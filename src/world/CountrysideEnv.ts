@@ -1,12 +1,28 @@
 import * as THREE from 'three';
 import { Sky } from 'three/addons/objects/Sky.js';
 
+interface FoliageInstance {
+  x: number;
+  z: number;
+  baseMatrix: THREE.Matrix4;
+}
+
 export class CountrysideEnv {
   public readonly sky: Sky;
   private readonly sunVec = new THREE.Vector3();
   private grassShaderUniforms = { uTime: { value: 0 } };
   private readonly grassMesh: THREE.InstancedMesh;
-  private readonly grassPositions: { x: number; z: number; baseMatrix: THREE.Matrix4 }[] = [];
+  private readonly grassInstances: FoliageInstance[] = [];
+
+  private whiteFlowersMesh!: THREE.InstancedMesh;
+  private readonly whiteFlowerInstances: FoliageInstance[] = [];
+  private yellowFlowersMesh!: THREE.InstancedMesh;
+  private readonly yellowFlowerInstances: FoliageInstance[] = [];
+
+  // Ensemble des coordonnées (x,z) occupées au sol (y=0) par une dalle de sol, brique ou porte
+  private readonly occupiedGroundCells = new Set<string>();
+  private readonly zeroMatrix = new THREE.Matrix4().makeScale(0, 0, 0);
+
   private readonly pmremGenerator: THREE.PMREMGenerator;
   private currentEnvMap: THREE.Texture | null = null;
 
@@ -14,19 +30,19 @@ export class CountrysideEnv {
     this.pmremGenerator = new THREE.PMREMGenerator(renderer);
     this.pmremGenerator.compileEquirectangularShader();
 
-    // 1. Physically-based Atmospheric Sky (Rayleigh + Mie scattering)
+    // 1. Physically-based Atmospheric Sky
     this.sky = new Sky();
     this.sky.scale.setScalar(450);
     this.scene.add(this.sky);
 
-    // 2. Instanced 3D Grass Tufts with GPU Wind Shader (22,000 tufts across the flat meadow)
+    // 2. Instanced 3D Grass Tufts with GPU Wind Shader
     this.grassMesh = this.createInstancedMeadowGrass(22000);
     this.scene.add(this.grassMesh);
 
     // 3. Instanced Wildflowers (Marguerites blanches & boutons d'or)
     this.createWildflowers(1100);
 
-    // 4. Distant Countryside Horizon (Trees, Pasture Fences & Rolling Hills beyond r=38m)
+    // 4. Distant Countryside Horizon (Trees & Rolling Hills beyond r=38m)
     this.createCountrysideHorizon();
   }
 
@@ -47,7 +63,6 @@ export class CountrysideEnv {
     this.sunVec.setFromSphericalCoords(1, phi, theta);
     skyUniforms['sunPosition'].value.copy(this.sunVec);
 
-    // Bake soft, non-glaring indirect lighting (IBL)
     if (this.currentEnvMap) {
       this.currentEnvMap.dispose();
     }
@@ -69,9 +84,8 @@ export class CountrysideEnv {
   }
 
   private createInstancedMeadowGrass(count: number): THREE.InstancedMesh {
-    // Crossed blade tuft geometry (2 intersecting tapered planes per tuft)
-    const bladeW = 0.22;
-    const bladeH = 0.34;
+    const bladeW = 0.2;
+    const bladeH = 0.3;
     const g1 = new THREE.PlaneGeometry(bladeW, bladeH, 1, 3);
     g1.translate(0, bladeH / 2 - 0.5, 0);
     const g2 = g1.clone();
@@ -79,10 +93,8 @@ export class CountrysideEnv {
     const g3 = g1.clone();
     g3.rotateY(-Math.PI / 3);
 
-    // Merge the 3 intersecting blades into a single lush tuft geometry
     const mergedGeo = this.mergeGeometries([g1, g2, g3]);
 
-    // Taper top vertices of each blade so grass tips are pointy
     const posAttr = mergedGeo.attributes.position;
     const colors: number[] = [];
     for (let i = 0; i < posAttr.count; i++) {
@@ -92,10 +104,9 @@ export class CountrysideEnv {
       posAttr.setX(i, posAttr.getX(i) * taper);
       posAttr.setZ(i, posAttr.getZ(i) * taper);
 
-      // Vertex color gradient: darker earthy green at root, vibrant sun-lit green at tip
-      const r = THREE.MathUtils.lerp(0.18, 0.48, heightRatio);
-      const g = THREE.MathUtils.lerp(0.34, 0.72, heightRatio);
-      const b = THREE.MathUtils.lerp(0.11, 0.22, heightRatio);
+      const r = THREE.MathUtils.lerp(0.18, 0.44, heightRatio);
+      const g = THREE.MathUtils.lerp(0.34, 0.66, heightRatio);
+      const b = THREE.MathUtils.lerp(0.11, 0.2, heightRatio);
       colors.push(r, g, b);
     }
     mergedGeo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
@@ -103,12 +114,11 @@ export class CountrysideEnv {
 
     const grassMat = new THREE.MeshStandardMaterial({
       vertexColors: true,
-      roughness: 0.72,
-      metalness: 0.02,
+      roughness: 0.78,
+      metalness: 0.01,
       side: THREE.DoubleSide,
     });
 
-    // Inject GPU wind sway in vertex shader
     grassMat.onBeforeCompile = (shader) => {
       shader.uniforms.uTime = this.grassShaderUniforms.uTime;
       shader.vertexShader =
@@ -117,10 +127,10 @@ export class CountrysideEnv {
           '#include <begin_vertex>',
           `
           #include <begin_vertex>
-          float hFactor = clamp((transformed.y + 0.5) / 0.34, 0.0, 1.0);
+          float hFactor = clamp((transformed.y + 0.5) / 0.30, 0.0, 1.0);
           vec4 worldInstancePos = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
-          float wave = sin(uTime * 2.2 + worldInstancePos.x * 0.45 + worldInstancePos.z * 0.35) * 0.09;
-          float gust = cos(uTime * 1.3 + worldInstancePos.x * 0.15 - worldInstancePos.z * 0.25) * 0.05;
+          float wave = sin(uTime * 2.2 + worldInstancePos.x * 0.45 + worldInstancePos.z * 0.35) * 0.08;
+          float gust = cos(uTime * 1.3 + worldInstancePos.x * 0.15 - worldInstancePos.z * 0.25) * 0.04;
           transformed.x += (wave + gust) * hFactor * hFactor;
           transformed.z += (wave * 0.6) * hFactor * hFactor;
           `
@@ -135,7 +145,6 @@ export class CountrysideEnv {
     const color = new THREE.Color();
 
     for (let i = 0; i < count; i++) {
-      // Distribute more densely near the player and out to 65m
       const radius = Math.pow(Math.random(), 0.7) * 65;
       const angle = Math.random() * Math.PI * 2;
       const x = Math.cos(angle) * radius;
@@ -143,17 +152,16 @@ export class CountrysideEnv {
 
       dummy.position.set(x, 0, z);
       dummy.rotation.y = Math.random() * Math.PI * 2;
-      const s = 0.65 + Math.random() * 0.75;
-      dummy.scale.set(s, s * (0.8 + Math.random() * 0.45), s);
+      const s = 0.65 + Math.random() * 0.65;
+      dummy.scale.set(s, s * (0.75 + Math.random() * 0.35), s);
       dummy.updateMatrix();
 
       instanced.setMatrixAt(i, dummy.matrix);
-      this.grassPositions.push({ x, z, baseMatrix: dummy.matrix.clone() });
+      this.grassInstances.push({ x, z, baseMatrix: dummy.matrix.clone() });
 
-      // Subtle natural variation per tuft
       const hueShift = (Math.random() - 0.5) * 0.04;
       const lightShift = (Math.random() - 0.5) * 0.08;
-      color.setHSL(0.27 + hueShift, 0.55, 0.52 + lightShift);
+      color.setHSL(0.27 + hueShift, 0.52, 0.48 + lightShift);
       instanced.setColorAt(i, color);
     }
 
@@ -162,31 +170,16 @@ export class CountrysideEnv {
     return instanced;
   }
 
-  /**
-   * Masque ou réaffiche les brins d'herbe 3D sous une coordonnée de brique (x, z)
-   */
-  public syncGrassAt(bx: number, bz: number, hasBrickOnGround: boolean): void {
-    const zeroMat = new THREE.Matrix4().makeScale(0, 0, 0);
-    let changed = false;
-    for (let i = 0; i < this.grassPositions.length; i++) {
-      const gp = this.grassPositions[i];
-      if (Math.abs(gp.x - bx) < 0.6 && Math.abs(gp.z - bz) < 0.6) {
-        this.grassMesh.setMatrixAt(i, hasBrickOnGround ? zeroMat : gp.baseMatrix);
-        changed = true;
-      }
-    }
-    if (changed) {
-      this.grassMesh.instanceMatrix.needsUpdate = true;
-    }
-  }
-
   private createWildflowers(count: number): void {
-    const flowerGeo = new THREE.DodecahedronGeometry(0.055, 0);
-    const whiteMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5 });
-    const yellowMat = new THREE.MeshStandardMaterial({ color: 0xfacc15, roughness: 0.4 });
+    const flowerGeo = new THREE.DodecahedronGeometry(0.05, 0);
+    const whiteMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.65 });
+    const yellowMat = new THREE.MeshStandardMaterial({ color: 0xeab308, roughness: 0.55 });
 
-    const whiteFlowers = new THREE.InstancedMesh(flowerGeo, whiteMat, Math.floor(count * 0.65));
-    const yellowFlowers = new THREE.InstancedMesh(flowerGeo, yellowMat, Math.floor(count * 0.35));
+    const whiteCount = Math.floor(count * 0.65);
+    const yellowCount = count - whiteCount;
+
+    this.whiteFlowersMesh = new THREE.InstancedMesh(flowerGeo, whiteMat, whiteCount);
+    this.yellowFlowersMesh = new THREE.InstancedMesh(flowerGeo, yellowMat, yellowCount);
 
     const dummy = new THREE.Object3D();
     let wIdx = 0;
@@ -195,25 +188,109 @@ export class CountrysideEnv {
     for (let i = 0; i < count; i++) {
       const r = 4 + Math.random() * 55;
       const a = Math.random() * Math.PI * 2;
-      dummy.position.set(Math.cos(a) * r, -0.24 + Math.random() * 0.1, Math.sin(a) * r);
+      const fx = Math.cos(a) * r;
+      const fz = Math.sin(a) * r;
+      dummy.position.set(fx, -0.36 + Math.random() * 0.08, fz);
       dummy.scale.set(1, 0.5, 1);
       dummy.updateMatrix();
 
-      if (i % 3 !== 0 && wIdx < whiteFlowers.count) {
-        whiteFlowers.setMatrixAt(wIdx++, dummy.matrix);
-      } else if (yIdx < yellowFlowers.count) {
-        yellowFlowers.setMatrixAt(yIdx++, dummy.matrix);
+      if (wIdx < whiteCount && (i % 3 !== 0 || yIdx >= yellowCount)) {
+        this.whiteFlowersMesh.setMatrixAt(wIdx++, dummy.matrix);
+        this.whiteFlowerInstances.push({ x: fx, z: fz, baseMatrix: dummy.matrix.clone() });
+      } else if (yIdx < yellowCount) {
+        this.yellowFlowersMesh.setMatrixAt(yIdx++, dummy.matrix);
+        this.yellowFlowerInstances.push({ x: fx, z: fz, baseMatrix: dummy.matrix.clone() });
       }
     }
 
-    this.scene.add(whiteFlowers);
-    this.scene.add(yellowFlowers);
+    this.whiteFlowersMesh.instanceMatrix.needsUpdate = true;
+    this.yellowFlowersMesh.instanceMatrix.needsUpdate = true;
+    this.scene.add(this.whiteFlowersMesh);
+    this.scene.add(this.yellowFlowersMesh);
+  }
+
+  private isNearAnyOccupiedGroundCell(px: number, pz: number, margin = 0.78): boolean {
+    const minCellX = Math.floor(px - margin);
+    const maxCellX = Math.ceil(px + margin);
+    const minCellZ = Math.floor(pz - margin);
+    const maxCellZ = Math.ceil(pz + margin);
+
+    for (let cx = minCellX; cx <= maxCellX; cx++) {
+      for (let cz = minCellZ; cz <= maxCellZ; cz++) {
+        if (this.occupiedGroundCells.has(`${cx},${cz}`)) {
+          if (Math.abs(px - cx) <= margin && Math.abs(pz - cz) <= margin) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Masque totalement l'herbe 3D ET les fleurs sauvages sous et au bord d'une dalle de sol ou brique (x, z)
+   * afin qu'aucun brin d'herbe ni fleur ne dépasse jamais à travers le sol construit.
+   */
+  public syncGrassAt(bx: number, bz: number, hasElementOnGround: boolean): void {
+    const rx = Math.round(bx);
+    const rz = Math.round(bz);
+    const key = `${rx},${rz}`;
+
+    if (hasElementOnGround) {
+      this.occupiedGroundCells.add(key);
+    } else {
+      this.occupiedGroundCells.delete(key);
+    }
+
+    const margin = 0.78;
+    const searchRadius = 1.65;
+
+    // 1. Update Grass Tufts in local neighborhood
+    let grassChanged = false;
+    for (let i = 0; i < this.grassInstances.length; i++) {
+      const inst = this.grassInstances[i];
+      if (Math.abs(inst.x - rx) <= searchRadius && Math.abs(inst.z - rz) <= searchRadius) {
+        const hide = this.isNearAnyOccupiedGroundCell(inst.x, inst.z, margin);
+        this.grassMesh.setMatrixAt(i, hide ? this.zeroMatrix : inst.baseMatrix);
+        grassChanged = true;
+      }
+    }
+    if (grassChanged) {
+      this.grassMesh.instanceMatrix.needsUpdate = true;
+    }
+
+    // 2. Update White Wildflowers in local neighborhood
+    let whiteChanged = false;
+    for (let i = 0; i < this.whiteFlowerInstances.length; i++) {
+      const inst = this.whiteFlowerInstances[i];
+      if (Math.abs(inst.x - rx) <= searchRadius && Math.abs(inst.z - rz) <= searchRadius) {
+        const hide = this.isNearAnyOccupiedGroundCell(inst.x, inst.z, margin);
+        this.whiteFlowersMesh.setMatrixAt(i, hide ? this.zeroMatrix : inst.baseMatrix);
+        whiteChanged = true;
+      }
+    }
+    if (whiteChanged) {
+      this.whiteFlowersMesh.instanceMatrix.needsUpdate = true;
+    }
+
+    // 3. Update Yellow Wildflowers in local neighborhood
+    let yellowChanged = false;
+    for (let i = 0; i < this.yellowFlowerInstances.length; i++) {
+      const inst = this.yellowFlowerInstances[i];
+      if (Math.abs(inst.x - rx) <= searchRadius && Math.abs(inst.z - rz) <= searchRadius) {
+        const hide = this.isNearAnyOccupiedGroundCell(inst.x, inst.z, margin);
+        this.yellowFlowersMesh.setMatrixAt(i, hide ? this.zeroMatrix : inst.baseMatrix);
+        yellowChanged = true;
+      }
+    }
+    if (yellowChanged) {
+      this.yellowFlowersMesh.instanceMatrix.needsUpdate = true;
+    }
   }
 
   private createCountrysideHorizon(): void {
     const horizonGroup = new THREE.Group();
 
-    // 1. Collines verdoyantes douces à l'horizon (au-delà du plateau plat de construction)
     const hillMat = new THREE.MeshStandardMaterial({
       color: 0x3f6e2c,
       roughness: 0.92,
@@ -232,7 +309,6 @@ export class CountrysideEnv {
       horizonGroup.add(hill);
     }
 
-    // 2. Arbres de campagne (Chênes & Cyprès) en lisière de prairie (entre 38m et 75m)
     const trunkMat = new THREE.MeshStandardMaterial({ color: 0x5c4033, roughness: 0.9 });
     const foliageMat1 = new THREE.MeshStandardMaterial({ color: 0x3b6e28, roughness: 0.82 });
     const foliageMat2 = new THREE.MeshStandardMaterial({ color: 0x4d8234, roughness: 0.82 });
@@ -313,4 +389,3 @@ export class CountrysideEnv {
     this.grassShaderUniforms.uTime.value = elapsedSeconds;
   }
 }
-

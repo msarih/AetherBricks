@@ -452,13 +452,13 @@ function canPlaceElementAt(x: number, y: number, z: number): boolean {
 }
 
 function stopDragActions(): void {
-  if (isHoldingBuild) {
+  if (isHoldingBuild || isHoldingRemove) {
     isHoldingBuild = false;
+    isHoldingRemove = false;
     lastDragPlacePos = null;
+    lastDragRemovePos = null;
     world.endDragStroke();
   }
-  isHoldingRemove = false;
-  lastDragRemovePos = null;
 }
 
 window.addEventListener('mouseup', () => {
@@ -496,6 +496,7 @@ renderer.domElement.addEventListener('mousedown', (e) => {
     }
   } else if (e.button === 2 || (e.button === 0 && e.altKey)) {
     isHoldingRemove = true;
+    world.beginDragStroke();
     if (target.removePos) {
       lastDragRemovePos = target.removePos.clone();
       const { x, y, z } = target.removePos;
@@ -531,9 +532,67 @@ window.addEventListener(
   { passive: true }
 );
 
+function performUndo(): void {
+  stopDragActions();
+  const count = world.undo();
+  if (count > 0) {
+    sound.playRemove();
+    player.triggerActionAnimation();
+    showToast(count > 1 ? `↩ Action annulée (${count} éléments)` : '↩ Action précédente annulée');
+  } else {
+    showToast('Aucune action à annuler');
+  }
+}
+
+function performRedo(): void {
+  stopDragActions();
+  const count = world.redo();
+  if (count > 0) {
+    sound.playPlace();
+    player.triggerActionAnimation();
+    showToast(count > 1 ? `↪ Action rétablie (${count} éléments)` : '↪ Action rétablie');
+  } else {
+    showToast('Aucune action à rétablir');
+  }
+}
+
+document.getElementById('btn-hud-undo')!.addEventListener('click', (e) => {
+  e.stopPropagation();
+  performUndo();
+});
+
+document.getElementById('btn-hud-redo')!.addEventListener('click', (e) => {
+  e.stopPropagation();
+  performRedo();
+});
+
 window.addEventListener('keydown', (e) => {
   // Ignore shortcuts when typing in an input field inside the modal
   if (document.activeElement instanceof HTMLInputElement) return;
+
+  // Undo shortcuts: U, Backspace, or Ctrl/Cmd + Z
+  if (
+    e.code === 'KeyU' ||
+    e.code === 'Backspace' ||
+    ((e.metaKey || e.ctrlKey) && (e.key.toLowerCase() === 'z' || e.code === 'KeyZ') && !e.shiftKey)
+  ) {
+    e.preventDefault();
+    performUndo();
+    return;
+  }
+
+  // Redo shortcuts: Y, Ctrl/Cmd + Y, or Ctrl/Cmd + Shift + Z
+  if (
+    e.code === 'KeyY' ||
+    ((e.metaKey || e.ctrlKey) &&
+      (e.key.toLowerCase() === 'y' ||
+        e.code === 'KeyY' ||
+        ((e.key.toLowerCase() === 'z' || e.code === 'KeyZ') && e.shiftKey)))
+  ) {
+    e.preventDefault();
+    performRedo();
+    return;
+  }
 
   if (e.code === 'Tab') {
     e.preventDefault();
@@ -570,25 +629,6 @@ window.addEventListener('keydown', (e) => {
         sound.playDoor(newState);
         player.triggerActionAnimation();
       }
-    }
-  }
-
-  if ((e.metaKey || e.ctrlKey) && e.code === 'KeyZ') {
-    e.preventDefault();
-    if (e.shiftKey) {
-      if (world.redo()) {
-        sound.playPlace();
-        showToast('Action rétablie');
-      }
-    } else if (world.undo()) {
-      sound.playRemove();
-      showToast('Action annulée');
-    }
-  } else if ((e.metaKey || e.ctrlKey) && e.code === 'KeyY') {
-    e.preventDefault();
-    if (world.redo()) {
-      sound.playPlace();
-      showToast('Action rétablie');
     }
   }
 

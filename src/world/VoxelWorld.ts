@@ -82,9 +82,10 @@ export class VoxelWorld {
     doorIsOpen?: boolean;
   } | null = null;
 
-  // Undo / Redo stacks
-  private undoStack: HistoryAction[] = [];
-  private redoStack: HistoryAction[] = [];
+  // Undo / Redo stacks (chaque étape peut contenir 1 bloc ou tout un tracé en masse)
+  private undoStack: HistoryAction[][] = [];
+  private redoStack: HistoryAction[][] = [];
+  private activeHistoryBatch: HistoryAction[] | null = null;
 
   // Particle bursts
   private bursts: ParticleBurst[] = [];
@@ -182,14 +183,49 @@ export class VoxelWorld {
     return this.rotationStep;
   }
 
-  public beginDragStroke(initialPlaneY: number): void {
-    this.isDragStrokeActive = true;
-    this.dragLockedY = Math.round(initialPlaneY);
+  public beginDragStroke(initialPlaneY?: number): void {
+    if (initialPlaneY !== undefined) {
+      this.isDragStrokeActive = true;
+      this.dragLockedY = Math.round(initialPlaneY);
+    }
+    this.activeHistoryBatch = [];
   }
 
   public endDragStroke(): void {
     this.isDragStrokeActive = false;
     this.dragLockedY = null;
+    if (this.activeHistoryBatch && this.activeHistoryBatch.length > 0) {
+      this.undoStack.push(this.activeHistoryBatch);
+      this.redoStack = [];
+    }
+    this.activeHistoryBatch = null;
+  }
+
+  private recordHistoryAction(action: HistoryAction): void {
+    if (this.activeHistoryBatch) {
+      this.activeHistoryBatch.push(action);
+    } else {
+      this.undoStack.push([action]);
+    }
+    this.redoStack = [];
+  }
+
+  public getUndoCount(): number {
+    return this.undoStack.length;
+  }
+
+  public getRedoCount(): number {
+    return this.redoStack.length;
+  }
+
+  private hasAnyGroundItemAt(x: number, z: number): boolean {
+    const rx = Math.round(x);
+    const rz = Math.round(z);
+    return (
+      this.bricks.has(`floor:${rx},0,${rz}`) ||
+      this.bricks.has(`main:${rx},0,${rz}`) ||
+      this.bricks.has(`ceil:${rx},0,${rz}`)
+    );
   }
 
   /**
@@ -440,8 +476,7 @@ export class VoxelWorld {
     }
 
     if (recordHistory) {
-      this.undoStack.push({ kind: 'place', entry: { ...entry } });
-      this.redoStack = [];
+      this.recordHistoryAction({ kind: 'place', entry: { ...entry } });
       this.saveToLocalStorage();
     }
 
@@ -491,13 +526,12 @@ export class VoxelWorld {
       this.bricks.delete(`main:${baseEntry.x},${baseEntry.y + 1},${baseEntry.z}`);
     }
 
-    if (baseEntry.y === 0) {
+    if (baseEntry.y === 0 && !this.hasAnyGroundItemAt(baseEntry.x, baseEntry.z)) {
       this.countryside?.syncGrassAt(baseEntry.x, baseEntry.z, false);
     }
 
     if (recordHistory) {
-      this.undoStack.push({ kind: 'remove', entry: { ...baseEntry } });
-      this.redoStack = [];
+      this.recordHistoryAction({ kind: 'remove', entry: { ...baseEntry } });
       this.saveToLocalStorage();
     }
 
@@ -508,50 +542,63 @@ export class VoxelWorld {
     return true;
   }
 
-  public undo(): boolean {
-    const action = this.undoStack.pop();
-    if (!action) return false;
+  public undo(): number {
+    const batch = this.undoStack.pop();
+    if (!batch || batch.length === 0) return 0;
 
-    if (action.kind === 'place') {
-      this.removeBrick(action.entry.x, action.entry.y, action.entry.z, false, true, action.entry.type);
-    } else {
-      this.setBrick(
-        action.entry.x,
-        action.entry.y,
-        action.entry.z,
-        action.entry.type,
-        false,
-        true,
-        action.entry.rot ?? 0,
-        action.entry.open ?? false
-      );
+    for (let i = batch.length - 1; i >= 0; i--) {
+      const action = batch[i];
+      if (action.kind === 'place') {
+        this.removeBrick(action.entry.x, action.entry.y, action.entry.z, false, i === 0, action.entry.type);
+      } else {
+        this.setBrick(
+          action.entry.x,
+          action.entry.y,
+          action.entry.z,
+          action.entry.type,
+          false,
+          i === 0,
+          action.entry.rot ?? 0,
+          action.entry.open ?? false
+        );
+      }
     }
-    this.redoStack.push(action);
+    this.redoStack.push(batch);
     this.saveToLocalStorage();
-    return true;
+    return batch.length;
   }
 
-  public redo(): boolean {
-    const action = this.redoStack.pop();
-    if (!action) return false;
+  public redo(): number {
+    const batch = this.redoStack.pop();
+    if (!batch || batch.length === 0) return 0;
 
-    if (action.kind === 'place') {
-      this.setBrick(
-        action.entry.x,
-        action.entry.y,
-        action.entry.z,
-        action.entry.type,
-        false,
-        true,
-        action.entry.rot ?? 0,
-        action.entry.open ?? false
-      );
-    } else {
-      this.removeBrick(action.entry.x, action.entry.y, action.entry.z, false, true, action.entry.type);
+    for (let i = 0; i < batch.length; i++) {
+      const action = batch[i];
+      if (action.kind === 'place') {
+        this.setBrick(
+          action.entry.x,
+          action.entry.y,
+          action.entry.z,
+          action.entry.type,
+          false,
+          i === batch.length - 1,
+          action.entry.rot ?? 0,
+          action.entry.open ?? false
+        );
+      } else {
+        this.removeBrick(
+          action.entry.x,
+          action.entry.y,
+          action.entry.z,
+          false,
+          i === batch.length - 1,
+          action.entry.type
+        );
+      }
     }
-    this.undoStack.push(action);
+    this.undoStack.push(batch);
     this.saveToLocalStorage();
-    return true;
+    return batch.length;
   }
 
   public clearAll(save = true): void {
