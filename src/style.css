@@ -693,3 +693,120 @@ kbd {
   color: #ffffff;
   border-color: #60a5fa;
 }
+
+/* --- Ambiance & Météo Rapide --- */
+.quick-ambience-bar {
+  display: flex;
+  gap: 4px;
+  background: rgba(15, 23, 42, 0.75);
+  backdrop-filter: blur(10px);
+  padding: 3px 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+}
+
+.quick-ambience-btn {
+  background: transparent;
+  border: none;
+  color: #cbd5e1;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 8px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.quick-ambience-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+}
+
+.quick-ambience-btn.active {
+  background: #3b82f6;
+  color: #ffffff;
+}
+
+/* --- Barre d'Outils Avancés --- */
+.quick-tools-bar {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.tool-btn {
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 999px;
+  padding: 5px 10px;
+  color: #e2e8f0;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.tool-btn:hover,
+.tool-btn.active {
+  background: #2563eb;
+  border-color: #60a5fa;
+  color: #ffffff;
+}
+
+/* --- Indicateur d'état des outils (Boîte / Règle) --- */
+.tool-status-bar {
+  position: fixed;
+  top: 76px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 25;
+  background: rgba(15, 23, 42, 0.92);
+  border: 1px solid #3b82f6;
+  color: #93c5fd;
+  padding: 8px 18px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  backdrop-filter: blur(16px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+}
+
+/* --- Barre Mode Photo --- */
+.photo-mode-bar {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  background: rgba(15, 23, 42, 0.9);
+  backdrop-filter: blur(20px);
+  padding: 8px 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+
+.photo-mode-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #f8fafc;
+  letter-spacing: 0.05em;
+}
+
+body.photo-mode .hud-top-left,
+body.photo-mode .hud-top-right,
+body.photo-mode .hud-bottom,
+body.photo-mode #crosshair,
+body.photo-mode #interaction-hint,
+body.photo-mode #tool-status-bar {
+  display: none !important;
+}

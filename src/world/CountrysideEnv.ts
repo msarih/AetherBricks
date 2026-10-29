@@ -26,6 +26,12 @@ export class CountrysideEnv {
   private readonly pmremGenerator: THREE.PMREMGenerator;
   private currentEnvMap: THREE.Texture | null = null;
 
+  // Système de pluie douce de campagne
+  public isRaining = false;
+  private rainPoints?: THREE.Points;
+  private rainPositions?: Float32Array;
+  private readonly rainCount = 2600;
+
   constructor(private readonly scene: THREE.Scene, renderer: THREE.WebGLRenderer) {
     this.pmremGenerator = new THREE.PMREMGenerator(renderer);
     this.pmremGenerator.compileEquirectangularShader();
@@ -44,6 +50,40 @@ export class CountrysideEnv {
 
     // 4. Distant Countryside Horizon (Trees & Rolling Hills beyond r=38m)
     this.createCountrysideHorizon();
+
+    // 5. Pluie douce de campagne (2600 gouttes)
+    this.initRainSystem();
+  }
+
+  private initRainSystem(): void {
+    const geo = new THREE.BufferGeometry();
+    const positions = new Float32Array(this.rainCount * 3);
+    for (let i = 0; i < this.rainCount; i++) {
+      positions[i * 3 + 0] = (Math.random() - 0.5) * 60;
+      positions[i * 3 + 1] = Math.random() * 32;
+      positions[i * 3 + 2] = (Math.random() - 0.5) * 60;
+    }
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    this.rainPositions = positions;
+
+    const mat = new THREE.PointsMaterial({
+      color: 0x93c5fd,
+      size: 0.14,
+      transparent: true,
+      opacity: 0.55,
+      depthWrite: false,
+    });
+    this.rainPoints = new THREE.Points(geo, mat);
+    this.rainPoints.visible = false;
+    this.scene.add(this.rainPoints);
+  }
+
+  public toggleRain(): boolean {
+    this.isRaining = !this.isRaining;
+    if (this.rainPoints) {
+      this.rainPoints.visible = this.isRaining;
+    }
+    return this.isRaining;
   }
 
   public updateSunAndEnvironment(
@@ -385,7 +425,25 @@ export class CountrysideEnv {
     return merged;
   }
 
-  public update(elapsedSeconds: number): void {
+  public update(elapsedSeconds: number, playerPos?: THREE.Vector3): void {
     this.grassShaderUniforms.uTime.value = elapsedSeconds;
+
+    if (this.isRaining && this.rainPositions && this.rainPoints) {
+      const px = playerPos?.x ?? 0;
+      const pz = playerPos?.z ?? 0;
+      const posAttr = this.rainPoints.geometry.attributes.position;
+      const fallSpeed = 32.0 * 0.016;
+
+      for (let i = 0; i < this.rainCount; i++) {
+        let y = this.rainPositions[i * 3 + 1] - fallSpeed;
+        if (y < -0.5) {
+          y = 28 + Math.random() * 4;
+          this.rainPositions[i * 3 + 0] = px + (Math.random() - 0.5) * 56;
+          this.rainPositions[i * 3 + 2] = pz + (Math.random() - 0.5) * 56;
+        }
+        this.rainPositions[i * 3 + 1] = y;
+      }
+      posAttr.needsUpdate = true;
+    }
   }
 }

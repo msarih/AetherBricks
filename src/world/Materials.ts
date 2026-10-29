@@ -1,13 +1,22 @@
 import * as THREE from 'three';
 
-export type ItemCategory = 'bricks' | 'slabs' | 'stairs_roofs' | 'openings' | 'decor';
+export type ItemCategory =
+  | 'bricks'
+  | 'slabs'
+  | 'stairs_roofs'
+  | 'openings'
+  | 'decor'
+  | 'furniture'
+  | 'nature';
 
 export const CATEGORY_DEFINITIONS: { id: ItemCategory; label: string; icon: string }[] = [
   { id: 'bricks', label: 'Briques & Murs', icon: '🧱' },
   { id: 'slabs', label: 'Sols & Plafonds', icon: '⬛' },
-  { id: 'stairs_roofs', label: 'Escaliers, Échelle & Triangles', icon: '🪜' },
+  { id: 'stairs_roofs', label: 'Escaliers & Toits', icon: '🪜' },
   { id: 'openings', label: 'Portes & Fenêtres', icon: '🚪' },
-  { id: 'decor', label: 'Piliers, Clôtures & Déco', icon: '🏛️' },
+  { id: 'decor', label: 'Piliers & Clôtures', icon: '🏛️' },
+  { id: 'furniture', label: 'Mobilier Intérieur', icon: '🛋️' },
+  { id: 'nature', label: 'Nature & Eau', icon: '🌿' },
 ];
 
 export interface BrickDefinition {
@@ -774,6 +783,115 @@ export function createBrickCatalog(): Map<number, BrickDefinition> {
     previewCss: 'radial-gradient(circle at 50% 35%, #fde68a 0%, #27303f 65%)',
     isLight: true,
     material: new THREE.MeshStandardMaterial({ color: 0xfde68a }),
+  });
+
+  // --- CATÉGORIE 6 : MOBILIER INTÉRIEUR ('furniture') ---
+  // 29. Table Basse Chêne & Marbre
+  catalog.set(29, {
+    id: 29,
+    category: 'furniture',
+    name: 'Table Chêne & Marbre',
+    subtitle: 'Plateau marbre sur 4 pieds en chêne massif [R]',
+    previewCss: 'linear-gradient(180deg, #ffffff 0%, #ffffff 32%, #9a6b3e 32%, #7c532d 100%)',
+    material: new THREE.MeshStandardMaterial({ color: 0xffffff }),
+  });
+
+  // 30. Fauteuil / Canapé Moderne
+  catalog.set(30, {
+    id: 30,
+    category: 'furniture',
+    name: 'Fauteuil Confort',
+    subtitle: 'Assise contemporaine en lin [E: S’asseoir • R]',
+    previewCss: 'linear-gradient(135deg, #e8e2d5 0%, #d4cbba 65%, #9a6b3e 65%, #7c532d 100%)',
+    material: new THREE.MeshStandardMaterial({ color: 0xe8e2d5 }),
+  });
+
+  // 31. Lit Douillet Moderne
+  catalog.set(31, {
+    id: 31,
+    category: 'furniture',
+    name: 'Lit Douillet Moderne',
+    subtitle: 'Cadre bois, matelas blanc, oreiller et couette bleue [R]',
+    previewCss: 'linear-gradient(180deg, #f5f5f5 0%, #f5f5f5 42%, #3b82f6 42%, #1d4ed8 100%)',
+    material: new THREE.MeshStandardMaterial({ color: 0x3b82f6 }),
+  });
+
+  // 32. Bibliothèque Garnie
+  catalog.set(32, {
+    id: 32,
+    category: 'furniture',
+    name: 'Bibliothèque Garnie',
+    subtitle: 'Meuble en chêne avec étagères de livres reliés [R]',
+    previewCss:
+      'repeating-linear-gradient(90deg, #991b1b 0px, #991b1b 5px, #1e3a8a 5px, #1e3a8a 10px, #065f46 10px, #065f46 15px, #9a6b3e 15px, #9a6b3e 18px)',
+    material: new THREE.MeshStandardMaterial({ color: 0x9a6b3e }),
+  });
+
+  // 33. Cheminée de Campagne
+  catalog.set(33, {
+    id: 33,
+    category: 'furniture',
+    name: 'Cheminée Pierre & Feu',
+    subtitle: 'Manteau calcaire et braises ardentes lumineuses [R]',
+    previewCss: 'radial-gradient(circle at 50% 65%, #ff5500 0%, #1e293b 62%)',
+    isLight: true,
+    material: new THREE.MeshStandardMaterial({ color: 0xff5500 }),
+  });
+
+  // 34. Tapis de Sol Décoratif
+  catalog.set(34, {
+    id: 34,
+    category: 'furniture',
+    name: 'Tapis de Salon Déco',
+    subtitle: 'Tapis doux ultra-fin posé au sol',
+    previewCss: 'linear-gradient(180deg, transparent 75%, #d8cca8 75%, #b8a67c 100%)',
+    material: new THREE.MeshStandardMaterial({ color: 0xd8cca8 }),
+  });
+
+  // --- CATÉGORIE 7 : NATURE, EAU & EXTÉRIEUR ('nature') ---
+  // 35. Bloc d'Eau Ondoyante (Permet de nager)
+  catalog.set(35, {
+    id: 35,
+    category: 'nature',
+    name: 'Bassin d’Eau Cristalline',
+    subtitle: 'Eau translucide ondoyante • Plongez pour nager !',
+    previewCss: 'linear-gradient(135deg, rgba(56, 189, 248, 0.7) 0%, rgba(2, 132, 199, 0.85) 100%)',
+    material: new THREE.MeshPhysicalMaterial({
+      color: 0x38bdf8,
+      transparent: true,
+      opacity: 0.6,
+      roughness: 0.05,
+    }),
+  });
+
+  // 36. Pas Japonais en Ardoise
+  catalog.set(36, {
+    id: 36,
+    category: 'nature',
+    name: 'Pas Japonais Ardoise',
+    subtitle: 'Dalles de jardin plates pour allée paysagère [R]',
+    previewCss: 'linear-gradient(180deg, transparent 65%, #475569 65%, #1e293b 100%)',
+    material: new THREE.MeshStandardMaterial({ color: 0x475569 }),
+  });
+
+  // 37. Haie Végétale Dense
+  catalog.set(37, {
+    id: 37,
+    category: 'nature',
+    name: 'Haie Végétale Dense',
+    subtitle: 'Buisson de feuillage taillé au carré',
+    previewCss: 'radial-gradient(circle, #4d8c36 0%, #2f5d21 100%)',
+    material: new THREE.MeshStandardMaterial({ color: 0x3f742b }),
+  });
+
+  // 38. Cyprès en Pot
+  catalog.set(38, {
+    id: 38,
+    category: 'nature',
+    name: 'Cyprès en Pot Terre Cuite',
+    subtitle: 'Arbuste conique méditerranéen élégant',
+    previewCss: 'linear-gradient(180deg, #1e3a1f 0%, #1e3a1f 65%, #b45309 65%, #78350f 100%)',
+    material: new THREE.MeshStandardMaterial({ color: 0x1e3a1f }),
   });
 
   return catalog;

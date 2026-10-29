@@ -6,6 +6,20 @@ export const BRICK_TYPE_WINDOW_MODERN = 8;
 export const BRICK_TYPE_DOOR_OAK = 9;
 export const BRICK_TYPE_WINDOW_FRAMELESS = 28;
 
+// Catégorie Mobilier & Intérieur ('furniture')
+export const OBJ_TYPE_TABLE = 29;
+export const OBJ_TYPE_CHAIR = 30;
+export const OBJ_TYPE_BED = 31;
+export const OBJ_TYPE_BOOKSHELF = 32;
+export const OBJ_TYPE_FIREPLACE = 33;
+export const OBJ_TYPE_CARPET = 34;
+
+// Catégorie Nature & Extérieur ('nature')
+export const OBJ_TYPE_WATER = 35;
+export const OBJ_TYPE_STEPPING_STONE = 36;
+export const OBJ_TYPE_HEDGE = 37;
+export const OBJ_TYPE_CYPRESS = 38;
+
 // Carrés plats pour Sols (posés au bas de la case : y - 0.42, épaisseur 0.16m)
 export const SLAB_TYPE_FLOOR_STONE = 10;
 export const SLAB_TYPE_FLOOR_OAK = 11;
@@ -66,6 +80,18 @@ export function isStairOrSlope(type: number): boolean {
 
 export function isLadder(type: number): boolean {
   return type === OBJ_TYPE_LADDER_OAK;
+}
+
+export function isChair(type: number): boolean {
+  return type === OBJ_TYPE_CHAIR;
+}
+
+export function isWater(type: number): boolean {
+  return type === OBJ_TYPE_WATER;
+}
+
+export function isCarpet(type: number): boolean {
+  return type === OBJ_TYPE_CARPET;
 }
 
 export function isArchitecturalObject(type: number): boolean {
@@ -168,6 +194,18 @@ let sharedMaterials: {
   bushGreen: THREE.MeshStandardMaterial;
   soilDark: THREE.MeshStandardMaterial;
   flowerPink: THREE.MeshStandardMaterial;
+  fabricCushion: THREE.MeshStandardMaterial;
+  fabricBlanket: THREE.MeshStandardMaterial;
+  pillowWhite: THREE.MeshStandardMaterial;
+  carpetFabric: THREE.MeshStandardMaterial;
+  fireEmbers: THREE.MeshStandardMaterial;
+  waterMat: THREE.MeshPhysicalMaterial;
+  slatePaver: THREE.MeshStandardMaterial;
+  terracottaPot: THREE.MeshStandardMaterial;
+  cypressFoliage: THREE.MeshStandardMaterial;
+  bookRed: THREE.MeshStandardMaterial;
+  bookBlue: THREE.MeshStandardMaterial;
+  bookGreen: THREE.MeshStandardMaterial;
 } | null = null;
 
 let sharedSlabGeo: THREE.BufferGeometry | null = null;
@@ -250,6 +288,59 @@ export function getSharedArchMaterials() {
         color: 0xf472b6,
         roughness: 0.6,
       }),
+      fabricCushion: new THREE.MeshStandardMaterial({
+        color: 0xe8e2d5,
+        roughness: 0.88,
+        metalness: 0.0,
+      }),
+      fabricBlanket: new THREE.MeshStandardMaterial({
+        color: 0x3b82f6,
+        roughness: 0.85,
+        metalness: 0.0,
+      }),
+      pillowWhite: new THREE.MeshStandardMaterial({
+        color: 0xfafafa,
+        roughness: 0.82,
+        metalness: 0.0,
+      }),
+      carpetFabric: new THREE.MeshStandardMaterial({
+        color: 0xd8cca8,
+        roughness: 0.92,
+        metalness: 0.0,
+      }),
+      fireEmbers: new THREE.MeshStandardMaterial({
+        color: 0xff4500,
+        emissive: 0xff3b00,
+        emissiveIntensity: 0.95,
+        roughness: 0.4,
+      }),
+      waterMat: new THREE.MeshPhysicalMaterial({
+        color: 0x38bdf8,
+        transparent: true,
+        opacity: 0.58,
+        roughness: 0.04,
+        metalness: 0.05,
+        transmission: 0.82,
+        ior: 1.333,
+        clearcoat: 1.0,
+      }),
+      slatePaver: new THREE.MeshStandardMaterial({
+        color: 0x475569,
+        roughness: 0.85,
+        metalness: 0.02,
+      }),
+      terracottaPot: new THREE.MeshStandardMaterial({
+        color: 0xb45309,
+        roughness: 0.88,
+        metalness: 0.02,
+      }),
+      cypressFoliage: new THREE.MeshStandardMaterial({
+        color: 0x1e3a1f,
+        roughness: 0.85,
+      }),
+      bookRed: new THREE.MeshStandardMaterial({ color: 0x991b1b, roughness: 0.7 }),
+      bookBlue: new THREE.MeshStandardMaterial({ color: 0x1e3a8a, roughness: 0.7 }),
+      bookGreen: new THREE.MeshStandardMaterial({ color: 0x065f46, roughness: 0.7 }),
     };
   }
   return sharedMaterials;
@@ -832,4 +923,345 @@ export function createOakDoorGroup(): { root: THREE.Group; doorPivot: THREE.Grou
   });
 
   return { root, doorPivot };
+}
+
+/**
+ * Table Basse / Table en Chêne & Marbre (1x1x1m)
+ */
+export function createTableGroup(): THREE.Group {
+  const mats = getSharedArchMaterials();
+  const group = new THREE.Group();
+
+  // Plateau supérieur en marbre doux ou bois
+  const top = new THREE.Mesh(
+    new RoundedBoxGeometry(0.96, 0.08, 0.96, 2, 0.015),
+    mats.marbleTile
+  );
+  top.position.y = 0.22;
+
+  // 4 pieds en chêne
+  const legGeo = new RoundedBoxGeometry(0.08, 0.68, 0.08, 2, 0.01);
+  const legOffset = 0.4;
+  const positions = [
+    [-legOffset, -0.16, -legOffset],
+    [legOffset, -0.16, -legOffset],
+    [-legOffset, -0.16, legOffset],
+    [legOffset, -0.16, legOffset],
+  ];
+
+  positions.forEach(([lx, ly, lz]) => {
+    const leg = new THREE.Mesh(legGeo, mats.oakWood);
+    leg.position.set(lx, ly, lz);
+    group.add(leg);
+  });
+
+  group.add(top);
+  group.traverse((o) => {
+    if (o instanceof THREE.Mesh) {
+      o.castShadow = true;
+      o.receiveShadow = true;
+    }
+  });
+  return group;
+}
+
+/**
+ * Fauteuil / Canapé Moderne avec Coussin Moelleux (1x1x1m)
+ * Possibilité de s'asseoir avec la touche E !
+ */
+export function createChairGroup(): THREE.Group {
+  const mats = getSharedArchMaterials();
+  const group = new THREE.Group();
+
+  // Assise coussinée confortable
+  const seat = new THREE.Mesh(
+    new RoundedBoxGeometry(0.78, 0.22, 0.74, 3, 0.03),
+    mats.fabricCushion
+  );
+  seat.position.set(0, -0.12, 0.02);
+
+  // Dossier à l'arrière (+Z)
+  const backrest = new THREE.Mesh(
+    new RoundedBoxGeometry(0.78, 0.58, 0.16, 3, 0.03),
+    mats.fabricCushion
+  );
+  backrest.position.set(0, 0.2, 0.32);
+
+  // 2 Accoudoirs latéraux
+  const armGeo = new RoundedBoxGeometry(0.12, 0.36, 0.72, 2, 0.02);
+  const armL = new THREE.Mesh(armGeo, mats.fabricCushion);
+  armL.position.set(-0.42, 0.04, 0.04);
+  const armR = new THREE.Mesh(armGeo, mats.fabricCushion);
+  armR.position.set(0.42, 0.04, 0.04);
+
+  // 4 Pieds fins en bois de chêne
+  const legGeo = new THREE.CylinderGeometry(0.028, 0.022, 0.26, 8);
+  const legPositions = [
+    [-0.34, -0.36, -0.28],
+    [0.34, -0.36, -0.28],
+    [-0.34, -0.36, 0.28],
+    [0.34, -0.36, 0.28],
+  ];
+  legPositions.forEach(([lx, ly, lz]) => {
+    const leg = new THREE.Mesh(legGeo, mats.oakWood);
+    leg.position.set(lx, ly, lz);
+    group.add(leg);
+  });
+
+  group.add(seat, backrest, armL, armR);
+  group.traverse((o) => {
+    if (o instanceof THREE.Mesh) {
+      o.castShadow = true;
+      o.receiveShadow = true;
+    }
+  });
+  return group;
+}
+
+/**
+ * Lit Douillet Moderne avec Cadre en Chêne, Matelas Blanc, Couette et Oreiller (1x1x1m)
+ */
+export function createBedGroup(): THREE.Group {
+  const mats = getSharedArchMaterials();
+  const group = new THREE.Group();
+
+  // Cadre et tête de lit en chêne
+  const frame = new THREE.Mesh(
+    new RoundedBoxGeometry(0.96, 0.24, 0.96, 2, 0.015),
+    mats.oakWood
+  );
+  frame.position.set(0, -0.34, 0);
+
+  const headboard = new THREE.Mesh(
+    new RoundedBoxGeometry(0.96, 0.52, 0.12, 2, 0.02),
+    mats.oakWood
+  );
+  headboard.position.set(0, 0.04, 0.44);
+
+  // Matelas confortable
+  const mattress = new THREE.Mesh(
+    new RoundedBoxGeometry(0.88, 0.2, 0.86, 2, 0.02),
+    mats.pillowWhite
+  );
+  mattress.position.set(0, -0.16, 0.02);
+
+  // Oreiller douillet
+  const pillow = new THREE.Mesh(
+    new RoundedBoxGeometry(0.72, 0.1, 0.26, 3, 0.03),
+    mats.pillowWhite
+  );
+  pillow.position.set(0, -0.02, 0.26);
+
+  // Couette élégante repliée sur les deux tiers avant
+  const blanket = new THREE.Mesh(
+    new RoundedBoxGeometry(0.9, 0.14, 0.56, 3, 0.025),
+    mats.fabricBlanket
+  );
+  blanket.position.set(0, -0.06, -0.14);
+
+  group.add(frame, headboard, mattress, pillow, blanket);
+  group.traverse((o) => {
+    if (o instanceof THREE.Mesh) {
+      o.castShadow = true;
+      o.receiveShadow = true;
+    }
+  });
+  return group;
+}
+
+/**
+ * Bibliothèque Garnie de Livres Colorés (1x1x1m)
+ */
+export function createBookshelfGroup(): THREE.Group {
+  const mats = getSharedArchMaterials();
+  const group = new THREE.Group();
+
+  // Structure extérieure en chêne
+  const outer = new THREE.Mesh(
+    new RoundedBoxGeometry(0.98, 0.98, 0.38, 2, 0.015),
+    mats.oakWood
+  );
+  outer.position.set(0, 0, 0);
+
+  // Étagère centrale
+  const shelf = new THREE.Mesh(
+    new THREE.BoxGeometry(0.86, 0.05, 0.36),
+    mats.oakWood
+  );
+  shelf.position.set(0, 0, 0);
+
+  // Livres rangés sur 2 niveaux
+  const bookMats = [mats.bookRed, mats.bookBlue, mats.bookGreen, mats.brassMetal];
+  const createBookRow = (rowY: number) => {
+    let startX = -0.38;
+    for (let b = 0; b < 9; b++) {
+      const bW = 0.06 + Math.random() * 0.035;
+      const bH = 0.32 + (Math.random() - 0.5) * 0.08;
+      const bMat = bookMats[b % bookMats.length];
+      const book = new THREE.Mesh(new THREE.BoxGeometry(bW, bH, 0.26), bMat);
+      book.position.set(startX + bW / 2, rowY + bH / 2, -0.02);
+      group.add(book);
+      startX += bW + 0.015;
+    }
+  };
+
+  createBookRow(-0.46); // Étagère inférieure
+  createBookRow(0.04);  // Étagère supérieure
+
+  group.add(outer, shelf);
+  group.traverse((o) => {
+    if (o instanceof THREE.Mesh) {
+      o.castShadow = true;
+      o.receiveShadow = true;
+    }
+  });
+  return group;
+}
+
+/**
+ * Cheminée de Campagne avec Manteau en Pierre et Foyer Lumineux Ambré (1x1x1m)
+ */
+export function createFireplaceGroup(): THREE.Group {
+  const mats = getSharedArchMaterials();
+  const group = new THREE.Group();
+
+  // Structure en brique calcaire
+  const mantle = new THREE.Mesh(
+    new RoundedBoxGeometry(0.98, 0.98, 0.5, 3, 0.02),
+    mats.whiteFrame
+  );
+  mantle.position.set(0, 0, 0.05);
+
+  // Foyer intérieur sombre
+  const hearthHole = new THREE.Mesh(
+    new THREE.BoxGeometry(0.64, 0.56, 0.42),
+    mats.darkIron
+  );
+  hearthHole.position.set(0, -0.16, -0.06);
+
+  // Bûches et braises ardentes
+  const emberGeo = new RoundedBoxGeometry(0.48, 0.16, 0.28, 2, 0.03);
+  const embers = new THREE.Mesh(emberGeo, mats.fireEmbers);
+  embers.position.set(0, -0.34, -0.04);
+
+  // Grille en fer forgé
+  const grate = new THREE.Mesh(
+    new THREE.BoxGeometry(0.56, 0.12, 0.03),
+    mats.darkIron
+  );
+  grate.position.set(0, -0.34, 0.16);
+
+  group.add(mantle, hearthHole, embers, grate);
+  group.traverse((o) => {
+    if (o instanceof THREE.Mesh) {
+      o.castShadow = true;
+      o.receiveShadow = true;
+    }
+  });
+  return group;
+}
+
+/**
+ * Tapis de Sol Décoratif Ultra-Fin (1x1m, épaisseur 0.035m)
+ */
+export function createCarpetMesh(): THREE.Mesh {
+  const mats = getSharedArchMaterials();
+  const mesh = new THREE.Mesh(
+    new RoundedBoxGeometry(1.0, 0.035, 1.0, 2, 0.01),
+    mats.carpetFabric
+  );
+  mesh.castShadow = false;
+  mesh.receiveShadow = true;
+  return mesh;
+}
+
+/**
+ * Bloc d'Eau Translucide Ondoyant (1x1x1m)
+ * Non-bloquant pour le joueur : permet de nager / flotter !
+ */
+export function createWaterMesh(): THREE.Mesh {
+  const mats = getSharedArchMaterials();
+  const geo = new THREE.BoxGeometry(1.0, 0.92, 1.0);
+  const mesh = new THREE.Mesh(geo, mats.waterMat);
+  mesh.castShadow = false;
+  mesh.receiveShadow = true;
+  return mesh;
+}
+
+/**
+ * Pas Japonais / Pavés de Jardin en Ardoise Naturelle (1x1m)
+ */
+export function createSteppingStoneMesh(): THREE.Group {
+  const mats = getSharedArchMaterials();
+  const group = new THREE.Group();
+
+  const stone1 = new THREE.Mesh(
+    new RoundedBoxGeometry(0.46, 0.06, 0.42, 2, 0.02),
+    mats.slatePaver
+  );
+  stone1.position.set(-0.2, -0.46, -0.2);
+
+  const stone2 = new THREE.Mesh(
+    new RoundedBoxGeometry(0.48, 0.06, 0.44, 2, 0.02),
+    mats.slatePaver
+  );
+  stone2.position.set(0.22, -0.46, 0.22);
+
+  group.add(stone1, stone2);
+  group.traverse((o) => {
+    if (o instanceof THREE.Mesh) {
+      o.castShadow = true;
+      o.receiveShadow = true;
+    }
+  });
+  return group;
+}
+
+/**
+ * Haie Végétale Dense Taillée (1x1x1m)
+ */
+export function createHedgeMesh(): THREE.Mesh {
+  const mats = getSharedArchMaterials();
+  const geo = new RoundedBoxGeometry(1.0, 1.0, 1.0, 3, 0.05);
+  const mesh = new THREE.Mesh(geo, mats.bushGreen);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  return mesh;
+}
+
+/**
+ * Cyprès / Arbuste Décoratif en Pot Terracotta (1x1x1m)
+ */
+export function createCypressGroup(): THREE.Group {
+  const mats = getSharedArchMaterials();
+  const group = new THREE.Group();
+
+  // Pot en terre cuite
+  const pot = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.24, 0.18, 0.32, 12),
+    mats.terracottaPot
+  );
+  pot.position.y = -0.34;
+
+  const soil = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.22, 0.22, 0.04, 12),
+    mats.soilDark
+  );
+  soil.position.y = -0.17;
+
+  // Feuillage conique en cyprès élancé
+  const foliage = new THREE.Mesh(
+    new THREE.ConeGeometry(0.28, 0.78, 10),
+    mats.cypressFoliage
+  );
+  foliage.position.y = 0.24;
+
+  group.add(pot, soil, foliage);
+  group.traverse((o) => {
+    if (o instanceof THREE.Mesh) {
+      o.castShadow = true;
+      o.receiveShadow = true;
+    }
+  });
+  return group;
 }

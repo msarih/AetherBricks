@@ -6,7 +6,7 @@
       "ownerId": "guest_1793289578954",
       "name": "Monde Récupéré #3",
       "createdAt": 1793289578963,
-      "updatedAt": 1793292645121,
+      "updatedAt": 1793293026002,
       "bricks": [
         {
           "x": 0,
@@ -244,14 +244,6 @@
           "x": 8,
           "y": 0,
           "z": 4,
-          "type": 10,
-          "rot": 0,
-          "open": false
-        },
-        {
-          "x": 7,
-          "y": 0,
-          "z": 10,
           "type": 10,
           "rot": 0,
           "open": false
@@ -529,14 +521,6 @@
           "open": false
         },
         {
-          "x": 2,
-          "y": 0,
-          "z": 10,
-          "type": 10,
-          "rot": 0,
-          "open": false
-        },
-        {
           "x": 3,
           "y": 0,
           "z": 10,
@@ -628,22 +612,6 @@
           "x": -1,
           "y": 0,
           "z": 4,
-          "type": 1,
-          "rot": 0,
-          "open": false
-        },
-        {
-          "x": -1,
-          "y": 0,
-          "z": 3,
-          "type": 1,
-          "rot": 0,
-          "open": false
-        },
-        {
-          "x": 0,
-          "y": 0,
-          "z": 3,
           "type": 1,
           "rot": 0,
           "open": false
@@ -770,22 +738,6 @@
         },
         {
           "x": 8,
-          "y": 0,
-          "z": 12,
-          "type": 1,
-          "rot": 0,
-          "open": false
-        },
-        {
-          "x": 7,
-          "y": 0,
-          "z": 12,
-          "type": 1,
-          "rot": 0,
-          "open": false
-        },
-        {
-          "x": 6,
           "y": 0,
           "z": 12,
           "type": 1,
@@ -913,35 +865,11 @@
           "open": false
         },
         {
-          "x": 1,
-          "y": 0,
-          "z": 10,
-          "type": 10,
-          "rot": 1,
-          "open": false
-        },
-        {
-          "x": 0,
-          "y": 0,
-          "z": 10,
-          "type": 10,
-          "rot": 1,
-          "open": false
-        },
-        {
           "x": 0,
           "y": 0,
           "z": 9,
           "type": 10,
           "rot": 1,
-          "open": false
-        },
-        {
-          "x": -1,
-          "y": 1,
-          "z": 7,
-          "type": 1,
-          "rot": 0,
           "open": false
         },
         {
@@ -986,30 +914,6 @@
         },
         {
           "x": 2,
-          "y": 1,
-          "z": 3,
-          "type": 1,
-          "rot": 0,
-          "open": false
-        },
-        {
-          "x": 3,
-          "y": 1,
-          "z": 3,
-          "type": 1,
-          "rot": 0,
-          "open": false
-        },
-        {
-          "x": 4,
-          "y": 1,
-          "z": 3,
-          "type": 1,
-          "rot": 0,
-          "open": false
-        },
-        {
-          "x": 5,
           "y": 1,
           "z": 3,
           "type": 1,
@@ -1090,30 +994,6 @@
         },
         {
           "x": 10,
-          "y": 1,
-          "z": 12,
-          "type": 1,
-          "rot": 0,
-          "open": false
-        },
-        {
-          "x": 9,
-          "y": 1,
-          "z": 12,
-          "type": 1,
-          "rot": 0,
-          "open": false
-        },
-        {
-          "x": 8,
-          "y": 1,
-          "z": 12,
-          "type": 1,
-          "rot": 0,
-          "open": false
-        },
-        {
-          "x": 7,
           "y": 1,
           "z": 12,
           "type": 1,
@@ -1220,30 +1100,6 @@
           "x": 0,
           "y": 0,
           "z": 11,
-          "type": 1,
-          "rot": 0,
-          "open": false
-        },
-        {
-          "x": 10,
-          "y": 2,
-          "z": 12,
-          "type": 1,
-          "rot": 0,
-          "open": false
-        },
-        {
-          "x": 10,
-          "y": 2,
-          "z": 11,
-          "type": 1,
-          "rot": 0,
-          "open": false
-        },
-        {
-          "x": 9,
-          "y": 2,
-          "z": 12,
           "type": 1,
           "rot": 0,
           "open": false
@@ -1492,23 +1348,15 @@
           "x": 10,
           "y": 2,
           "z": 4,
-          "type": 7,
-          "rot": 0,
-          "open": false
-        },
-        {
-          "x": 10,
-          "y": 2,
-          "z": 5,
-          "type": 7,
+          "type": 28,
           "rot": 1,
           "open": false
         },
         {
           "x": 10,
           "y": 2,
-          "z": 6,
-          "type": 8,
+          "z": 5,
+          "type": 28,
           "rot": 1,
           "open": false
         },
@@ -1516,7 +1364,7 @@
           "x": 10,
           "y": 2,
           "z": 7,
-          "type": 8,
+          "type": 28,
           "rot": 1,
           "open": false
         },
@@ -1524,15 +1372,143 @@
           "x": 10,
           "y": 2,
           "z": 8,
-          "type": 8,
+          "type": 28,
+          "rot": 1,
+          "open": false
+        },
+        {
+          "x": 10,
+          "y": 2,
+          "z": 9,
+          "type": 28,
+          "rot": 1,
+          "open": false
+        },
+        {
+          "x": 10,
+          "y": 2,
+          "z": 6,
+          "type": 28,
+          "rot": 1,
+          "open": false
+        },
+        {
+          "x": 10,
+          "y": 3,
+          "z": 10,
+          "type": 1,
+          "rot": 1,
+          "open": false
+        },
+        {
+          "x": 10,
+          "y": 3,
+          "z": 9,
+          "type": 1,
+          "rot": 1,
+          "open": false
+        },
+        {
+          "x": 10,
+          "y": 3,
+          "z": 8,
+          "type": 1,
+          "rot": 1,
+          "open": false
+        },
+        {
+          "x": 10,
+          "y": 3,
+          "z": 7,
+          "type": 1,
+          "rot": 1,
+          "open": false
+        },
+        {
+          "x": 10,
+          "y": 3,
+          "z": 6,
+          "type": 1,
+          "rot": 1,
+          "open": false
+        },
+        {
+          "x": 10,
+          "y": 3,
+          "z": 5,
+          "type": 1,
+          "rot": 1,
+          "open": false
+        },
+        {
+          "x": 10,
+          "y": 3,
+          "z": 4,
+          "type": 1,
+          "rot": 1,
+          "open": false
+        },
+        {
+          "x": 10,
+          "y": 3,
+          "z": 3,
+          "type": 1,
+          "rot": 1,
+          "open": false
+        },
+        {
+          "x": 9,
+          "y": 3,
+          "z": 12,
+          "type": 1,
+          "rot": 1,
+          "open": false
+        },
+        {
+          "x": 10,
+          "y": 2,
+          "z": 10,
+          "type": 1,
+          "rot": 1,
+          "open": false
+        },
+        {
+          "x": 10,
+          "y": 2,
+          "z": 11,
+          "type": 1,
+          "rot": 1,
+          "open": false
+        },
+        {
+          "x": 10,
+          "y": 2,
+          "z": 12,
+          "type": 1,
+          "rot": 1,
+          "open": false
+        },
+        {
+          "x": 10,
+          "y": 3,
+          "z": 11,
+          "type": 1,
+          "rot": 1,
+          "open": false
+        },
+        {
+          "x": 10,
+          "y": 3,
+          "z": 12,
+          "type": 1,
           "rot": 1,
           "open": false
         }
       ],
       "playerState": {
-        "x": 12.271657604068379,
-        "y": 1.1625587300000875,
-        "z": 7.688170396092206,
+        "x": 13.79821118348656,
+        "y": 2.4223499999998603,
+        "z": 10.61933908629036,
         "viewMode": "tps-back",
         "lightingIdx": 0
       }

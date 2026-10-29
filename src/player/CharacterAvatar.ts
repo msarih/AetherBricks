@@ -182,7 +182,8 @@ export class CharacterAvatar {
     cameraPitch: number,
     isGrounded: boolean,
     isFlying: boolean,
-    visible: boolean
+    visible: boolean,
+    isSitting = false
   ): void {
     this.root.visible = visible;
     this.root.position.copy(position);
@@ -199,7 +200,15 @@ export class CharacterAvatar {
     this.headPivot.rotation.x = THREE.MathUtils.clamp(cameraPitch * 0.45, -0.45, 0.45);
 
     // Cycle d'animation des jambes et des bras
-    if (isMoving && isGrounded && !isFlying) {
+    if (isSitting) {
+      this.leftLegPivot.rotation.x = -Math.PI * 0.48;
+      this.rightLegPivot.rotation.x = -Math.PI * 0.48;
+      this.leftLegPivot.rotation.z = -0.08;
+      this.rightLegPivot.rotation.z = 0.08;
+      this.leftArmPivot.rotation.x = -0.25;
+      this.rightArmPivot.rotation.x = -0.25;
+      this.bodyGroup.position.y = -0.62;
+    } else if (isMoving && isGrounded && !isFlying) {
       this.walkPhase += dt * Math.max(4.5, moveSpeed) * 1.65;
       const swing = Math.sin(this.walkPhase) * 0.75;
       this.leftLegPivot.rotation.x = swing;

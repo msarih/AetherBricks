@@ -10,24 +10,41 @@ import {
   BRICK_TYPE_WINDOW_MODERN,
   OBJ_TYPE_ARCH_WHITE,
   OBJ_TYPE_BALUSTRADE_WHITE,
+  OBJ_TYPE_BED,
+  OBJ_TYPE_BOOKSHELF,
+  OBJ_TYPE_CARPET,
+  OBJ_TYPE_CHAIR,
+  OBJ_TYPE_CYPRESS,
   OBJ_TYPE_FENCE_OAK,
+  OBJ_TYPE_FIREPLACE,
   OBJ_TYPE_GABLE_ROOF,
+  OBJ_TYPE_HEDGE,
   OBJ_TYPE_LADDER_OAK,
   OBJ_TYPE_LANTERN_POST,
   OBJ_TYPE_PILLAR_WHITE,
   OBJ_TYPE_PLANTER_BOX,
   OBJ_TYPE_STAIRS_OAK,
   OBJ_TYPE_STAIRS_WHITE,
+  OBJ_TYPE_STEPPING_STONE,
+  OBJ_TYPE_TABLE,
   OBJ_TYPE_TRIANGLE_OAK,
   OBJ_TYPE_TRIANGLE_WHITE,
+  OBJ_TYPE_WATER,
   SLAB_OFFSET_Y,
   SLAB_THICKNESS,
   createArchBlockGroup,
   createBalustradeGroup,
+  createBedGroup,
+  createBookshelfGroup,
+  createCarpetMesh,
+  createChairGroup,
   createCrossWindowGroup,
+  createCypressGroup,
+  createFireplaceGroup,
   createFlatSlabMesh,
   createFramelessWindowGroup,
   createGableRoofMesh,
+  createHedgeMesh,
   createLadderGroup,
   createLanternPostGroup,
   createModernWindowGroup,
@@ -36,13 +53,19 @@ import {
   createPillarGroup,
   createPlanterBoxGroup,
   createStairsGroup,
+  createSteppingStoneMesh,
+  createTableGroup,
   createTriangleWedgeMesh,
+  createWaterMesh,
+  isCarpet,
   isCeilingSlab,
+  isChair,
   isFlatSlab,
   isFloorSlab,
   isLadder,
   isStairOrSlope,
   isTwoBlocksTall,
+  isWater,
 } from './ArchitecturalObjects';
 
 interface HistoryAction {
@@ -362,6 +385,75 @@ export class VoxelWorld {
   }
 
   /**
+   * Remplissage de boîte (Volume entre deux coins A et B) avec le type choisi
+   */
+  public fillBox(
+    from: THREE.Vector3,
+    to: THREE.Vector3,
+    type: number,
+    canPlaceAt: (x: number, y: number, z: number) => boolean
+  ): number {
+    const minX = Math.min(Math.round(from.x), Math.round(to.x));
+    const maxX = Math.max(Math.round(from.x), Math.round(to.x));
+    const minY = Math.max(0, Math.min(Math.round(from.y), Math.round(to.y)));
+    const maxY = Math.min(60, Math.max(Math.round(from.y), Math.round(to.y)));
+    const minZ = Math.min(Math.round(from.z), Math.round(to.z));
+    const maxZ = Math.max(Math.round(from.z), Math.round(to.z));
+
+    const totalVolume = (maxX - minX + 1) * (maxY - minY + 1) * (maxZ - minZ + 1);
+    if (totalVolume > 2500) {
+      return 0; // Sécurité de performance
+    }
+
+    this.beginDragStroke();
+    let count = 0;
+    for (let x = minX; x <= maxX; x++) {
+      for (let y = minY; y <= maxY; y++) {
+        for (let z = minZ; z <= maxZ; z++) {
+          if (canPlaceAt(x, y, z)) {
+            if (this.setBrick(x, y, z, type, true, false, this.rotationStep, false)) {
+              count++;
+            }
+          }
+        }
+      }
+    }
+    this.endDragStroke();
+    return count;
+  }
+
+  /**
+   * Suppression de boîte (Volume entre deux coins A et B)
+   */
+  public clearBox(from: THREE.Vector3, to: THREE.Vector3): number {
+    const minX = Math.min(Math.round(from.x), Math.round(to.x));
+    const maxX = Math.max(Math.round(from.x), Math.round(to.x));
+    const minY = Math.max(0, Math.min(Math.round(from.y), Math.round(to.y)));
+    const maxY = Math.min(60, Math.max(Math.round(from.y), Math.round(to.y)));
+    const minZ = Math.min(Math.round(from.z), Math.round(to.z));
+    const maxZ = Math.max(Math.round(from.z), Math.round(to.z));
+
+    const totalVolume = (maxX - minX + 1) * (maxY - minY + 1) * (maxZ - minZ + 1);
+    if (totalVolume > 2500) {
+      return 0;
+    }
+
+    this.beginDragStroke();
+    let count = 0;
+    for (let x = minX; x <= maxX; x++) {
+      for (let y = minY; y <= maxY; y++) {
+        for (let z = minZ; z <= maxZ; z++) {
+          if (this.removeBrick(x, y, z, true, false)) {
+            count++;
+          }
+        }
+      }
+    }
+    this.endDragStroke();
+    return count;
+  }
+
+  /**
    * Utilisé pour les collisions physiques du joueur :
    * Seuls les blocs principaux ("main:x,y,z") fermés bloquent le passage.
    * Les échelles (isLadder) ne bloquent pas l'entrée dans la case afin de permettre de grimper.
@@ -375,10 +467,26 @@ export class VoxelWorld {
     if (item.entry.type === BRICK_TYPE_DOOR_OAK && item.entry.open) {
       return false;
     }
-    if (isLadder(item.entry.type)) {
+    if (isLadder(item.entry.type) || isWater(item.entry.type) || isCarpet(item.entry.type)) {
       return false;
     }
     return true;
+  }
+
+  public hasWaterAt(x: number, y: number, z: number): boolean {
+    const rx = Math.round(x);
+    const ry = Math.round(y);
+    const rz = Math.round(z);
+    const item = this.bricks.get(`main:${rx},${ry},${rz}`);
+    return Boolean(item && isWater(item.entry.type));
+  }
+
+  public isChairAt(x: number, y: number, z: number): boolean {
+    const rx = Math.round(x);
+    const ry = Math.round(y);
+    const rz = Math.round(z);
+    const item = this.bricks.get(`main:${rx},${ry},${rz}`);
+    return Boolean(item && isChair(item.entry.type));
   }
 
   public hasLadderAt(x: number, y: number, z: number): boolean {
@@ -515,7 +623,17 @@ export class VoxelWorld {
       def.id === OBJ_TYPE_FENCE_OAK ||
       def.id === OBJ_TYPE_ARCH_WHITE ||
       def.id === OBJ_TYPE_PLANTER_BOX ||
-      def.id === OBJ_TYPE_LANTERN_POST
+      def.id === OBJ_TYPE_LANTERN_POST ||
+      def.id === OBJ_TYPE_TABLE ||
+      def.id === OBJ_TYPE_CHAIR ||
+      def.id === OBJ_TYPE_BED ||
+      def.id === OBJ_TYPE_BOOKSHELF ||
+      def.id === OBJ_TYPE_FIREPLACE ||
+      def.id === OBJ_TYPE_CARPET ||
+      def.id === OBJ_TYPE_WATER ||
+      def.id === OBJ_TYPE_STEPPING_STONE ||
+      def.id === OBJ_TYPE_HEDGE ||
+      def.id === OBJ_TYPE_CYPRESS
     ) {
       switch (def.id) {
         case OBJ_TYPE_STAIRS_WHITE:
@@ -552,8 +670,38 @@ export class VoxelWorld {
           visualRoot = createPlanterBoxGroup();
           break;
         case OBJ_TYPE_LANTERN_POST:
-        default:
           visualRoot = createLanternPostGroup();
+          break;
+        case OBJ_TYPE_TABLE:
+          visualRoot = createTableGroup();
+          break;
+        case OBJ_TYPE_CHAIR:
+          visualRoot = createChairGroup();
+          break;
+        case OBJ_TYPE_BED:
+          visualRoot = createBedGroup();
+          break;
+        case OBJ_TYPE_BOOKSHELF:
+          visualRoot = createBookshelfGroup();
+          break;
+        case OBJ_TYPE_FIREPLACE:
+          visualRoot = createFireplaceGroup();
+          break;
+        case OBJ_TYPE_CARPET:
+          visualRoot = createCarpetMesh();
+          break;
+        case OBJ_TYPE_WATER:
+          visualRoot = createWaterMesh();
+          break;
+        case OBJ_TYPE_STEPPING_STONE:
+          visualRoot = createSteppingStoneMesh();
+          break;
+        case OBJ_TYPE_HEDGE:
+          visualRoot = createHedgeMesh();
+          break;
+        case OBJ_TYPE_CYPRESS:
+        default:
+          visualRoot = createCypressGroup();
           break;
       }
       visualRoot.position.set(rx, ry, rz);
@@ -580,7 +728,9 @@ export class VoxelWorld {
 
     let light: THREE.PointLight | undefined;
     if (def.isLight) {
-      light = new THREE.PointLight(0xfde68a, 1.4, 8, 1.8);
+      const lightColor = def.id === OBJ_TYPE_FIREPLACE ? 0xff6600 : 0xfde68a;
+      const lightIntensity = def.id === OBJ_TYPE_FIREPLACE ? 1.8 : 1.4;
+      light = new THREE.PointLight(lightColor, lightIntensity, 8, 1.8);
       light.position.set(rx, ry, rz);
       this.scene.add(light);
     }
@@ -760,6 +910,56 @@ export class VoxelWorld {
       list.push({ ...item.entry });
     }
     return list;
+  }
+
+  /**
+   * Exporte la construction entière au format universel Wavefront (.OBJ)
+   * Prêt pour Blender, Maya, Windows 3D Viewer ou impression 3D !
+   */
+  public exportToOBJ(worldName = 'aetherbricks-monde'): void {
+    let objText = `# AetherBricks 3D - Export Wavefront OBJ\n# Monde: ${worldName}\n# Éléments: ${this.uniqueItems.size}\n\n`;
+
+    let vertOffset = 1;
+    for (const item of this.uniqueItems) {
+      const e = item.entry;
+      const def = this.catalog.get(e.type);
+      const name = def?.name.replace(/[^a-zA-Z0-9]/g, '_') || `block_${e.type}`;
+      objText += `g ${name}_${e.x}_${e.y}_${e.z}\n`;
+
+      const x = e.x;
+      const y = e.y;
+      const z = e.z;
+      const hx = 0.5;
+      const hy = isFlatSlab(e.type) ? SLAB_THICKNESS / 2 : 0.5;
+      const hz = 0.5;
+      const cy = isFloorSlab(e.type) ? y - SLAB_OFFSET_Y : isCeilingSlab(e.type) ? y + SLAB_OFFSET_Y : y;
+
+      objText += `v ${x - hx} ${cy - hy} ${z + hz}\n`;
+      objText += `v ${x + hx} ${cy - hy} ${z + hz}\n`;
+      objText += `v ${x + hx} ${cy + hy} ${z + hz}\n`;
+      objText += `v ${x - hx} ${cy + hy} ${z + hz}\n`;
+      objText += `v ${x - hx} ${cy - hy} ${z - hz}\n`;
+      objText += `v ${x + hx} ${cy - hy} ${z - hz}\n`;
+      objText += `v ${x + hx} ${cy + hy} ${z - hz}\n`;
+      objText += `v ${x - hx} ${cy + hy} ${z - hz}\n`;
+
+      objText += `f ${vertOffset} ${vertOffset + 1} ${vertOffset + 2} ${vertOffset + 3}\n`;
+      objText += `f ${vertOffset + 5} ${vertOffset + 4} ${vertOffset + 7} ${vertOffset + 6}\n`;
+      objText += `f ${vertOffset + 4} ${vertOffset} ${vertOffset + 3} ${vertOffset + 7}\n`;
+      objText += `f ${vertOffset + 1} ${vertOffset + 5} ${vertOffset + 6} ${vertOffset + 2}\n`;
+      objText += `f ${vertOffset + 3} ${vertOffset + 2} ${vertOffset + 6} ${vertOffset + 7}\n`;
+      objText += `f ${vertOffset + 4} ${vertOffset + 5} ${vertOffset + 1} ${vertOffset}\n`;
+
+      vertOffset += 8;
+    }
+
+    const blob = new Blob([objText], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${worldName}.obj`;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   public saveToLocalStorage(): void {

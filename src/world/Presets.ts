@@ -150,6 +150,38 @@ export function getWhitePavilionPreset(): BrickEntry[] {
   bricks.push({ x: -3, y: 0, z: 0, type: 27, rot: 0 });
   bricks.push({ x: 3, y: 0, z: 0, type: 27, rot: 0 });
 
+  // --- Mobilier Intérieur ---
+  // Cheminée chaleureuse au fond
+  bricks.push({ x: 0, y: 0, z: -9, type: 33, rot: 0 });
+  // Tapis de salon moelleux
+  bricks.push({ x: -1, y: 0, z: -6, type: 34, rot: 0 });
+  // Table basse chêne & marbre
+  bricks.push({ x: 0, y: 0, z: -6, type: 29, rot: 0 });
+  // Fauteuils confortables (interactifs avec la touche E pour s'asseoir !)
+  bricks.push({ x: 1, y: 0, z: -6, type: 30, rot: 3 });
+  bricks.push({ x: -2, y: 0, z: -6, type: 30, rot: 1 });
+  // Lit douillet moderne avec couette
+  bricks.push({ x: 3, y: 0, z: -8, type: 31, rot: 0 });
+  // Bibliothèque garnie de livres
+  bricks.push({ x: 3, y: 0, z: -4, type: 32, rot: 3 });
+
+  // --- Aménagement Extérieur & Nature ---
+  // Cyprès méditerranéens en pot
+  bricks.push({ x: -4, y: 0, z: 1, type: 38, rot: 0 });
+  bricks.push({ x: 4, y: 0, z: 1, type: 38, rot: 0 });
+  // Pas japonais dans l'herbe
+  bricks.push({ x: 0, y: 0, z: 2, type: 36, rot: 0 });
+  bricks.push({ x: 0, y: 0, z: 3, type: 36, rot: 0 });
+  bricks.push({ x: 0, y: 0, z: 4, type: 36, rot: 0 });
+  // Haies taillées
+  bricks.push({ x: -5, y: 0, z: 0, type: 37, rot: 0 });
+  bricks.push({ x: -6, y: 0, z: 0, type: 37, rot: 0 });
+  // Bassin d'eau extérieure cristalline avec margelle
+  bricks.push({ x: 6, y: 0, z: -6, type: 35, rot: 0 });
+  bricks.push({ x: 6, y: 0, z: -7, type: 35, rot: 0 });
+  bricks.push({ x: 7, y: 0, z: -6, type: 35, rot: 0 });
+  bricks.push({ x: 7, y: 0, z: -7, type: 35, rot: 0 });
+
   return bricks;
 }
 

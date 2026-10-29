@@ -18,6 +18,8 @@ export class PlayerController {
   public isFlying = false;
   public isGrounded = false;
   public isLocked = false;
+  public isSitting = false;
+  public isInWater = false;
   public viewMode: CameraViewMode = 'tps-back';
 
   private readonly keys = new Set<string>();
@@ -172,6 +174,29 @@ export class PlayerController {
     return false;
   }
 
+  public toggleSitting(chairPos?: THREE.Vector3): boolean {
+    if (this.isSitting) {
+      this.isSitting = false;
+      this.position.y += 0.45;
+      return false;
+    }
+    if (chairPos) {
+      this.isSitting = true;
+      this.isFlying = false;
+      this.velocity.set(0, 0, 0);
+      this.position.set(chairPos.x, chairPos.y + 0.14, chairPos.z);
+      return true;
+    }
+    return false;
+  }
+
+  private checkInWater(pos: THREE.Vector3 = this.position): boolean {
+    const rx = Math.round(pos.x);
+    const ry = Math.round(pos.y - this.playerHeight * 0.25);
+    const rz = Math.round(pos.z);
+    return this.world.hasWaterAt(rx, ry, rz);
+  }
+
   private isTouchingLadder(pos: THREE.Vector3 = this.position): boolean {
     const r = this.playerRadius + 0.18;
     const minX = Math.floor(pos.x - r + 0.5);
@@ -224,13 +249,24 @@ export class PlayerController {
 
     this.isMovingInput = moveDir.lengthSq() > 0.001;
     if (this.isMovingInput) {
+      if (this.isSitting) {
+        this.isSitting = false;
+        this.position.y += 0.45;
+      }
       moveDir.normalize();
       // Le personnage change immédiatement de face selon la flèche de direction pressée (Haut, Bas, Gauche, Droite)
       this.characterFacingYaw = Math.atan2(-moveDir.x, -moveDir.z);
     }
 
+    if (this.isSitting) {
+      this.velocity.set(0, 0, 0);
+      this.syncCamera(clampedDt);
+      return;
+    }
+
+    this.isInWater = this.checkInWater();
     const isSprinting = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight');
-    const baseSpeed = this.isFlying ? 10.5 : 5.8;
+    const baseSpeed = this.isFlying ? 10.5 : this.isInWater ? 3.8 : 5.8;
     const speed = isSprinting && !this.isFlying ? baseSpeed * 1.55 : baseSpeed;
 
     this.velocity.x = moveDir.x * speed;
@@ -242,6 +278,15 @@ export class PlayerController {
       this.velocity.y = 0;
       if (this.keys.has('Space')) this.velocity.y = 7.5;
       if (this.keys.has('KeyC') || this.keys.has('ShiftLeft')) this.velocity.y = -7.5;
+    } else if (this.isInWater) {
+      // Physique de nage douce dans l'eau : flottabilité et remontée avec Espace
+      this.velocity.y = THREE.MathUtils.lerp(this.velocity.y, -0.6, clampedDt * 3.5);
+      if (this.keys.has('Space')) {
+        this.velocity.y = 3.6;
+      } else if (this.keys.has('KeyC') || this.keys.has('ShiftLeft')) {
+        this.velocity.y = -3.2;
+      }
+      this.isGrounded = false;
     } else if (onLadder) {
       // Escalade fluide sur les échelles : Espace ou Flèche Haut / W fait monter, sinon descente douce contrôlée
       if (this.keys.has('Space') || this.keys.has('KeyW') || this.keys.has('ArrowUp')) {
@@ -357,7 +402,8 @@ export class PlayerController {
       this.pitch,
       this.isGrounded,
       this.isFlying,
-      isThirdPerson
+      isThirdPerson,
+      this.isSitting
     );
 
     const headPos = this.getEyePosition();

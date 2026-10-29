@@ -469,6 +469,104 @@ window.addEventListener('blur', () => {
   stopDragActions();
 });
 
+// --- Tools: Pipette, Box Fill, Ruler, Photo Mode & 3D Export ---
+let isBoxMode = false;
+let boxCornerA: THREE.Vector3 | null = null;
+let isRulerMode = false;
+let isPhotoMode = false;
+
+const toolStatusBarEl = document.getElementById('tool-status-bar')!;
+const photoModeBarEl = document.getElementById('photo-mode-bar')!;
+
+function pickTargetBrick(): void {
+  const target = world.currentTarget;
+  if (target?.hitBrickType) {
+    selectBrick(target.hitBrickType);
+    const def = world.catalog.get(target.hitBrickType);
+    sound.playSelect();
+    showToast(`🎨 Pipette : "${def?.name}" sélectionné !`);
+  }
+}
+
+function toggleBoxMode(): void {
+  isBoxMode = !isBoxMode;
+  boxCornerA = null;
+  toolStatusBarEl.classList.toggle('hidden', !isBoxMode && !isRulerMode);
+  document.getElementById('tool-box')?.classList.toggle('active', isBoxMode);
+  if (isBoxMode) {
+    toolStatusBarEl.textContent = '📦 Mode Boîte : Cliquez pour définir le 1er coin (A)';
+    showToast('📦 Mode Boîte activé : Cliquez pour poser 2 coins');
+  } else {
+    showToast('Mode Boîte désactivé');
+  }
+}
+
+function toggleRulerMode(): void {
+  isRulerMode = !isRulerMode;
+  toolStatusBarEl.classList.toggle('hidden', !isBoxMode && !isRulerMode);
+  document.getElementById('tool-ruler')?.classList.toggle('active', isRulerMode);
+  if (isRulerMode) {
+    showToast('📏 Mode Règle activé : Visez un bloc pour mesurer');
+  } else {
+    showToast('Mode Règle désactivé');
+  }
+}
+
+function togglePhotoMode(): void {
+  isPhotoMode = !isPhotoMode;
+  document.body.classList.toggle('photo-mode', isPhotoMode);
+  photoModeBarEl.classList.toggle('hidden', !isPhotoMode);
+  document.getElementById('tool-photo')?.classList.toggle('active', isPhotoMode);
+  if (isPhotoMode) {
+    showToast('📸 Mode Photo Cinématique (Appuyez sur P pour quitter)');
+  }
+}
+
+function exportWorldOBJ(): void {
+  const safeName = (db.currentWorld?.name || 'monde').toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  world.exportToOBJ(`aetherbricks-${safeName}`);
+  showToast('💾 Fichier 3D (.OBJ) téléchargé avec succès !');
+}
+
+// Tool button listeners
+document.getElementById('tool-pipette')?.addEventListener('click', pickTargetBrick);
+document.getElementById('tool-box')?.addEventListener('click', toggleBoxMode);
+document.getElementById('tool-ruler')?.addEventListener('click', toggleRulerMode);
+document.getElementById('tool-photo')?.addEventListener('click', togglePhotoMode);
+document.getElementById('tool-obj')?.addEventListener('click', exportWorldOBJ);
+document.getElementById('btn-export-obj')?.addEventListener('click', exportWorldOBJ);
+
+// Screenshot capture in Photo Mode
+document.getElementById('btn-take-screenshot')?.addEventListener('click', () => {
+  photoModeBarEl.style.display = 'none';
+  renderer.render(scene, camera);
+  const dataUrl = renderer.domElement.toDataURL('image/png');
+  photoModeBarEl.style.display = 'flex';
+  const a = document.createElement('a');
+  a.href = dataUrl;
+  a.download = `aetherbricks-photo-${Date.now()}.png`;
+  a.click();
+  showToast('📸 Photo HD capturée et téléchargée !');
+});
+
+document.getElementById('btn-exit-photo')?.addEventListener('click', togglePhotoMode);
+
+// Quick Ambience & Weather buttons
+for (let i = 0; i <= 3; i++) {
+  document.getElementById(`quick-btn-time-${i}`)?.addEventListener('click', () => {
+    applyLighting(i);
+    for (let j = 0; j <= 3; j++) {
+      document.getElementById(`quick-btn-time-${j}`)?.classList.toggle('active', j === i);
+    }
+  });
+}
+
+document.getElementById('quick-btn-rain')?.addEventListener('click', (e) => {
+  const raining = countryside.toggleRain();
+  (e.currentTarget as HTMLElement).classList.toggle('active', raining);
+  showToast(raining ? '🌧️ Pluie douce activée' : '☀️ Pluie arrêtée');
+});
+
 renderer.domElement.addEventListener('mousedown', (e) => {
   if (!player.isLocked) {
     player.requestLock();
@@ -477,6 +575,39 @@ renderer.domElement.addEventListener('mousedown', (e) => {
 
   const target = world.currentTarget;
   if (!target) return;
+
+  // Middle click: Pipette / Pick block
+  if (e.button === 1) {
+    pickTargetBrick();
+    return;
+  }
+
+  // If in Box Fill Mode
+  if (isBoxMode) {
+    if (!boxCornerA) {
+      boxCornerA = target.placePos.clone();
+      toolStatusBarEl.textContent = `📦 Coin A fixé en (${boxCornerA.x}, ${boxCornerA.y}, ${boxCornerA.z}). Cliquez pour le coin B (Gauche = Remplir, Droite = Vider)`;
+      sound.playSelect();
+      showToast(`Coin A (${boxCornerA.x}, ${boxCornerA.y}, ${boxCornerA.z}) fixé !`);
+      return;
+    } else {
+      const cornerB = e.button === 0 ? target.placePos.clone() : (target.removePos ?? target.placePos).clone();
+      if (e.button === 0) {
+        const count = world.fillBox(boxCornerA, cornerB, selectedBrickId, canPlaceElementAt);
+        sound.playPlace();
+        player.triggerActionAnimation();
+        showToast(`📦 Boîte remplie (${count} éléments) !`);
+      } else {
+        const count = world.clearBox(boxCornerA, cornerB);
+        sound.playRemove();
+        player.triggerActionAnimation();
+        showToast(`📦 Boîte vidée (${count} éléments supprimés) !`);
+      }
+      boxCornerA = null;
+      toolStatusBarEl.textContent = '📦 Mode Boîte : Cliquez pour définir le 1er coin (A)';
+      return;
+    }
+  }
 
   // Left click: Place element & begin hold-to-mass-build stroke
   if (e.button === 0 && !e.altKey) {
@@ -505,10 +636,6 @@ renderer.domElement.addEventListener('mousedown', (e) => {
         lastBuildSoundTime = performance.now();
         player.triggerActionAnimation();
       }
-    }
-  } else if (e.button === 1) {
-    if (target.hitBrickType) {
-      selectBrick(target.hitBrickType);
     }
   }
 });
@@ -618,28 +745,51 @@ window.addEventListener('keydown', (e) => {
   }
 
   if (e.code === 'KeyE' && player.isLocked) {
+    if (player.isSitting) {
+      player.toggleSitting();
+      showToast('Personnage debout');
+      return;
+    }
     const target = world.currentTarget;
-    if (target?.removePos && target.isDoorHit) {
-      const newState = world.toggleDoorAt(
-        target.removePos.x,
-        target.removePos.y,
-        target.removePos.z
-      );
-      if (newState !== null) {
-        sound.playDoor(newState);
-        player.triggerActionAnimation();
+    if (target?.removePos) {
+      if (target.isDoorHit) {
+        const newState = world.toggleDoorAt(
+          target.removePos.x,
+          target.removePos.y,
+          target.removePos.z
+        );
+        if (newState !== null) {
+          sound.playDoor(newState);
+          player.triggerActionAnimation();
+        }
+      } else if (world.isChairAt(target.removePos.x, target.removePos.y, target.removePos.z)) {
+        player.toggleSitting(target.removePos);
+        sound.playSelect();
+        showToast('Assis sur le fauteuil • Appuyez sur E ou Déplacement pour vous relever');
       }
     }
+  }
+
+  if (e.code === 'KeyC' && player.isLocked) {
+    pickTargetBrick();
+  }
+
+  if (e.code === 'KeyB' && player.isLocked) {
+    toggleBoxMode();
+  }
+
+  if (e.code === 'KeyM' && player.isLocked) {
+    toggleRulerMode();
+  }
+
+  if (e.code === 'KeyP' && player.isLocked) {
+    togglePhotoMode();
   }
 
   if (e.code === 'KeyT' && player.isLocked) {
     applyLighting(currentLightingIdx + 1);
     sound.playSelect();
     showToast(`Lumière : ${LIGHTING_PRESETS[currentLightingIdx].name}`);
-  }
-
-  if (e.code === 'KeyP' && player.isLocked && world.currentTarget?.hitBrickType) {
-    selectBrick(world.currentTarget.hitBrickType);
   }
 });
 
@@ -807,8 +957,19 @@ function animate(now: number): void {
   lastTime = now;
 
   player.update(dt);
-  countryside.update(now * 0.001);
+  countryside.update(now * 0.001, player.position);
   world.update(dt, camera, player.getEyePosition());
+
+  // Règle / Mesure en direct
+  if (isRulerMode && world.currentTarget) {
+    const p = player.position;
+    const t = world.currentTarget.placePos;
+    const dx = Math.abs(t.x - Math.round(p.x));
+    const dy = Math.abs(t.y - Math.round(p.y));
+    const dz = Math.abs(t.z - Math.round(p.z));
+    const dist = Math.hypot(dx, dy, dz).toFixed(1);
+    toolStatusBarEl.textContent = `📏 Mesure : ΔX = ${dx}m • ΔY = ${dy}m • ΔZ = ${dz}m (Distance : ${dist}m)`;
+  }
 
   // Mass creation / removal while holding mouse button and moving the mouse
   if (player.isLocked && isHoldingBuild && world.currentTarget) {
@@ -844,10 +1005,23 @@ function animate(now: number): void {
   sunLight.target.updateMatrixWorld();
 
   crosshairEl.classList.toggle('active', world.currentTarget !== null);
-  if (world.currentTarget?.isDoorHit) {
+  if (player.isSitting) {
+    interactionHintEl.innerHTML = `<kbd>E</kbd> ou <kbd>Flèches</kbd> Se relever`;
+    interactionHintEl.classList.remove('hidden');
+  } else if (world.currentTarget?.isDoorHit) {
     interactionHintEl.innerHTML = `<kbd>E</kbd> ${
       world.currentTarget.doorIsOpen ? 'Fermer la porte' : 'Ouvrir la porte'
     }`;
+    interactionHintEl.classList.remove('hidden');
+  } else if (
+    world.currentTarget?.removePos &&
+    world.isChairAt(
+      world.currentTarget.removePos.x,
+      world.currentTarget.removePos.y,
+      world.currentTarget.removePos.z
+    )
+  ) {
+    interactionHintEl.innerHTML = `<kbd>E</kbd> S'asseoir confortablement`;
     interactionHintEl.classList.remove('hidden');
   } else {
     interactionHintEl.classList.add('hidden');
@@ -855,7 +1029,13 @@ function animate(now: number): void {
 
   statBricksEl.textContent = String(world.getBrickCount());
   statPosEl.textContent = `${Math.round(player.position.x)}, ${Math.round(player.position.y)}, ${Math.round(player.position.z)}`;
-  statModeEl.textContent = player.isFlying ? 'VOL LIBRE' : 'MARCHE';
+  statModeEl.textContent = player.isSitting
+    ? 'ASSIS'
+    : player.isInWater
+    ? 'NAGE'
+    : player.isFlying
+    ? 'VOL LIBRE'
+    : 'MARCHE';
 
   renderer.render(scene, camera);
 }

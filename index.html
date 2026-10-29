@@ -52,21 +52,45 @@
           <span id="stat-time" class="stat-value">DOUCEUR NATURELLE</span>
         </div>
       </div>
+
+      <!-- Barre d'ambiance et météo rapide -->
+      <div class="quick-ambience-bar">
+        <button id="quick-btn-time-0" class="quick-ambience-btn active" title="Lumière douce naturelle">🌅 Aube</button>
+        <button id="quick-btn-time-1" class="quick-ambience-btn" title="Après-midi doux">☀️ Jour</button>
+        <button id="quick-btn-time-2" class="quick-ambience-btn" title="Coucher de soleil doré">🌇 Coucher</button>
+        <button id="quick-btn-time-3" class="quick-ambience-btn" title="Nuit douce et étoilée">🌙 Nuit</button>
+        <button id="quick-btn-rain" class="quick-ambience-btn" title="Activer / Désactiver la pluie douce">🌧️ Pluie</button>
+      </div>
     </div>
 
-    <!-- HUD supérieur droit : Raccourcis rapides -->
+    <!-- HUD supérieur droit : Outils avancés & Raccourcis -->
     <div class="hud-top-right">
+      <div class="quick-tools-bar">
+        <button id="tool-pipette" class="tool-btn" title="Pipette : Sélectionne le bloc visé (Touche C ou Clic Molette)">🎨 Pipette <kbd>C</kbd></button>
+        <button id="tool-box" class="tool-btn" title="Mode Boîte : Remplir ou vider un volume cubique (Touche B)">📦 Boîte <kbd>B</kbd></button>
+        <button id="tool-ruler" class="tool-btn" title="Règle : Mesurer la distance avec la cible (Touche M)">📏 Règle <kbd>M</kbd></button>
+        <button id="tool-photo" class="tool-btn" title="Mode Photo Cinématique HD (Touche P)">📸 Photo <kbd>P</kbd></button>
+        <button id="tool-obj" class="tool-btn" title="Télécharger le modèle 3D au format Wavefront (.OBJ)">💾 3D .OBJ</button>
+      </div>
+
       <div class="shortcut-card">
         <div><kbd>Clic Gauche</kbd> Poser • <kbd>Clic Droit</kbd> Supprimer</div>
-        <div><kbd>U</kbd> / <kbd>⌫</kbd> / <kbd>Ctrl+Z</kbd> Annuler l'action précédente</div>
-        <div><kbd>Y</kbd> / <kbd>Ctrl+Y</kbd> Rétablir l'action</div>
-        <div><kbd>Tab</kbd> Changer Catégorie (Briques / Sols / Portes)</div>
-        <div><kbd>1-6</kbd> / <kbd>Molette</kbd> Choisir dans la catégorie</div>
-        <div><kbd>Flèches</kbd> / <kbd>ZQSD</kbd> Déplacer & Orienter</div>
-        <div><kbd>V</kbd> Vue (3e Pers. / 1re Pers.) • <kbd>F</kbd> Vol</div>
-        <div><kbd>E</kbd> Ouvrir Porte • <kbd>R</kbd> Pivoter (90°)</div>
-        <div><kbd>Échap</kbd> Menu Mondes & Compte (BDD)</div>
+        <div><kbd>U</kbd> / <kbd>⌫</kbd> / <kbd>Ctrl+Z</kbd> Annuler • <kbd>Y</kbd> Rétablir</div>
+        <div><kbd>C</kbd> Pipette • <kbd>B</kbd> Boîte • <kbd>M</kbd> Règle • <kbd>P</kbd> Photo</div>
+        <div><kbd>E</kbd> Ouvrir Porte / S'asseoir • <kbd>R</kbd> Pivoter (90°)</div>
+        <div><kbd>Tab</kbd> Catégorie • <kbd>1-9</kbd> / <kbd>Molette</kbd> Bloc</div>
+        <div><kbd>V</kbd> Vue (3e / 1re Pers.) • <kbd>F</kbd> Vol • <kbd>T</kbd> Heure</div>
       </div>
+    </div>
+
+    <!-- Indicateur d'état des outils (Boîte / Règle) -->
+    <div id="tool-status-bar" class="tool-status-bar hidden"></div>
+
+    <!-- Barre dédiée au Mode Photo -->
+    <div id="photo-mode-bar" class="photo-mode-bar hidden">
+      <span class="photo-mode-label">📸 MODE PHOTO CINÉMATIQUE</span>
+      <button id="btn-take-screenshot" class="btn-primary-compact">📷 Prendre Photo HD (.png)</button>
+      <button id="btn-exit-photo" class="btn-secondary">✕ Quitter <kbd>P</kbd></button>
     </div>
 
     <!-- Notification Toast -->
@@ -187,6 +211,7 @@
             <div class="btn-group" style="margin-top: 8px">
               <button id="btn-export" class="btn-secondary">Exporter Monde (.json)</button>
               <button id="btn-import" class="btn-secondary">Importer (.json)</button>
+              <button id="btn-export-obj" class="btn-accent">Exporter 3D (.obj)</button>
               <input id="file-import" type="file" accept=".json" style="display: none" />
             </div>
           </div>
