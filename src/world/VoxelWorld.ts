@@ -1021,7 +1021,12 @@ export class VoxelWorld {
     });
   }
 
-  public update(dt: number, camera: THREE.Camera, playerEyePos?: THREE.Vector3): void {
+  public update(
+    dt: number,
+    camera: THREE.Camera,
+    playerEyePos?: THREE.Vector3,
+    enableRaycast = true
+  ): void {
     // Animate doors smoothly
     for (const item of this.uniqueItems) {
       if (item.doorPivot) {
@@ -1032,6 +1037,13 @@ export class VoxelWorld {
           Math.min(1, dt * 10)
         );
       }
+    }
+
+    if (!enableRaycast) {
+      this.currentTarget = null;
+      this.ghostGroup.visible = false;
+      this.updateParticles(dt);
+      return;
     }
 
     // Always cast directly from the camera through the exact center crosshair (0, 0)

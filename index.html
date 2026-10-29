@@ -40,46 +40,116 @@
           <span id="stat-pos" class="stat-value">0, 1, 4</span>
         </div>
         <div class="stat-pill">
-          <span class="stat-label">MODE (F)</span>
+          <span class="stat-label">MODE</span>
           <span id="stat-mode" class="stat-value">MARCHE</span>
         </div>
         <div class="stat-pill">
           <span class="stat-label">CAMÉRA (V)</span>
-          <span id="stat-view" class="stat-value">3E PERSONNE (DOS)</span>
+          <span id="stat-view" class="stat-value">3E PERS.</span>
         </div>
         <div class="stat-pill">
           <span class="stat-label">LUMIÈRE (T)</span>
-          <span id="stat-time" class="stat-value">DOUCEUR NATURELLE</span>
+          <span id="stat-time" class="stat-value">DOUCEUR</span>
         </div>
-      </div>
-
-      <!-- Barre d'ambiance et météo rapide -->
-      <div class="quick-ambience-bar">
-        <button id="quick-btn-time-0" class="quick-ambience-btn active" title="Lumière douce naturelle">🌅 Aube</button>
-        <button id="quick-btn-time-1" class="quick-ambience-btn" title="Après-midi doux">☀️ Jour</button>
-        <button id="quick-btn-time-2" class="quick-ambience-btn" title="Coucher de soleil doré">🌇 Coucher</button>
-        <button id="quick-btn-time-3" class="quick-ambience-btn" title="Nuit douce et étoilée">🌙 Nuit</button>
-        <button id="quick-btn-rain" class="quick-ambience-btn" title="Activer / Désactiver la pluie douce">🌧️ Pluie</button>
       </div>
     </div>
 
-    <!-- HUD supérieur droit : Outils avancés & Raccourcis -->
+    <!-- Sélecteur Central des 2 Modes : Mode Création vs Mode Navigation -->
+    <div class="mode-switcher-container">
+      <button id="btn-mode-creation" class="mode-pill active" title="Mode Création : Viser et poser / détruire des blocs dans le monde 3D">
+        <span class="mode-icon">🛠️</span>
+        <span class="mode-text">CRÉATION</span>
+        <kbd>Clic / Entrée</kbd>
+      </button>
+      <button id="btn-mode-navigation" class="mode-pill" title="Mode Navigation : Curseur de souris libéré pour interagir avec les menus et barres">
+        <span class="mode-icon">🧭</span>
+        <span class="mode-text">NAVIGATION</span>
+        <kbd>Échap / N</kbd>
+      </button>
+    </div>
+
+    <!-- HUD supérieur droit : Ambiance & Outils & Menu BDD -->
     <div class="hud-top-right">
       <div class="quick-tools-bar">
+        <!-- Barre d'ambiance et météo rapide -->
+        <div class="quick-ambience-bar">
+          <button id="quick-btn-time-0" class="quick-ambience-btn active" title="Lumière douce naturelle">🌅 Aube</button>
+          <button id="quick-btn-time-1" class="quick-ambience-btn" title="Après-midi doux">☀️ Jour</button>
+          <button id="quick-btn-time-2" class="quick-ambience-btn" title="Coucher de soleil doré">🌇 Coucher</button>
+          <button id="quick-btn-time-3" class="quick-ambience-btn" title="Nuit douce et étoilée">🌙 Nuit</button>
+          <button id="quick-btn-rain" class="quick-ambience-btn" title="Activer / Désactiver la pluie douce">🌧️ Pluie</button>
+        </div>
+
         <button id="tool-pipette" class="tool-btn" title="Pipette : Sélectionne le bloc visé (Touche C ou Clic Molette)">🎨 Pipette <kbd>C</kbd></button>
         <button id="tool-box" class="tool-btn" title="Mode Boîte : Remplir ou vider un volume cubique (Touche B)">📦 Boîte <kbd>B</kbd></button>
         <button id="tool-ruler" class="tool-btn" title="Règle : Mesurer la distance avec la cible (Touche M)">📏 Règle <kbd>M</kbd></button>
         <button id="tool-photo" class="tool-btn" title="Mode Photo Cinématique HD (Touche P)">📸 Photo <kbd>P</kbd></button>
         <button id="tool-obj" class="tool-btn" title="Télécharger le modèle 3D au format Wavefront (.OBJ)">💾 3D .OBJ</button>
+        <button id="btn-open-studio" class="tool-btn btn-highlight" title="Ouvrir le menu des mondes et comptes BDD">🌍 Mondes & Compte</button>
       </div>
 
       <div class="shortcut-card">
-        <div><kbd>Clic Gauche</kbd> Poser • <kbd>Clic Droit</kbd> Supprimer</div>
-        <div><kbd>U</kbd> / <kbd>⌫</kbd> / <kbd>Ctrl+Z</kbd> Annuler • <kbd>Y</kbd> Rétablir</div>
-        <div><kbd>C</kbd> Pipette • <kbd>B</kbd> Boîte • <kbd>M</kbd> Règle • <kbd>P</kbd> Photo</div>
-        <div><kbd>E</kbd> Ouvrir Porte / S'asseoir • <kbd>R</kbd> Pivoter (90°)</div>
-        <div><kbd>Tab</kbd> Catégorie • <kbd>1-9</kbd> / <kbd>Molette</kbd> Bloc</div>
-        <div><kbd>V</kbd> Vue (3e / 1re Pers.) • <kbd>F</kbd> Vol • <kbd>T</kbd> Heure</div>
+        <div><kbd>Clic G</kbd> Poser • <kbd>Clic D</kbd> Supprimer • <kbd>U</kbd>/<kbd>Y</kbd> Annuler/Rétablir</div>
+        <div><kbd>N</kbd> Mode Navigation (Menus) • <kbd>Tab</kbd> Déplier / Plier Éléments</div>
+        <div><kbd>C</kbd> Pipette • <kbd>B</kbd> Boîte • <kbd>M</kbd> Règle • <kbd>E</kbd> S'asseoir/Porte</div>
+      </div>
+    </div>
+
+    <!-- Barre Latérale de Construction (Pliable / Dépliable) -->
+    <aside id="build-sidebar" class="build-sidebar">
+      <div class="sidebar-header">
+        <div class="sidebar-title-row">
+          <div class="sidebar-title">
+            <span>📐</span> ÉLÉMENTS DE CONSTRUCTION
+          </div>
+          <button id="btn-toggle-sidebar" class="btn-sidebar-toggle" title="Plier la barre latérale">
+            ◀ Replier
+          </button>
+        </div>
+        <div class="sidebar-active-info">
+          <div id="active-brick-preview" class="active-brick-preview"></div>
+          <div class="active-brick-texts">
+            <span id="active-brick-name">Brique Blanche Chaux</span>
+            <span id="active-brick-sub">Maçonnerie mate douce</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="sidebar-scroll-area">
+        <!-- Onglets Catégories avec Icônes Compactes -->
+        <div class="sidebar-section-label">CATÉGORIES</div>
+        <div id="category-tabs" class="category-tabs"></div>
+
+        <!-- Grille des Éléments avec Icônes Réduites -->
+        <div class="sidebar-section-label">ÉLÉMENTS DISPONIBLES</div>
+        <div id="hotbar" class="hotbar"></div>
+
+        <!-- Historique Annuler / Rétablir -->
+        <div class="sidebar-history-row">
+          <button id="btn-hud-undo" class="sidebar-history-btn" title="Annuler la dernière action (U, Retour Arrière, Ctrl+Z)">
+            ↩ Annuler <kbd>U</kbd>
+          </button>
+          <button id="btn-hud-redo" class="sidebar-history-btn" title="Rétablir l'action annulée (Y, Ctrl+Y)">
+            ↪ Rétablir <kbd>Y</kbd>
+          </button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Bouton flottant pour déplier la barre latérale quand elle est repliée -->
+    <button id="btn-open-sidebar" class="btn-open-sidebar hidden" title="Déplier la barre des éléments (Tab)">
+      <span>📐 Éléments de Construction</span>
+      <span class="btn-open-badge">▶</span>
+    </button>
+
+    <!-- Mini-HUD au bas de l'écran (ultra-discret, libère 100% de la vue) -->
+    <div class="mini-hud-bottom">
+      <div class="mini-hud-pill">
+        <div id="mini-current-swatch" class="mini-swatch"></div>
+        <span id="mini-current-name">Brique Blanche Chaux</span>
+        <button id="btn-quick-catalog" class="btn-mini-catalog" title="Ouvrir le catalogue d'éléments">
+          Catalogue <kbd>Tab</kbd>
+        </button>
       </div>
     </div>
 
@@ -96,25 +166,7 @@
     <!-- Notification Toast -->
     <div id="toast" class="toast hidden"></div>
 
-    <!-- Barre d'inventaire par catégories (Hotbar) en bas -->
-    <div class="hud-bottom">
-      <div class="hud-top-bar-row">
-        <div id="category-tabs" class="category-tabs"></div>
-        <div class="history-buttons">
-          <button id="btn-hud-undo" class="history-btn" title="Revenir sur l'action précédente (Touche U, Retour Arrière ou Ctrl+Z)">
-            ↩ Annuler <kbd>U</kbd>
-          </button>
-          <button id="btn-hud-redo" class="history-btn" title="Rétablir l'action annulée (Touche Y ou Ctrl+Y)">
-            ↪ Rétablir <kbd>Y</kbd>
-          </button>
-        </div>
-      </div>
-      <div class="selected-brick-title">
-        <span id="active-brick-name">Brique Blanche Chaux</span>
-        <span id="active-brick-sub">Maçonnerie mate douce à joints creux</span>
-      </div>
-      <div id="hotbar" class="hotbar"></div>
-    </div>
+    <!-- Menu Studio / Base de Données / Compte & Mondes -->
 
     <!-- Menu Studio / Base de Données / Compte & Mondes -->
     <div id="studio-overlay" class="studio-overlay">

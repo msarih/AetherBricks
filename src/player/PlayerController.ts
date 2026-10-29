@@ -88,6 +88,12 @@ export class PlayerController {
     this.domElement.requestPointerLock();
   }
 
+  public exitLock(): void {
+    if (document.pointerLockElement === this.domElement) {
+      document.exitPointerLock();
+    }
+  }
+
   public toggleFlyMode(): void {
     this.isFlying = !this.isFlying;
     this.velocity.y = 0;

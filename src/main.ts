@@ -161,9 +161,23 @@ const statViewEl = document.getElementById('stat-view')!;
 const statTimeEl = document.getElementById('stat-time')!;
 const activeBrickNameEl = document.getElementById('active-brick-name')!;
 const activeBrickSubEl = document.getElementById('active-brick-sub')!;
+const activeBrickPreviewEl = document.getElementById('active-brick-preview');
 const categoryTabsEl = document.getElementById('category-tabs')!;
 const hotbarEl = document.getElementById('hotbar')!;
 const toastEl = document.getElementById('toast')!;
+
+// Navigation vs Creation Mode elements
+const btnModeCreation = document.getElementById('btn-mode-creation')!;
+const btnModeNavigation = document.getElementById('btn-mode-navigation')!;
+const btnOpenStudio = document.getElementById('btn-open-studio')!;
+
+// Collapsible Sidebar & Mini-HUD elements
+const buildSidebarEl = document.getElementById('build-sidebar')!;
+const btnToggleSidebarEl = document.getElementById('btn-toggle-sidebar')!;
+const btnOpenSidebarEl = document.getElementById('btn-open-sidebar')!;
+const btnQuickCatalogEl = document.getElementById('btn-quick-catalog');
+const miniCurrentSwatchEl = document.getElementById('mini-current-swatch');
+const miniCurrentNameEl = document.getElementById('mini-current-name');
 
 // Studio Modal DOM elements
 const accountDisplayNameEl = document.getElementById('account-display-name')!;
@@ -184,6 +198,69 @@ function showToast(msg: string): void {
   }, 2200);
 }
 
+// Gestion des 2 Modes : Mode Création vs Mode Navigation
+export type AppUIMode = 'creation' | 'navigation';
+let currentUIMode: AppUIMode = 'creation';
+
+function setUIMode(mode: AppUIMode, notify = true): void {
+  currentUIMode = mode;
+  if (mode === 'creation') {
+    document.body.classList.remove('mode-navigation');
+    btnModeCreation.classList.add('active');
+    btnModeNavigation.classList.remove('active');
+    player.requestLock();
+    if (notify) showToast('🛠️ Mode Création : Visez et cliquez pour construire');
+  } else {
+    document.body.classList.add('mode-navigation');
+    btnModeNavigation.classList.add('active');
+    btnModeCreation.classList.remove('active');
+    player.exitLock();
+    if (notify) showToast('🧭 Mode Navigation : Curseur libre pour utiliser les menus');
+  }
+}
+
+btnModeCreation.addEventListener('click', (e) => {
+  e.stopPropagation();
+  setUIMode('creation');
+});
+
+btnModeNavigation.addEventListener('click', (e) => {
+  e.stopPropagation();
+  setUIMode('navigation');
+});
+
+// Menu Studio / Base de données dédié
+btnOpenStudio.addEventListener('click', (e) => {
+  e.stopPropagation();
+  setUIMode('navigation', false);
+  renderDatabaseModalUI();
+  studioOverlay.classList.remove('hidden');
+});
+
+// Barre latérale de construction pliable / dépliable
+let isSidebarOpen = true;
+function setSidebarOpen(open: boolean): void {
+  isSidebarOpen = open;
+  buildSidebarEl.classList.toggle('collapsed', !open);
+  btnOpenSidebarEl.classList.toggle('hidden', open);
+  sound.playSelect();
+}
+
+btnToggleSidebarEl.addEventListener('click', (e) => {
+  e.stopPropagation();
+  setSidebarOpen(false);
+});
+
+btnOpenSidebarEl.addEventListener('click', (e) => {
+  e.stopPropagation();
+  setSidebarOpen(true);
+});
+
+btnQuickCatalogEl?.addEventListener('click', (e) => {
+  e.stopPropagation();
+  setSidebarOpen(true);
+});
+
 const player = new PlayerController(
   camera,
   renderer.domElement,
@@ -191,10 +268,17 @@ const player = new PlayerController(
   sound,
   (locked) => {
     if (locked) {
+      currentUIMode = 'creation';
+      document.body.classList.remove('mode-navigation');
+      btnModeCreation.classList.add('active');
+      btnModeNavigation.classList.remove('active');
       studioOverlay.classList.add('hidden');
     } else {
-      renderDatabaseModalUI();
-      studioOverlay.classList.remove('hidden');
+      currentUIMode = 'navigation';
+      document.body.classList.add('mode-navigation');
+      btnModeNavigation.classList.add('active');
+      btnModeCreation.classList.remove('active');
+      // En mode navigation, ne PAS ouvrir la modale studio automatiquement : l'utilisateur explore librement les menus !
     }
   },
   (viewMode) => {
@@ -382,6 +466,15 @@ function renderInventoryUI(): void {
   const activeDef = world.catalog.get(selectedBrickId)!;
   activeBrickNameEl.textContent = activeDef.name;
   activeBrickSubEl.textContent = activeDef.subtitle;
+  if (activeBrickPreviewEl) {
+    activeBrickPreviewEl.style.background = activeDef.previewCss;
+  }
+  if (miniCurrentSwatchEl) {
+    miniCurrentSwatchEl.style.background = activeDef.previewCss;
+  }
+  if (miniCurrentNameEl) {
+    miniCurrentNameEl.textContent = activeDef.name;
+  }
   world.setGhostMode(selectedBrickId);
 }
 
@@ -568,6 +661,12 @@ document.getElementById('quick-btn-rain')?.addEventListener('click', (e) => {
 });
 
 renderer.domElement.addEventListener('mousedown', (e) => {
+  // If in navigation mode and clicked on canvas, switch to Creation mode
+  if (currentUIMode === 'navigation' && e.button === 0) {
+    setUIMode('creation');
+    return;
+  }
+
   if (!player.isLocked) {
     player.requestLock();
     return;
@@ -721,12 +820,30 @@ window.addEventListener('keydown', (e) => {
     return;
   }
 
+  // Bascule rapide entre Mode Création et Mode Navigation
+  if (e.code === 'KeyN') {
+    e.preventDefault();
+    setUIMode(currentUIMode === 'creation' ? 'navigation' : 'creation');
+    return;
+  }
+
+  if (e.code === 'Enter' && currentUIMode === 'navigation') {
+    e.preventDefault();
+    setUIMode('creation');
+    return;
+  }
+
   if (e.code === 'Tab') {
     e.preventDefault();
-    const curCatIdx = CATEGORY_DEFINITIONS.findIndex((c) => c.id === activeCategory);
-    const nextCat = CATEGORY_DEFINITIONS[(curCatIdx + 1) % CATEGORY_DEFINITIONS.length];
-    selectCategory(nextCat.id, true);
-    showToast(`Catégorie : ${nextCat.icon} ${nextCat.label}`);
+    if (!isSidebarOpen) {
+      setSidebarOpen(true);
+      showToast('📐 Éléments de Construction dépliés');
+    } else {
+      const curCatIdx = CATEGORY_DEFINITIONS.findIndex((c) => c.id === activeCategory);
+      const nextCat = CATEGORY_DEFINITIONS[(curCatIdx + 1) % CATEGORY_DEFINITIONS.length];
+      selectCategory(nextCat.id, true);
+      showToast(`Catégorie : ${nextCat.icon} ${nextCat.label}`);
+    }
     return;
   }
 
@@ -958,7 +1075,7 @@ function animate(now: number): void {
 
   player.update(dt);
   countryside.update(now * 0.001, player.position);
-  world.update(dt, camera, player.getEyePosition());
+  world.update(dt, camera, player.getEyePosition(), currentUIMode === 'creation');
 
   // Règle / Mesure en direct
   if (isRulerMode && world.currentTarget) {
