@@ -443,14 +443,19 @@ export const PATTERN_NAMES: Record<string, string> = {
 export const COLOR_NAMES: Record<string, string> = {
   '#f8fafc': 'Blanc Albâtre',
   '#fef3c7': 'Ivoire Chaud',
-  '#c2410c': 'Terracotta',
-  '#4d7c0f': 'Sauge Méditerranée',
-  '#1e3a8a': 'Bleu Nuit',
-  '#334155': 'Gris Graphite',
-  '#d97706': 'Ocre Doré',
+  '#fed7aa': 'Abricot Doux',
+  '#fca5a5': 'Corail Pastel',
   '#f472b6': 'Rose Poudré',
+  '#c2410c': 'Terracotta',
+  '#d97706': 'Ocre Doré',
+  '#ca8a04': 'Moutarde Chaude',
+  '#4d7c0f': 'Sauge Méditerranée',
   '#15803d': 'Vert Forêt',
+  '#0284c7': 'Bleu Azur',
+  '#1e3a8a': 'Bleu Nuit',
   '#7c3aed': 'Violet Royal',
+  '#475569': 'Gris Ardoise',
+  '#1e293b': 'Noir Anthracite',
 };
 
 function updatePaintPreviewUI(): void {
@@ -731,14 +736,19 @@ const btnQuickOpenPaint = document.getElementById('btn-quick-open-paint');
 const PAINT_SWATCH_COLORS = [
   '#f8fafc',
   '#fef3c7',
-  '#c2410c',
-  '#4d7c0f',
-  '#1e3a8a',
-  '#334155',
-  '#d97706',
+  '#fed7aa',
+  '#fca5a5',
   '#f472b6',
+  '#c2410c',
+  '#d97706',
+  '#ca8a04',
+  '#4d7c0f',
   '#15803d',
+  '#0284c7',
+  '#1e3a8a',
   '#7c3aed',
+  '#475569',
+  '#1e293b',
 ];
 
 function initPaintPalette(): void {
@@ -746,7 +756,7 @@ function initPaintPalette(): void {
     paintSwatchesEl.innerHTML = '';
     for (const col of PAINT_SWATCH_COLORS) {
       const sw = document.createElement('button');
-      sw.className = `paint-swatch ${col === selectedPaintColor ? 'active' : ''}`;
+      sw.className = `paint-swatch ${col.toLowerCase() === selectedPaintColor.toLowerCase() ? 'active' : ''}`;
       sw.style.backgroundColor = col;
       const cName = COLOR_NAMES[col.toLowerCase()] || col;
       sw.title = `${col} (${cName})`;
@@ -762,12 +772,13 @@ function initPaintPalette(): void {
         updatePaintPreviewUI();
         const pName = PATTERN_NAMES[selectedPaintPattern] || selectedPaintPattern;
         toolStatusBarEl.textContent = `🖌️ Mode Peinture : Visez et cliquez pour peindre (${pName} - ${selectedPaintColor})`;
+        showToast(`Couleur choisie : ${cName} (${col})`);
       });
       paintSwatchesEl.appendChild(sw);
     }
   }
 
-  paintColorPicker?.addEventListener('input', (e) => {
+  const handleColorInput = (e: Event) => {
     selectedPaintColor = (e.target as HTMLInputElement).value;
     document.querySelectorAll('.paint-swatch').forEach((s) => s.classList.remove('active'));
     isPaintMode = true;
@@ -775,7 +786,9 @@ function initPaintPalette(): void {
     updatePaintPreviewUI();
     const pName = PATTERN_NAMES[selectedPaintPattern] || selectedPaintPattern;
     toolStatusBarEl.textContent = `🖌️ Mode Peinture : Visez et cliquez pour peindre (${pName} - ${selectedPaintColor})`;
-  });
+  };
+  paintColorPicker?.addEventListener('input', handleColorInput);
+  paintColorPicker?.addEventListener('change', handleColorInput);
 
   paintPatternsEl?.querySelectorAll('.paint-pattern-btn').forEach((btn) => {
     btn.addEventListener('click', (e) => {
@@ -799,10 +812,10 @@ function initPaintPalette(): void {
     togglePaintMode();
   });
 
-  // Bouton "Peindre le mur visé maintenant"
+  // Bouton "Peindre le mur visé maintenant" (fonctionne immédiatement avec le mur visé par le joueur)
   btnSidebarApplyPaint?.addEventListener('click', (e) => {
     e.stopPropagation();
-    const target = world.currentTarget;
+    const target = world.currentTarget ?? world.lastValidTarget;
     if (target?.removePos) {
       const { x, y, z } = target.removePos;
       if (world.paintBrickAt(x, y, z, selectedPaintColor, selectedPaintPattern)) {
@@ -810,11 +823,11 @@ function initPaintPalette(): void {
         lastBuildSoundTime = performance.now();
         player.triggerActionAnimation();
         const pName = PATTERN_NAMES[selectedPaintPattern] || selectedPaintPattern;
-        showToast(`Fine couche appliquée (${pName} • ${selectedPaintColor}) !`);
+        showToast(`Mur peint avec succès (${pName} • ${selectedPaintColor}) !`);
         return;
       }
     }
-    showToast("⚠️ Visez d'abord un mur avec votre regard, puis cliquez pour peindre");
+    showToast("⚠️ Visez d'abord un mur avec votre regard, puis cliquez sur ce bouton");
   });
 
   // Raccourci basculant vers la catégorie peinture
@@ -950,8 +963,27 @@ document.getElementById('quick-btn-rain')?.addEventListener('click', (e) => {
 });
 
 renderer.domElement.addEventListener('mousedown', (e) => {
-  // If in navigation mode and clicked on canvas, switch to Creation mode
+  // En Mode Navigation :
   if (currentUIMode === 'navigation' && e.button === 0) {
+    // Si le mode peinture est actif, permet de cliquer directement sur un mur de la scène pour le peindre immédiatement !
+    if (isPaintMode) {
+      const mouse = new THREE.Vector2(
+        (e.clientX / window.innerWidth) * 2 - 1,
+        -(e.clientY / window.innerHeight) * 2 + 1
+      );
+      const hit = world.raycastFromMouse(mouse, camera);
+      if (hit?.removePos) {
+        const { x, y, z } = hit.removePos;
+        if (world.paintBrickAt(x, y, z, selectedPaintColor, selectedPaintPattern)) {
+          sound.playPaint();
+          player.triggerActionAnimation();
+          const pName = PATTERN_NAMES[selectedPaintPattern] || selectedPaintPattern;
+          showToast(`Mur peint (${pName} • ${selectedPaintColor}) !`);
+          return;
+        }
+      }
+    }
+    // Sinon, un clic sur le jeu repasse en Mode Création avec contrôle 3D immersif
     setUIMode('creation');
     return;
   }

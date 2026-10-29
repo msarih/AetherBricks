@@ -6,7 +6,7 @@
       "ownerId": "guest_1793289578954",
       "name": "Monde Récupéré #3",
       "createdAt": 1793289578963,
-      "updatedAt": 1793310485959,
+      "updatedAt": 1793312113173,
       "bricks": [
         {
           "x": 1,
@@ -662,7 +662,9 @@
           "z": 3,
           "type": 1,
           "rot": 0,
-          "open": false
+          "open": false,
+          "color": "#f8fafc",
+          "pattern": "plain"
         },
         {
           "x": 1,
@@ -670,7 +672,9 @@
           "z": 3,
           "type": 1,
           "rot": 0,
-          "open": false
+          "open": false,
+          "color": "#f8fafc",
+          "pattern": "plain"
         },
         {
           "x": 9,
@@ -990,7 +994,9 @@
           "z": 3,
           "type": 1,
           "rot": 0,
-          "open": false
+          "open": false,
+          "color": "#f8fafc",
+          "pattern": "plain"
         },
         {
           "x": 5,
@@ -998,7 +1004,9 @@
           "z": 3,
           "type": 1,
           "rot": 0,
-          "open": false
+          "open": false,
+          "color": "#f8fafc",
+          "pattern": "plain"
         },
         {
           "x": 4,
@@ -1006,7 +1014,9 @@
           "z": 3,
           "type": 1,
           "rot": 0,
-          "open": false
+          "open": false,
+          "color": "#f8fafc",
+          "pattern": "plain"
         },
         {
           "x": 4,
@@ -1014,7 +1024,9 @@
           "z": 3,
           "type": 1,
           "rot": 0,
-          "open": false
+          "open": false,
+          "color": "#f8fafc",
+          "pattern": "plain"
         },
         {
           "x": 2,
@@ -1022,7 +1034,9 @@
           "z": 3,
           "type": 1,
           "rot": 0,
-          "open": false
+          "open": false,
+          "color": "#f8fafc",
+          "pattern": "plain"
         },
         {
           "x": 1,
@@ -1030,7 +1044,9 @@
           "z": 3,
           "type": 1,
           "rot": 0,
-          "open": false
+          "open": false,
+          "color": "#f8fafc",
+          "pattern": "plain"
         },
         {
           "x": 3,
@@ -1382,7 +1398,9 @@
           "z": 3,
           "type": 1,
           "rot": 2,
-          "open": false
+          "open": false,
+          "color": "#f8fafc",
+          "pattern": "plain"
         },
         {
           "x": 4,
@@ -1390,7 +1408,9 @@
           "z": 3,
           "type": 1,
           "rot": 2,
-          "open": false
+          "open": false,
+          "color": "#f8fafc",
+          "pattern": "plain"
         },
         {
           "x": 6,
@@ -1398,7 +1418,9 @@
           "z": 3,
           "type": 1,
           "rot": 2,
-          "open": false
+          "open": false,
+          "color": "#f8fafc",
+          "pattern": "plain"
         },
         {
           "x": 7,
@@ -1406,7 +1428,9 @@
           "z": 3,
           "type": 1,
           "rot": 2,
-          "open": false
+          "open": false,
+          "color": "#f8fafc",
+          "pattern": "plain"
         },
         {
           "x": 8,
@@ -1414,15 +1438,9 @@
           "z": 3,
           "type": 1,
           "rot": 2,
-          "open": false
-        },
-        {
-          "x": 8,
-          "y": 2,
-          "z": 3,
-          "type": 1,
-          "rot": 2,
-          "open": false
+          "open": false,
+          "color": "#f8fafc",
+          "pattern": "plain"
         },
         {
           "x": 7,
@@ -1430,7 +1448,9 @@
           "z": 3,
           "type": 1,
           "rot": 2,
-          "open": false
+          "open": false,
+          "color": "#f8fafc",
+          "pattern": "plain"
         },
         {
           "x": 5,
@@ -1438,7 +1458,9 @@
           "z": 3,
           "type": 1,
           "rot": 2,
-          "open": false
+          "open": false,
+          "color": "#f8fafc",
+          "pattern": "plain"
         },
         {
           "x": 6,
@@ -1446,7 +1468,9 @@
           "z": 3,
           "type": 1,
           "rot": 2,
-          "open": false
+          "open": false,
+          "color": "#f8fafc",
+          "pattern": "plain"
         },
         {
           "x": 7,
@@ -1454,7 +1478,9 @@
           "z": 3,
           "type": 1,
           "rot": 2,
-          "open": false
+          "open": false,
+          "color": "#f8fafc",
+          "pattern": "plain"
         },
         {
           "x": 8,
@@ -1462,7 +1488,9 @@
           "z": 3,
           "type": 1,
           "rot": 2,
-          "open": false
+          "open": false,
+          "color": "#f8fafc",
+          "pattern": "plain"
         },
         {
           "x": 9,
@@ -1622,7 +1650,9 @@
           "z": 3,
           "type": 1,
           "rot": 2,
-          "open": false
+          "open": false,
+          "color": "#f8fafc",
+          "pattern": "plain"
         },
         {
           "x": 0,
@@ -1630,7 +1660,9 @@
           "z": 3,
           "type": 1,
           "rot": 2,
-          "open": false
+          "open": false,
+          "color": "#f8fafc",
+          "pattern": "plain"
         },
         {
           "x": 0,
@@ -1638,7 +1670,9 @@
           "z": 3,
           "type": 1,
           "rot": 2,
-          "open": false
+          "open": false,
+          "color": "#f8fafc",
+          "pattern": "plain"
         },
         {
           "x": -1,
@@ -1798,7 +1832,9 @@
           "z": 3,
           "type": 1,
           "rot": 1,
-          "open": false
+          "open": false,
+          "color": "#f8fafc",
+          "pattern": "plain"
         },
         {
           "x": 3,
@@ -1806,7 +1842,9 @@
           "z": 3,
           "type": 1,
           "rot": 1,
-          "open": false
+          "open": false,
+          "color": "#f8fafc",
+          "pattern": "plain"
         },
         {
           "x": -25,
@@ -2222,7 +2260,9 @@
           "z": 3,
           "type": 1,
           "rot": 0,
-          "open": false
+          "open": false,
+          "color": "#f8fafc",
+          "pattern": "plain"
         },
         {
           "x": 3,
@@ -2289,42 +2329,30 @@
           "open": false
         },
         {
-          "x": 9,
-          "y": 2,
-          "z": 4,
-          "type": 1,
-          "rot": 0,
-          "open": false
-        },
-        {
-          "x": 6,
-          "y": 1,
-          "z": 5,
-          "type": 35,
-          "rot": 0,
-          "open": false
-        },
-        {
-          "x": 4,
-          "y": 1,
-          "z": 4,
-          "type": 35,
-          "rot": 0,
-          "open": false
-        },
-        {
           "x": 5,
           "y": 1,
           "z": 3,
           "type": 1,
           "rot": 0,
-          "open": false
+          "open": false,
+          "color": "#f8fafc",
+          "pattern": "plain"
+        },
+        {
+          "x": 8,
+          "y": 2,
+          "z": 3,
+          "type": 1,
+          "rot": 0,
+          "open": false,
+          "color": "#f8fafc",
+          "pattern": "plain"
         }
       ],
       "playerState": {
-        "x": 5.109748244043099,
+        "x": 4.7202596344788095,
         "y": 0.36,
-        "z": 5.522710378228276,
+        "z": 7.789443503935171,
         "viewMode": "tps-back",
         "lightingIdx": 0
       }

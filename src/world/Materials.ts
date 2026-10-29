@@ -453,6 +453,18 @@ export function getOrCreatePaintedMaterial(
   const existing = paintedMaterialCache.get(cacheKey);
   if (existing) return existing;
 
+  // Si motif Uni : couleur directe pure et veloutée, sans texture de bruit ni fausse normale,
+  // assurant un rendu parfaitement uniforme ("uni partout" sans lignes)
+  if (normPattern === 'plain') {
+    const mat = new THREE.MeshStandardMaterial({
+      color: new THREE.Color(normColor),
+      roughness: 0.78,
+      metalness: 0.01,
+    });
+    paintedMaterialCache.set(cacheKey, mat);
+    return mat;
+  }
+
   const size = 512;
   const canvas = document.createElement('canvas');
   const hCanvas = document.createElement('canvas');
@@ -687,11 +699,26 @@ export function getOrCreatePaintedMaterial(
   return mat;
 }
 
+const flatBoxGeo = new THREE.BoxGeometry(1, 1, 1);
+
 export function applyPaintToVisual(root: THREE.Object3D, color: string, pattern = 'plain'): void {
   const mat = getOrCreatePaintedMaterial(color, pattern);
   root.traverse((child) => {
     if (child instanceof THREE.Mesh && !child.userData.isProxy) {
       child.material = mat;
+      // Remplace les géométries biseautées/arrondies résiduelles par un cube plat sans joints
+      if (child.geometry) {
+        if (!child.geometry.boundingBox) child.geometry.computeBoundingBox();
+        const box = child.geometry.boundingBox;
+        if (box) {
+          const dx = box.max.x - box.min.x;
+          const dy = box.max.y - box.min.y;
+          const dz = box.max.z - box.min.z;
+          if (Math.abs(dx - 1) < 0.08 && Math.abs(dy - 1) < 0.08 && Math.abs(dz - 1) < 0.08) {
+            child.geometry = flatBoxGeo;
+          }
+        }
+      }
     }
   });
 }

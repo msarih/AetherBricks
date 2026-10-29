@@ -6,6 +6,10 @@
   -webkit-font-smoothing: antialiased;
 }
 
+.hidden {
+  display: none !important;
+}
+
 body,
 html {
   width: 100%;
@@ -1242,29 +1246,30 @@ body.photo-mode #tool-status-bar {
 
 .paint-swatches {
   display: flex;
-  gap: 4px;
+  gap: 6px;
   flex-wrap: wrap;
+  align-items: center;
 }
 
 .paint-swatch {
-  width: 20px;
-  height: 20px;
+  width: 23px;
+  height: 23px;
   border-radius: 50%;
-  border: 1.5px solid rgba(255, 255, 255, 0.25);
+  border: 2px solid rgba(255, 255, 255, 0.35);
   cursor: pointer;
-  transition: transform 0.14s ease, border-color 0.14s ease;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.25);
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.35);
 }
 
 .paint-swatch:hover {
-  transform: scale(1.22);
+  transform: scale(1.18);
   border-color: #ffffff;
 }
 
 .paint-swatch.active {
   transform: scale(1.22);
   border-color: #38bdf8;
-  box-shadow: 0 0 8px rgba(56, 189, 248, 0.7);
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.5), 0 2px 6px rgba(0, 0, 0, 0.4);
 }
 
 .paint-patterns-grid {

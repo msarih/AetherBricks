@@ -152,6 +152,15 @@ export class VoxelWorld {
     doorIsOpen?: boolean;
   } | null = null;
 
+  public lastValidTarget: {
+    placePos: THREE.Vector3;
+    removePos: THREE.Vector3 | null;
+    removeType: number | null;
+    hitBrickType: number | null;
+    isDoorHit: boolean;
+    doorIsOpen?: boolean;
+  } | null = null;
+
   // Undo / Redo stacks (chaque étape peut contenir 1 bloc ou tout un tracé en masse)
   private undoStack: HistoryAction[][] = [];
   private redoStack: HistoryAction[][] = [];
@@ -170,8 +179,8 @@ export class VoxelWorld {
     this.countryside = countryside;
     this.catalog = createBrickCatalog();
 
-    // High-resolution beveled cube geometry (4 segments, 3.2cm chamfer)
-    this.brickGeo = new RoundedBoxGeometry(1, 1, 1, 4, 0.032);
+    // Clean planar cube geometry (1x1x1) for perfectly flush, smooth and seamless walls
+    this.brickGeo = new THREE.BoxGeometry(1, 1, 1);
 
     // Initialisation du masque de sol pour l'excavation Minecraft
     this.maskCanvas.width = this.maskSize;
@@ -650,6 +659,56 @@ export class VoxelWorld {
 
     this.onWorldChanged?.();
     return true;
+  }
+
+  /**
+   * Effectue un lancer de rayon depuis les coordonnées 2D de la souris (utile en Mode Navigation)
+   */
+  public raycastFromMouse(
+    normalizedMouse: THREE.Vector2,
+    camera: THREE.Camera
+  ): {
+    placePos: THREE.Vector3;
+    removePos: THREE.Vector3 | null;
+    removeType: number | null;
+    hitBrickType: number | null;
+  } | null {
+    const picker = new THREE.Raycaster();
+    picker.setFromCamera(normalizedMouse, camera);
+    const rawHits = picker.intersectObjects(this.interactables, false);
+    for (const hit of rawHits) {
+      if (hit.distance < 0.2) continue;
+      if (hit.object === this.groundMesh) {
+        const px = Math.round(hit.point.x);
+        const pz = Math.round(hit.point.z);
+        if (this.dugColumns.has(`${px},${pz}`)) continue;
+        return {
+          placePos: new THREE.Vector3(px, Math.max(0, Math.round(hit.point.y)), pz),
+          removePos: new THREE.Vector3(px, Math.max(0, Math.round(hit.point.y)), pz),
+          removeType: BRICK_TYPE_DIRT,
+          hitBrickType: BRICK_TYPE_GRASS_BLOCK,
+        };
+      }
+      if (hit.object.userData && hit.object.userData.isHill) {
+        const px = Math.round(hit.point.x);
+        const py = Math.max(0, Math.round(hit.point.y));
+        const pz = Math.round(hit.point.z);
+        return {
+          placePos: new THREE.Vector3(px, py, pz),
+          removePos: new THREE.Vector3(px, py, pz),
+          removeType: BRICK_TYPE_DIRT,
+          hitBrickType: BRICK_TYPE_GRASS_BLOCK,
+        };
+      }
+      const data = hit.object.userData as BrickEntry;
+      return {
+        placePos: new THREE.Vector3(data.x, data.y, data.z),
+        removePos: new THREE.Vector3(data.x, data.y, data.z),
+        removeType: data.type,
+        hitBrickType: data.type,
+      };
+    }
+    return null;
   }
 
   /**
@@ -1338,15 +1397,10 @@ export class VoxelWorld {
       }
     }
 
-    if (!enableRaycast) {
-      this.currentTarget = null;
-      this.ghostGroup.visible = false;
-      this.updateParticles(dt);
-      return;
-    }
-
     // Always cast directly from the camera through the exact center crosshair (0, 0)
     // so there is ZERO parallax discrepancy between what the crosshair points at and what gets hit!
+    // Note: We keep raycasting active even in Navigation mode so currentTarget and lastValidTarget
+    // remain up to date for sidebar tools (e.g. "Peindre le mur visé maintenant")!
     this.raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
 
     // Minimum distance filter so blocks behind the player (between 3rd-person camera and character back) are ignored
@@ -1471,20 +1525,28 @@ export class VoxelWorld {
         };
       }
 
-      if (this.isPaintGhostActive) {
-        this.ghostGroup.visible = false;
-        if (this.currentTarget.removePos) {
-          const hitPos = this.currentTarget.removePos;
-          this.paintGhostPlane.position.copy(hitPos).addScaledVector(normal, 0.504);
-          this.paintGhostPlane.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal);
-          this.paintGhostPlane.visible = true;
+      this.lastValidTarget = { ...this.currentTarget };
+
+      if (enableRaycast) {
+        if (this.isPaintGhostActive) {
+          this.ghostGroup.visible = false;
+          if (this.currentTarget.removePos) {
+            const hitPos = this.currentTarget.removePos;
+            this.paintGhostPlane.position.copy(hitPos).addScaledVector(normal, 0.504);
+            this.paintGhostPlane.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal);
+            this.paintGhostPlane.visible = true;
+          } else {
+            this.paintGhostPlane.visible = false;
+          }
         } else {
           this.paintGhostPlane.visible = false;
+          this.ghostGroup.position.copy(this.currentTarget.placePos);
+          this.ghostGroup.visible = true;
         }
       } else {
+        // En mode navigation, on masque le fantôme de placement mais on conserve currentTarget & lastValidTarget
+        this.ghostGroup.visible = false;
         this.paintGhostPlane.visible = false;
-        this.ghostGroup.position.copy(this.currentTarget.placePos);
-        this.ghostGroup.visible = true;
       }
     } else {
       this.currentTarget = null;
