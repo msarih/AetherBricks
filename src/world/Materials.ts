@@ -428,9 +428,9 @@ export function createCountrysideGrassPBR(): {
   normal.wrapS = normal.wrapT = THREE.RepeatWrapping;
   roughness.wrapS = roughness.wrapT = THREE.RepeatWrapping;
 
-  albedo.repeat.set(65, 65);
-  normal.repeat.set(65, 65);
-  roughness.repeat.set(65, 65);
+  albedo.repeat.set(1182, 1182);
+  normal.repeat.set(1182, 1182);
+  roughness.repeat.set(1182, 1182);
 
   albedo.anisotropy = 16;
   normal.anisotropy = 16;

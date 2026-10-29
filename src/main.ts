@@ -97,7 +97,7 @@ const container = document.getElementById('canvas-container')!;
 const scene = new THREE.Scene();
 scene.fog = new THREE.FogExp2(LIGHTING_PRESETS[0].fogColor, LIGHTING_PRESETS[0].fogDensity);
 
-const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 350);
+const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 3500);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -204,6 +204,7 @@ let currentUIMode: AppUIMode = 'creation';
 
 function setUIMode(mode: AppUIMode, notify = true): void {
   currentUIMode = mode;
+  player.clearKeys();
   if (mode === 'creation') {
     document.body.classList.remove('mode-navigation');
     btnModeCreation.classList.add('active');
@@ -1149,10 +1150,10 @@ function animate(now: number): void {
   statModeEl.textContent = player.isSitting
     ? 'ASSIS'
     : player.isInWater
-    ? 'NAGE'
+    ? (player.isSprinting ? 'NAGE RAPIDE' : 'NAGE')
     : player.isFlying
-    ? 'VOL LIBRE'
-    : 'MARCHE';
+    ? (player.isSprinting ? 'VOL TURBO (SHIFT)' : 'VOL LIBRE (F)')
+    : (player.isSprinting ? 'COURSE RAPIDE (SHIFT)' : 'MARCHE');
 
   renderer.render(scene, camera);
 }

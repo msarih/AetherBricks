@@ -152,9 +152,9 @@ export class VoxelWorld {
     // High-resolution beveled cube geometry (4 segments, 3.2cm chamfer)
     this.brickGeo = new RoundedBoxGeometry(1, 1, 1, 4, 0.032);
 
-    // Flat countryside grass ground plane (220m x 220m) with PBR Albedo + Normal + Roughness
+    // Immense prairie infinie (4000m x 4000m) avec PBR Albedo + Normal + Roughness
     const grassPBR = createCountrysideGrassPBR();
-    const groundGeo = new THREE.PlaneGeometry(220, 220);
+    const groundGeo = new THREE.PlaneGeometry(4000, 4000);
     groundGeo.rotateX(-Math.PI / 2);
     const groundMat = new THREE.MeshStandardMaterial({
       map: grassPBR.albedo,
@@ -1027,6 +1027,20 @@ export class VoxelWorld {
     playerEyePos?: THREE.Vector3,
     enableRaycast = true
   ): void {
+    // Recentrage imperceptible du sol selon la position du joueur (monde infini sans couture)
+    if (playerEyePos) {
+      const tileSize = 4000 / 1182; // ~3.384m
+      const snapX = Math.round(playerEyePos.x / tileSize) * tileSize;
+      const snapZ = Math.round(playerEyePos.z / tileSize) * tileSize;
+      if (
+        Math.abs(this.groundMesh.position.x - snapX) > 20 ||
+        Math.abs(this.groundMesh.position.z - snapZ) > 20
+      ) {
+        this.groundMesh.position.x = snapX;
+        this.groundMesh.position.z = snapZ;
+      }
+    }
+
     // Animate doors smoothly
     for (const item of this.uniqueItems) {
       if (item.doorPivot) {

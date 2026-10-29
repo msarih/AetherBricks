@@ -36,9 +36,9 @@ export class CountrysideEnv {
     this.pmremGenerator = new THREE.PMREMGenerator(renderer);
     this.pmremGenerator.compileEquirectangularShader();
 
-    // 1. Physically-based Atmospheric Sky
+    // 1. Physically-based Atmospheric Sky (immense dôme atmosphérique infini)
     this.sky = new Sky();
-    this.sky.scale.setScalar(450);
+    this.sky.scale.setScalar(8000);
     this.scene.add(this.sky);
 
     // 2. Instanced 3D Grass Tufts with GPU Wind Shader
@@ -427,6 +427,10 @@ export class CountrysideEnv {
 
   public update(elapsedSeconds: number, playerPos?: THREE.Vector3): void {
     this.grassShaderUniforms.uTime.value = elapsedSeconds;
+
+    if (playerPos) {
+      this.sky.position.set(playerPos.x, 0, playerPos.z);
+    }
 
     if (this.isRaining && this.rainPositions && this.rainPoints) {
       const px = playerPos?.x ?? 0;

@@ -20,6 +20,7 @@ export class PlayerController {
   public isLocked = false;
   public isSitting = false;
   public isInWater = false;
+  public isSprinting = false;
   public viewMode: CameraViewMode = 'tps-back';
 
   private readonly keys = new Set<string>();
@@ -44,6 +45,18 @@ export class PlayerController {
     this.syncCamera(0.016);
 
     window.addEventListener('keydown', (e) => {
+      // Ignore character inputs when typing in text fields or modals
+      const active = document.activeElement;
+      if (
+        active &&
+        (active.tagName === 'INPUT' ||
+          active.tagName === 'TEXTAREA' ||
+          (active as HTMLElement).isContentEditable)
+      ) {
+        this.clearKeys();
+        return;
+      }
+
       if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) {
         e.preventDefault();
       }
@@ -58,7 +71,21 @@ export class PlayerController {
 
     window.addEventListener('keyup', (e) => {
       this.keys.delete(e.code);
+      // macOS quirk: releasing Meta/Alt/Ctrl might swallow subsequent keyups
+      if (e.key === 'Meta' || e.key === 'Alt' || e.key === 'Control') {
+        this.clearKeys();
+      }
     });
+
+    // Évite le bug où le personnage continue d'avancer indéfiniment lors d'une perte de focus
+    window.addEventListener('blur', () => this.clearKeys());
+    window.addEventListener('focus', () => this.clearKeys());
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        this.clearKeys();
+      }
+    });
+    window.addEventListener('contextmenu', () => this.clearKeys());
 
     document.addEventListener('mousemove', (e) => {
       if (!this.isLocked) return;
@@ -77,11 +104,19 @@ export class PlayerController {
 
     document.addEventListener('pointerlockchange', () => {
       this.isLocked = document.pointerLockElement === this.domElement;
-      if (!this.isLocked) {
-        this.keys.clear();
-      }
+      this.clearKeys();
       this.onLockChange?.(this.isLocked);
     });
+  }
+
+  public clearKeys(): void {
+    this.keys.clear();
+    this.velocity.x = 0;
+    this.velocity.z = 0;
+    if (this.isFlying) {
+      this.velocity.y = 0;
+    }
+    this.isMovingInput = false;
   }
 
   public requestLock(): void {
@@ -271,9 +306,17 @@ export class PlayerController {
     }
 
     this.isInWater = this.checkInWater();
-    const isSprinting = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight');
-    const baseSpeed = this.isFlying ? 10.5 : this.isInWater ? 3.8 : 5.8;
-    const speed = isSprinting && !this.isFlying ? baseSpeed * 1.55 : baseSpeed;
+    this.isSprinting = (this.keys.has('ShiftLeft') || this.keys.has('ShiftRight')) && this.isLocked;
+
+    // Vitesse dynamique : marche / course rapide au sol et vol normal / turbo en l'air
+    let speed = 6.0;
+    if (this.isFlying) {
+      speed = this.isSprinting ? 32.0 : 12.0;
+    } else if (this.isInWater) {
+      speed = this.isSprinting ? 6.2 : 3.8;
+    } else {
+      speed = this.isSprinting ? 12.8 : 6.0;
+    }
 
     this.velocity.x = moveDir.x * speed;
     this.velocity.z = moveDir.z * speed;
@@ -281,24 +324,30 @@ export class PlayerController {
     const onLadder = !this.isFlying && this.isTouchingLadder();
 
     if (this.isFlying) {
+      const vertSpeed = this.isSprinting ? 22.0 : 9.0;
       this.velocity.y = 0;
-      if (this.keys.has('Space')) this.velocity.y = 7.5;
-      if (this.keys.has('KeyC') || this.keys.has('ShiftLeft')) this.velocity.y = -7.5;
+      if (this.keys.has('Space')) {
+        this.velocity.y = vertSpeed;
+      }
+      if (this.keys.has('KeyC') || this.keys.has('ControlLeft') || this.keys.has('ControlRight')) {
+        this.velocity.y = -vertSpeed;
+      }
     } else if (this.isInWater) {
       // Physique de nage douce dans l'eau : flottabilité et remontée avec Espace
       this.velocity.y = THREE.MathUtils.lerp(this.velocity.y, -0.6, clampedDt * 3.5);
       if (this.keys.has('Space')) {
-        this.velocity.y = 3.6;
-      } else if (this.keys.has('KeyC') || this.keys.has('ShiftLeft')) {
-        this.velocity.y = -3.2;
+        this.velocity.y = this.isSprinting ? 5.2 : 3.6;
+      } else if (this.keys.has('KeyC') || this.keys.has('ControlLeft') || this.keys.has('ControlRight')) {
+        this.velocity.y = -(this.isSprinting ? 4.8 : 3.2);
       }
       this.isGrounded = false;
     } else if (onLadder) {
       // Escalade fluide sur les échelles : Espace ou Flèche Haut / W fait monter, sinon descente douce contrôlée
+      const ladderSpeed = this.isSprinting ? 7.5 : 4.8;
       if (this.keys.has('Space') || this.keys.has('KeyW') || this.keys.has('ArrowUp')) {
-        this.velocity.y = 4.8;
+        this.velocity.y = ladderSpeed;
       } else if (this.keys.has('KeyS') || this.keys.has('ArrowDown')) {
-        this.velocity.y = -4.2;
+        this.velocity.y = -ladderSpeed;
       } else {
         this.velocity.y = -1.6;
       }
@@ -306,10 +355,25 @@ export class PlayerController {
     } else {
       this.velocity.y -= 23.0 * clampedDt;
       if (this.keys.has('Space') && this.isGrounded) {
-        this.velocity.y = 8.4;
+        this.velocity.y = this.isSprinting ? 9.6 : 8.4;
         this.isGrounded = false;
         this.sound.playStep();
       }
+    }
+
+    // Effet cinématique subtil d'accélération FOV (sensation de vitesse fluide)
+    const isAccelerating =
+      this.isSprinting &&
+      (this.isMovingInput ||
+        (this.isFlying &&
+          (this.keys.has('Space') ||
+            this.keys.has('KeyC') ||
+            this.keys.has('ControlLeft') ||
+            this.keys.has('ControlRight'))));
+    const targetFov = isAccelerating ? (this.isFlying ? 79 : 75) : 70;
+    if (Math.abs(this.camera.fov - targetFov) > 0.05) {
+      this.camera.fov = THREE.MathUtils.lerp(this.camera.fov, targetFov, clampedDt * 8.0);
+      this.camera.updateProjectionMatrix();
     }
 
     // Apply X movement (with automatic step-up on stairs & triangular slopes)
@@ -365,11 +429,10 @@ export class PlayerController {
       this.velocity.y = 0;
     }
 
-    this.position.x = Math.max(-78, Math.min(78, this.position.x));
-    this.position.z = Math.max(-78, Math.min(78, this.position.z));
+    // Monde ouvert infini : aucune barrière artificielle !
 
     if (this.isGrounded && !this.isFlying && this.isMovingInput) {
-      this.stepTimer += clampedDt * (isSprinting ? 1.45 : 1.0);
+      this.stepTimer += clampedDt * (this.isSprinting ? 1.6 : 1.0);
       if (this.stepTimer >= 0.42) {
         this.stepTimer = 0;
         this.sound.playStep();
