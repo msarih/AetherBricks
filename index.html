@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AetherBricks 3D — Construction Architecturale en Briques Blanches</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="canvas-container"></div>
+
+    <!-- Réticule central -->
+    <div id="crosshair" class="crosshair">
+      <div class="crosshair-dot"></div>
+      <div class="crosshair-ring"></div>
+    </div>
+
+    <!-- HUD supérieur gauche : Télémétrie & État -->
+    <div class="hud-top-left">
+      <div class="brand-badge">
+        <span class="cube-icon"></span>
+        <div>
+          <h1>AETHERBRICKS 3D</h1>
+          <p>SANDBOX ARCHITECTURAL PBR • BRIQUES BLANCHES</p>
+        </div>
+      </div>
+
+      <div class="stats-grid">
+        <div class="stat-pill">
+          <span class="stat-label">BRIQUES</span>
+          <span id="stat-bricks" class="stat-value">0</span>
+        </div>
+        <div class="stat-pill">
+          <span class="stat-label">COORD</span>
+          <span id="stat-pos" class="stat-value">0, 1, 4</span>
+        </div>
+        <div class="stat-pill">
+          <span class="stat-label">MODE (F)</span>
+          <span id="stat-mode" class="stat-value">MARCHE</span>
+        </div>
+        <div class="stat-pill">
+          <span class="stat-label">LUMIÈRE (T)</span>
+          <span id="stat-time" class="stat-value">MATIN PUR</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- HUD supérieur droit : Raccourcis rapides -->
+    <div class="hud-top-right">
+      <div class="shortcut-card">
+        <div><kbd>Clic Gauche</kbd> Poser brique blanche</div>
+        <div><kbd>Clic Droit</kbd> Supprimer brique</div>
+        <div><kbd>ZQSD</kbd> / <kbd>Flèches</kbd> Se déplacer</div>
+        <div><kbd>Espace</kbd> Sauter / Monter</div>
+        <div><kbd>F</kbd> Mode Vol • <kbd>T</kbd> Soleil</div>
+        <div><kbd>Ctrl+Z</kbd> Annuler • <kbd>1-6</kbd> Finition</div>
+        <div><kbd>Échap</kbd> Menu Studio</div>
+      </div>
+    </div>
+
+    <!-- Notification Toast -->
+    <div id="toast" class="toast hidden"></div>
+
+    <!-- Barre d'inventaire (Hotbar) en bas -->
+    <div class="hud-bottom">
+      <div class="selected-brick-title">
+        <span id="active-brick-name">Brique Blanche</span>
+        <span id="active-brick-sub">Maçonnerie blanche mate</span>
+      </div>
+      <div id="hotbar" class="hotbar"></div>
+    </div>
+
+    <!-- Menu Studio / Overlay de démarrage -->
+    <div id="studio-overlay" class="studio-overlay">
+      <div class="studio-modal">
+        <div class="modal-header">
+          <div class="cube-logo-lg"></div>
+          <div>
+            <h2>AetherBricks 3D</h2>
+            <p>Construction libre sur terrain plat en briques cubiques blanches haute fidélité</p>
+          </div>
+        </div>
+
+        <button id="btn-resume" class="btn-primary">
+          Entrer sur le Terrain & Construire (Clic)
+        </button>
+
+        <div class="studio-sections">
+          <div class="studio-section">
+            <h3>Scènes & Terrain</h3>
+            <div class="btn-group">
+              <button id="btn-flat-empty" class="btn-secondary">Terrain Plat Vierge</button>
+              <button id="btn-starter" class="btn-secondary">Socle Initial</button>
+              <button id="btn-pavilion" class="btn-secondary">Pavillon Blanc</button>
+              <button id="btn-arch" class="btn-secondary">Arche Brutaliste</button>
+            </div>
+          </div>
+
+          <div class="studio-section">
+            <h3>Ambiance Solaire & Ombres</h3>
+            <div class="btn-group">
+              <button data-time="0" class="btn-secondary time-btn active">Matin Pur</button>
+              <button data-time="1" class="btn-secondary time-btn">Zénith</button>
+              <button data-time="2" class="btn-secondary time-btn">Golden Hour</button>
+              <button data-time="3" class="btn-secondary time-btn">Nuit Claire</button>
+            </div>
+          </div>
+
+          <div class="studio-section">
+            <h3>Sauvegarde & Partage</h3>
+            <div class="btn-group">
+              <button id="btn-export" class="btn-secondary">Exporter (.json)</button>
+              <button id="btn-import" class="btn-secondary">Importer (.json)</button>
+              <input id="file-import" type="file" accept=".json" style="display: none" />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
