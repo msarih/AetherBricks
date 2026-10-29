@@ -8,7 +8,8 @@ import { VoxelWorld } from './world/VoxelWorld';
 import { CountrysideEnv } from './world/CountrysideEnv';
 import { PlayerController, CameraViewMode } from './player/PlayerController';
 import { SoundManager } from './audio/SoundManager';
-import { isTwoBlocksTall } from './world/ArchitecturalObjects';
+import { isFlatSlab, isTwoBlocksTall } from './world/ArchitecturalObjects';
+import { BrickDefinition, CATEGORY_DEFINITIONS, ItemCategory } from './world/Materials';
 import {
   BrickEntry,
   getBrutalistArchPreset,
@@ -169,6 +170,7 @@ const statViewEl = document.getElementById('stat-view')!;
 const statTimeEl = document.getElementById('stat-time')!;
 const activeBrickNameEl = document.getElementById('active-brick-name')!;
 const activeBrickSubEl = document.getElementById('active-brick-sub')!;
+const categoryTabsEl = document.getElementById('category-tabs')!;
 const hotbarEl = document.getElementById('hotbar')!;
 const toastEl = document.getElementById('toast')!;
 
@@ -204,38 +206,78 @@ const player = new PlayerController(
   }
 );
 
-// --- Hotbar & Active Brick Selection ---
+// --- Categorized Inventory & Hotbar Selection ---
+let activeCategory: ItemCategory = 'bricks';
 let selectedBrickId = 1;
 
-function renderHotbar(): void {
+function getItemsByCategory(cat: ItemCategory): BrickDefinition[] {
+  const list: BrickDefinition[] = [];
+  for (const [, def] of world.catalog) {
+    if (def.category === cat) {
+      list.push(def);
+    }
+  }
+  return list;
+}
+
+function renderInventoryUI(): void {
+  // 1. Render Category Tabs
+  categoryTabsEl.innerHTML = '';
+  for (const catDef of CATEGORY_DEFINITIONS) {
+    const btn = document.createElement('button');
+    btn.className = `category-tab ${catDef.id === activeCategory ? 'active' : ''}`;
+    btn.innerHTML = `<span>${catDef.icon}</span><span>${catDef.label}</span>`;
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      selectCategory(catDef.id);
+    });
+    categoryTabsEl.appendChild(btn);
+  }
+
+  // 2. Render Hotbar Slots for Active Category
   hotbarEl.innerHTML = '';
-  for (const [id, def] of world.catalog) {
+  const items = getItemsByCategory(activeCategory);
+  items.forEach((def, idx) => {
     const slot = document.createElement('div');
-    slot.className = `hotbar-slot ${id === selectedBrickId ? 'active' : ''}`;
+    slot.className = `hotbar-slot ${def.id === selectedBrickId ? 'active' : ''}`;
+    slot.title = def.name;
     slot.innerHTML = `
-      <span class="slot-key">${id}</span>
+      <span class="slot-key">${idx + 1}</span>
       <div class="slot-swatch" style="background: ${def.previewCss}"></div>
     `;
     slot.addEventListener('click', (e) => {
       e.stopPropagation();
-      selectBrick(id);
+      selectBrick(def.id);
     });
     hotbarEl.appendChild(slot);
-  }
+  });
+
   const activeDef = world.catalog.get(selectedBrickId)!;
   activeBrickNameEl.textContent = activeDef.name;
   activeBrickSubEl.textContent = activeDef.subtitle;
   world.setGhostMode(selectedBrickId);
 }
 
-function selectBrick(id: number): void {
-  if (!world.catalog.has(id)) return;
-  selectedBrickId = id;
+function selectCategory(cat: ItemCategory, autoSelectFirst = true): void {
+  activeCategory = cat;
+  const items = getItemsByCategory(cat);
+  if (autoSelectFirst && items.length > 0 && !items.some((i) => i.id === selectedBrickId)) {
+    selectedBrickId = items[0].id;
+  }
   sound.playSelect();
-  renderHotbar();
+  renderInventoryUI();
 }
 
-renderHotbar();
+function selectBrick(id: number): void {
+  const def = world.catalog.get(id);
+  if (!def) return;
+  selectedBrickId = id;
+  activeCategory = def.category;
+  sound.playSelect();
+  renderInventoryUI();
+}
+
+renderInventoryUI();
 
 // --- Time of Day Control ---
 let currentLightingIdx = 0;
@@ -276,11 +318,15 @@ renderer.domElement.addEventListener('mousedown', (e) => {
   const target = world.currentTarget;
   if (!target) return;
 
-  // Left click: Place brick / window / door (unless Alt+Click)
+  // Left click: Place brick / slab / window / door (unless Alt+Click)
   if (e.button === 0 && !e.altKey) {
     const { x, y, z } = target.placePos;
     const twoTall = isTwoBlocksTall(selectedBrickId);
-    if (player.intersectsBrick(x, y, z) || (twoTall && player.intersectsBrick(x, y + 1, z))) {
+    const flatSlab = isFlatSlab(selectedBrickId);
+    if (
+      !flatSlab &&
+      (player.intersectsBrick(x, y, z) || (twoTall && player.intersectsBrick(x, y + 1, z)))
+    ) {
       showToast('Espace occupé par le joueur');
       return;
     }
@@ -289,7 +335,7 @@ renderer.domElement.addEventListener('mousedown', (e) => {
       player.triggerActionAnimation();
     }
   }
-  // Right click (or Alt+Left click): Remove brick / door / window
+  // Right click (or Alt+Left click): Remove element
   else if (e.button === 2 || (e.button === 0 && e.altKey)) {
     if (target.removePos) {
       const { x, y, z } = target.removePos;
@@ -311,26 +357,42 @@ window.addEventListener(
   'wheel',
   (e) => {
     if (!player.isLocked) return;
-    const total = world.catalog.size;
+    const items = getItemsByCategory(activeCategory);
+    if (items.length === 0) return;
+    const curIdx = Math.max(
+      0,
+      items.findIndex((i) => i.id === selectedBrickId)
+    );
     if (e.deltaY > 0) {
-      selectBrick((selectedBrickId % total) + 1);
+      selectBrick(items[(curIdx + 1) % items.length].id);
     } else if (e.deltaY < 0) {
-      selectBrick(((selectedBrickId - 2 + total) % total) + 1);
+      selectBrick(items[(curIdx - 1 + items.length) % items.length].id);
     }
   },
   { passive: true }
 );
 
 window.addEventListener('keydown', (e) => {
-  // Number keys 1..9
+  // Tab: Cycle Category (Briques & Murs -> Sols & Plafonds -> Portes & Fenêtres)
+  if (e.code === 'Tab') {
+    e.preventDefault();
+    const curCatIdx = CATEGORY_DEFINITIONS.findIndex((c) => c.id === activeCategory);
+    const nextCat = CATEGORY_DEFINITIONS[(curCatIdx + 1) % CATEGORY_DEFINITIONS.length];
+    selectCategory(nextCat.id, true);
+    showToast(`Catégorie : ${nextCat.icon} ${nextCat.label}`);
+    return;
+  }
+
+  // Number keys 1..6 select slot inside the active category
   if (e.code.startsWith('Digit')) {
-    const num = Number(e.code.replace('Digit', ''));
-    if (num >= 1 && num <= 9) {
-      selectBrick(num);
+    const slotNum = Number(e.code.replace('Digit', ''));
+    const items = getItemsByCategory(activeCategory);
+    if (slotNum >= 1 && slotNum <= items.length) {
+      selectBrick(items[slotNum - 1].id);
     }
   }
 
-  // Rotate door / window orientation (R)
+  // Rotate door / window / slab orientation (R)
   if (e.code === 'KeyR' && player.isLocked) {
     const step = world.rotatePlacement();
     sound.playSelect();
@@ -401,21 +463,21 @@ document.getElementById('btn-flat-empty')!.addEventListener('click', () => {
 document.getElementById('btn-starter')!.addEventListener('click', () => {
   world.loadPreset(getStarterScene(), true);
   player.resetPosition();
-  showToast('Façade avec porte en chêne et fenêtres chargée');
+  showToast('Terrasse avec sol plat, plafond, porte et fenêtres chargée');
   player.requestLock();
 });
 
 document.getElementById('btn-pavilion')!.addEventListener('click', () => {
   world.loadPreset(getWhitePavilionPreset(), true);
   player.resetPosition();
-  showToast('Maisonnette Blanche avec porte & fenêtres générée');
+  showToast('Maisonnette Blanche complète (sols, plafonds, porte & fenêtres)');
   player.requestLock();
 });
 
 document.getElementById('btn-arch')!.addEventListener('click', () => {
   world.loadPreset(getBrutalistArchPreset(), true);
   player.resetPosition();
-  showToast('Arche Blanche générée');
+  showToast('Arche Blanche avec allée en marbre générée');
   player.requestLock();
 });
 

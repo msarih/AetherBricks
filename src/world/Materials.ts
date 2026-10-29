@@ -1,7 +1,16 @@
 import * as THREE from 'three';
 
+export type ItemCategory = 'bricks' | 'slabs' | 'openings';
+
+export const CATEGORY_DEFINITIONS: { id: ItemCategory; label: string; icon: string }[] = [
+  { id: 'bricks', label: 'Briques & Murs', icon: '🧱' },
+  { id: 'slabs', label: 'Sols & Plafonds', icon: '⬛' },
+  { id: 'openings', label: 'Portes & Fenêtres', icon: '🚪' },
+];
+
 export interface BrickDefinition {
   id: number;
+  category: ItemCategory;
   name: string;
   subtitle: string;
   previewCss: string;
@@ -422,10 +431,12 @@ export function createCountrysideGrassPBR(): {
 export function createBrickCatalog(): Map<number, BrickDefinition> {
   const catalog = new Map<number, BrickDefinition>();
 
+  // --- CATÉGORIE 1 : BRIQUES & MURS ('bricks') ---
   // 1. Brique Blanche Réaliste (Maçonnerie blanchie à la chaux + joints creux)
   const whiteBrickPBR = createRealisticWhiteBrickPBR();
   catalog.set(1, {
     id: 1,
+    category: 'bricks',
     name: 'Brique Blanche Chaux',
     subtitle: 'Maçonnerie réaliste à joints creux',
     previewCss: 'linear-gradient(135deg, #ffffff 0%, #dcd8ce 100%)',
@@ -446,6 +457,7 @@ export function createBrickCatalog(): Map<number, BrickDefinition> {
   const limestone = createCutLimestonePBR('#f7f5ee');
   catalog.set(2, {
     id: 2,
+    category: 'bricks',
     name: 'Pierre Blanche Taillée',
     subtitle: 'Bloc de calcaire naturel',
     previewCss: 'linear-gradient(135deg, #faf8f2 0%, #e2dfd5 100%)',
@@ -463,6 +475,7 @@ export function createBrickCatalog(): Map<number, BrickDefinition> {
   const marble = createMarbleTexture();
   catalog.set(3, {
     id: 3,
+    category: 'bricks',
     name: 'Marbre Blanc Poli',
     subtitle: 'Pierre noble veinée à reflets',
     previewCss: 'linear-gradient(135deg, #ffffff 0%, #cbd5e1 100%)',
@@ -481,6 +494,7 @@ export function createBrickCatalog(): Map<number, BrickDefinition> {
   // 4. Brique Blanche Rustique (Ton Craie & Pierre Chaude)
   catalog.set(4, {
     id: 4,
+    category: 'bricks',
     name: 'Brique Blanche Craie',
     subtitle: 'Brique de campagne ton chaud',
     previewCss: 'linear-gradient(135deg, #fdfbf7 0%, #e5dec9 100%)',
@@ -498,6 +512,7 @@ export function createBrickCatalog(): Map<number, BrickDefinition> {
   // 5. Lanterne Blanche Architecturale
   catalog.set(5, {
     id: 5,
+    category: 'bricks',
     name: 'Brique Lumineuse',
     subtitle: 'Lanterne blanche chaude',
     previewCss: 'radial-gradient(circle, #ffffff 0%, #fef08a 100%)',
@@ -513,6 +528,7 @@ export function createBrickCatalog(): Map<number, BrickDefinition> {
   // 6. Verre Blanc Cristallin
   catalog.set(6, {
     id: 6,
+    category: 'bricks',
     name: 'Verre Cristallin',
     subtitle: 'Verre architectural translucide',
     previewCss: 'linear-gradient(135deg, rgba(255,255,255,0.95) 0%, rgba(186,230,253,0.6) 100%)',
@@ -528,9 +544,73 @@ export function createBrickCatalog(): Map<number, BrickDefinition> {
     }),
   });
 
+  // --- CATÉGORIE 2 : SOLS & PLAFONDS - CARRÉS PLATS ('slabs') ---
+  // 10. Dalle Sol Pierre Blanche
+  catalog.set(10, {
+    id: 10,
+    category: 'slabs',
+    name: 'Sol Pierre Blanche',
+    subtitle: 'Carré plat de sol en travertin blanc',
+    previewCss: 'linear-gradient(180deg, transparent 58%, #f5f3ec 58%, #d6d2c6 100%)',
+    material: new THREE.MeshStandardMaterial({ color: 0xf5f3ec }),
+  });
+
+  // 11. Dalle Sol Parquet Chêne
+  catalog.set(11, {
+    id: 11,
+    category: 'slabs',
+    name: 'Sol Parquet Chêne',
+    subtitle: 'Carré plat de plancher en chêne',
+    previewCss: 'linear-gradient(180deg, transparent 58%, #b68654 58%, #7c532d 100%)',
+    material: new THREE.MeshStandardMaterial({ color: 0x9a6b3e }),
+  });
+
+  // 12. Dalle Sol Marbre Blanc
+  catalog.set(12, {
+    id: 12,
+    category: 'slabs',
+    name: 'Sol Marbre Blanc',
+    subtitle: 'Carré plat de carrelage en marbre poli',
+    previewCss: 'linear-gradient(180deg, transparent 58%, #ffffff 58%, #cbd5e1 100%)',
+    material: new THREE.MeshStandardMaterial({ color: 0xffffff }),
+  });
+
+  // 13. Plafond Blanc Lisse
+  catalog.set(13, {
+    id: 13,
+    category: 'slabs',
+    name: 'Plafond Blanc Lisse',
+    subtitle: 'Carré plat de plafond architectural blanc',
+    previewCss: 'linear-gradient(180deg, #ffffff 0%, #cbd5e1 42%, transparent 42%)',
+    material: new THREE.MeshStandardMaterial({ color: 0xffffff }),
+  });
+
+  // 14. Plafond Caisson Lumineux
+  catalog.set(14, {
+    id: 14,
+    category: 'slabs',
+    name: 'Plafond Lumineux LED',
+    subtitle: 'Carré plat de plafond éclairant',
+    previewCss: 'linear-gradient(180deg, #fef08a 0%, #ffffff 42%, transparent 42%)',
+    isLight: true,
+    material: new THREE.MeshStandardMaterial({ color: 0xffffff }),
+  });
+
+  // 15. Plafond Bois Chêne
+  catalog.set(15, {
+    id: 15,
+    category: 'slabs',
+    name: 'Plafond Lambris Chêne',
+    subtitle: 'Carré plat de plafond en chêne chaud',
+    previewCss: 'linear-gradient(180deg, #9a6b3e 0%, #7c532d 42%, transparent 42%)',
+    material: new THREE.MeshStandardMaterial({ color: 0x9a6b3e }),
+  });
+
+  // --- CATÉGORIE 3 : PORTES & FENÊTRES ('openings') ---
   // 7. Fenêtre Croisée de Campagne (Chêne & Cadre Blanc)
   catalog.set(7, {
     id: 7,
+    category: 'openings',
     name: 'Fenêtre Croisée',
     subtitle: 'Fenêtre chêne & rebord pierre [R: Pivoter]',
     previewCss:
@@ -541,6 +621,7 @@ export function createBrickCatalog(): Map<number, BrickDefinition> {
   // 8. Baie Vitrée Blanche Architecturale
   catalog.set(8, {
     id: 8,
+    category: 'openings',
     name: 'Fenêtre Panoramique',
     subtitle: 'Châssis blanc épuré & double vitrage [R]',
     previewCss:
@@ -551,6 +632,7 @@ export function createBrickCatalog(): Map<number, BrickDefinition> {
   // 9. Porte de Campagne en Chêne & Cadre Blanc (Hauteur 2 blocs, ouvrable avec E)
   catalog.set(9, {
     id: 9,
+    category: 'openings',
     name: 'Porte de Campagne',
     subtitle: 'Porte 2m en chêne ouvrable [E: Ouvrir • R: Pivoter]',
     previewCss: 'linear-gradient(180deg, #bae6fd 0%, #bae6fd 38%, #9a6b3e 38%, #7c532d 100%)',

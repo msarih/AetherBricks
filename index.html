@@ -57,22 +57,22 @@
     <!-- HUD supérieur droit : Raccourcis rapides -->
     <div class="hud-top-right">
       <div class="shortcut-card">
-        <div><kbd>Clic Gauche</kbd> Poser brique / porte / fenêtre</div>
+        <div><kbd>Clic Gauche</kbd> Poser élément</div>
         <div><kbd>Clic Droit</kbd> Supprimer élément</div>
+        <div><kbd>Tab</kbd> Changer Catégorie (Briques / Sols / Portes)</div>
+        <div><kbd>1-6</kbd> / <kbd>Molette</kbd> Choisir dans la catégorie</div>
         <div><kbd>V</kbd> Changer Vue (3e Pers. Dos / Face / 1re Pers.)</div>
-        <div><kbd>E</kbd> Ouvrir / Fermer une porte</div>
-        <div><kbd>R</kbd> Pivoter porte / fenêtre (90°)</div>
-        <div><kbd>1-9</kbd> / <kbd>Molette</kbd> Choisir élément</div>
-        <div><kbd>F</kbd> Mode Vol • <kbd>T</kbd> Heure Solaire</div>
-        <div><kbd>Ctrl+Z</kbd> Annuler • <kbd>Échap</kbd> Menu</div>
+        <div><kbd>E</kbd> Ouvrir / Fermer porte • <kbd>R</kbd> Pivoter</div>
+        <div><kbd>F</kbd> Mode Vol • <kbd>T</kbd> Soleil • <kbd>Ctrl+Z</kbd> Annuler</div>
       </div>
     </div>
 
     <!-- Notification Toast -->
     <div id="toast" class="toast hidden"></div>
 
-    <!-- Barre d'inventaire (Hotbar) en bas -->
+    <!-- Barre d'inventaire par catégories (Hotbar) en bas -->
     <div class="hud-bottom">
+      <div id="category-tabs" class="category-tabs"></div>
       <div class="selected-brick-title">
         <span id="active-brick-name">Brique Blanche Chaux</span>
         <span id="active-brick-sub">Maçonnerie réaliste à joints creux</span>

@@ -8,50 +8,65 @@ export interface BrickEntry {
 }
 
 /**
- * Génère un petit muret de démonstration en briques blanches avec une porte en chêne et deux fenêtres
- * sur le terrain de campagne plat au lancement.
+ * Génère une terrasse en carrés plats (Dalles de sol) avec un muret en briques blanches,
+ * une porte en chêne et deux fenêtres croisées.
  */
 export function getStarterScene(): BrickEntry[] {
   const bricks: BrickEntry[] = [];
-  const z = -6;
+  const zWall = -6;
+
+  // Terrasse avant en carrés plats de Pierre Blanche (type 10) et Parquet Chêne (type 11)
+  for (let x = -3; x <= 3; x++) {
+    for (let z = -5; z <= -3; z++) {
+      bricks.push({ x, y: 0, z, type: z === -5 ? 11 : 10 });
+    }
+  }
 
   // Muret de façade en briques blanches (-3..3) avec porte centrale et 2 fenêtres croisées
   for (let x = -3; x <= 3; x++) {
     for (let y = 0; y <= 2; y++) {
-      // Emplacement de la porte centrale (x=0, y=0..1)
       if (x === 0 && (y === 0 || y === 1)) continue;
-      // Emplacements des 2 fenêtres latérales (x=-2 et x=2, y=1)
       if ((x === -2 || x === 2) && y === 1) continue;
-
-      bricks.push({ x, y, z, type: 1 });
+      bricks.push({ x, y, z: zWall, type: 1 });
     }
   }
 
-  // Ajout des 2 fenêtres croisées (type 7)
-  bricks.push({ x: -2, y: 1, z, type: 7, rot: 0 });
-  bricks.push({ x: 2, y: 1, z, type: 7, rot: 0 });
+  // Auvent de plafond en carrés plats (Plafond Blanc Lisse type 13 & Plafond Lumineux LED type 14)
+  for (let x = -3; x <= 3; x++) {
+    bricks.push({ x, y: 2, z: -5, type: x === 0 ? 14 : 13 });
+  }
 
-  // Ajout de la porte de campagne ouvrable au centre (type 9)
-  bricks.push({ x: 0, y: 0, z, type: 9, rot: 0, open: false });
+  // 2 fenêtres croisées (type 7) + 1 porte de campagne ouvrable (type 9)
+  bricks.push({ x: -2, y: 1, z: zWall, type: 7, rot: 0 });
+  bricks.push({ x: 2, y: 1, z: zWall, type: 7, rot: 0 });
+  bricks.push({ x: 0, y: 0, z: zWall, type: 9, rot: 0, open: false });
 
   return bricks;
 }
 
 /**
- * Maisonnette / Pavillon de Campagne en Briques Blanches avec Porte en Chêne et Fenêtres
+ * Maisonnette / Pavillon de Campagne en Briques Blanches avec Sol en Parquet/Pierre,
+ * Plafond en Carrés Plats + LED, Porte en Chêne et Fenêtres
  */
 export function getWhitePavilionPreset(): BrickEntry[] {
   const bricks: BrickEntry[] = [];
 
-  // Dalle de base en pierre blanche (-4..4 en X, -10..-2 en Z)
-  for (let x = -4; x <= 4; x++) {
-    for (let z = -10; z <= -2; z++) {
-      bricks.push({ x, y: 0, z, type: 2 });
+  // Sol intérieur en carrés plats (Parquet Chêne type 11 au centre, Pierre Blanche type 10 en bordure)
+  for (let x = -3; x <= 3; x++) {
+    for (let z = -9; z <= -3; z++) {
+      const isEdge = Math.abs(x) === 3 || z === -9 || z === -3;
+      bricks.push({ x, y: 0, z, type: isEdge ? 10 : 11 });
     }
   }
 
-  // Murs périmétriques en briques blanches (y = 1..4)
-  for (let y = 1; y <= 4; y++) {
+  // Terrasse d'entrée extérieure en carrés plats de Marbre Blanc (type 12)
+  for (let x = -2; x <= 2; x++) {
+    bricks.push({ x, y: 0, z: -1, type: 12 });
+    bricks.push({ x, y: 0, z: 0, type: 10 });
+  }
+
+  // Murs périmétriques en briques blanches (y = 0..3)
+  for (let y = 0; y <= 3; y++) {
     for (let x = -4; x <= 4; x++) {
       for (let z = -10; z <= -2; z++) {
         const isFront = z === -2;
@@ -60,23 +75,23 @@ export function getWhitePavilionPreset(): BrickEntry[] {
         const isRight = x === 4;
         if (!isFront && !isBack && !isLeft && !isRight) continue;
 
-        // Ouverture porte d'entrée (façade avant z = -2, x = 0, y = 1..2)
-        if (isFront && x === 0 && (y === 1 || y === 2)) continue;
+        // Ouverture porte d'entrée (façade avant z = -2, x = 0, y = 0..1)
+        if (isFront && x === 0 && (y === 0 || y === 1)) continue;
 
-        // Fenêtres en façade avant (z = -2, x = -2 et x = 2, y = 2)
-        if (isFront && (x === -2 || x === 2) && y === 2) {
+        // Fenêtres en façade avant (z = -2, x = -2 et x = 2, y = 1)
+        if (isFront && (x === -2 || x === 2) && y === 1) {
           bricks.push({ x, y, z, type: 7, rot: 0 });
           continue;
         }
 
-        // Grandes baies vitrées sur les murs latéraux (x = -4 et x = 4, z = -7..-5, y = 2..3)
-        if ((isLeft || isRight) && z >= -7 && z <= -5 && (y === 2 || y === 3)) {
+        // Grandes baies vitrées sur les murs latéraux (x = -4 et x = 4, z = -7..-5, y = 1..2)
+        if ((isLeft || isRight) && z >= -7 && z <= -5 && (y === 1 || y === 2)) {
           bricks.push({ x, y, z, type: 8, rot: 1 });
           continue;
         }
 
-        // Fenêtres mur du fond (z = -10, x = -2, 0, 2, y = 2)
-        if (isBack && (x === -2 || x === 0 || x === 2) && y === 2) {
+        // Fenêtres mur du fond (z = -10, x = -2, 0, 2, y = 1)
+        if (isBack && (x === -2 || x === 0 || x === 2) && y === 1) {
           bricks.push({ x, y, z, type: 7, rot: 0 });
           continue;
         }
@@ -86,18 +101,18 @@ export function getWhitePavilionPreset(): BrickEntry[] {
     }
   }
 
-  // Porte d'entrée en chêne sur la façade avant (z = -2, x = 0, y = 1)
-  bricks.push({ x: 0, y: 1, z: -2, type: 9, rot: 0, open: false });
+  // Porte d'entrée en chêne sur la façade avant (z = -2, x = 0, y = 0)
+  bricks.push({ x: 0, y: 0, z: -2, type: 9, rot: 0, open: false });
 
-  // Toit architectural en pierre blanche avec puits de lumière central
+  // Plafond architectural en carrés plats (y = 3 : Plafond Blanc Lisse type 13, Lambris Chêne type 15 & Caissons LED type 14)
   for (let x = -4; x <= 4; x++) {
     for (let z = -10; z <= -2; z++) {
-      if (x === 0 && z === -6) {
-        bricks.push({ x, y: 5, z, type: 5 }); // Lanterne blanche centrale
-      } else if (Math.abs(x) <= 1 && z >= -7 && z <= -5) {
-        bricks.push({ x, y: 5, z, type: 6 }); // Verrière de toit
+      if (Math.abs(x) <= 1 && Math.abs(z + 6) <= 1) {
+        bricks.push({ x, y: 3, z, type: 14 }); // Caisson lumineux central
+      } else if (Math.abs(x) <= 2 && z >= -8 && z <= -4) {
+        bricks.push({ x, y: 3, z, type: 15 }); // Plafond lambris chêne
       } else {
-        bricks.push({ x, y: 5, z, type: 2 });
+        bricks.push({ x, y: 3, z, type: 13 }); // Plafond blanc lisse
       }
     }
   }
@@ -111,6 +126,13 @@ export function getWhitePavilionPreset(): BrickEntry[] {
 export function getBrutalistArchPreset(): BrickEntry[] {
   const bricks: BrickEntry[] = [];
   const zBase = -8;
+
+  // Allée en dalles plates de marbre blanc sous l'arche
+  for (let x = -2; x <= 2; x++) {
+    for (let z = -11; z <= -5; z++) {
+      bricks.push({ x, y: 0, z, type: 12 });
+    }
+  }
 
   for (let y = 0; y <= 7; y++) {
     for (let z = zBase - 1; z <= zBase + 1; z++) {

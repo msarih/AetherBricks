@@ -7,9 +7,15 @@ import {
   BRICK_TYPE_DOOR_OAK,
   BRICK_TYPE_WINDOW_CROSS,
   BRICK_TYPE_WINDOW_MODERN,
+  SLAB_OFFSET_Y,
+  SLAB_THICKNESS,
   createCrossWindowGroup,
+  createFlatSlabMesh,
   createModernWindowGroup,
   createOakDoorGroup,
+  isCeilingSlab,
+  isFlatSlab,
+  isFloorSlab,
   isTwoBlocksTall,
 } from './ArchitecturalObjects';
 
@@ -34,7 +40,7 @@ interface ParticleBurst {
   maxAge: number;
 }
 
-const STORAGE_KEY = 'aetherbricks_world_v2';
+const STORAGE_KEY = 'aetherbricks_world_v3';
 
 export class VoxelWorld {
   public readonly scene: THREE.Scene;
@@ -48,7 +54,6 @@ export class VoxelWorld {
   });
   private readonly groundMesh: THREE.Mesh;
 
-  // Map from "x,y,z" -> PlacedItem (for 2-block-tall doors, both (x,y,z) and (x,y+1,z) point to the same PlacedItem)
   private readonly bricks = new Map<string, PlacedItem>();
   private readonly uniqueItems = new Set<PlacedItem>();
   private readonly raycaster = new THREE.Raycaster();
@@ -114,7 +119,7 @@ export class VoxelWorld {
     const ghostMat = new THREE.MeshBasicMaterial({
       color: 0xffffff,
       transparent: true,
-      opacity: 0.24,
+      opacity: 0.28,
       depthWrite: false,
     });
     this.ghostBoxMesh = new THREE.Mesh(new THREE.BoxGeometry(1.005, 1.005, 1.005), ghostMat);
@@ -131,7 +136,7 @@ export class VoxelWorld {
     this.scene.add(this.ghostGroup);
 
     this.raycaster.near = 0.1;
-    this.raycaster.far = 11.5;
+    this.raycaster.far = 14.5;
 
     // Load saved world or starter scene
     if (!this.loadFromLocalStorage()) {
@@ -140,12 +145,21 @@ export class VoxelWorld {
   }
 
   public setGhostMode(selectedType: number): void {
-    const twoTall = isTwoBlocksTall(selectedType);
-    if (twoTall) {
+    if (isTwoBlocksTall(selectedType)) {
       this.ghostBoxMesh.scale.set(1, 2, 1);
       this.ghostBoxMesh.position.set(0, 0.5, 0);
       this.ghostWireframe.scale.set(1, 2, 1);
       this.ghostWireframe.position.set(0, 0.5, 0);
+    } else if (isFloorSlab(selectedType)) {
+      this.ghostBoxMesh.scale.set(1, SLAB_THICKNESS, 1);
+      this.ghostBoxMesh.position.set(0, -SLAB_OFFSET_Y, 0);
+      this.ghostWireframe.scale.set(1, SLAB_THICKNESS, 1);
+      this.ghostWireframe.position.set(0, -SLAB_OFFSET_Y, 0);
+    } else if (isCeilingSlab(selectedType)) {
+      this.ghostBoxMesh.scale.set(1, SLAB_THICKNESS, 1);
+      this.ghostBoxMesh.position.set(0, SLAB_OFFSET_Y, 0);
+      this.ghostWireframe.scale.set(1, SLAB_THICKNESS, 1);
+      this.ghostWireframe.position.set(0, SLAB_OFFSET_Y, 0);
     } else {
       this.ghostBoxMesh.scale.set(1, 1, 1);
       this.ghostBoxMesh.position.set(0, 0, 0);
@@ -165,12 +179,16 @@ export class VoxelWorld {
 
   /**
    * Utilisé pour les collisions physiques du joueur :
-   * Une porte ouverte (`type === 9` et `open === true`) laisse passer le joueur !
+   * - Une porte ouverte laisse passer le joueur.
+   * - Une dalle plate de sol ou de plafond (`isFlatSlab`) laisse aussi circuler le joueur dans la pièce !
    */
   public hasBrickAt(x: number, y: number, z: number): boolean {
     const item = this.bricks.get(this.key(Math.round(x), Math.round(y), Math.round(z)));
     if (!item) return false;
     if (item.entry.type === BRICK_TYPE_DOOR_OAK && item.entry.open) {
+      return false;
+    }
+    if (isFlatSlab(item.entry.type)) {
       return false;
     }
     return true;
@@ -209,7 +227,21 @@ export class VoxelWorld {
     let doorPivot: THREE.Group | undefined;
     const hitProxies: THREE.Mesh[] = [];
 
-    if (def.id === BRICK_TYPE_WINDOW_CROSS) {
+    if (isFlatSlab(def.id)) {
+      const slabMesh = createFlatSlabMesh(def.id);
+      const yOffset = isFloorSlab(def.id) ? -SLAB_OFFSET_Y : SLAB_OFFSET_Y;
+      slabMesh.position.set(rx, ry + yOffset, rz);
+      slabMesh.rotation.y = (entry.rot ?? 0) * (Math.PI / 2);
+      visualRoot = slabMesh;
+      this.scene.add(slabMesh);
+
+      const proxy = new THREE.Mesh(this.proxyBoxGeo, this.proxyMat);
+      proxy.position.set(rx, ry, rz);
+      proxy.userData = { ...entry };
+      this.scene.add(proxy);
+      this.interactables.push(proxy);
+      hitProxies.push(proxy);
+    } else if (def.id === BRICK_TYPE_WINDOW_CROSS) {
       visualRoot = createCrossWindowGroup();
       visualRoot.position.set(rx, ry, rz);
       visualRoot.rotation.y = (entry.rot ?? 0) * (Math.PI / 2);
@@ -244,7 +276,6 @@ export class VoxelWorld {
       visualRoot.rotation.y = (entry.rot ?? 0) * (Math.PI / 2);
       this.scene.add(visualRoot);
 
-      // Deux boîtes de sélection (bloc bas ry et bloc haut ry+1)
       const proxyBottom = new THREE.Mesh(this.proxyBoxGeo, this.proxyMat);
       proxyBottom.position.set(rx, ry, rz);
       proxyBottom.userData = { ...entry };
