@@ -171,6 +171,11 @@ export class VoxelWorld {
     this.groundMesh.name = 'ground';
     this.scene.add(this.groundMesh);
     this.interactables.push(this.groundMesh);
+    if (this.countryside) {
+      for (const h of this.countryside.hills) {
+        this.interactables.push(h.mesh);
+      }
+    }
 
     // Ghost placement indicator
     this.ghostGroup = new THREE.Group();
@@ -458,6 +463,14 @@ export class VoxelWorld {
    * Seuls les blocs principaux ("main:x,y,z") fermés bloquent le passage.
    * Les échelles (isLadder) ne bloquent pas l'entrée dans la case afin de permettre de grimper.
    */
+  public getTerrainHeightAt(x: number, z: number): number {
+    return this.countryside ? this.countryside.getTerrainHeight(x, z) : -0.5;
+  }
+
+  public hasObstacleAt(pos: THREE.Vector3, radius: number, height: number): boolean {
+    return this.countryside ? this.countryside.hasObstacleAt(pos, radius, height) : false;
+  }
+
   public hasBrickAt(x: number, y: number, z: number): boolean {
     const rx = Math.round(x);
     const ry = Math.round(y);
@@ -887,6 +900,11 @@ export class VoxelWorld {
     this.bricks.clear();
     this.interactables.length = 0;
     this.interactables.push(this.groundMesh);
+    if (this.countryside) {
+      for (const h of this.countryside.hills) {
+        this.interactables.push(h.mesh);
+      }
+    }
     this.undoStack = [];
     this.redoStack = [];
     if (save) {
@@ -1105,10 +1123,11 @@ export class VoxelWorld {
       const normal = hit.face.normal.clone();
       normal.transformDirection(hit.object.matrixWorld).round();
 
-      if (hit.object === this.groundMesh) {
+      if (hit.object === this.groundMesh || (hit.object.userData && hit.object.userData.isHill)) {
         const px = Math.round(hit.point.x);
+        const py = Math.max(0, Math.round(hit.point.y));
         const pz = Math.round(hit.point.z);
-        const placePos = new THREE.Vector3(px, 0, pz);
+        const placePos = new THREE.Vector3(px, py, pz);
         this.currentTarget = {
           placePos,
           removePos: null,

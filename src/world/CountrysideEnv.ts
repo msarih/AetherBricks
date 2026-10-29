@@ -7,12 +7,36 @@ interface FoliageInstance {
   baseMatrix: THREE.Matrix4;
 }
 
+export interface HillObstacle {
+  hx: number;
+  hy: number;
+  hz: number;
+  rx: number;
+  ry: number;
+  rz: number;
+  mesh: THREE.Mesh;
+}
+
+export interface TreeObstacle {
+  x: number;
+  y: number;
+  z: number;
+  trunkRadius: number;
+  trunkHeight: number;
+  crownRadius: number;
+  crownMinY: number;
+  crownMaxY: number;
+}
+
 export class CountrysideEnv {
   public readonly sky: Sky;
   private readonly sunVec = new THREE.Vector3();
   private grassShaderUniforms = { uTime: { value: 0 } };
   private readonly grassMesh: THREE.InstancedMesh;
   private readonly grassInstances: FoliageInstance[] = [];
+
+  public readonly hills: HillObstacle[] = [];
+  public readonly trees: TreeObstacle[] = [];
 
   private whiteFlowersMesh!: THREE.InstancedMesh;
   private readonly whiteFlowerInstances: FoliageInstance[] = [];
@@ -328,6 +352,66 @@ export class CountrysideEnv {
     }
   }
 
+  public getTerrainHeight(x: number, z: number): number {
+    let maxHeight = -0.5;
+    for (const h of this.hills) {
+      const dx = x - h.hx;
+      const dz = z - h.hz;
+      const dSq = (dx * dx) / (h.rx * h.rx) + (dz * dz) / (h.rz * h.rz);
+      if (dSq < 1.0) {
+        const topY = h.hy + h.ry * Math.sqrt(1.0 - dSq);
+        if (topY > maxHeight) {
+          maxHeight = topY;
+        }
+      }
+    }
+    return maxHeight;
+  }
+
+  public hasObstacleAt(pos: THREE.Vector3, playerRadius: number, playerHeight: number): boolean {
+    const feetY = pos.y - playerHeight * 0.5;
+    const headY = pos.y + playerHeight * 0.5;
+
+    // 1. Collision avec les arbres naturels (troncs infranchissables et cimes denses)
+    for (const tree of this.trees) {
+      const dx = pos.x - tree.x;
+      const dz = pos.z - tree.z;
+      const distSq = dx * dx + dz * dz;
+
+      // Tronc solide infranchissable
+      const trunkCollDist = tree.trunkRadius + playerRadius;
+      if (distSq < trunkCollDist * trunkCollDist) {
+        if (feetY < tree.y + tree.trunkHeight && headY > tree.y) {
+          return true;
+        }
+      }
+
+      // Cime dense bloquante
+      const crownCollDist = tree.crownRadius + playerRadius;
+      if (distSq < crownCollDist * crownCollDist) {
+        if (headY > tree.crownMinY && feetY < tree.crownMaxY) {
+          return true;
+        }
+      }
+    }
+
+    // 2. Collision avec l'intérieur solide des collines (bloque si le corps s'enfonce sous la surface)
+    for (const h of this.hills) {
+      const dx = pos.x - h.hx;
+      const dz = pos.z - h.hz;
+      const dSq = (dx * dx) / (h.rx * h.rx) + (dz * dz) / (h.rz * h.rz);
+      if (dSq < 0.99) {
+        const topY = h.hy + h.ry * Math.sqrt(1.0 - dSq);
+        // Si le centre du corps est sous la surface supérieure de la colline
+        if (pos.y < topY) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
   private createCountrysideHorizon(): void {
     const horizonGroup = new THREE.Group();
 
@@ -341,12 +425,30 @@ export class CountrysideEnv {
     for (let i = 0; i < hillCount; i++) {
       const angle = (i / hillCount) * Math.PI * 2 + (Math.random() - 0.5) * 0.2;
       const dist = 92 + Math.random() * 25;
-      const hillGeo = new THREE.SphereGeometry(28 + Math.random() * 18, 24, 16);
+      const radius = 28 + Math.random() * 18;
+      const sx = 1.6;
+      const sy = 0.36 + Math.random() * 0.15;
+      const sz = 1.2;
+      const hillGeo = new THREE.SphereGeometry(radius, 24, 16);
       const hill = new THREE.Mesh(hillGeo, hillMat);
-      hill.scale.set(1.6, 0.36 + Math.random() * 0.15, 1.2);
-      hill.position.set(Math.cos(angle) * dist, -6, Math.sin(angle) * dist);
+      hill.scale.set(sx, sy, sz);
+      const hx = Math.cos(angle) * dist;
+      const hy = -6;
+      const hz = Math.sin(angle) * dist;
+      hill.position.set(hx, hy, hz);
       hill.receiveShadow = true;
+      hill.userData = { isHill: true };
       horizonGroup.add(hill);
+
+      this.hills.push({
+        hx,
+        hy,
+        hz,
+        rx: radius * sx,
+        ry: radius * sy,
+        rz: radius * sz,
+        mesh: hill,
+      });
     }
 
     const trunkMat = new THREE.MeshStandardMaterial({ color: 0x5c4033, roughness: 0.9 });
@@ -359,9 +461,16 @@ export class CountrysideEnv {
       const dist = 38 + Math.random() * 38;
       const tx = Math.cos(angle) * dist;
       const tz = Math.sin(angle) * dist;
+      const groundY = this.getTerrainHeight(tx, tz);
 
       const tree = new THREE.Group();
       const scale = 0.85 + Math.random() * 0.7;
+
+      const trunkHeight = 2.4 * scale;
+      const trunkRadius = 0.38 * scale;
+      const crownRadius = 1.8 * scale;
+      const crownMinY = groundY + 1.8 * scale;
+      const crownMaxY = groundY + 5.0 * scale;
 
       const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.35, 2.6, 7), trunkMat);
       trunk.position.y = 0.8;
@@ -382,9 +491,20 @@ export class CountrysideEnv {
       subCrown.castShadow = true;
       tree.add(subCrown);
 
-      tree.position.set(tx, 0, tz);
+      tree.position.set(tx, groundY, tz);
       tree.scale.setScalar(scale);
       horizonGroup.add(tree);
+
+      this.trees.push({
+        x: tx,
+        y: groundY,
+        z: tz,
+        trunkRadius,
+        trunkHeight,
+        crownRadius,
+        crownMinY,
+        crownMaxY,
+      });
     }
 
     this.scene.add(horizonGroup);
