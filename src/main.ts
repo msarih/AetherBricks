@@ -439,6 +439,7 @@ window.addEventListener('contextmenu', (e) => e.preventDefault());
 let isHoldingBuild = false;
 let isHoldingRemove = false;
 let lastDragPlacePos: THREE.Vector3 | null = null;
+let lastDragRemovePos: THREE.Vector3 | null = null;
 let lastBuildSoundTime = 0;
 
 function canPlaceElementAt(x: number, y: number, z: number): boolean {
@@ -457,6 +458,7 @@ function stopDragActions(): void {
     world.endDragStroke();
   }
   isHoldingRemove = false;
+  lastDragRemovePos = null;
 }
 
 window.addEventListener('mouseup', () => {
@@ -495,6 +497,7 @@ renderer.domElement.addEventListener('mousedown', (e) => {
   } else if (e.button === 2 || (e.button === 0 && e.altKey)) {
     isHoldingRemove = true;
     if (target.removePos) {
+      lastDragRemovePos = target.removePos.clone();
       const { x, y, z } = target.removePos;
       if (world.removeBrick(x, y, z, true, true)) {
         sound.playRemove();
@@ -783,12 +786,15 @@ function animate(now: number): void {
       }
     }
   } else if (player.isLocked && isHoldingRemove && world.currentTarget?.removePos) {
-    if (now - lastBuildSoundTime > 95) {
-      const { x, y, z } = world.currentTarget.removePos;
-      if (world.removeBrick(x, y, z, true, true)) {
+    const curRemPos = world.currentTarget.removePos;
+    const fromRemPos = lastDragRemovePos ?? curRemPos;
+    const removed = world.removeLine(fromRemPos, curRemPos);
+    lastDragRemovePos = curRemPos.clone();
+    if (removed > 0) {
+      player.triggerActionAnimation();
+      if (now - lastBuildSoundTime > 55) {
         sound.playRemove();
         lastBuildSoundTime = now;
-        player.triggerActionAnimation();
       }
     }
   }

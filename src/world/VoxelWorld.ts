@@ -241,6 +241,39 @@ export class VoxelWorld {
     return placedCount;
   }
 
+  /**
+   * Supprime en masse sur toute la ligne balayée par la souris entre `from` et `to`.
+   */
+  public removeLine(from: THREE.Vector3, to: THREE.Vector3): number {
+    const x0 = Math.round(from.x);
+    const y0 = Math.round(from.y);
+    const z0 = Math.round(from.z);
+    const x1 = Math.round(to.x);
+    const y1 = Math.round(to.y);
+    const z1 = Math.round(to.z);
+
+    const dx = x1 - x0;
+    const dy = y1 - y0;
+    const dz = z1 - z0;
+    const steps = Math.max(Math.abs(dx), Math.abs(dy), Math.abs(dz));
+
+    if (steps === 0 || steps > 18) {
+      return this.removeBrick(x1, y1, z1, true, true) ? 1 : 0;
+    }
+
+    let removedCount = 0;
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      const cx = Math.round(x0 + dx * t);
+      const cy = Math.round(y0 + dy * t);
+      const cz = Math.round(z0 + dz * t);
+      if (this.removeBrick(cx, cy, cz, true, i === steps)) {
+        removedCount++;
+      }
+    }
+    return removedCount;
+  }
+
   private key(x: number, y: number, z: number): string {
     return `${x},${y},${z}`;
   }
