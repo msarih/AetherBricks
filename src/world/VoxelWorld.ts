@@ -1,10 +1,18 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
-import { BrickDefinition, createBrickCatalog, createCountrysideGrassPBR } from './Materials';
+import {
+  BrickDefinition,
+  createBrickCatalog,
+  createCountrysideGrassPBR,
+  applyPaintToVisual,
+} from './Materials';
 import { BrickEntry, getStarterScene } from './Presets';
 import { CountrysideEnv } from './CountrysideEnv';
 import {
+  BRICK_TYPE_DIRT,
   BRICK_TYPE_DOOR_OAK,
+  BRICK_TYPE_GRASS_BLOCK,
+  BRICK_TYPE_STONE,
   BRICK_TYPE_WINDOW_CROSS,
   BRICK_TYPE_WINDOW_FRAMELESS,
   BRICK_TYPE_WINDOW_MODERN,
@@ -69,8 +77,10 @@ import {
 } from './ArchitecturalObjects';
 
 interface HistoryAction {
-  kind: 'place' | 'remove';
+  kind: 'place' | 'remove' | 'paint';
   entry: BrickEntry;
+  prevColor?: string;
+  prevPattern?: string;
 }
 
 interface PlacedItem {
@@ -104,6 +114,14 @@ export class VoxelWorld {
     depthWrite: false,
   });
   private readonly groundMesh: THREE.Mesh;
+
+  // Système d'excavation de terre (creusement Minecraft avec masque transparent dynamique)
+  private readonly maskSize = 512;
+  private readonly maskCanvas = document.createElement('canvas');
+  private readonly maskCtx: CanvasRenderingContext2D;
+  private readonly maskTexture: THREE.CanvasTexture;
+  public readonly dugColumns = new Set<string>(); // "x,z"
+  public readonly dugVoxels = new Set<string>(); // "x,y,z"
 
   // Map from slotKey ("main:x,y,z" | "floor:x,y,z" | "ceil:x,y,z") -> PlacedItem
   private readonly bricks = new Map<string, PlacedItem>();
@@ -152,6 +170,17 @@ export class VoxelWorld {
     // High-resolution beveled cube geometry (4 segments, 3.2cm chamfer)
     this.brickGeo = new RoundedBoxGeometry(1, 1, 1, 4, 0.032);
 
+    // Initialisation du masque de sol pour l'excavation Minecraft
+    this.maskCanvas.width = this.maskSize;
+    this.maskCanvas.height = this.maskSize;
+    this.maskCtx = this.maskCanvas.getContext('2d')!;
+    this.maskCtx.fillStyle = '#ffffff';
+    this.maskCtx.fillRect(0, 0, this.maskSize, this.maskSize);
+
+    this.maskTexture = new THREE.CanvasTexture(this.maskCanvas);
+    this.maskTexture.minFilter = THREE.NearestFilter;
+    this.maskTexture.magFilter = THREE.NearestFilter;
+
     // Immense prairie infinie (4000m x 4000m) avec PBR Albedo + Normal + Roughness
     const grassPBR = createCountrysideGrassPBR();
     const groundGeo = new THREE.PlaneGeometry(4000, 4000);
@@ -164,6 +193,38 @@ export class VoxelWorld {
       roughness: 0.88,
       metalness: 0.01,
     });
+
+    // Shader hook pour découper les trous creusés dans le sol en direct
+    groundMat.onBeforeCompile = (shader) => {
+      shader.uniforms.uHoleMask = { value: this.maskTexture };
+      shader.vertexShader = `
+        varying vec3 vWorldPos;
+        ${shader.vertexShader}
+      `.replace(
+        '#include <worldpos_vertex>',
+        `
+        #include <worldpos_vertex>
+        vWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;
+        `
+      );
+      shader.fragmentShader = `
+        uniform sampler2D uHoleMask;
+        varying vec3 vWorldPos;
+        ${shader.fragmentShader}
+      `.replace(
+        '#include <dithering_fragment>',
+        `
+        #include <dithering_fragment>
+        vec2 maskCoord = vWorldPos.xz / 512.0 + 0.5;
+        if (maskCoord.x >= 0.0 && maskCoord.x <= 1.0 && maskCoord.y >= 0.0 && maskCoord.y <= 1.0) {
+          vec4 holeSample = texture2D(uHoleMask, maskCoord);
+          if (holeSample.r < 0.5) {
+            discard;
+          }
+        }
+        `
+      );
+    };
 
     this.groundMesh = new THREE.Mesh(groundGeo, groundMat);
     this.groundMesh.position.set(0, -0.5, 0);
@@ -458,12 +519,117 @@ export class VoxelWorld {
     return count;
   }
 
+  public setGroundHoleMask(x: number, z: number, isHole: boolean): void {
+    const px = Math.floor(x + 256);
+    const pz = Math.floor(z + 256);
+    if (px >= 0 && px < this.maskSize && pz >= 0 && pz < this.maskSize) {
+      this.maskCtx.fillStyle = isHole ? '#000000' : '#ffffff';
+      this.maskCtx.fillRect(px, pz, 1, 1);
+      this.maskTexture.needsUpdate = true;
+    }
+  }
+
+  /**
+   * Creuse la terre naturelle comme dans Minecraft.
+   * Découpe un trou dans la surface herbeuse et matérialise les parois et le fond en terre/roche.
+   */
+  public digGroundAt(x: number, y: number, z: number): boolean {
+    const rx = Math.round(x);
+    const ry = Math.round(y);
+    const rz = Math.round(z);
+    const k = `${rx},${ry},${rz}`;
+    if (this.dugVoxels.has(k)) return false;
+
+    this.dugVoxels.add(k);
+    if (ry >= 0) {
+      this.dugColumns.add(`${rx},${rz}`);
+      this.setGroundHoleMask(rx, rz, true);
+      this.countryside?.syncGrassAt(rx, rz, true);
+    }
+
+    // Poser le sol de terre/roche au fond du trou (ry - 1)
+    const floorY = ry - 1;
+    if (!this.hasBrickAt(rx, floorY, rz) && !this.dugVoxels.has(`${rx},${floorY},${rz}`)) {
+      const bottomType = floorY <= -3 ? BRICK_TYPE_STONE : BRICK_TYPE_DIRT;
+      this.setBrick(rx, floorY, rz, bottomType, false, false);
+    }
+
+    // Parois de terre sur les 4 côtés
+    const neighbors = [
+      [rx + 1, rz],
+      [rx - 1, rz],
+      [rx, rz + 1],
+      [rx, rz - 1],
+    ];
+    for (const [nx, nz] of neighbors) {
+      if (!this.dugColumns.has(`${nx},${nz}`) && !this.hasBrickAt(nx, ry, nz)) {
+        this.setBrick(nx, ry, nz, ry === 0 ? BRICK_TYPE_GRASS_BLOCK : BRICK_TYPE_DIRT, false, false);
+      }
+    }
+
+    this.spawnBurst(new THREE.Vector3(rx, ry, rz), 18);
+    this.recordHistoryAction({
+      kind: 'remove',
+      entry: { x: rx, y: ry, z: rz, type: BRICK_TYPE_DIRT },
+    });
+
+    this.saveToLocalStorage();
+    this.onWorldChanged?.();
+    return true;
+  }
+
+  /**
+   * Peint un mur ou élément avec une couleur et un motif décoratif.
+   */
+  public paintBrickAt(
+    x: number,
+    y: number,
+    z: number,
+    color: string,
+    pattern = 'plain',
+    recordHistory = true
+  ): boolean {
+    const item = this.findAnyItemAt(x, y, z);
+    if (!item) return false;
+
+    const prevColor = item.entry.color;
+    const prevPattern = item.entry.pattern;
+
+    item.entry.color = color;
+    item.entry.pattern = pattern;
+
+    applyPaintToVisual(item.visualRoot, color, pattern);
+
+    if (recordHistory) {
+      this.recordHistoryAction({
+        kind: 'paint',
+        entry: { ...item.entry },
+        prevColor,
+        prevPattern,
+      });
+      this.saveToLocalStorage();
+    }
+
+    this.onWorldChanged?.();
+    return true;
+  }
+
   /**
    * Utilisé pour les collisions physiques du joueur :
    * Seuls les blocs principaux ("main:x,y,z") fermés bloquent le passage.
    * Les échelles (isLadder) ne bloquent pas l'entrée dans la case afin de permettre de grimper.
    */
   public getTerrainHeightAt(x: number, z: number): number {
+    const rx = Math.round(x);
+    const rz = Math.round(z);
+    if (this.dugColumns.has(`${rx},${rz}`)) {
+      for (let y = 0; y >= -25; y--) {
+        if (this.hasBrickAt(rx, y, rz)) {
+          return y + 0.5;
+        }
+      }
+      return -1.5;
+    }
     return this.countryside ? this.countryside.getTerrainHeight(x, z) : -0.5;
   }
 
@@ -530,12 +696,14 @@ export class VoxelWorld {
     recordHistory = true,
     spawnParticles = false,
     rot = this.rotationStep,
-    open = false
+    open = false,
+    color?: string,
+    pattern?: string
   ): boolean {
     const rx = Math.round(x);
     const ry = Math.round(y);
     const rz = Math.round(z);
-    if (ry < 0 || ry > 120) return false;
+    if (ry < -32 || ry > 120) return false;
 
     const k1 = this.slotKeyForType(rx, ry, rz, type);
     if (this.bricks.has(k1)) return false;
@@ -545,7 +713,7 @@ export class VoxelWorld {
     if (twoTall && this.bricks.has(k2)) return false;
 
     const def = this.catalog.get(type) ?? this.catalog.get(1)!;
-    const entry: BrickEntry = { x: rx, y: ry, z: rz, type: def.id, rot: rot % 4, open };
+    const entry: BrickEntry = { x: rx, y: ry, z: rz, type: def.id, rot: rot % 4, open, color, pattern };
 
     let visualRoot: THREE.Object3D;
     let doorPivot: THREE.Group | undefined;
@@ -748,12 +916,22 @@ export class VoxelWorld {
       this.scene.add(light);
     }
 
+    if (color || pattern) {
+      applyPaintToVisual(visualRoot, color ?? '#f8fafc', pattern ?? 'plain');
+    }
+
     const placed: PlacedItem = { slotKey: k1, visualRoot, hitProxies, entry, light, doorPivot };
     this.uniqueItems.add(placed);
     this.bricks.set(k1, placed);
     if (twoTall) {
       this.bricks.set(k2, placed);
     }
+
+    if (ry >= 0 && this.dugColumns.has(`${rx},${rz}`)) {
+      this.dugColumns.delete(`${rx},${rz}`);
+      this.setGroundHoleMask(rx, rz, false);
+    }
+    this.dugVoxels.delete(`${rx},${ry},${rz}`);
 
     if (ry === 0) {
       this.countryside?.syncGrassAt(rx, rz, true);
@@ -788,7 +966,13 @@ export class VoxelWorld {
     preferredType?: number | null
   ): boolean {
     const existing = this.findAnyItemAt(x, y, z, preferredType);
-    if (!existing) return false;
+    if (!existing) {
+      // Si aucun bloc n'est posé et qu'on vise le sol ou sous-sol, on creuse la terre (comme Minecraft !)
+      if (Math.round(y) <= 0) {
+        return this.digGroundAt(x, y, z);
+      }
+      return false;
+    }
 
     const baseEntry = existing.entry;
     this.scene.remove(existing.visualRoot);
@@ -808,6 +992,14 @@ export class VoxelWorld {
     this.bricks.delete(existing.slotKey);
     if (isTwoBlocksTall(baseEntry.type)) {
       this.bricks.delete(`main:${baseEntry.x},${baseEntry.y + 1},${baseEntry.z}`);
+    }
+
+    if (baseEntry.y < 0) {
+      this.dugVoxels.add(`${baseEntry.x},${baseEntry.y},${baseEntry.z}`);
+    }
+    if (baseEntry.y === 0) {
+      this.dugColumns.add(`${baseEntry.x},${baseEntry.z}`);
+      this.setGroundHoleMask(baseEntry.x, baseEntry.z, true);
     }
 
     if (baseEntry.y === 0 && !this.hasAnyGroundItemAt(baseEntry.x, baseEntry.z)) {
@@ -834,7 +1026,7 @@ export class VoxelWorld {
       const action = batch[i];
       if (action.kind === 'place') {
         this.removeBrick(action.entry.x, action.entry.y, action.entry.z, false, i === 0, action.entry.type);
-      } else {
+      } else if (action.kind === 'remove') {
         this.setBrick(
           action.entry.x,
           action.entry.y,
@@ -843,8 +1035,24 @@ export class VoxelWorld {
           false,
           i === 0,
           action.entry.rot ?? 0,
-          action.entry.open ?? false
+          action.entry.open ?? false,
+          action.entry.color,
+          action.entry.pattern
         );
+      } else if (action.kind === 'paint') {
+        if (action.prevColor) {
+          this.paintBrickAt(action.entry.x, action.entry.y, action.entry.z, action.prevColor, action.prevPattern ?? 'plain', false);
+        } else {
+          const it = this.findAnyItemAt(action.entry.x, action.entry.y, action.entry.z);
+          if (it) {
+            delete it.entry.color;
+            delete it.entry.pattern;
+            const def = this.catalog.get(it.entry.type);
+            if (def && it.visualRoot instanceof THREE.Mesh) {
+              it.visualRoot.material = def.material;
+            }
+          }
+        }
       }
     }
     this.redoStack.push(batch);
@@ -867,9 +1075,11 @@ export class VoxelWorld {
           false,
           i === batch.length - 1,
           action.entry.rot ?? 0,
-          action.entry.open ?? false
+          action.entry.open ?? false,
+          action.entry.color,
+          action.entry.pattern
         );
-      } else {
+      } else if (action.kind === 'remove') {
         this.removeBrick(
           action.entry.x,
           action.entry.y,
@@ -877,6 +1087,15 @@ export class VoxelWorld {
           false,
           i === batch.length - 1,
           action.entry.type
+        );
+      } else if (action.kind === 'paint') {
+        this.paintBrickAt(
+          action.entry.x,
+          action.entry.y,
+          action.entry.z,
+          action.entry.color ?? '#f8fafc',
+          action.entry.pattern ?? 'plain',
+          false
         );
       }
     }
@@ -898,6 +1117,12 @@ export class VoxelWorld {
     }
     this.uniqueItems.clear();
     this.bricks.clear();
+    this.dugColumns.clear();
+    this.dugVoxels.clear();
+    this.maskCtx.fillStyle = '#ffffff';
+    this.maskCtx.fillRect(0, 0, this.maskSize, this.maskSize);
+    this.maskTexture.needsUpdate = true;
+
     this.interactables.length = 0;
     this.interactables.push(this.groundMesh);
     if (this.countryside) {
@@ -915,7 +1140,11 @@ export class VoxelWorld {
   public loadPreset(entries: BrickEntry[], save = true): void {
     this.clearAll(false);
     for (const e of entries) {
-      this.setBrick(e.x, e.y, e.z, e.type, false, false, e.rot ?? 0, e.open ?? false);
+      if (e.y < 0) {
+        this.dugColumns.add(`${e.x},${e.z}`);
+        this.setGroundHoleMask(e.x, e.z, true);
+      }
+      this.setBrick(e.x, e.y, e.z, e.type, false, false, e.rot ?? 0, e.open ?? false, e.color, e.pattern);
     }
     if (save) {
       this.saveToLocalStorage();
@@ -1117,7 +1346,20 @@ export class VoxelWorld {
     }
 
     const rawHits = this.raycaster.intersectObjects(this.interactables, false);
-    const hit = rawHits.find((h) => h.distance >= minValidDist);
+    let hit: THREE.Intersection | undefined;
+    for (const h of rawHits) {
+      if (h.distance < minValidDist) continue;
+      if (h.object === this.groundMesh) {
+        const px = Math.round(h.point.x);
+        const pz = Math.round(h.point.z);
+        if (this.dugColumns.has(`${px},${pz}`)) {
+          // Sol creusé : le rayon passe à travers le trou transparent pour viser le fond !
+          continue;
+        }
+      }
+      hit = h;
+      break;
+    }
 
     if (hit && hit.face) {
       const normal = hit.face.normal.clone();
@@ -1128,11 +1370,12 @@ export class VoxelWorld {
         const py = Math.max(0, Math.round(hit.point.y));
         const pz = Math.round(hit.point.z);
         const placePos = new THREE.Vector3(px, py, pz);
+        const removePos = new THREE.Vector3(px, py, pz);
         this.currentTarget = {
           placePos,
-          removePos: null,
-          removeType: null,
-          hitBrickType: null,
+          removePos,
+          removeType: BRICK_TYPE_DIRT,
+          hitBrickType: BRICK_TYPE_GRASS_BLOCK,
           isDoorHit: false,
         };
       } else {

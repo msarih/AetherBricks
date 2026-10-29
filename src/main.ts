@@ -4,7 +4,7 @@ import { VoxelWorld } from './world/VoxelWorld';
 import { CountrysideEnv } from './world/CountrysideEnv';
 import { PlayerController, CameraViewMode } from './player/PlayerController';
 import { SoundManager } from './audio/SoundManager';
-import { isFlatSlab, isTwoBlocksTall } from './world/ArchitecturalObjects';
+import { isFlatSlab, isTwoBlocksTall, BRICK_TYPE_DIRT } from './world/ArchitecturalObjects';
 import { BrickDefinition, CATEGORY_DEFINITIONS, ItemCategory } from './world/Materials';
 import {
   BrickEntry,
@@ -563,7 +563,11 @@ window.addEventListener('blur', () => {
   stopDragActions();
 });
 
-// --- Tools: Pipette, Box Fill, Ruler, Photo Mode & 3D Export ---
+// --- Tools: Peinture, Pipette, Box Fill, Ruler, Photo Mode & 3D Export ---
+let isPaintMode = false;
+let selectedPaintColor = '#f8fafc';
+let selectedPaintPattern = 'plain';
+
 let isBoxMode = false;
 let boxCornerA: THREE.Vector3 | null = null;
 let isRulerMode = false;
@@ -571,6 +575,86 @@ let isPhotoMode = false;
 
 const toolStatusBarEl = document.getElementById('tool-status-bar')!;
 const photoModeBarEl = document.getElementById('photo-mode-bar')!;
+const paintBarEl = document.getElementById('paint-bar')!;
+const toolPaintBtn = document.getElementById('tool-paint')!;
+const btnClosePaint = document.getElementById('btn-close-paint')!;
+const paintColorPicker = document.getElementById('paint-color-picker') as HTMLInputElement;
+const paintSwatchesEl = document.getElementById('paint-swatches')!;
+const paintPatternsEl = document.getElementById('paint-patterns')!;
+
+const PAINT_SWATCH_COLORS = [
+  '#f8fafc',
+  '#fef3c7',
+  '#c2410c',
+  '#4d7c0f',
+  '#1e3a8a',
+  '#334155',
+  '#d97706',
+  '#f472b6',
+  '#15803d',
+  '#7c3aed',
+];
+
+function initPaintPalette(): void {
+  if (!paintSwatchesEl) return;
+  paintSwatchesEl.innerHTML = '';
+  for (const col of PAINT_SWATCH_COLORS) {
+    const sw = document.createElement('button');
+    sw.className = `paint-swatch ${col === selectedPaintColor ? 'active' : ''}`;
+    sw.style.backgroundColor = col;
+    sw.title = `Couleur ${col}`;
+    sw.addEventListener('click', (e) => {
+      e.stopPropagation();
+      selectedPaintColor = col;
+      if (paintColorPicker) paintColorPicker.value = col;
+      document.querySelectorAll('.paint-swatch').forEach((s) => s.classList.remove('active'));
+      sw.classList.add('active');
+      sound.playSelect();
+      toolStatusBarEl.textContent = `🖌️ Mode Peinture : Visez et cliquez pour peindre (${selectedPaintPattern} - ${selectedPaintColor})`;
+    });
+    paintSwatchesEl.appendChild(sw);
+  }
+
+  paintColorPicker?.addEventListener('input', (e) => {
+    selectedPaintColor = (e.target as HTMLInputElement).value;
+    document.querySelectorAll('.paint-swatch').forEach((s) => s.classList.remove('active'));
+    toolStatusBarEl.textContent = `🖌️ Mode Peinture : Visez et cliquez pour peindre (${selectedPaintPattern} - ${selectedPaintColor})`;
+  });
+
+  paintPatternsEl?.querySelectorAll('.paint-pattern-btn').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      paintPatternsEl.querySelectorAll('.paint-pattern-btn').forEach((b) => b.classList.remove('active'));
+      (btn as HTMLElement).classList.add('active');
+      selectedPaintPattern = (btn as HTMLElement).dataset.pattern || 'plain';
+      sound.playSelect();
+      toolStatusBarEl.textContent = `🖌️ Mode Peinture : Visez et cliquez pour peindre (${selectedPaintPattern} - ${selectedPaintColor})`;
+      showToast(`Motif choisi : ${(btn as HTMLElement).textContent?.trim()}`);
+    });
+  });
+}
+
+initPaintPalette();
+
+function togglePaintMode(force?: boolean): void {
+  isPaintMode = force !== undefined ? force : !isPaintMode;
+  if (isPaintMode) {
+    isBoxMode = false;
+    isRulerMode = false;
+    boxCornerA = null;
+    document.getElementById('tool-box')?.classList.remove('active');
+    document.getElementById('tool-ruler')?.classList.remove('active');
+  }
+  paintBarEl?.classList.toggle('hidden', !isPaintMode);
+  toolPaintBtn?.classList.toggle('active', isPaintMode);
+  toolStatusBarEl.classList.toggle('hidden', !isPaintMode && !isBoxMode && !isRulerMode);
+  if (isPaintMode) {
+    toolStatusBarEl.textContent = `🖌️ Mode Peinture : Visez et cliquez sur un mur pour peindre (${selectedPaintPattern} - ${selectedPaintColor})`;
+    showToast('🖌️ Atelier Peinture activé : Cliquez sur un mur pour le peindre');
+  } else {
+    showToast('Atelier Peinture fermé');
+  }
+}
 
 function pickTargetBrick(): void {
   const target = world.currentTarget;
@@ -585,7 +669,8 @@ function pickTargetBrick(): void {
 function toggleBoxMode(): void {
   isBoxMode = !isBoxMode;
   boxCornerA = null;
-  toolStatusBarEl.classList.toggle('hidden', !isBoxMode && !isRulerMode);
+  if (isBoxMode && isPaintMode) togglePaintMode(false);
+  toolStatusBarEl.classList.toggle('hidden', !isBoxMode && !isRulerMode && !isPaintMode);
   document.getElementById('tool-box')?.classList.toggle('active', isBoxMode);
   if (isBoxMode) {
     toolStatusBarEl.textContent = '📦 Mode Boîte : Cliquez pour définir le 1er coin (A)';
@@ -597,7 +682,8 @@ function toggleBoxMode(): void {
 
 function toggleRulerMode(): void {
   isRulerMode = !isRulerMode;
-  toolStatusBarEl.classList.toggle('hidden', !isBoxMode && !isRulerMode);
+  if (isRulerMode && isPaintMode) togglePaintMode(false);
+  toolStatusBarEl.classList.toggle('hidden', !isBoxMode && !isRulerMode && !isPaintMode);
   document.getElementById('tool-ruler')?.classList.toggle('active', isRulerMode);
   if (isRulerMode) {
     showToast('📏 Mode Règle activé : Visez un bloc pour mesurer');
@@ -623,6 +709,8 @@ function exportWorldOBJ(): void {
 }
 
 // Tool button listeners
+toolPaintBtn?.addEventListener('click', () => togglePaintMode());
+btnClosePaint?.addEventListener('click', () => togglePaintMode(false));
 document.getElementById('tool-pipette')?.addEventListener('click', pickTargetBrick);
 document.getElementById('tool-box')?.addEventListener('click', toggleBoxMode);
 document.getElementById('tool-ruler')?.addEventListener('click', toggleRulerMode);
@@ -709,6 +797,21 @@ renderer.domElement.addEventListener('mousedown', (e) => {
     }
   }
 
+  // Mode Peinture : peindre le mur visé au clic gauche
+  if (isPaintMode && e.button === 0) {
+    if (target.removePos) {
+      isHoldingBuild = true;
+      const { x, y, z } = target.removePos;
+      if (world.paintBrickAt(x, y, z, selectedPaintColor, selectedPaintPattern)) {
+        sound.playPaint();
+        lastBuildSoundTime = performance.now();
+        player.triggerActionAnimation();
+        showToast(`Mur peint (${selectedPaintPattern})`);
+      }
+    }
+    return;
+  }
+
   // Left click: Place element & begin hold-to-mass-build stroke
   if (e.button === 0 && !e.altKey) {
     const { x, y, z } = target.placePos;
@@ -732,7 +835,11 @@ renderer.domElement.addEventListener('mousedown', (e) => {
       lastDragRemovePos = target.removePos.clone();
       const { x, y, z } = target.removePos;
       if (world.removeBrick(x, y, z, true, true, target.removeType)) {
-        sound.playRemove();
+        if (target.removeType === BRICK_TYPE_DIRT) {
+          sound.playDig();
+        } else {
+          sound.playRemove();
+        }
         lastBuildSoundTime = performance.now();
         player.triggerActionAnimation();
       }
@@ -890,6 +997,10 @@ window.addEventListener('keydown', (e) => {
 
   if (e.code === 'KeyC' && player.isLocked) {
     pickTargetBrick();
+  }
+
+  if (e.code === 'KeyR' && player.isLocked) {
+    togglePaintMode();
   }
 
   if (e.code === 'KeyB' && player.isLocked) {
@@ -1089,8 +1200,19 @@ function animate(now: number): void {
     toolStatusBarEl.textContent = `📏 Mesure : ΔX = ${dx}m • ΔY = ${dy}m • ΔZ = ${dz}m (Distance : ${dist}m)`;
   }
 
-  // Mass creation / removal while holding mouse button and moving the mouse
-  if (player.isLocked && isHoldingBuild && world.currentTarget) {
+  // Mass painting / creation / removal while holding mouse button and moving the mouse
+  if (player.isLocked && isHoldingBuild && isPaintMode && world.currentTarget?.removePos) {
+    const curPos = world.currentTarget.removePos;
+    if (!lastDragPlacePos || !lastDragPlacePos.equals(curPos)) {
+      world.paintBrickAt(curPos.x, curPos.y, curPos.z, selectedPaintColor, selectedPaintPattern);
+      lastDragPlacePos = curPos.clone();
+      player.triggerActionAnimation();
+      if (now - lastBuildSoundTime > 65) {
+        sound.playPaint();
+        lastBuildSoundTime = now;
+      }
+    }
+  } else if (player.isLocked && isHoldingBuild && world.currentTarget) {
     const curPos = world.currentTarget.placePos;
     if (!lastDragPlacePos || !lastDragPlacePos.equals(curPos)) {
       const fromPos = lastDragPlacePos ?? curPos;
@@ -1112,7 +1234,11 @@ function animate(now: number): void {
     if (removed > 0) {
       player.triggerActionAnimation();
       if (now - lastBuildSoundTime > 55) {
-        sound.playRemove();
+        if (world.currentTarget?.removeType === BRICK_TYPE_DIRT) {
+          sound.playDig();
+        } else {
+          sound.playRemove();
+        }
         lastBuildSoundTime = now;
       }
     }

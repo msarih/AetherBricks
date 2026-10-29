@@ -439,6 +439,382 @@ export function createCountrysideGrassPBR(): {
   return { albedo, normal, roughness };
 }
 
+const paintedMaterialCache = new Map<string, THREE.MeshStandardMaterial>();
+
+export function getOrCreatePaintedMaterial(
+  colorHex = '#f8fafc',
+  pattern = 'plain'
+): THREE.MeshStandardMaterial {
+  const normColor = colorHex.toLowerCase();
+  const normPattern = pattern.toLowerCase();
+  const cacheKey = `${normColor}:${normPattern}`;
+  const existing = paintedMaterialCache.get(cacheKey);
+  if (existing) return existing;
+
+  const size = 512;
+  const canvas = document.createElement('canvas');
+  const hCanvas = document.createElement('canvas');
+  canvas.width = hCanvas.width = size;
+  canvas.height = hCanvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+  const hCtx = hCanvas.getContext('2d')!;
+
+  const baseCol = new THREE.Color(normColor);
+  const darkCol = baseCol.clone().offsetHSL(0, 0, -0.15);
+  const lightCol = baseCol.clone().offsetHSL(0, 0, 0.12);
+
+  ctx.fillStyle = normColor;
+  ctx.fillRect(0, 0, size, size);
+  hCtx.fillStyle = '#808080';
+  hCtx.fillRect(0, 0, size, size);
+
+  let roughness = 0.72;
+  let normalStrength = 2.4;
+
+  switch (normPattern) {
+    case 'stripes': {
+      // Rayures verticales élégantes bicolores style haussmannien
+      const stripeW = 32;
+      for (let x = 0; x < size; x += stripeW * 2) {
+        ctx.fillStyle = '#' + darkCol.getHexString();
+        ctx.fillRect(x, 0, stripeW, size);
+
+        // Ligne de liseré fin
+        ctx.fillStyle = '#' + lightCol.getHexString();
+        ctx.fillRect(x + stripeW - 2, 0, 2, size);
+
+        hCtx.fillStyle = '#606060';
+        hCtx.fillRect(x, 0, stripeW, size);
+        hCtx.fillStyle = '#b0b0b0';
+        hCtx.fillRect(x + stripeW - 2, 0, 2, size);
+      }
+      roughness = 0.62;
+      normalStrength = 1.8;
+      break;
+    }
+    case 'floral': {
+      // Motif damas baroque floral
+      const step = 64;
+      ctx.fillStyle = '#' + lightCol.getHexString();
+      hCtx.fillStyle = '#b8b8b8';
+      for (let y = 0; y < size; y += step) {
+        for (let x = 0; x < size; x += step) {
+          const cx = x + step / 2;
+          const cy = y + step / 2;
+          ctx.beginPath();
+          ctx.arc(cx, cy, 14, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.beginPath();
+          ctx.ellipse(cx, cy - 18, 6, 12, 0, 0, Math.PI * 2);
+          ctx.ellipse(cx, cy + 18, 6, 12, 0, 0, Math.PI * 2);
+          ctx.ellipse(cx - 18, cy, 12, 6, 0, 0, Math.PI * 2);
+          ctx.ellipse(cx + 18, cy, 12, 6, 0, 0, Math.PI * 2);
+          ctx.fill();
+
+          hCtx.beginPath();
+          hCtx.arc(cx, cy, 14, 0, Math.PI * 2);
+          hCtx.fill();
+          hCtx.beginPath();
+          hCtx.ellipse(cx, cy - 18, 6, 12, 0, 0, Math.PI * 2);
+          hCtx.ellipse(cx, cy + 18, 6, 12, 0, 0, Math.PI * 2);
+          hCtx.ellipse(cx - 18, cy, 12, 6, 0, 0, Math.PI * 2);
+          hCtx.ellipse(cx + 18, cy, 12, 6, 0, 0, Math.PI * 2);
+          hCtx.fill();
+        }
+      }
+      roughness = 0.55;
+      normalStrength = 2.8;
+      break;
+    }
+    case 'bricks': {
+      // Briques apparentes peintes dans la teinte choisie
+      const bw = 64;
+      const bh = 28;
+      let row = 0;
+      for (let y = 0; y < size; y += bh) {
+        const offset = (row % 2) * (bw / 2);
+        for (let x = -bw; x < size + bw; x += bw) {
+          const bx = x + offset;
+          ctx.fillStyle = '#' + (row % 2 === 0 ? baseCol : darkCol).getHexString();
+          ctx.fillRect(bx + 2, y + 2, bw - 4, bh - 4);
+
+          hCtx.fillStyle = '#b0b0b0';
+          hCtx.fillRect(bx + 2, y + 2, bw - 4, bh - 4);
+          hCtx.strokeStyle = '#202020';
+          hCtx.lineWidth = 3;
+          hCtx.strokeRect(bx + 1, y + 1, bw - 2, bh - 2);
+        }
+        row++;
+      }
+      roughness = 0.82;
+      normalStrength = 4.2;
+      break;
+    }
+    case 'tiles': {
+      // Carrelage / faïence métro quadrillée
+      const tw = 48;
+      const th = 24;
+      let r = 0;
+      for (let y = 0; y < size; y += th) {
+        const off = (r % 2) * (tw / 2);
+        for (let x = -tw; x < size + tw; x += tw) {
+          const tx = x + off;
+          ctx.fillStyle = '#' + baseCol.getHexString();
+          ctx.fillRect(tx + 2, y + 2, tw - 4, th - 4);
+          ctx.fillStyle = '#' + lightCol.getHexString();
+          ctx.fillRect(tx + 2, y + 2, tw - 4, 3);
+
+          hCtx.fillStyle = '#c0c0c0';
+          hCtx.fillRect(tx + 2, y + 2, tw - 4, th - 4);
+          hCtx.strokeStyle = '#202020';
+          hCtx.lineWidth = 3;
+          hCtx.strokeRect(tx + 1, y + 1, tw - 2, th - 2);
+        }
+        r++;
+      }
+      roughness = 0.32;
+      normalStrength = 3.6;
+      break;
+    }
+    case 'wood': {
+      // Boiserie haussmannienne à moulures
+      const panelMargin = 18;
+      ctx.fillStyle = '#' + baseCol.getHexString();
+      ctx.fillRect(0, 0, size, size);
+
+      ctx.strokeStyle = '#' + darkCol.getHexString();
+      ctx.lineWidth = 8;
+      ctx.strokeRect(panelMargin, panelMargin, size - panelMargin * 2, size - panelMargin * 2);
+      ctx.strokeStyle = '#' + lightCol.getHexString();
+      ctx.lineWidth = 4;
+      ctx.strokeRect(panelMargin + 6, panelMargin + 6, size - (panelMargin + 6) * 2, size - (panelMargin + 6) * 2);
+
+      hCtx.strokeStyle = '#303030';
+      hCtx.lineWidth = 8;
+      hCtx.strokeRect(panelMargin, panelMargin, size - panelMargin * 2, size - panelMargin * 2);
+      hCtx.strokeStyle = '#d0d0d0';
+      hCtx.lineWidth = 4;
+      hCtx.strokeRect(panelMargin + 6, panelMargin + 6, size - (panelMargin + 6) * 2, size - (panelMargin + 6) * 2);
+      roughness = 0.52;
+      normalStrength = 3.2;
+      break;
+    }
+    case 'marble': {
+      // Marbre veiné noble
+      ctx.fillStyle = '#' + baseCol.getHexString();
+      ctx.fillRect(0, 0, size, size);
+      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = '#' + lightCol.getHexString();
+      hCtx.lineWidth = 2.5;
+      hCtx.strokeStyle = '#a0a0a0';
+
+      for (let v = 0; v < 7; v++) {
+        let vx = Math.random() * size;
+        let vy = 0;
+        ctx.beginPath();
+        ctx.moveTo(vx, vy);
+        hCtx.beginPath();
+        hCtx.moveTo(vx, vy);
+        while (vy < size) {
+          vx += (Math.random() - 0.45) * 28;
+          vy += 16 + Math.random() * 24;
+          ctx.lineTo(vx, vy);
+          hCtx.lineTo(vx, vy);
+        }
+        ctx.stroke();
+        hCtx.stroke();
+      }
+      roughness = 0.26;
+      normalStrength = 1.6;
+      break;
+    }
+    case 'geometric': {
+      // Motif losanges Art Déco
+      const step = 48;
+      ctx.fillStyle = '#' + darkCol.getHexString();
+      hCtx.fillStyle = '#b0b0b0';
+      for (let y = 0; y < size; y += step) {
+        for (let x = 0; x < size; x += step) {
+          ctx.beginPath();
+          ctx.moveTo(x + step / 2, y);
+          ctx.lineTo(x + step, y + step / 2);
+          ctx.lineTo(x + step / 2, y + step);
+          ctx.lineTo(x, y + step / 2);
+          ctx.closePath();
+          ctx.fill();
+
+          hCtx.beginPath();
+          hCtx.moveTo(x + step / 2, y);
+          hCtx.lineTo(x + step, y + step / 2);
+          hCtx.lineTo(x + step / 2, y + step);
+          hCtx.lineTo(x, y + step / 2);
+          hCtx.closePath();
+          hCtx.fill();
+        }
+      }
+      roughness = 0.48;
+      normalStrength = 2.6;
+      break;
+    }
+    case 'plain':
+    default: {
+      roughness = 0.72;
+      normalStrength = 1.4;
+      break;
+    }
+  }
+
+  const albedo = new THREE.CanvasTexture(canvas);
+  albedo.colorSpace = THREE.SRGBColorSpace;
+  albedo.wrapS = albedo.wrapT = THREE.RepeatWrapping;
+  albedo.anisotropy = 8;
+
+  const normal = heightCanvasToNormalTexture(hCanvas, normalStrength);
+  normal.wrapS = normal.wrapT = THREE.RepeatWrapping;
+  normal.anisotropy = 8;
+
+  const mat = new THREE.MeshStandardMaterial({
+    map: albedo,
+    normalMap: normal,
+    normalScale: new THREE.Vector2(0.85, 0.85),
+    roughness,
+    metalness: 0.02,
+  });
+
+  paintedMaterialCache.set(cacheKey, mat);
+  return mat;
+}
+
+export function applyPaintToVisual(root: THREE.Object3D, color: string, pattern = 'plain'): void {
+  const mat = getOrCreatePaintedMaterial(color, pattern);
+  root.traverse((child) => {
+    if (child instanceof THREE.Mesh && !child.userData.isProxy) {
+      child.material = mat;
+    }
+  });
+}
+
+export function createDirtPBR(): { albedo: THREE.CanvasTexture; normal: THREE.CanvasTexture } {
+  const size = 512;
+  const canvas = document.createElement('canvas');
+  const hCanvas = document.createElement('canvas');
+  canvas.width = hCanvas.width = size;
+  canvas.height = hCanvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+  const hCtx = hCanvas.getContext('2d')!;
+
+  ctx.fillStyle = '#4e3629';
+  ctx.fillRect(0, 0, size, size);
+  hCtx.fillStyle = '#808080';
+  hCtx.fillRect(0, 0, size, size);
+
+  for (let i = 0; i < 4000; i++) {
+    const x = Math.random() * size;
+    const y = Math.random() * size;
+    const r = 1 + Math.random() * 4;
+    const tone = (Math.random() - 0.5) * 45;
+    ctx.fillStyle = `rgb(${78 + tone}, ${54 + tone * 0.8}, ${41 + tone * 0.6})`;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+
+    hCtx.fillStyle = tone > 0 ? '#b0b0b0' : '#404040';
+    hCtx.beginPath();
+    hCtx.arc(x, y, r, 0, Math.PI * 2);
+    hCtx.fill();
+  }
+
+  const albedo = new THREE.CanvasTexture(canvas);
+  albedo.colorSpace = THREE.SRGBColorSpace;
+  const normal = heightCanvasToNormalTexture(hCanvas, 4.2);
+  return { albedo, normal };
+}
+
+export function createStonePBR(): { albedo: THREE.CanvasTexture; normal: THREE.CanvasTexture } {
+  const size = 512;
+  const canvas = document.createElement('canvas');
+  const hCanvas = document.createElement('canvas');
+  canvas.width = hCanvas.width = size;
+  canvas.height = hCanvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+  const hCtx = hCanvas.getContext('2d')!;
+
+  ctx.fillStyle = '#525b68';
+  ctx.fillRect(0, 0, size, size);
+  hCtx.fillStyle = '#808080';
+  hCtx.fillRect(0, 0, size, size);
+
+  for (let i = 0; i < 50; i++) {
+    let x = Math.random() * size;
+    let y = Math.random() * size;
+    ctx.strokeStyle = '#2b3038';
+    ctx.lineWidth = 1.5;
+    hCtx.strokeStyle = '#202020';
+    hCtx.lineWidth = 2.0;
+    ctx.beginPath();
+    hCtx.beginPath();
+    ctx.moveTo(x, y);
+    hCtx.moveTo(x, y);
+    for (let s = 0; s < 12; s++) {
+      x += (Math.random() - 0.5) * 35;
+      y += (Math.random() - 0.5) * 35;
+      ctx.lineTo(x, y);
+      hCtx.lineTo(x, y);
+    }
+    ctx.stroke();
+    hCtx.stroke();
+  }
+
+  const albedo = new THREE.CanvasTexture(canvas);
+  albedo.colorSpace = THREE.SRGBColorSpace;
+  const normal = heightCanvasToNormalTexture(hCanvas, 4.8);
+  return { albedo, normal };
+}
+
+export function createGrassBlockMaterials(): THREE.Material[] {
+  const dirt = createDirtPBR();
+  const dirtMat = new THREE.MeshStandardMaterial({
+    map: dirt.albedo,
+    normalMap: dirt.normal,
+    roughness: 0.95,
+  });
+
+  const grassTopCanvas = document.createElement('canvas');
+  grassTopCanvas.width = grassTopCanvas.height = 256;
+  const gCtx = grassTopCanvas.getContext('2d')!;
+  gCtx.fillStyle = '#4a7c36';
+  gCtx.fillRect(0, 0, 256, 256);
+  for (let i = 0; i < 1200; i++) {
+    gCtx.fillStyle = Math.random() > 0.5 ? '#558d3f' : '#3e6b2c';
+    gCtx.fillRect(Math.random() * 256, Math.random() * 256, 2, 2);
+  }
+  const grassTopTex = new THREE.CanvasTexture(grassTopCanvas);
+  grassTopTex.colorSpace = THREE.SRGBColorSpace;
+  const grassTopMat = new THREE.MeshStandardMaterial({
+    map: grassTopTex,
+    roughness: 0.9,
+  });
+
+  const sideCanvas = document.createElement('canvas');
+  sideCanvas.width = sideCanvas.height = 256;
+  const sCtx = sideCanvas.getContext('2d')!;
+  sCtx.drawImage(dirt.albedo.image, 0, 0, 256, 256);
+  sCtx.fillStyle = '#4a7c36';
+  sCtx.fillRect(0, 0, 256, 52);
+  for (let x = 0; x < 256; x += 12) {
+    const hang = 12 + Math.random() * 32;
+    sCtx.fillRect(x, 52, 12, hang);
+  }
+  const sideTex = new THREE.CanvasTexture(sideCanvas);
+  sideTex.colorSpace = THREE.SRGBColorSpace;
+  const sideMat = new THREE.MeshStandardMaterial({
+    map: sideTex,
+    roughness: 0.92,
+  });
+
+  return [sideMat, sideMat, grassTopMat, dirtMat, sideMat, sideMat];
+}
+
 export function createBrickCatalog(): Map<number, BrickDefinition> {
   const catalog = new Map<number, BrickDefinition>();
 
@@ -892,6 +1268,77 @@ export function createBrickCatalog(): Map<number, BrickDefinition> {
     subtitle: 'Arbuste conique méditerranéen élégant',
     previewCss: 'linear-gradient(180deg, #1e3a1f 0%, #1e3a1f 65%, #b45309 65%, #78350f 100%)',
     material: new THREE.MeshStandardMaterial({ color: 0x1e3a1f }),
+  });
+
+  // 39. Bloc de Terre Riche (Minecraft)
+  const dirtPBR = createDirtPBR();
+  catalog.set(39, {
+    id: 39,
+    category: 'nature',
+    name: 'Bloc de Terre Meuble',
+    subtitle: 'Terre brune naturelle de sous-sol [Minecraft]',
+    previewCss: 'linear-gradient(135deg, #5c4033 0%, #3e2723 100%)',
+    material: new THREE.MeshStandardMaterial({
+      map: dirtPBR.albedo,
+      normalMap: dirtPBR.normal,
+      roughness: 0.95,
+      metalness: 0.0,
+    }),
+  });
+
+  // 40. Bloc de Gazon Cubique (Minecraft)
+  const grassBlockMats = createGrassBlockMaterials();
+  catalog.set(40, {
+    id: 40,
+    category: 'nature',
+    name: 'Bloc d\'Herbe & Gazon',
+    subtitle: 'Cube de prairie herbeuse naturelle [Minecraft]',
+    previewCss: 'linear-gradient(180deg, #4a7c36 40%, #5c4033 40%)',
+    material: grassBlockMats as unknown as THREE.Material,
+  });
+
+  // 41. Bloc de Roche & Pierre Brute
+  const stonePBR = createStonePBR();
+  catalog.set(41, {
+    id: 41,
+    category: 'nature',
+    name: 'Roche / Pierre Naturelle',
+    subtitle: 'Roche brute de carrière et de sous-sol',
+    previewCss: 'linear-gradient(135deg, #64748b 0%, #334155 100%)',
+    material: new THREE.MeshStandardMaterial({
+      map: stonePBR.albedo,
+      normalMap: stonePBR.normal,
+      roughness: 0.88,
+      metalness: 0.02,
+    }),
+  });
+
+  // 42. Bloc de Sable Doré
+  catalog.set(42, {
+    id: 42,
+    category: 'nature',
+    name: 'Sable Fin Doré',
+    subtitle: 'Sable de plage ou de carrière paysagère',
+    previewCss: 'linear-gradient(135deg, #fcd34d 0%, #d97706 100%)',
+    material: new THREE.MeshStandardMaterial({
+      color: 0xe0b978,
+      roughness: 0.92,
+      metalness: 0.0,
+    }),
+  });
+
+  // 43. Bloc de Gravier Concassé
+  catalog.set(43, {
+    id: 43,
+    category: 'nature',
+    name: 'Gravier Concassé',
+    subtitle: 'Petits galets et cailloux de jardin',
+    previewCss: 'linear-gradient(135deg, #94a3b8 0%, #475569 100%)',
+    material: new THREE.MeshStandardMaterial({
+      color: 0x78716c,
+      roughness: 0.86,
+      metalness: 0.0,
+    }),
   });
 
   return catalog;

@@ -74,6 +74,50 @@ export class SoundManager {
     osc.stop(now + 0.125);
   }
 
+  public playDig(): void {
+    const ctx = this.ensureContext();
+    if (!ctx) return;
+
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    // Bruit sourd et croustillant de coup de pelle / terre creusée
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(140 + Math.random() * 25, now);
+    osc.frequency.exponentialRampToValueAtTime(38, now + 0.14);
+
+    gain.gain.setValueAtTime(0.24, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.15);
+  }
+
+  public playPaint(): void {
+    const ctx = this.ensureContext();
+    if (!ctx) return;
+
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    // Bruissement doux et soyeux de pinceau ou rouleau de peinture
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(420, now);
+    osc.frequency.exponentialRampToValueAtTime(680, now + 0.08);
+
+    gain.gain.setValueAtTime(0.09, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.125);
+  }
+
   public playStep(): void {
     const ctx = this.ensureContext();
     if (!ctx) return;

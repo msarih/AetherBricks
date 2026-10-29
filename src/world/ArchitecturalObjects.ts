@@ -19,6 +19,11 @@ export const OBJ_TYPE_WATER = 35;
 export const OBJ_TYPE_STEPPING_STONE = 36;
 export const OBJ_TYPE_HEDGE = 37;
 export const OBJ_TYPE_CYPRESS = 38;
+export const BRICK_TYPE_DIRT = 39;
+export const BRICK_TYPE_GRASS_BLOCK = 40;
+export const BRICK_TYPE_STONE = 41;
+export const BRICK_TYPE_SAND = 42;
+export const BRICK_TYPE_GRAVEL = 43;
 
 // Carrés plats pour Sols (posés au bas de la case : y - 0.42, épaisseur 0.16m)
 export const SLAB_TYPE_FLOOR_STONE = 10;

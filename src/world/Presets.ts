@@ -5,6 +5,8 @@ export interface BrickEntry {
   type: number;
   rot?: number; // 0, 1, 2, 3 (multiples de 90°)
   open?: boolean; // Pour les portes ouvrables
+  color?: string; // Teinte personnalisée de peinture (hex ex: #f8fafc)
+  pattern?: string; // Motif personnalisé (ex: 'plain', 'stripes', 'floral', 'bricks', 'tiles', 'wood', 'marble', 'geometric')
 }
 
 /**

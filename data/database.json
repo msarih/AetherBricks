@@ -6,7 +6,7 @@
       "ownerId": "guest_1793289578954",
       "name": "Monde Récupéré #3",
       "createdAt": 1793289578963,
-      "updatedAt": 1793308054280,
+      "updatedAt": 1793308150409,
       "bricks": [
         {
           "x": 1,
@@ -2118,7 +2118,7 @@
           "z": 12,
           "type": 9,
           "rot": 0,
-          "open": false
+          "open": true
         },
         {
           "x": 4,
@@ -2234,9 +2234,9 @@
         }
       ],
       "playerState": {
-        "x": 5.942694926144013,
+        "x": 4.732251272916311,
         "y": 0.36,
-        "z": 6.5576117168358605,
+        "z": 9.600149171915215,
         "viewMode": "tps-back",
         "lightingIdx": 0
       }
