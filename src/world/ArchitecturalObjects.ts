@@ -139,7 +139,7 @@ let sharedMaterials: {
   whiteFrame: THREE.MeshStandardMaterial;
   stoneSill: THREE.MeshStandardMaterial;
   stoneTile: THREE.MeshStandardMaterial;
-  marbleTile: THREE.MeshPhysicalMaterial;
+  marbleTile: THREE.MeshStandardMaterial;
   ceilingWhite: THREE.MeshStandardMaterial;
   ceilingLight: THREE.MeshStandardMaterial;
   oakWood: THREE.MeshStandardMaterial;
@@ -155,39 +155,37 @@ export function getSharedArchMaterials() {
     const stoneTileTex = createStoneTileTexture();
     sharedMaterials = {
       whiteFrame: new THREE.MeshStandardMaterial({
-        color: 0xf8f6f0,
-        roughness: 0.42,
-        metalness: 0.04,
+        color: 0xdedad0,
+        roughness: 0.75,
+        metalness: 0.02,
       }),
       stoneSill: new THREE.MeshStandardMaterial({
-        color: 0xe7e3d8,
-        roughness: 0.78,
-        metalness: 0.02,
+        color: 0xd2cdc0,
+        roughness: 0.85,
+        metalness: 0.01,
       }),
       stoneTile: new THREE.MeshStandardMaterial({
-        color: 0xffffff,
+        color: 0xdfd9cd,
         map: stoneTileTex,
-        roughness: 0.62,
-        metalness: 0.02,
+        roughness: 0.82,
+        metalness: 0.01,
       }),
-      marbleTile: new THREE.MeshPhysicalMaterial({
-        color: 0xfafcff,
+      marbleTile: new THREE.MeshStandardMaterial({
+        color: 0xe2e6eb,
         map: stoneTileTex,
-        roughness: 0.14,
-        metalness: 0.03,
-        clearcoat: 0.8,
-        clearcoatRoughness: 0.1,
+        roughness: 0.48,
+        metalness: 0.02,
       }),
       ceilingWhite: new THREE.MeshStandardMaterial({
-        color: 0xfcfcfc,
-        roughness: 0.5,
-        metalness: 0.02,
+        color: 0xdedbd2,
+        roughness: 0.8,
+        metalness: 0.01,
       }),
       ceilingLight: new THREE.MeshStandardMaterial({
-        color: 0xffffff,
-        emissive: 0xfffbeb,
-        emissiveIntensity: 1.5,
-        roughness: 0.2,
+        color: 0xfde68a,
+        emissive: 0xf59e0b,
+        emissiveIntensity: 0.5,
+        roughness: 0.45,
       }),
       oakWood: new THREE.MeshStandardMaterial({
         color: 0xffffff,

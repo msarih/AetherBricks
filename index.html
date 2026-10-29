@@ -9,7 +9,7 @@
   <body>
     <div id="canvas-container"></div>
 
-    <!-- Réticule central -->
+    <!-- Réticule central doux -->
     <div id="crosshair" class="crosshair">
       <div class="crosshair-dot"></div>
       <div class="crosshair-ring"></div>
@@ -20,13 +20,13 @@
       <kbd>E</kbd> Ouvrir / Fermer la porte
     </div>
 
-    <!-- HUD supérieur gauche : Télémétrie & État -->
+    <!-- HUD supérieur gauche : Compte, Monde sauvegardé & Télémétrie -->
     <div class="hud-top-left">
       <div class="brand-badge">
         <span class="cube-icon"></span>
         <div>
           <h1>AETHERBRICKS 3D</h1>
-          <p>CAMPAGNE PBR • BRIQUES BLANCHES, PORTES & FENÊTRES</p>
+          <p id="hud-account-world">👤 Invité • 🌍 Chargement... • 💾 BDD</p>
         </div>
       </div>
 
@@ -49,7 +49,7 @@
         </div>
         <div class="stat-pill">
           <span class="stat-label">LUMIÈRE (T)</span>
-          <span id="stat-time" class="stat-value">SOLEIL DE CAMPAGNE</span>
+          <span id="stat-time" class="stat-value">DOUCEUR NATURELLE</span>
         </div>
       </div>
     </div>
@@ -57,13 +57,13 @@
     <!-- HUD supérieur droit : Raccourcis rapides -->
     <div class="hud-top-right">
       <div class="shortcut-card">
-        <div><kbd>Clic Gauche</kbd> Poser élément</div>
-        <div><kbd>Clic Droit</kbd> Supprimer élément</div>
+        <div><kbd>Clic Gauche</kbd> Poser • <kbd>Clic Droit</kbd> Supprimer</div>
         <div><kbd>Tab</kbd> Changer Catégorie (Briques / Sols / Portes)</div>
         <div><kbd>1-6</kbd> / <kbd>Molette</kbd> Choisir dans la catégorie</div>
-        <div><kbd>V</kbd> Changer Vue (3e Pers. Dos / Face / 1re Pers.)</div>
-        <div><kbd>E</kbd> Ouvrir / Fermer porte • <kbd>R</kbd> Pivoter</div>
-        <div><kbd>F</kbd> Mode Vol • <kbd>T</kbd> Soleil • <kbd>Ctrl+Z</kbd> Annuler</div>
+        <div><kbd>Flèches</kbd> / <kbd>ZQSD</kbd> Déplacer & Orienter</div>
+        <div><kbd>V</kbd> Vue (3e Pers. / 1re Pers.) • <kbd>F</kbd> Vol</div>
+        <div><kbd>E</kbd> Ouvrir Porte • <kbd>R</kbd> Pivoter (90°)</div>
+        <div><kbd>Échap</kbd> Menu Mondes & Compte (BDD)</div>
       </div>
     </div>
 
@@ -75,60 +75,105 @@
       <div id="category-tabs" class="category-tabs"></div>
       <div class="selected-brick-title">
         <span id="active-brick-name">Brique Blanche Chaux</span>
-        <span id="active-brick-sub">Maçonnerie réaliste à joints creux</span>
+        <span id="active-brick-sub">Maçonnerie mate douce à joints creux</span>
       </div>
       <div id="hotbar" class="hotbar"></div>
     </div>
 
-    <!-- Menu Studio / Overlay de démarrage -->
+    <!-- Menu Studio / Base de Données / Compte & Mondes -->
     <div id="studio-overlay" class="studio-overlay">
       <div class="studio-modal">
         <div class="modal-header">
           <div class="cube-logo-lg"></div>
-          <div>
-            <h2>AetherBricks 3D</h2>
-            <p>Prairie de campagne en gazon 3D, briques blanches réalistes, portes & fenêtres</p>
+          <div class="modal-title-block">
+            <h2>AetherBricks 3D — Studio & Base de Données</h2>
+            <p id="modal-status-subtitle">Sauvegarde automatique en temps réel dans la base de données</p>
           </div>
+          <button id="btn-resume" class="btn-primary-compact">
+            ▶ Reprendre la Construction
+          </button>
         </div>
 
-        <button id="btn-resume" class="btn-primary">
-          Entrer sur le Terrain & Construire (Clic)
-        </button>
+        <div class="studio-columns">
+          <!-- Colonne Gauche : Compte Utilisateur / Invité -->
+          <div class="studio-card">
+            <h3>👤 Compte & Profil</h3>
+            <div id="account-current-box" class="account-banner">
+              <div>
+                <strong id="account-display-name">Architecte Invité</strong>
+                <span id="account-badge" class="badge-guest">Compte Invité</span>
+              </div>
+              <p class="account-hint">
+                Vos créations sont sauvegardées automatiquement. Créez un compte pour sécuriser vos mondes avec un pseudo.
+              </p>
+            </div>
 
-        <div class="studio-sections">
-          <div class="studio-section">
-            <h3>Scènes & Modèles</h3>
+            <div class="auth-form">
+              <input
+                id="auth-username"
+                type="text"
+                placeholder="Pseudo (ex: Mohamed)"
+                class="input-field"
+              />
+              <input
+                id="auth-password"
+                type="password"
+                placeholder="Mot de passe"
+                class="input-field"
+              />
+              <div class="btn-group">
+                <button id="btn-register" class="btn-accent">Créer / Lier Compte</button>
+                <button id="btn-login" class="btn-secondary">Se Connecter</button>
+                <button id="btn-guest" class="btn-secondary">Mode Invité</button>
+              </div>
+              <div id="auth-feedback" class="auth-feedback"></div>
+            </div>
+
+            <div class="studio-section-divider"></div>
+
+            <h3>🎥 Vue & Ambiance Lumineuse (Sans Éblouissement)</h3>
+            <div class="btn-group" style="margin-bottom: 8px">
+              <button data-view="tps-back" class="btn-secondary view-btn active">3e Pers. (Dos)</button>
+              <button data-view="tps-front" class="btn-secondary view-btn">3e Pers. (Face)</button>
+              <button data-view="fps" class="btn-secondary view-btn">1re Pers. (FPS)</button>
+            </div>
             <div class="btn-group">
-              <button id="btn-flat-empty" class="btn-secondary">Prairie Plate Vierge</button>
-              <button id="btn-starter" class="btn-secondary">Façade Porte & Fenêtres</button>
-              <button id="btn-pavilion" class="btn-secondary">Maisonnette Blanche</button>
-              <button id="btn-arch" class="btn-secondary">Arche Brutaliste</button>
+              <button data-time="0" class="btn-secondary time-btn active">Douceur Naturelle</button>
+              <button data-time="1" class="btn-secondary time-btn">Après-Midi</button>
+              <button data-time="2" class="btn-secondary time-btn">Coucher Doré</button>
+              <button data-time="3" class="btn-secondary time-btn">Nuit Douce</button>
             </div>
           </div>
 
-          <div class="studio-section">
-            <h3>Vue Caméra & Personnage (Touche V)</h3>
-            <div class="btn-group">
-              <button data-view="tps-back" class="btn-secondary view-btn active">3e Personne (Dos)</button>
-              <button data-view="tps-front" class="btn-secondary view-btn">3e Personne (Face)</button>
-              <button data-view="fps" class="btn-secondary view-btn">1re Personne (FPS)</button>
+          <!-- Colonne Droite : Gestionnaire de Mondes (Base de Données) -->
+          <div class="studio-card">
+            <div class="worlds-header-row">
+              <h3>🌍 Mes Mondes Sauvegardés (BDD)</h3>
+              <button id="btn-save-now" class="btn-save-pill">💾 Sauvegarder</button>
             </div>
-          </div>
 
-          <div class="studio-section">
-            <h3>Ambiance Solaire & Ombres</h3>
-            <div class="btn-group">
-              <button data-time="0" class="btn-secondary time-btn active">Soleil Campagne</button>
-              <button data-time="1" class="btn-secondary time-btn">Zénith</button>
-              <button data-time="2" class="btn-secondary time-btn">Golden Hour</button>
-              <button data-time="3" class="btn-secondary time-btn">Clair de Lune</button>
+            <!-- Liste des mondes dans la BDD -->
+            <div id="worlds-list" class="worlds-list"></div>
+
+            <!-- Créer un nouveau monde sans perdre l'ancien -->
+            <div class="new-world-box">
+              <h4>➕ Créer un Nouveau Monde</h4>
+              <input
+                id="new-world-name"
+                type="text"
+                placeholder="Nom du nouveau monde (ex: Villa Campagne)"
+                class="input-field"
+              />
+              <div class="btn-group">
+                <button data-template="empty" class="btn-secondary new-world-btn">Prairie Vierge</button>
+                <button data-template="starter" class="btn-secondary new-world-btn">Terrasse & Porte</button>
+                <button data-template="pavilion" class="btn-secondary new-world-btn">Maisonnette</button>
+                <button data-template="arch" class="btn-secondary new-world-btn">Arche</button>
+              </div>
             </div>
-          </div>
 
-          <div class="studio-section">
-            <h3>Sauvegarde & Partage</h3>
-            <div class="btn-group">
-              <button id="btn-export" class="btn-secondary">Exporter (.json)</button>
+            <div class="btn-group" style="margin-top: 8px">
+              <button id="btn-export" class="btn-secondary">Exporter Monde (.json)</button>
               <button id="btn-import" class="btn-secondary">Importer (.json)</button>
               <input id="file-import" type="file" accept=".json" style="display: none" />
             </div>

@@ -33,46 +33,37 @@ export class CountrysideEnv {
   public updateSunAndEnvironment(
     elevationDeg: number,
     azimuthDeg: number,
-    turbidity = 3.2,
-    rayleigh = 1.6
+    turbidity = 1.6,
+    rayleigh = 2.2
   ): THREE.Vector3 {
     const skyUniforms = this.sky.material.uniforms;
     skyUniforms['turbidity'].value = turbidity;
     skyUniforms['rayleigh'].value = rayleigh;
-    skyUniforms['mieCoefficient'].value = 0.005;
-    skyUniforms['mieDirectionalG'].value = 0.82;
+    skyUniforms['mieCoefficient'].value = 0.0015;
+    skyUniforms['mieDirectionalG'].value = 0.55;
 
     const phi = THREE.MathUtils.degToRad(90 - elevationDeg);
     const theta = THREE.MathUtils.degToRad(azimuthDeg);
     this.sunVec.setFromSphericalCoords(1, phi, theta);
     skyUniforms['sunPosition'].value.copy(this.sunVec);
 
-    // Bake realistic indirect lighting (IBL) from the atmospheric sky
+    // Bake soft, non-glaring indirect lighting (IBL)
     if (this.currentEnvMap) {
       this.currentEnvMap.dispose();
     }
     const envScene = new THREE.Scene();
-    const skyClone = new Sky();
-    skyClone.scale.setScalar(100);
-    const cloneUniforms = skyClone.material.uniforms;
-    cloneUniforms['turbidity'].value = turbidity;
-    cloneUniforms['rayleigh'].value = rayleigh;
-    cloneUniforms['mieCoefficient'].value = 0.005;
-    cloneUniforms['mieDirectionalG'].value = 0.82;
-    cloneUniforms['sunPosition'].value.copy(this.sunVec);
-    envScene.add(skyClone);
+    envScene.background = new THREE.Color(elevationDeg > 5 ? 0x7faad4 : 0x0f172a);
 
-    // Add a green meadow bounce floor inside the IBL capture so brick undersides get subtle green/warm bounce light
     const bounceGround = new THREE.Mesh(
       new THREE.PlaneGeometry(200, 200).rotateX(-Math.PI / 2),
-      new THREE.MeshBasicMaterial({ color: elevationDeg > 5 ? 0x4d7c38 : 0x0f172a })
+      new THREE.MeshBasicMaterial({ color: elevationDeg > 5 ? 0x456e32 : 0x0f172a })
     );
     bounceGround.position.y = -2;
     envScene.add(bounceGround);
 
     this.currentEnvMap = this.pmremGenerator.fromScene(envScene, 0.04).texture;
     this.scene.environment = this.currentEnvMap;
-    this.scene.environmentIntensity = elevationDeg > 5 ? 0.65 : 0.25;
+    this.scene.environmentIntensity = elevationDeg > 5 ? 0.26 : 0.15;
 
     return this.sunVec.clone();
   }

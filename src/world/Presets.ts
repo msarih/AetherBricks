@@ -31,9 +31,9 @@ export function getStarterScene(): BrickEntry[] {
     }
   }
 
-  // Auvent de plafond en carrés plats (Plafond Blanc Lisse type 13 & Plafond Lumineux LED type 14)
+  // Auvent de plafond en carrés plats (Plafond Blanc Lisse mat type 13, sans lumière blanche éblouissante)
   for (let x = -3; x <= 3; x++) {
-    bricks.push({ x, y: 2, z: -5, type: x === 0 ? 14 : 13 });
+    bricks.push({ x, y: 2, z: -5, type: 13 });
   }
 
   // 2 fenêtres croisées (type 7) + 1 porte de campagne ouvrable (type 9)

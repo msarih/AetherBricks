@@ -102,14 +102,14 @@ function createRealisticWhiteBrickPBR(): {
   const hCtx = heightCanvas.getContext('2d')!;
   const rCtx = roughCanvas.getContext('2d')!;
 
-  // 1. Fond de mortier (joint creux couleur chaux/sable clair)
-  aCtx.fillStyle = '#d8d4cb';
+  // 1. Fond de mortier (joint creux couleur chaux/sable doux non-éblouissant)
+  aCtx.fillStyle = '#b8b2a6';
   aCtx.fillRect(0, 0, size, size);
 
   hCtx.fillStyle = '#262626'; // Creux profond pour le mortier
   hCtx.fillRect(0, 0, size, size);
 
-  rCtx.fillStyle = '#ececec'; // Mortier très mat (rugosité élevée)
+  rCtx.fillStyle = '#f2f2f2'; // Mortier très mat (rugosité élevée)
   rCtx.fillRect(0, 0, size, size);
 
   // Grain sableux dans le mortier
@@ -144,31 +144,31 @@ function createRealisticWhiteBrickPBR(): {
       hCtx.fill();
     }
 
-    // Couleur de base de la brique blanche (légère variation naturelle de blanc chaux / craie)
+    // Couleur de base de la brique blanche adoucie (blanc pierre/argile doux pour le confort des yeux)
     const baseWarmth = (seed % 7) - 3;
-    const r = Math.min(255, 248 + baseWarmth);
-    const g = Math.min(255, 247 + baseWarmth);
-    const b = Math.min(255, 243 + baseWarmth);
+    const r = Math.min(235, 224 + baseWarmth);
+    const g = Math.min(233, 221 + baseWarmth);
+    const b = Math.min(228, 214 + baseWarmth);
 
     const grad = aCtx.createLinearGradient(bx, by, bx + bw, by + bh);
     grad.addColorStop(0, `rgb(${r}, ${g}, ${b})`);
-    grad.addColorStop(0.5, `rgb(${r - 4}, ${g - 4}, ${b - 5})`);
-    grad.addColorStop(1, `rgb(${r - 9}, ${g - 9}, ${b - 10})`);
+    grad.addColorStop(0.5, `rgb(${r - 5}, ${g - 5}, ${b - 6})`);
+    grad.addColorStop(1, `rgb(${r - 11}, ${g - 11}, ${b - 12})`);
 
     aCtx.fillStyle = grad;
     aCtx.beginPath();
     aCtx.roundRect(bx, by, bw, bh, 8);
     aCtx.fill();
 
-    // Fine lisière claire d'usure sur le bord de la brique
-    aCtx.strokeStyle = 'rgba(255, 255, 255, 0.75)';
-    aCtx.lineWidth = 3;
+    // Fine lisière douce sur le bord de la brique
+    aCtx.strokeStyle = 'rgba(238, 235, 228, 0.5)';
+    aCtx.lineWidth = 2.5;
     aCtx.beginPath();
     aCtx.roundRect(bx + 2, by + 2, bw - 4, bh - 4, 7);
     aCtx.stroke();
 
-    // Rugosité de la brique (plus douce que le mortier, avec variations de badigeon de chaux)
-    const roughBase = 150 + (seed % 20);
+    // Rugosité mate élevée de la brique (aucun reflet blanc éblouissant)
+    const roughBase = 205 + (seed % 20);
     rCtx.fillStyle = `rgb(${roughBase}, ${roughBase}, ${roughBase})`;
     rCtx.beginPath();
     rCtx.roundRect(bx, by, bw, bh, 8);
@@ -432,42 +432,40 @@ export function createBrickCatalog(): Map<number, BrickDefinition> {
   const catalog = new Map<number, BrickDefinition>();
 
   // --- CATÉGORIE 1 : BRIQUES & MURS ('bricks') ---
-  // 1. Brique Blanche Réaliste (Maçonnerie blanchie à la chaux + joints creux)
+  // 1. Brique Blanche Réaliste (Maçonnerie blanchie à la chaux + joints creux, ton doux non-éblouissant)
   const whiteBrickPBR = createRealisticWhiteBrickPBR();
   catalog.set(1, {
     id: 1,
     category: 'bricks',
     name: 'Brique Blanche Chaux',
-    subtitle: 'Maçonnerie réaliste à joints creux',
-    previewCss: 'linear-gradient(135deg, #ffffff 0%, #dcd8ce 100%)',
-    material: new THREE.MeshPhysicalMaterial({
-      color: 0xffffff,
+    subtitle: 'Maçonnerie mate douce à joints creux',
+    previewCss: 'linear-gradient(135deg, #e5e1d8 0%, #c8c2b4 100%)',
+    material: new THREE.MeshStandardMaterial({
+      color: 0xe6e2d8,
       map: whiteBrickPBR.albedo,
       normalMap: whiteBrickPBR.normal,
-      normalScale: new THREE.Vector2(1.15, 1.15),
+      normalScale: new THREE.Vector2(1.0, 1.0),
       roughnessMap: whiteBrickPBR.roughness,
-      roughness: 0.78,
-      metalness: 0.01,
-      clearcoat: 0.04,
-      clearcoatRoughness: 0.8,
+      roughness: 0.9,
+      metalness: 0.0,
     }),
   });
 
-  // 2. Pierre Blanche de Taille (Calcaire ciselé)
-  const limestone = createCutLimestonePBR('#f7f5ee');
+  // 2. Pierre Blanche de Taille (Calcaire ciselé doux)
+  const limestone = createCutLimestonePBR('#e2ded3');
   catalog.set(2, {
     id: 2,
     category: 'bricks',
     name: 'Pierre Blanche Taillée',
-    subtitle: 'Bloc de calcaire naturel',
-    previewCss: 'linear-gradient(135deg, #faf8f2 0%, #e2dfd5 100%)',
+    subtitle: 'Bloc de calcaire naturel mat',
+    previewCss: 'linear-gradient(135deg, #e2ded3 0%, #cbc5b7 100%)',
     material: new THREE.MeshStandardMaterial({
-      color: 0xffffff,
+      color: 0xe4e0d5,
       map: limestone.albedo,
       normalMap: limestone.normal,
-      normalScale: new THREE.Vector2(0.85, 0.85),
-      roughness: 0.68,
-      metalness: 0.02,
+      normalScale: new THREE.Vector2(0.8, 0.8),
+      roughness: 0.85,
+      metalness: 0.0,
     }),
   });
 
@@ -476,18 +474,16 @@ export function createBrickCatalog(): Map<number, BrickDefinition> {
   catalog.set(3, {
     id: 3,
     category: 'bricks',
-    name: 'Marbre Blanc Poli',
-    subtitle: 'Pierre noble veinée à reflets',
-    previewCss: 'linear-gradient(135deg, #ffffff 0%, #cbd5e1 100%)',
-    material: new THREE.MeshPhysicalMaterial({
-      color: 0xffffff,
+    name: 'Marbre Blanc Satiné',
+    subtitle: 'Pierre noble veinée douce',
+    previewCss: 'linear-gradient(135deg, #eaedf0 0%, #cbd5e1 100%)',
+    material: new THREE.MeshStandardMaterial({
+      color: 0xe2e6ec,
       map: marble.albedo,
       normalMap: marble.normal,
       normalScale: new THREE.Vector2(0.35, 0.35),
-      roughness: 0.14,
+      roughness: 0.45,
       metalness: 0.02,
-      clearcoat: 0.75,
-      clearcoatRoughness: 0.1,
     }),
   });
 
@@ -496,16 +492,16 @@ export function createBrickCatalog(): Map<number, BrickDefinition> {
     id: 4,
     category: 'bricks',
     name: 'Brique Blanche Craie',
-    subtitle: 'Brique de campagne ton chaud',
-    previewCss: 'linear-gradient(135deg, #fdfbf7 0%, #e5dec9 100%)',
-    material: new THREE.MeshPhysicalMaterial({
-      color: 0xf7f3e8,
+    subtitle: 'Brique de campagne ton sable chaud',
+    previewCss: 'linear-gradient(135deg, #dfd9c8 0%, #c7bea8 100%)',
+    material: new THREE.MeshStandardMaterial({
+      color: 0xddd6c5,
       map: whiteBrickPBR.albedo,
       normalMap: whiteBrickPBR.normal,
-      normalScale: new THREE.Vector2(1.3, 1.3),
+      normalScale: new THREE.Vector2(1.1, 1.1),
       roughnessMap: whiteBrickPBR.roughness,
-      roughness: 0.86,
-      metalness: 0.01,
+      roughness: 0.92,
+      metalness: 0.0,
     }),
   });
 
@@ -513,15 +509,15 @@ export function createBrickCatalog(): Map<number, BrickDefinition> {
   catalog.set(5, {
     id: 5,
     category: 'bricks',
-    name: 'Brique Lumineuse',
-    subtitle: 'Lanterne blanche chaude',
-    previewCss: 'radial-gradient(circle, #ffffff 0%, #fef08a 100%)',
+    name: 'Brique Ambrée Douce',
+    subtitle: 'Lanterne chaude apaisante',
+    previewCss: 'radial-gradient(circle, #fef3c7 0%, #f59e0b 100%)',
     isLight: true,
     material: new THREE.MeshStandardMaterial({
-      color: 0xffffff,
-      emissive: 0xfffbeb,
-      emissiveIntensity: 1.6,
-      roughness: 0.2,
+      color: 0xfde68a,
+      emissive: 0xf59e0b,
+      emissiveIntensity: 0.55,
+      roughness: 0.5,
     }),
   });
 

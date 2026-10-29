@@ -59,6 +59,7 @@ export class VoxelWorld {
   private readonly raycaster = new THREE.Raycaster();
   private readonly interactables: THREE.Object3D[] = [];
   private countryside?: CountrysideEnv;
+  public onWorldChanged?: () => void;
 
   // Ghost block preview
   private readonly ghostGroup: THREE.Group;
@@ -301,7 +302,7 @@ export class VoxelWorld {
 
     let light: THREE.PointLight | undefined;
     if (def.isLight) {
-      light = new THREE.PointLight(0xfffbeb, 4.2, 11, 1.5);
+      light = new THREE.PointLight(0xfde68a, 1.4, 8, 1.8);
       light.position.set(rx, ry, rz);
       this.scene.add(light);
     }
@@ -475,6 +476,7 @@ export class VoxelWorld {
     } catch {
       // Ignore quota errors
     }
+    this.onWorldChanged?.();
   }
 
   public loadFromLocalStorage(): boolean {
