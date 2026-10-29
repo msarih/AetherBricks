@@ -547,9 +547,7 @@ function animate(now: number): void {
   const dt = (now - lastTime) / 1000;
   lastTime = now;
 
-  if (player.isLocked) {
-    player.update(dt);
-  }
+  player.update(dt);
   countryside.update(now * 0.001);
   world.update(dt, camera, player.getEyePosition(), player.getAimDirection());
 

@@ -99,12 +99,18 @@ export class CharacterAvatar {
     hairBack.position.set(0, 0.26, 0.16);
     this.headPivot.add(hairBack);
 
-    // Yeux sur la face avant (-Z)
-    const leftEye = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.065, 0.02), eyeMat);
-    leftEye.position.set(-0.09, 0.21, -0.21);
-    const rightEye = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.065, 0.02), eyeMat);
-    rightEye.position.set(0.09, 0.21, -0.21);
-    this.headPivot.add(leftEye, rightEye);
+    // Yeux + Sourcils sur la face avant (-Z) pour bien distinguer le visage quand il se tourne
+    const leftEye = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.07, 0.025), eyeMat);
+    leftEye.position.set(-0.095, 0.21, -0.21);
+    const rightEye = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.07, 0.025), eyeMat);
+    rightEye.position.set(0.095, 0.21, -0.21);
+
+    const leftBrow = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.025, 0.025), hairMat);
+    leftBrow.position.set(-0.095, 0.27, -0.21);
+    const rightBrow = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.025, 0.025), hairMat);
+    rightBrow.position.set(0.095, 0.27, -0.21);
+
+    this.headPivot.add(leftEye, rightEye, leftBrow, rightBrow);
 
     // --- 3. Bras Gauche et Bras Droit (Pivots aux épaules y = 1.25) ---
     this.leftArmPivot.position.set(-0.33, 1.25, 0);
@@ -170,8 +176,9 @@ export class CharacterAvatar {
   public update(
     dt: number,
     position: THREE.Vector3,
-    velocity: THREE.Vector3,
-    cameraYaw: number,
+    isMoving: boolean,
+    moveSpeed: number,
+    targetFacingYaw: number,
     cameraPitch: number,
     isGrounded: boolean,
     isFlying: boolean,
@@ -180,42 +187,26 @@ export class CharacterAvatar {
     this.root.visible = visible;
     this.root.position.copy(position);
 
-    const horizSpeed = Math.hypot(velocity.x, velocity.z);
-
-    // Le corps s'oriente avec la caméra ou la direction de marche
-    let targetBodyYaw = cameraYaw;
-    if (horizSpeed > 0.3) {
-      const moveAngle = Math.atan2(-velocity.x, -velocity.z);
-      // Limite la torsion entre le regard et les jambes pour un rendu naturel
-      let diff = moveAngle - cameraYaw;
-      while (diff > Math.PI) diff -= Math.PI * 2;
-      while (diff < -Math.PI) diff += Math.PI * 2;
-      targetBodyYaw = cameraYaw + THREE.MathUtils.clamp(diff, -0.65, 0.65);
-    }
-
-    // Interpolation fluide de la rotation du buste
-    let yawDiff = targetBodyYaw - this.currentBodyYaw;
+    // Rotation 360° fluide vers la direction choisie par les flèches directionnelles (Haut, Bas, Gauche, Droite)
+    let yawDiff = targetFacingYaw - this.currentBodyYaw;
     while (yawDiff > Math.PI) yawDiff -= Math.PI * 2;
     while (yawDiff < -Math.PI) yawDiff += Math.PI * 2;
-    this.currentBodyYaw += yawDiff * Math.min(1, dt * 14);
+    this.currentBodyYaw += yawDiff * Math.min(1, dt * 16);
     this.root.rotation.y = this.currentBodyYaw;
 
-    // La tête suit exactement le regard (Yaw relatif + Pitch)
-    let headRelYaw = cameraYaw - this.currentBodyYaw;
-    while (headRelYaw > Math.PI) headRelYaw -= Math.PI * 2;
-    while (headRelYaw < -Math.PI) headRelYaw += Math.PI * 2;
-    this.headPivot.rotation.y = THREE.MathUtils.clamp(headRelYaw, -0.8, 0.8);
-    this.headPivot.rotation.x = THREE.MathUtils.clamp(cameraPitch * 0.75, -0.65, 0.65);
+    // La tête regarde dans la direction où fait face le personnage
+    this.headPivot.rotation.y = 0;
+    this.headPivot.rotation.x = THREE.MathUtils.clamp(cameraPitch * 0.45, -0.45, 0.45);
 
     // Cycle d'animation des jambes et des bras
-    if (horizSpeed > 0.2 && isGrounded && !isFlying) {
-      this.walkPhase += dt * horizSpeed * 1.65;
-      const swing = Math.sin(this.walkPhase) * 0.72;
+    if (isMoving && isGrounded && !isFlying) {
+      this.walkPhase += dt * Math.max(4.5, moveSpeed) * 1.65;
+      const swing = Math.sin(this.walkPhase) * 0.75;
       this.leftLegPivot.rotation.x = swing;
       this.rightLegPivot.rotation.x = -swing;
-      this.leftArmPivot.rotation.x = -swing * 0.8;
-      this.rightArmPivot.rotation.x = swing * 0.8;
-      this.bodyGroup.position.y = -0.86 + Math.abs(Math.cos(this.walkPhase)) * 0.045;
+      this.leftArmPivot.rotation.x = -swing * 0.85;
+      this.rightArmPivot.rotation.x = swing * 0.85;
+      this.bodyGroup.position.y = -0.86 + Math.abs(Math.cos(this.walkPhase)) * 0.048;
     } else if (!isGrounded || isFlying) {
       // Pose de saut ou de vol
       this.leftLegPivot.rotation.x = THREE.MathUtils.lerp(this.leftLegPivot.rotation.x, -0.28, dt * 10);
@@ -249,4 +240,3 @@ export class CharacterAvatar {
     }
   }
 }
-

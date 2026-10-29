@@ -13,10 +13,12 @@ export class PlayerController {
 
   private yaw = 0;
   private pitch = -0.18;
+  private characterFacingYaw = 0;
+  private isMovingInput = false;
   public isFlying = false;
   public isGrounded = false;
   public isLocked = false;
-  public viewMode: CameraViewMode = 'tps-back'; // Activé par défaut pour voir son personnage immédiatement
+  public viewMode: CameraViewMode = 'tps-back';
 
   private readonly keys = new Set<string>();
   private readonly playerRadius = 0.34;
@@ -40,6 +42,9 @@ export class PlayerController {
     this.syncCamera(0.016);
 
     window.addEventListener('keydown', (e) => {
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) {
+        e.preventDefault();
+      }
       this.keys.add(e.code);
       if (e.code === 'KeyF' && this.isLocked) {
         this.toggleFlyMode();
@@ -56,10 +61,16 @@ export class PlayerController {
     document.addEventListener('mousemove', (e) => {
       if (!this.isLocked) return;
       const sensitivity = 0.0021;
+      const prevYaw = this.yaw;
       this.yaw -= e.movementX * sensitivity;
       this.pitch -= e.movementY * sensitivity;
       const maxPitch = Math.PI / 2 - 0.08;
       this.pitch = Math.max(-maxPitch, Math.min(maxPitch, this.pitch));
+
+      // Keep relative facing offset when rotating camera with mouse if standing still
+      if (!this.isMovingInput) {
+        this.characterFacingYaw += this.yaw - prevYaw;
+      }
     });
 
     document.addEventListener('pointerlockchange', () => {
@@ -109,6 +120,8 @@ export class PlayerController {
   }
 
   public triggerActionAnimation(): void {
+    // Lorsqu'on pose ou détruit une brique, le personnage fait face à la cible visée et lève le bras
+    this.characterFacingYaw = this.yaw;
     this.avatar.triggerArmSwing();
   }
 
@@ -117,6 +130,7 @@ export class PlayerController {
     this.velocity.set(0, 0, 0);
     this.yaw = 0;
     this.pitch = -0.18;
+    this.characterFacingYaw = 0;
     this.syncCamera(0.016);
   }
 
@@ -170,8 +184,11 @@ export class PlayerController {
     if (this.keys.has('KeyD') || this.keys.has('ArrowRight')) moveDir.add(right);
     if (this.keys.has('KeyA') || this.keys.has('ArrowLeft')) moveDir.sub(right);
 
-    if (moveDir.lengthSq() > 0) {
+    this.isMovingInput = moveDir.lengthSq() > 0.001;
+    if (this.isMovingInput) {
       moveDir.normalize();
+      // Le personnage change immédiatement de face selon la flèche de direction pressée (Haut, Bas, Gauche, Droite)
+      this.characterFacingYaw = Math.atan2(-moveDir.x, -moveDir.z);
     }
 
     const isSprinting = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight');
@@ -234,7 +251,7 @@ export class PlayerController {
     this.position.x = Math.max(-78, Math.min(78, this.position.x));
     this.position.z = Math.max(-78, Math.min(78, this.position.z));
 
-    if (this.isGrounded && !this.isFlying && moveDir.lengthSq() > 0.1) {
+    if (this.isGrounded && !this.isFlying && this.isMovingInput) {
       this.stepTimer += clampedDt * (isSprinting ? 1.45 : 1.0);
       if (this.stepTimer >= 0.42) {
         this.stepTimer = 0;
@@ -264,11 +281,13 @@ export class PlayerController {
 
   private syncCamera(dt: number): void {
     const isThirdPerson = this.viewMode !== 'fps';
+    const horizSpeed = Math.hypot(this.velocity.x, this.velocity.z);
     this.avatar.update(
       dt,
       this.position,
-      this.velocity,
-      this.yaw,
+      this.isMovingInput,
+      horizSpeed,
+      this.characterFacingYaw,
       this.pitch,
       this.isGrounded,
       this.isFlying,
@@ -282,24 +301,21 @@ export class PlayerController {
       this.camera.rotation.y = this.yaw;
       this.camera.rotation.x = this.pitch;
     } else if (this.viewMode === 'tps-back') {
-      // Caméra 3e personne derrière l'épaule droite du personnage
       const dist = 3.6;
       const aimDir = this.getAimDirection();
-      const rightOffset = new THREE.Vector3(Math.cos(this.yaw), 0, -Math.sin(this.yaw)).multiplyScalar(0.45);
+      const rightOffset = new THREE.Vector3(Math.cos(this.yaw), 0, -Math.sin(this.yaw)).multiplyScalar(0.35);
       const camPos = headPos
         .clone()
         .add(rightOffset)
         .addScaledVector(aimDir, -dist)
         .add(new THREE.Vector3(0, 0.35, 0));
 
-      // Empêche la caméra de passer sous l'herbe du sol
       camPos.y = Math.max(-0.15, camPos.y);
 
       this.camera.position.copy(camPos);
       const lookTarget = headPos.clone().add(rightOffset).addScaledVector(aimDir, 6.0);
       this.camera.lookAt(lookTarget);
     } else {
-      // Caméra 3e personne de face (Selfie / Vue avant sur le personnage)
       const dist = 3.2;
       const forwardFlat = new THREE.Vector3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw));
       const camPos = headPos
