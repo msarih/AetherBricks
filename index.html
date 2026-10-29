@@ -44,6 +44,10 @@
           <span id="stat-mode" class="stat-value">MARCHE</span>
         </div>
         <div class="stat-pill">
+          <span class="stat-label">CAMÉRA (V)</span>
+          <span id="stat-view" class="stat-value">3E PERSONNE (DOS)</span>
+        </div>
+        <div class="stat-pill">
           <span class="stat-label">LUMIÈRE (T)</span>
           <span id="stat-time" class="stat-value">SOLEIL DE CAMPAGNE</span>
         </div>
@@ -55,6 +59,7 @@
       <div class="shortcut-card">
         <div><kbd>Clic Gauche</kbd> Poser brique / porte / fenêtre</div>
         <div><kbd>Clic Droit</kbd> Supprimer élément</div>
+        <div><kbd>V</kbd> Changer Vue (3e Pers. Dos / Face / 1re Pers.)</div>
         <div><kbd>E</kbd> Ouvrir / Fermer une porte</div>
         <div><kbd>R</kbd> Pivoter porte / fenêtre (90°)</div>
         <div><kbd>1-9</kbd> / <kbd>Molette</kbd> Choisir élément</div>
@@ -98,6 +103,15 @@
               <button id="btn-starter" class="btn-secondary">Façade Porte & Fenêtres</button>
               <button id="btn-pavilion" class="btn-secondary">Maisonnette Blanche</button>
               <button id="btn-arch" class="btn-secondary">Arche Brutaliste</button>
+            </div>
+          </div>
+
+          <div class="studio-section">
+            <h3>Vue Caméra & Personnage (Touche V)</h3>
+            <div class="btn-group">
+              <button data-view="tps-back" class="btn-secondary view-btn active">3e Personne (Dos)</button>
+              <button data-view="tps-front" class="btn-secondary view-btn">3e Personne (Face)</button>
+              <button data-view="fps" class="btn-secondary view-btn">1re Personne (FPS)</button>
             </div>
           </div>
 

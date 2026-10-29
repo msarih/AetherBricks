@@ -496,7 +496,12 @@ export class VoxelWorld {
     });
   }
 
-  public update(dt: number, camera: THREE.Camera): void {
+  public update(
+    dt: number,
+    camera: THREE.Camera,
+    aimOrigin?: THREE.Vector3,
+    aimDirection?: THREE.Vector3
+  ): void {
     // Animate doors smoothly
     for (const item of this.uniqueItems) {
       if (item.doorPivot) {
@@ -509,7 +514,11 @@ export class VoxelWorld {
       }
     }
 
-    this.raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+    if (aimOrigin && aimDirection) {
+      this.raycaster.set(aimOrigin, aimDirection);
+    } else {
+      this.raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+    }
     const hits = this.raycaster.intersectObjects(this.interactables, false);
 
     const hit = hits[0];

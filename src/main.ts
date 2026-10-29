@@ -6,7 +6,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
 import { VoxelWorld } from './world/VoxelWorld';
 import { CountrysideEnv } from './world/CountrysideEnv';
-import { PlayerController } from './player/PlayerController';
+import { PlayerController, CameraViewMode } from './player/PlayerController';
 import { SoundManager } from './audio/SoundManager';
 import { isTwoBlocksTall } from './world/ArchitecturalObjects';
 import {
@@ -165,6 +165,7 @@ const interactionHintEl = document.getElementById('interaction-hint')!;
 const statBricksEl = document.getElementById('stat-bricks')!;
 const statPosEl = document.getElementById('stat-pos')!;
 const statModeEl = document.getElementById('stat-mode')!;
+const statViewEl = document.getElementById('stat-view')!;
 const statTimeEl = document.getElementById('stat-time')!;
 const activeBrickNameEl = document.getElementById('active-brick-name')!;
 const activeBrickSubEl = document.getElementById('active-brick-sub')!;
@@ -181,13 +182,27 @@ function showToast(msg: string): void {
   }, 2000);
 }
 
-const player = new PlayerController(camera, renderer.domElement, world, sound, (locked) => {
-  if (locked) {
-    studioOverlay.classList.add('hidden');
-  } else {
-    studioOverlay.classList.remove('hidden');
+const player = new PlayerController(
+  camera,
+  renderer.domElement,
+  world,
+  sound,
+  (locked) => {
+    if (locked) {
+      studioOverlay.classList.add('hidden');
+    } else {
+      studioOverlay.classList.remove('hidden');
+    }
+  },
+  (viewMode) => {
+    statViewEl.textContent = player.getViewModeLabel();
+    showToast(`Vue : ${player.getViewModeLabel()}`);
+    document.querySelectorAll('.view-btn').forEach((btn) => {
+      const m = (btn as HTMLElement).dataset.view;
+      btn.classList.toggle('active', m === viewMode);
+    });
   }
-});
+);
 
 // --- Hotbar & Active Brick Selection ---
 let selectedBrickId = 1;
@@ -271,6 +286,7 @@ renderer.domElement.addEventListener('mousedown', (e) => {
     }
     if (world.setBrick(x, y, z, selectedBrickId, true, true, world.rotationStep, false)) {
       sound.playPlace();
+      player.triggerActionAnimation();
     }
   }
   // Right click (or Alt+Left click): Remove brick / door / window
@@ -279,6 +295,7 @@ renderer.domElement.addEventListener('mousedown', (e) => {
       const { x, y, z } = target.removePos;
       if (world.removeBrick(x, y, z, true, true)) {
         sound.playRemove();
+        player.triggerActionAnimation();
       }
     }
   }
@@ -331,6 +348,7 @@ window.addEventListener('keydown', (e) => {
       );
       if (newState !== null) {
         sound.playDoor(newState);
+        player.triggerActionAnimation();
       }
     }
   }
@@ -408,6 +426,14 @@ document.querySelectorAll('.time-btn').forEach((btn) => {
   });
 });
 
+document.querySelectorAll('.view-btn').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    const mode = (btn as HTMLElement).dataset.view as CameraViewMode;
+    player.cycleViewMode(mode);
+    player.requestLock();
+  });
+});
+
 document.getElementById('btn-export')!.addEventListener('click', () => {
   const data = JSON.stringify(world.serialize(), null, 2);
   const blob = new Blob([data], { type: 'application/json' });
@@ -463,7 +489,7 @@ function animate(now: number): void {
     player.update(dt);
   }
   countryside.update(now * 0.001);
-  world.update(dt, camera);
+  world.update(dt, camera, player.getEyePosition(), player.getAimDirection());
 
   // Follow player with directional shadow frustum for ultra-sharp brick shadows everywhere
   sunLight.position.copy(player.position).addScaledVector(currentSunDir, 65);

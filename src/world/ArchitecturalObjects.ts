@@ -316,3 +316,4 @@ export function createOakDoorGroup(): { root: THREE.Group; doorPivot: THREE.Grou
 
   return { root, doorPivot };
 }
+

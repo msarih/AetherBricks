@@ -1,22 +1,27 @@
 import * as THREE from 'three';
 import { VoxelWorld } from '../world/VoxelWorld';
 import { SoundManager } from '../audio/SoundManager';
+import { CharacterAvatar } from './CharacterAvatar';
+
+export type CameraViewMode = 'tps-back' | 'tps-front' | 'fps';
 
 export class PlayerController {
   public readonly camera: THREE.PerspectiveCamera;
   public readonly position = new THREE.Vector3(0, 1.2, 4);
   public readonly velocity = new THREE.Vector3();
+  public readonly avatar: CharacterAvatar;
 
   private yaw = 0;
-  private pitch = -0.12;
+  private pitch = -0.18;
   public isFlying = false;
   public isGrounded = false;
   public isLocked = false;
+  public viewMode: CameraViewMode = 'tps-back'; // Activé par défaut pour voir son personnage immédiatement
 
   private readonly keys = new Set<string>();
   private readonly playerRadius = 0.34;
   private readonly playerHeight = 1.72;
-  private readonly eyeOffset = 0.62; // Distance above player base center
+  private readonly eyeOffset = 0.62;
   private stepTimer = 0;
 
   constructor(
@@ -24,16 +29,23 @@ export class PlayerController {
     private readonly domElement: HTMLElement,
     private readonly world: VoxelWorld,
     private readonly sound: SoundManager,
-    private readonly onLockChange?: (locked: boolean) => void
+    private readonly onLockChange?: (locked: boolean) => void,
+    private readonly onViewModeChange?: (mode: CameraViewMode) => void
   ) {
     this.camera = camera;
     this.camera.rotation.order = 'YXZ';
-    this.syncCamera();
+
+    this.avatar = new CharacterAvatar();
+    this.world.scene.add(this.avatar.root);
+    this.syncCamera(0.016);
 
     window.addEventListener('keydown', (e) => {
       this.keys.add(e.code);
       if (e.code === 'KeyF' && this.isLocked) {
         this.toggleFlyMode();
+      }
+      if (e.code === 'KeyV' && this.isLocked) {
+        this.cycleViewMode();
       }
     });
 
@@ -46,7 +58,7 @@ export class PlayerController {
       const sensitivity = 0.0021;
       this.yaw -= e.movementX * sensitivity;
       this.pitch -= e.movementY * sensitivity;
-      const maxPitch = Math.PI / 2 - 0.04;
+      const maxPitch = Math.PI / 2 - 0.08;
       this.pitch = Math.max(-maxPitch, Math.min(maxPitch, this.pitch));
     });
 
@@ -69,12 +81,43 @@ export class PlayerController {
     this.sound.playSelect();
   }
 
+  public cycleViewMode(explicitMode?: CameraViewMode): CameraViewMode {
+    if (explicitMode) {
+      this.viewMode = explicitMode;
+    } else if (this.viewMode === 'tps-back') {
+      this.viewMode = 'tps-front';
+    } else if (this.viewMode === 'tps-front') {
+      this.viewMode = 'fps';
+    } else {
+      this.viewMode = 'tps-back';
+    }
+    this.sound.playSelect();
+    this.syncCamera(0.016);
+    this.onViewModeChange?.(this.viewMode);
+    return this.viewMode;
+  }
+
+  public getViewModeLabel(): string {
+    switch (this.viewMode) {
+      case 'tps-back':
+        return '3E PERSONNE (DOS)';
+      case 'tps-front':
+        return '3E PERSONNE (FACE)';
+      case 'fps':
+        return '1RE PERSONNE (FPS)';
+    }
+  }
+
+  public triggerActionAnimation(): void {
+    this.avatar.triggerArmSwing();
+  }
+
   public resetPosition(): void {
     this.position.set(0, 1.2, 4);
     this.velocity.set(0, 0, 0);
     this.yaw = 0;
-    this.pitch = -0.12;
-    this.syncCamera();
+    this.pitch = -0.18;
+    this.syncCamera(0.016);
   }
 
   public intersectsBrick(bx: number, by: number, bz: number): boolean {
@@ -118,12 +161,10 @@ export class PlayerController {
   public update(dt: number): void {
     const clampedDt = Math.min(dt, 0.05);
 
-    // Forward & Right vectors on horizontal plane
     const forward = new THREE.Vector3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw));
     const right = new THREE.Vector3(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
 
     const moveDir = new THREE.Vector3();
-    // Works automatically for both AZERTY (ZQSD) and QWERTY (WASD) via physical KeyCodes + Arrow keys
     if (this.keys.has('KeyW') || this.keys.has('ArrowUp')) moveDir.add(forward);
     if (this.keys.has('KeyS') || this.keys.has('ArrowDown')) moveDir.sub(forward);
     if (this.keys.has('KeyD') || this.keys.has('ArrowRight')) moveDir.add(right);
@@ -145,7 +186,6 @@ export class PlayerController {
       if (this.keys.has('Space')) this.velocity.y = 7.5;
       if (this.keys.has('KeyC') || this.keys.has('ShiftLeft')) this.velocity.y = -7.5;
     } else {
-      // Gravity
       this.velocity.y -= 23.0 * clampedDt;
       if (this.keys.has('Space') && this.isGrounded) {
         this.velocity.y = 8.4;
@@ -154,21 +194,25 @@ export class PlayerController {
       }
     }
 
-    // Apply X movement with collision
+    // Apply X movement
     const nextX = this.position.clone();
     nextX.x += this.velocity.x * clampedDt;
     if (!this.checkWorldCollision(nextX)) {
       this.position.x = nextX.x;
+    } else {
+      this.velocity.x = 0;
     }
 
-    // Apply Z movement with collision
+    // Apply Z movement
     const nextZ = this.position.clone();
     nextZ.z += this.velocity.z * clampedDt;
     if (!this.checkWorldCollision(nextZ)) {
       this.position.z = nextZ.z;
+    } else {
+      this.velocity.z = 0;
     }
 
-    // Apply Y movement with ground + voxel collision
+    // Apply Y movement
     const nextY = this.position.clone();
     nextY.y += this.velocity.y * clampedDt;
     const groundMinY = -0.5 + this.playerHeight * 0.5;
@@ -187,11 +231,9 @@ export class PlayerController {
       this.velocity.y = 0;
     }
 
-    // Keep within flat terrain bounds (-78..78)
     this.position.x = Math.max(-78, Math.min(78, this.position.x));
     this.position.z = Math.max(-78, Math.min(78, this.position.z));
 
-    // Footstep sound when walking on ground or bricks
     if (this.isGrounded && !this.isFlying && moveDir.lengthSq() > 0.1) {
       this.stepTimer += clampedDt * (isSprinting ? 1.45 : 1.0);
       if (this.stepTimer >= 0.42) {
@@ -202,17 +244,72 @@ export class PlayerController {
       this.stepTimer = 0.3;
     }
 
-    this.syncCamera();
+    this.syncCamera(clampedDt);
   }
 
-  private syncCamera(): void {
-    this.camera.position.set(
+  public getEyePosition(): THREE.Vector3 {
+    return new THREE.Vector3(
       this.position.x,
       this.position.y + this.eyeOffset,
       this.position.z
     );
-    this.camera.rotation.y = this.yaw;
-    this.camera.rotation.x = this.pitch;
+  }
+
+  public getAimDirection(): THREE.Vector3 {
+    const dir = new THREE.Vector3(0, 0, -1);
+    const euler = new THREE.Euler(this.pitch, this.yaw, 0, 'YXZ');
+    dir.applyEuler(euler);
+    return dir.normalize();
+  }
+
+  private syncCamera(dt: number): void {
+    const isThirdPerson = this.viewMode !== 'fps';
+    this.avatar.update(
+      dt,
+      this.position,
+      this.velocity,
+      this.yaw,
+      this.pitch,
+      this.isGrounded,
+      this.isFlying,
+      isThirdPerson
+    );
+
+    const headPos = this.getEyePosition();
+
+    if (this.viewMode === 'fps') {
+      this.camera.position.copy(headPos);
+      this.camera.rotation.y = this.yaw;
+      this.camera.rotation.x = this.pitch;
+    } else if (this.viewMode === 'tps-back') {
+      // Caméra 3e personne derrière l'épaule droite du personnage
+      const dist = 3.6;
+      const aimDir = this.getAimDirection();
+      const rightOffset = new THREE.Vector3(Math.cos(this.yaw), 0, -Math.sin(this.yaw)).multiplyScalar(0.45);
+      const camPos = headPos
+        .clone()
+        .add(rightOffset)
+        .addScaledVector(aimDir, -dist)
+        .add(new THREE.Vector3(0, 0.35, 0));
+
+      // Empêche la caméra de passer sous l'herbe du sol
+      camPos.y = Math.max(-0.15, camPos.y);
+
+      this.camera.position.copy(camPos);
+      const lookTarget = headPos.clone().add(rightOffset).addScaledVector(aimDir, 6.0);
+      this.camera.lookAt(lookTarget);
+    } else {
+      // Caméra 3e personne de face (Selfie / Vue avant sur le personnage)
+      const dist = 3.2;
+      const forwardFlat = new THREE.Vector3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw));
+      const camPos = headPos
+        .clone()
+        .addScaledVector(forwardFlat, dist)
+        .add(new THREE.Vector3(0, 0.25, 0));
+      camPos.y = Math.max(-0.15, camPos.y);
+
+      this.camera.position.copy(camPos);
+      this.camera.lookAt(this.position.x, this.position.y + 0.25, this.position.z);
+    }
   }
 }
-
