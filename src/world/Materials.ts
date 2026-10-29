@@ -1,11 +1,13 @@
 import * as THREE from 'three';
 
-export type ItemCategory = 'bricks' | 'slabs' | 'openings';
+export type ItemCategory = 'bricks' | 'slabs' | 'stairs_roofs' | 'openings' | 'decor';
 
 export const CATEGORY_DEFINITIONS: { id: ItemCategory; label: string; icon: string }[] = [
   { id: 'bricks', label: 'Briques & Murs', icon: '🧱' },
   { id: 'slabs', label: 'Sols & Plafonds', icon: '⬛' },
+  { id: 'stairs_roofs', label: 'Escaliers, Échelle & Triangles', icon: '🪜' },
   { id: 'openings', label: 'Portes & Fenêtres', icon: '🚪' },
+  { id: 'decor', label: 'Piliers, Clôtures & Déco', icon: '🏛️' },
 ];
 
 export interface BrickDefinition {
@@ -633,6 +635,134 @@ export function createBrickCatalog(): Map<number, BrickDefinition> {
     subtitle: 'Porte 2m en chêne ouvrable [E: Ouvrir • R: Pivoter]',
     previewCss: 'linear-gradient(180deg, #bae6fd 0%, #bae6fd 38%, #9a6b3e 38%, #7c532d 100%)',
     material: new THREE.MeshStandardMaterial({ color: 0x9a6b3e }),
+  });
+
+  // --- CATÉGORIE 4 : ESCALIERS, ÉCHELLES & CUBES TRIANGLES ('stairs_roofs') ---
+  // 16. Escalier Pierre Blanche
+  catalog.set(16, {
+    id: 16,
+    category: 'stairs_roofs',
+    name: 'Escalier Pierre Blanche',
+    subtitle: 'Escalier 3 marches à montée auto [R: Pivoter]',
+    previewCss:
+      'linear-gradient(135deg, transparent 35%, #e5e1d6 35%, #c8c3b6 100%)',
+    material: new THREE.MeshStandardMaterial({ color: 0xe5e1d6 }),
+  });
+
+  // 17. Escalier Bois de Chêne
+  catalog.set(17, {
+    id: 17,
+    category: 'stairs_roofs',
+    name: 'Escalier Bois de Chêne',
+    subtitle: 'Escalier chaleureux en chêne [R: Pivoter]',
+    previewCss:
+      'linear-gradient(135deg, transparent 35%, #b68654 35%, #7c532d 100%)',
+    material: new THREE.MeshStandardMaterial({ color: 0x9a6b3e }),
+  });
+
+  // 18. Échelle en Chêne (Grimpable !)
+  catalog.set(18, {
+    id: 18,
+    category: 'stairs_roofs',
+    name: 'Échelle en Chêne',
+    subtitle: 'Avancez contre l’échelle pour grimper [R: Pivoter]',
+    previewCss:
+      'repeating-linear-gradient(0deg, #9a6b3e 0px, #9a6b3e 4px, transparent 4px, transparent 10px)',
+    material: new THREE.MeshStandardMaterial({ color: 0x9a6b3e }),
+  });
+
+  // 19. Cube Triangle / Pente 45° Blanche
+  catalog.set(19, {
+    id: 19,
+    category: 'stairs_roofs',
+    name: 'Cube Triangle Blanc',
+    subtitle: 'Prisme triangulaire 45° (Toit / Rampe) [R: Pivoter]',
+    previewCss: 'linear-gradient(45deg, #e5e1d6 50%, transparent 50%)',
+    material: new THREE.MeshStandardMaterial({ color: 0xe5e1d6 }),
+  });
+
+  // 20. Cube Triangle / Toit en Chêne 45°
+  catalog.set(20, {
+    id: 20,
+    category: 'stairs_roofs',
+    name: 'Cube Triangle Chêne',
+    subtitle: 'Pente de toit 45° en bois de chêne [R: Pivoter]',
+    previewCss: 'linear-gradient(45deg, #9a6b3e 50%, transparent 50%)',
+    material: new THREE.MeshStandardMaterial({ color: 0x9a6b3e }),
+  });
+
+  // 21. Faîtage / Double Pente Triangulaire
+  catalog.set(21, {
+    id: 21,
+    category: 'stairs_roofs',
+    name: 'Faîtage Double Pente',
+    subtitle: 'Sommet de toit triangulaire symétrique [R]',
+    previewCss: 'conic-gradient(from 135deg at 50% 25%, #e5e1d6 0deg 90deg, transparent 90deg 360deg)',
+    material: new THREE.MeshStandardMaterial({ color: 0xe5e1d6 }),
+  });
+
+  // --- CATÉGORIE 5 : PILIERS, CLÔTURES & DÉCORATION ('decor') ---
+  // 22. Colonne / Pilier Rond Blanc
+  catalog.set(22, {
+    id: 22,
+    category: 'decor',
+    name: 'Colonne Pierre Blanche',
+    subtitle: 'Pilier cylindrique avec base et chapiteau',
+    previewCss: 'linear-gradient(90deg, transparent 22%, #e5e1d6 22%, #c8c3b6 78%, transparent 78%)',
+    material: new THREE.MeshStandardMaterial({ color: 0xe5e1d6 }),
+  });
+
+  // 23. Garde-Corps / Balustrade Blanche
+  catalog.set(23, {
+    id: 23,
+    category: 'decor',
+    name: 'Garde-Corps Balustrade',
+    subtitle: 'Rambarde en pierre blanche pour balcon/terrasse [R]',
+    previewCss:
+      'repeating-linear-gradient(90deg, #e5e1d6 0px, #e5e1d6 5px, transparent 5px, transparent 10px)',
+    material: new THREE.MeshStandardMaterial({ color: 0xe5e1d6 }),
+  });
+
+  // 24. Clôture de Campagne en Chêne
+  catalog.set(24, {
+    id: 24,
+    category: 'decor',
+    name: 'Clôture en Chêne',
+    subtitle: 'Barrière de jardin en bois massif [R: Pivoter]',
+    previewCss:
+      'repeating-linear-gradient(90deg, #9a6b3e 0px, #9a6b3e 6px, transparent 6px, transparent 12px)',
+    material: new THREE.MeshStandardMaterial({ color: 0x9a6b3e }),
+  });
+
+  // 25. Bloc d'Arche / Arcade Blanche
+  catalog.set(25, {
+    id: 25,
+    category: 'decor',
+    name: 'Arche Voûtée Blanche',
+    subtitle: 'Linteau arqué en pierre blanche [R: Pivoter]',
+    previewCss: 'radial-gradient(circle at 50% 100%, transparent 42%, #e5e1d6 43%)',
+    material: new THREE.MeshStandardMaterial({ color: 0xe5e1d6 }),
+  });
+
+  // 26. Jardinière Fleurie en Pierre Blanche
+  catalog.set(26, {
+    id: 26,
+    category: 'decor',
+    name: 'Jardinière Fleurie',
+    subtitle: 'Bac en pierre blanche avec arbuste et fleurs',
+    previewCss: 'linear-gradient(180deg, #3f742b 0%, #3f742b 48%, #e5e1d6 48%, #c8c3b6 100%)',
+    material: new THREE.MeshStandardMaterial({ color: 0x3f742b }),
+  });
+
+  // 27. Lampadaire / Lanterne sur Pied
+  catalog.set(27, {
+    id: 27,
+    category: 'decor',
+    name: 'Lampadaire Lanterne',
+    subtitle: 'Lanterne sur pied à lumière chaude apaisante',
+    previewCss: 'radial-gradient(circle at 50% 35%, #fde68a 0%, #27303f 65%)',
+    isLight: true,
+    material: new THREE.MeshStandardMaterial({ color: 0xfde68a }),
   });
 
   return catalog;

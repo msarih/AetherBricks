@@ -172,6 +172,44 @@ export class PlayerController {
     return false;
   }
 
+  private isTouchingLadder(pos: THREE.Vector3 = this.position): boolean {
+    const r = this.playerRadius + 0.18;
+    const minX = Math.floor(pos.x - r + 0.5);
+    const maxX = Math.floor(pos.x + r + 0.5);
+    const minY = Math.floor(pos.y - this.playerHeight * 0.5 + 0.5);
+    const maxY = Math.floor(pos.y + this.playerHeight * 0.5 + 0.5);
+    const minZ = Math.floor(pos.z - r + 0.5);
+    const maxZ = Math.floor(pos.z + r + 0.5);
+
+    for (let x = minX; x <= maxX; x++) {
+      for (let y = minY; y <= maxY; y++) {
+        for (let z = minZ; z <= maxZ; z++) {
+          if (this.world.hasLadderAt(x, y, z)) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  private hasStepUpStairOrSlopeAt(pos: THREE.Vector3): boolean {
+    const minX = Math.floor(pos.x - this.playerRadius + 0.5);
+    const maxX = Math.floor(pos.x + this.playerRadius + 0.5);
+    const footY = Math.floor(pos.y - this.playerHeight * 0.5 + 0.5);
+    const minZ = Math.floor(pos.z - this.playerRadius + 0.5);
+    const maxZ = Math.floor(pos.z + this.playerRadius + 0.5);
+
+    for (let x = minX; x <= maxX; x++) {
+      for (let z = minZ; z <= maxZ; z++) {
+        if (this.world.hasStairOrSlopeAt(x, footY, z)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
   public update(dt: number): void {
     const clampedDt = Math.min(dt, 0.05);
 
@@ -198,10 +236,22 @@ export class PlayerController {
     this.velocity.x = moveDir.x * speed;
     this.velocity.z = moveDir.z * speed;
 
+    const onLadder = !this.isFlying && this.isTouchingLadder();
+
     if (this.isFlying) {
       this.velocity.y = 0;
       if (this.keys.has('Space')) this.velocity.y = 7.5;
       if (this.keys.has('KeyC') || this.keys.has('ShiftLeft')) this.velocity.y = -7.5;
+    } else if (onLadder) {
+      // Escalade fluide sur les échelles : Espace ou Flèche Haut / W fait monter, sinon descente douce contrôlée
+      if (this.keys.has('Space') || this.keys.has('KeyW') || this.keys.has('ArrowUp')) {
+        this.velocity.y = 4.8;
+      } else if (this.keys.has('KeyS') || this.keys.has('ArrowDown')) {
+        this.velocity.y = -4.2;
+      } else {
+        this.velocity.y = -1.6;
+      }
+      this.isGrounded = true;
     } else {
       this.velocity.y -= 23.0 * clampedDt;
       if (this.keys.has('Space') && this.isGrounded) {
@@ -211,20 +261,36 @@ export class PlayerController {
       }
     }
 
-    // Apply X movement
+    // Apply X movement (with automatic step-up on stairs & triangular slopes)
     const nextX = this.position.clone();
     nextX.x += this.velocity.x * clampedDt;
     if (!this.checkWorldCollision(nextX)) {
       this.position.x = nextX.x;
+    } else if (this.isGrounded && this.hasStepUpStairOrSlopeAt(nextX)) {
+      const stepX = nextX.clone();
+      stepX.y += 1.02;
+      if (!this.checkWorldCollision(stepX)) {
+        this.position.copy(stepX);
+      } else {
+        this.velocity.x = 0;
+      }
     } else {
       this.velocity.x = 0;
     }
 
-    // Apply Z movement
+    // Apply Z movement (with automatic step-up on stairs & triangular slopes)
     const nextZ = this.position.clone();
     nextZ.z += this.velocity.z * clampedDt;
     if (!this.checkWorldCollision(nextZ)) {
       this.position.z = nextZ.z;
+    } else if (this.isGrounded && this.hasStepUpStairOrSlopeAt(nextZ)) {
+      const stepZ = nextZ.clone();
+      stepZ.y += 1.02;
+      if (!this.checkWorldCollision(stepZ)) {
+        this.position.copy(stepZ);
+      } else {
+        this.velocity.z = 0;
+      }
     } else {
       this.velocity.z = 0;
     }

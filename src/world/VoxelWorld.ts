@@ -7,15 +7,39 @@ import {
   BRICK_TYPE_DOOR_OAK,
   BRICK_TYPE_WINDOW_CROSS,
   BRICK_TYPE_WINDOW_MODERN,
+  OBJ_TYPE_ARCH_WHITE,
+  OBJ_TYPE_BALUSTRADE_WHITE,
+  OBJ_TYPE_FENCE_OAK,
+  OBJ_TYPE_GABLE_ROOF,
+  OBJ_TYPE_LADDER_OAK,
+  OBJ_TYPE_LANTERN_POST,
+  OBJ_TYPE_PILLAR_WHITE,
+  OBJ_TYPE_PLANTER_BOX,
+  OBJ_TYPE_STAIRS_OAK,
+  OBJ_TYPE_STAIRS_WHITE,
+  OBJ_TYPE_TRIANGLE_OAK,
+  OBJ_TYPE_TRIANGLE_WHITE,
   SLAB_OFFSET_Y,
   SLAB_THICKNESS,
+  createArchBlockGroup,
+  createBalustradeGroup,
   createCrossWindowGroup,
   createFlatSlabMesh,
+  createGableRoofMesh,
+  createLadderGroup,
+  createLanternPostGroup,
   createModernWindowGroup,
   createOakDoorGroup,
+  createOakFenceGroup,
+  createPillarGroup,
+  createPlanterBoxGroup,
+  createStairsGroup,
+  createTriangleWedgeMesh,
   isCeilingSlab,
   isFlatSlab,
   isFloorSlab,
+  isLadder,
+  isStairOrSlope,
   isTwoBlocksTall,
 } from './ArchitecturalObjects';
 
@@ -338,6 +362,7 @@ export class VoxelWorld {
   /**
    * Utilisé pour les collisions physiques du joueur :
    * Seuls les blocs principaux ("main:x,y,z") fermés bloquent le passage.
+   * Les échelles (isLadder) ne bloquent pas l'entrée dans la case afin de permettre de grimper.
    */
   public hasBrickAt(x: number, y: number, z: number): boolean {
     const rx = Math.round(x);
@@ -348,7 +373,26 @@ export class VoxelWorld {
     if (item.entry.type === BRICK_TYPE_DOOR_OAK && item.entry.open) {
       return false;
     }
+    if (isLadder(item.entry.type)) {
+      return false;
+    }
     return true;
+  }
+
+  public hasLadderAt(x: number, y: number, z: number): boolean {
+    const rx = Math.round(x);
+    const ry = Math.round(y);
+    const rz = Math.round(z);
+    const item = this.bricks.get(`main:${rx},${ry},${rz}`);
+    return Boolean(item && isLadder(item.entry.type));
+  }
+
+  public hasStairOrSlopeAt(x: number, y: number, z: number): boolean {
+    const rx = Math.round(x);
+    const ry = Math.round(y);
+    const rz = Math.round(z);
+    const item = this.bricks.get(`main:${rx},${ry},${rz}`);
+    return Boolean(item && isStairOrSlope(item.entry.type));
   }
 
   public getBrickCount(): number {
@@ -445,6 +489,69 @@ export class VoxelWorld {
       this.scene.add(proxyBottom, proxyTop);
       this.interactables.push(proxyBottom, proxyTop);
       hitProxies.push(proxyBottom, proxyTop);
+    } else if (
+      def.id === OBJ_TYPE_STAIRS_WHITE ||
+      def.id === OBJ_TYPE_STAIRS_OAK ||
+      def.id === OBJ_TYPE_LADDER_OAK ||
+      def.id === OBJ_TYPE_TRIANGLE_WHITE ||
+      def.id === OBJ_TYPE_TRIANGLE_OAK ||
+      def.id === OBJ_TYPE_GABLE_ROOF ||
+      def.id === OBJ_TYPE_PILLAR_WHITE ||
+      def.id === OBJ_TYPE_BALUSTRADE_WHITE ||
+      def.id === OBJ_TYPE_FENCE_OAK ||
+      def.id === OBJ_TYPE_ARCH_WHITE ||
+      def.id === OBJ_TYPE_PLANTER_BOX ||
+      def.id === OBJ_TYPE_LANTERN_POST
+    ) {
+      switch (def.id) {
+        case OBJ_TYPE_STAIRS_WHITE:
+          visualRoot = createStairsGroup(false);
+          break;
+        case OBJ_TYPE_STAIRS_OAK:
+          visualRoot = createStairsGroup(true);
+          break;
+        case OBJ_TYPE_LADDER_OAK:
+          visualRoot = createLadderGroup();
+          break;
+        case OBJ_TYPE_TRIANGLE_WHITE:
+          visualRoot = createTriangleWedgeMesh(false);
+          break;
+        case OBJ_TYPE_TRIANGLE_OAK:
+          visualRoot = createTriangleWedgeMesh(true);
+          break;
+        case OBJ_TYPE_GABLE_ROOF:
+          visualRoot = createGableRoofMesh();
+          break;
+        case OBJ_TYPE_PILLAR_WHITE:
+          visualRoot = createPillarGroup();
+          break;
+        case OBJ_TYPE_BALUSTRADE_WHITE:
+          visualRoot = createBalustradeGroup();
+          break;
+        case OBJ_TYPE_FENCE_OAK:
+          visualRoot = createOakFenceGroup();
+          break;
+        case OBJ_TYPE_ARCH_WHITE:
+          visualRoot = createArchBlockGroup();
+          break;
+        case OBJ_TYPE_PLANTER_BOX:
+          visualRoot = createPlanterBoxGroup();
+          break;
+        case OBJ_TYPE_LANTERN_POST:
+        default:
+          visualRoot = createLanternPostGroup();
+          break;
+      }
+      visualRoot.position.set(rx, ry, rz);
+      visualRoot.rotation.y = (entry.rot ?? 0) * (Math.PI / 2);
+      this.scene.add(visualRoot);
+
+      const proxy = new THREE.Mesh(this.proxyBoxGeo, this.proxyMat);
+      proxy.position.set(rx, ry, rz);
+      proxy.userData = { ...entry };
+      this.scene.add(proxy);
+      this.interactables.push(proxy);
+      hitProxies.push(proxy);
     } else {
       const mesh = new THREE.Mesh(this.brickGeo, def.material);
       mesh.position.set(rx, ry, rz);

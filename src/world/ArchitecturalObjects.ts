@@ -15,6 +15,22 @@ export const SLAB_TYPE_CEILING_WHITE = 13;
 export const SLAB_TYPE_CEILING_LIGHT = 14;
 export const SLAB_TYPE_CEILING_OAK = 15;
 
+// Catégorie Escaliers, Échelles & Cubes Triangles (Toitures / Pentes)
+export const OBJ_TYPE_STAIRS_WHITE = 16;
+export const OBJ_TYPE_STAIRS_OAK = 17;
+export const OBJ_TYPE_LADDER_OAK = 18;
+export const OBJ_TYPE_TRIANGLE_WHITE = 19;
+export const OBJ_TYPE_TRIANGLE_OAK = 20;
+export const OBJ_TYPE_GABLE_ROOF = 21;
+
+// Catégorie Piliers, Clôtures & Décoration
+export const OBJ_TYPE_PILLAR_WHITE = 22;
+export const OBJ_TYPE_BALUSTRADE_WHITE = 23;
+export const OBJ_TYPE_FENCE_OAK = 24;
+export const OBJ_TYPE_ARCH_WHITE = 25;
+export const OBJ_TYPE_PLANTER_BOX = 26;
+export const OBJ_TYPE_LANTERN_POST = 27;
+
 export const SLAB_THICKNESS = 0.16;
 export const SLAB_OFFSET_Y = 0.5 - SLAB_THICKNESS / 2; // 0.42
 
@@ -38,13 +54,21 @@ export function isFlatSlab(type: number): boolean {
   return isFloorSlab(type) || isCeilingSlab(type);
 }
 
-export function isArchitecturalObject(type: number): boolean {
+export function isStairOrSlope(type: number): boolean {
   return (
-    type === BRICK_TYPE_WINDOW_CROSS ||
-    type === BRICK_TYPE_WINDOW_MODERN ||
-    type === BRICK_TYPE_DOOR_OAK ||
-    isFlatSlab(type)
+    type === OBJ_TYPE_STAIRS_WHITE ||
+    type === OBJ_TYPE_STAIRS_OAK ||
+    type === OBJ_TYPE_TRIANGLE_WHITE ||
+    type === OBJ_TYPE_TRIANGLE_OAK
   );
+}
+
+export function isLadder(type: number): boolean {
+  return type === OBJ_TYPE_LADDER_OAK;
+}
+
+export function isArchitecturalObject(type: number): boolean {
+  return type >= 7 && type <= 27;
 }
 
 export function isTwoBlocksTall(type: number): boolean {
@@ -57,11 +81,9 @@ function createOakWoodTexture(): THREE.CanvasTexture {
   canvas.width = canvas.height = size;
   const ctx = canvas.getContext('2d')!;
 
-  // Warm natural honey oak base
   ctx.fillStyle = '#9a6b3e';
   ctx.fillRect(0, 0, size, size);
 
-  // Parquet plank lines (4 planks per meter)
   const planks = 4;
   const plankW = size / planks;
   for (let p = 0; p < planks; p++) {
@@ -73,7 +95,6 @@ function createOakWoodTexture(): THREE.CanvasTexture {
     ctx.strokeRect(p * plankW + 1.5, 1.5, plankW - 3, size - 3);
   }
 
-  // Wood fibers and annual rings
   for (let i = 0; i < 450; i++) {
     const x = Math.random() * size;
     const w = 2 + Math.random() * 6;
@@ -81,7 +102,6 @@ function createOakWoodTexture(): THREE.CanvasTexture {
     ctx.fillRect(x, 0, w, size);
   }
 
-  // Fine grain streaks
   ctx.strokeStyle = 'rgba(58, 35, 16, 0.2)';
   ctx.lineWidth = 1.5;
   for (let i = 0; i < 120; i++) {
@@ -107,11 +127,10 @@ function createStoneTileTexture(): THREE.CanvasTexture {
   canvas.width = canvas.height = size;
   const ctx = canvas.getContext('2d')!;
 
-  ctx.fillStyle = '#f5f3ec';
+  ctx.fillStyle = '#e5e1d6';
   ctx.fillRect(0, 0, size, size);
 
-  // Subtle 2x2 architectural floor tiles per square meter
-  ctx.strokeStyle = '#d6d2c6';
+  ctx.strokeStyle = '#c8c3b6';
   ctx.lineWidth = 6;
   ctx.strokeRect(3, 3, size - 6, size - 6);
   ctx.beginPath();
@@ -121,11 +140,10 @@ function createStoneTileTexture(): THREE.CanvasTexture {
   ctx.lineTo(size, size / 2);
   ctx.stroke();
 
-  // Travertine stone micro-speckles
   for (let i = 0; i < 6000; i++) {
     const x = Math.random() * size;
     const y = Math.random() * size;
-    ctx.fillStyle = Math.random() > 0.5 ? 'rgba(255,255,255,0.2)' : 'rgba(195,190,178,0.15)';
+    ctx.fillStyle = Math.random() > 0.5 ? 'rgba(245,243,236,0.2)' : 'rgba(185,180,168,0.18)';
     ctx.fillRect(x, y, 2, 2);
   }
 
@@ -145,9 +163,15 @@ let sharedMaterials: {
   oakWood: THREE.MeshStandardMaterial;
   clearGlass: THREE.MeshPhysicalMaterial;
   brassMetal: THREE.MeshStandardMaterial;
+  darkIron: THREE.MeshStandardMaterial;
+  bushGreen: THREE.MeshStandardMaterial;
+  soilDark: THREE.MeshStandardMaterial;
+  flowerPink: THREE.MeshStandardMaterial;
 } | null = null;
 
 let sharedSlabGeo: THREE.BufferGeometry | null = null;
+let sharedWedgeGeo: THREE.BufferGeometry | null = null;
+let sharedGableGeo: THREE.BufferGeometry | null = null;
 
 export function getSharedArchMaterials() {
   if (!sharedMaterials) {
@@ -190,8 +214,8 @@ export function getSharedArchMaterials() {
       oakWood: new THREE.MeshStandardMaterial({
         color: 0xffffff,
         map: oakTex,
-        roughness: 0.52,
-        metalness: 0.03,
+        roughness: 0.58,
+        metalness: 0.02,
       }),
       clearGlass: new THREE.MeshPhysicalMaterial({
         color: 0xe0f2fe,
@@ -207,6 +231,23 @@ export function getSharedArchMaterials() {
         color: 0xd4af37,
         roughness: 0.25,
         metalness: 0.88,
+      }),
+      darkIron: new THREE.MeshStandardMaterial({
+        color: 0x27303f,
+        roughness: 0.45,
+        metalness: 0.7,
+      }),
+      bushGreen: new THREE.MeshStandardMaterial({
+        color: 0x3f742b,
+        roughness: 0.85,
+      }),
+      soilDark: new THREE.MeshStandardMaterial({
+        color: 0x4a3525,
+        roughness: 0.95,
+      }),
+      flowerPink: new THREE.MeshStandardMaterial({
+        color: 0xf472b6,
+        roughness: 0.6,
       }),
     };
   }
@@ -246,6 +287,324 @@ export function createFlatSlabMesh(type: number): THREE.Mesh {
   mesh.castShadow = true;
   mesh.receiveShadow = true;
   return mesh;
+}
+
+/**
+ * Escalier 3D à 3 marches (Pierre Blanche ou Chêne Massif)
+ * Permet de monter de y = -0.5 à y = +0.5 sur 1 bloc
+ */
+export function createStairsGroup(isOak: boolean): THREE.Group {
+  const mats = getSharedArchMaterials();
+  const mat = isOak ? mats.oakWood : mats.stoneTile;
+  const group = new THREE.Group();
+
+  // 3 marches progressives (bas-avant -> haut-arrière)
+  const step1 = new THREE.Mesh(new RoundedBoxGeometry(1.0, 0.333, 1.0, 2, 0.015), mat);
+  step1.position.set(0, -0.5 + 0.333 / 2, 0);
+
+  const step2 = new THREE.Mesh(new RoundedBoxGeometry(1.0, 0.333, 0.666, 2, 0.015), mat);
+  step2.position.set(0, -0.5 + 0.333 + 0.333 / 2, -0.5 + 0.666 / 2);
+
+  const step3 = new THREE.Mesh(new RoundedBoxGeometry(1.0, 0.334, 0.333, 2, 0.015), mat);
+  step3.position.set(0, 0.5 - 0.334 / 2, -0.5 + 0.333 / 2);
+
+  group.add(step1, step2, step3);
+  group.traverse((o) => {
+    if (o instanceof THREE.Mesh) {
+      o.castShadow = true;
+      o.receiveShadow = true;
+    }
+  });
+  return group;
+}
+
+/**
+ * Échelle verticale en Chêne à 4 barreaux (plaquée sur le côté arrière de la case pour grimper)
+ */
+export function createLadderGroup(): THREE.Group {
+  const mats = getSharedArchMaterials();
+  const group = new THREE.Group();
+
+  const railGeo = new RoundedBoxGeometry(0.07, 1.0, 0.07, 2, 0.01);
+  const leftRail = new THREE.Mesh(railGeo, mats.oakWood);
+  leftRail.position.set(-0.34, 0, -0.43);
+
+  const rightRail = new THREE.Mesh(railGeo, mats.oakWood);
+  rightRail.position.set(0.34, 0, -0.43);
+
+  group.add(leftRail, rightRail);
+
+  const rungGeo = new THREE.CylinderGeometry(0.028, 0.028, 0.68, 8);
+  rungGeo.rotateZ(Math.PI / 2);
+
+  for (let i = 0; i < 4; i++) {
+    const y = -0.36 + i * 0.24;
+    const rung = new THREE.Mesh(rungGeo, mats.oakWood);
+    rung.position.set(0, y, -0.43);
+    group.add(rung);
+  }
+
+  group.traverse((o) => {
+    if (o instanceof THREE.Mesh) {
+      o.castShadow = true;
+      o.receiveShadow = true;
+    }
+  });
+  return group;
+}
+
+/**
+ * Cube sous forme Triangle / Prisme à 45° (Rampe ou Pente de Toit)
+ */
+export function createTriangleWedgeMesh(isOak: boolean): THREE.Mesh {
+  if (!sharedWedgeGeo) {
+    // Profil triangulaire rectangle dans le plan YZ (bas de -0.5 à +0.5 en Z, haut à z = -0.5, y = +0.5)
+    const shape = new THREE.Shape();
+    shape.moveTo(-0.5, -0.5);
+    shape.lineTo(0.5, -0.5);
+    shape.lineTo(-0.5, 0.5);
+    shape.closePath();
+
+    const extrudeSettings: THREE.ExtrudeGeometryOptions = {
+      depth: 1.0,
+      bevelEnabled: false,
+      steps: 1,
+    };
+    const geo = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+    // Centrer l'extrusion sur X (-0.5 .. +0.5) et orienter la pente de +Z (bas) vers -Z (haut)
+    geo.translate(0, 0, -0.5);
+    geo.rotateY(Math.PI / 2);
+    geo.computeVertexNormals();
+    sharedWedgeGeo = geo;
+  }
+
+  const mats = getSharedArchMaterials();
+  const mesh = new THREE.Mesh(sharedWedgeGeo, isOak ? mats.oakWood : mats.stoneTile);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  return mesh;
+}
+
+/**
+ * Toit Faîtage / Double Pente Triangulaire Symétrique (Pignon)
+ */
+export function createGableRoofMesh(): THREE.Mesh {
+  if (!sharedGableGeo) {
+    const shape = new THREE.Shape();
+    shape.moveTo(-0.5, -0.5);
+    shape.lineTo(0.5, -0.5);
+    shape.lineTo(0.0, 0.25);
+    shape.closePath();
+
+    const geo = new THREE.ExtrudeGeometry(shape, { depth: 1.0, bevelEnabled: false, steps: 1 });
+    geo.translate(0, 0, -0.5);
+    geo.computeVertexNormals();
+    sharedGableGeo = geo;
+  }
+
+  const mats = getSharedArchMaterials();
+  const mesh = new THREE.Mesh(sharedGableGeo, mats.stoneTile);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  return mesh;
+}
+
+/**
+ * Colonne / Pilier Architectural Rond en Pierre Blanche avec Base et Chapiteau
+ */
+export function createPillarGroup(): THREE.Group {
+  const mats = getSharedArchMaterials();
+  const group = new THREE.Group();
+
+  const plinthBottom = new THREE.Mesh(new RoundedBoxGeometry(0.84, 0.14, 0.84, 2, 0.02), mats.stoneSill);
+  plinthBottom.position.y = -0.5 + 0.07;
+
+  const plinthTop = new THREE.Mesh(new RoundedBoxGeometry(0.84, 0.14, 0.84, 2, 0.02), mats.stoneSill);
+  plinthTop.position.y = 0.5 - 0.07;
+
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.31, 0.34, 0.76, 16), mats.whiteFrame);
+
+  group.add(plinthBottom, plinthTop, shaft);
+  group.traverse((o) => {
+    if (o instanceof THREE.Mesh) {
+      o.castShadow = true;
+      o.receiveShadow = true;
+    }
+  });
+  return group;
+}
+
+/**
+ * Garde-Corps / Balustrade ajourée en Pierre Blanche
+ */
+export function createBalustradeGroup(): THREE.Group {
+  const mats = getSharedArchMaterials();
+  const group = new THREE.Group();
+
+  const bottomRail = new THREE.Mesh(new RoundedBoxGeometry(1.0, 0.12, 0.22, 2, 0.015), mats.stoneSill);
+  bottomRail.position.set(0, -0.5 + 0.06, 0);
+
+  const topRail = new THREE.Mesh(new RoundedBoxGeometry(1.0, 0.12, 0.24, 2, 0.015), mats.whiteFrame);
+  topRail.position.set(0, 0.32, 0);
+
+  group.add(bottomRail, topRail);
+
+  const balusterGeo = new THREE.CylinderGeometry(0.055, 0.065, 0.68, 10);
+  for (const bx of [-0.34, 0, 0.34]) {
+    const b = new THREE.Mesh(balusterGeo, mats.whiteFrame);
+    b.position.set(bx, -0.08, 0);
+    group.add(b);
+  }
+
+  group.traverse((o) => {
+    if (o instanceof THREE.Mesh) {
+      o.castShadow = true;
+      o.receiveShadow = true;
+    }
+  });
+  return group;
+}
+
+/**
+ * Clôture de Campagne en Bois de Chêne
+ */
+export function createOakFenceGroup(): THREE.Group {
+  const mats = getSharedArchMaterials();
+  const group = new THREE.Group();
+
+  const postGeo = new RoundedBoxGeometry(0.14, 0.92, 0.14, 2, 0.015);
+  const leftPost = new THREE.Mesh(postGeo, mats.oakWood);
+  leftPost.position.set(-0.38, -0.04, 0);
+
+  const rightPost = new THREE.Mesh(postGeo, mats.oakWood);
+  rightPost.position.set(0.38, -0.04, 0);
+
+  const railGeo = new RoundedBoxGeometry(1.0, 0.1, 0.06, 2, 0.01);
+  const upperRail = new THREE.Mesh(railGeo, mats.oakWood);
+  upperRail.position.set(0, 0.22, 0);
+
+  const lowerRail = new THREE.Mesh(railGeo, mats.oakWood);
+  lowerRail.position.set(0, -0.14, 0);
+
+  group.add(leftPost, rightPost, upperRail, lowerRail);
+  group.traverse((o) => {
+    if (o instanceof THREE.Mesh) {
+      o.castShadow = true;
+      o.receiveShadow = true;
+    }
+  });
+  return group;
+}
+
+/**
+ * Bloc d'Arche / Arcade en Pierre Blanche
+ */
+export function createArchBlockGroup(): THREE.Group {
+  const mats = getSharedArchMaterials();
+  const group = new THREE.Group();
+
+  // Linteau supérieur + deux écoinçons latéraux formant une voûte
+  const topBeam = new THREE.Mesh(new RoundedBoxGeometry(1.0, 0.28, 1.0, 2, 0.02), mats.stoneTile);
+  topBeam.position.set(0, 0.5 - 0.14, 0);
+
+  const leftSide = new THREE.Mesh(new RoundedBoxGeometry(0.24, 0.72, 1.0, 2, 0.02), mats.stoneTile);
+  leftSide.position.set(-0.5 + 0.12, -0.14, 0);
+
+  const rightSide = new THREE.Mesh(new RoundedBoxGeometry(0.24, 0.72, 1.0, 2, 0.02), mats.stoneTile);
+  rightSide.position.set(0.5 - 0.12, -0.14, 0);
+
+  const leftCorner = new THREE.Mesh(new RoundedBoxGeometry(0.18, 0.24, 0.98, 2, 0.02), mats.stoneSill);
+  leftCorner.position.set(-0.22, 0.16, 0);
+
+  const rightCorner = new THREE.Mesh(new RoundedBoxGeometry(0.18, 0.24, 0.98, 2, 0.02), mats.stoneSill);
+  rightCorner.position.set(0.22, 0.16, 0);
+
+  group.add(topBeam, leftSide, rightSide, leftCorner, rightCorner);
+  group.traverse((o) => {
+    if (o instanceof THREE.Mesh) {
+      o.castShadow = true;
+      o.receiveShadow = true;
+    }
+  });
+  return group;
+}
+
+/**
+ * Jardinière en Pierre Blanche avec Arbuste et Fleurs
+ */
+export function createPlanterBoxGroup(): THREE.Group {
+  const mats = getSharedArchMaterials();
+  const group = new THREE.Group();
+
+  const box = new THREE.Mesh(new RoundedBoxGeometry(0.92, 0.46, 0.92, 2, 0.02), mats.stoneTile);
+  box.position.y = -0.5 + 0.23;
+
+  const soil = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.06, 0.8), mats.soilDark);
+  soil.position.y = -0.06;
+
+  const bushMain = new THREE.Mesh(new THREE.DodecahedronGeometry(0.32, 1), mats.bushGreen);
+  bushMain.position.set(0, 0.16, 0);
+  bushMain.scale.set(1.15, 0.85, 1.15);
+
+  group.add(box, soil, bushMain);
+
+  const flowerGeo = new THREE.DodecahedronGeometry(0.06, 0);
+  const flowerOffsets = [
+    [-0.16, 0.36, 0.12],
+    [0.18, 0.34, -0.14],
+    [0.05, 0.41, 0.15],
+    [-0.12, 0.33, -0.18],
+  ];
+  for (const [fx, fy, fz] of flowerOffsets) {
+    const f = new THREE.Mesh(flowerGeo, mats.flowerPink);
+    f.position.set(fx, fy, fz);
+    group.add(f);
+  }
+
+  group.traverse((o) => {
+    if (o instanceof THREE.Mesh) {
+      o.castShadow = true;
+      o.receiveShadow = true;
+    }
+  });
+  return group;
+}
+
+/**
+ * Lampadaire / Lanterne sur Pied
+ */
+export function createLanternPostGroup(): THREE.Group {
+  const mats = getSharedArchMaterials();
+  const group = new THREE.Group();
+
+  const base = new THREE.Mesh(CylinderOrBoxBase(), mats.darkIron);
+  base.position.y = -0.5 + 0.06;
+
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.065, 0.62, 10), mats.darkIron);
+  pole.position.y = -0.08;
+
+  const lampCore = new THREE.Mesh(
+    new RoundedBoxGeometry(0.26, 0.28, 0.26, 2, 0.02),
+    mats.ceilingLight
+  );
+  lampCore.position.y = 0.32;
+
+  const cap = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.12, 4), mats.darkIron);
+  cap.rotation.y = Math.PI / 4;
+  cap.position.y = 0.5;
+
+  group.add(base, pole, lampCore, cap);
+  group.traverse((o) => {
+    if (o instanceof THREE.Mesh) {
+      o.castShadow = true;
+      o.receiveShadow = true;
+    }
+  });
+  return group;
+}
+
+function CylinderOrBoxBase(): THREE.BufferGeometry {
+  return new RoundedBoxGeometry(0.32, 0.12, 0.32, 2, 0.02);
 }
 
 /**
@@ -351,8 +710,7 @@ export function createOakDoorGroup(): { root: THREE.Group; doorPivot: THREE.Grou
   leftJamb.position.set(-0.5 + jambW / 2, 0.5, 0);
 
   const rightJamb = new THREE.Mesh(new THREE.BoxGeometry(jambW, totalH, frameDepth), mats.whiteFrame);
-  rightJamb.position.set(0.5 - jambW / 2, 0, 0);
-  rightJamb.position.y = 0.5;
+  rightJamb.position.set(0.5 - jambW / 2, 0.5, 0);
 
   const topLintel = new THREE.Mesh(new THREE.BoxGeometry(1.0, jambW, frameDepth + 0.03), mats.whiteFrame);
   topLintel.position.set(0, 1.5 - jambW / 2, 0);

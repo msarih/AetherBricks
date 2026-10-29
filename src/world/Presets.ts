@@ -41,6 +41,18 @@ export function getStarterScene(): BrickEntry[] {
   bricks.push({ x: 2, y: 1, z: zWall, type: 7, rot: 0 });
   bricks.push({ x: 0, y: 0, z: zWall, type: 9, rot: 0, open: false });
 
+  // Éléments de démonstration sur la terrasse : escalier (16), échelle (18), jardinières (26), lampadaires (27) et clôtures (24)
+  bricks.push({ x: 0, y: 0, z: -2, type: 16, rot: 0 }); // Escalier d'accès central
+  bricks.push({ x: -3, y: 0, z: -5, type: 18, rot: 0 }); // Échelle en chêne
+  bricks.push({ x: -3, y: 1, z: -5, type: 18, rot: 0 });
+  bricks.push({ x: -3, y: 2, z: -5, type: 18, rot: 0 });
+  bricks.push({ x: -1, y: 0, z: -3, type: 26, rot: 0 }); // Jardinière fleurie gauche
+  bricks.push({ x: 1, y: 0, z: -3, type: 26, rot: 0 }); // Jardinière fleurie droite
+  bricks.push({ x: -3, y: 0, z: -3, type: 27, rot: 0 }); // Lampadaire gauche
+  bricks.push({ x: 3, y: 0, z: -3, type: 27, rot: 0 }); // Lampadaire droit
+  bricks.push({ x: -2, y: 0, z: -3, type: 24, rot: 0 }); // Clôture chêne
+  bricks.push({ x: 2, y: 0, z: -3, type: 24, rot: 0 });
+
   return bricks;
 }
 
@@ -116,6 +128,27 @@ export function getWhitePavilionPreset(): BrickEntry[] {
       }
     }
   }
+
+  // Toiture en prismes triangulaires (type 19) et faîtage double pente (type 21) au-dessus du pavillon (y = 4)
+  for (let z = -10; z <= -2; z++) {
+    bricks.push({ x: -4, y: 4, z, type: 19, rot: 1 }); // Pente gauche
+    bricks.push({ x: 4, y: 4, z, type: 19, rot: 3 }); // Pente droite
+    bricks.push({ x: 0, y: 4, z, type: 21, rot: 0 }); // Faîtage central double pente
+  }
+
+  // Échelle extérieure en chêne sur le flanc droit (x = 5, z = -3, y = 0..3) pour grimper sur le toit
+  for (let y = 0; y <= 3; y++) {
+    bricks.push({ x: 5, y, z: -3, type: 18, rot: 1 });
+  }
+
+  // Escalier d'accueil (16), colonnes (22), jardinières (26) et lampadaires (27) devant la maisonnette
+  bricks.push({ x: 0, y: 0, z: 1, type: 16, rot: 0 });
+  bricks.push({ x: -2, y: 0, z: -1, type: 22, rot: 0 });
+  bricks.push({ x: 2, y: 0, z: -1, type: 22, rot: 0 });
+  bricks.push({ x: -1, y: 0, z: -1, type: 26, rot: 0 });
+  bricks.push({ x: 1, y: 0, z: -1, type: 26, rot: 0 });
+  bricks.push({ x: -3, y: 0, z: 0, type: 27, rot: 0 });
+  bricks.push({ x: 3, y: 0, z: 0, type: 27, rot: 0 });
 
   return bricks;
 }
