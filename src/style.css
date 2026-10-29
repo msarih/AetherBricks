@@ -59,6 +59,30 @@ html {
   border-color: #ffffff;
 }
 
+.interaction-hint {
+  position: fixed;
+  top: calc(50% + 28px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(15, 23, 42, 0.85);
+  color: #ffffff;
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  pointer-events: none;
+  z-index: 25;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.22);
+  transition: opacity 0.15s ease;
+}
+
+.interaction-hint.hidden {
+  opacity: 0;
+}
+
 /* Top Left HUD */
 .hud-top-left {
   position: fixed;

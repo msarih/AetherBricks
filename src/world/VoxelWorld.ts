@@ -3,10 +3,27 @@ import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.j
 import { BrickDefinition, createBrickCatalog, createCountrysideGrassPBR } from './Materials';
 import { BrickEntry, getStarterScene } from './Presets';
 import { CountrysideEnv } from './CountrysideEnv';
+import {
+  BRICK_TYPE_DOOR_OAK,
+  BRICK_TYPE_WINDOW_CROSS,
+  BRICK_TYPE_WINDOW_MODERN,
+  createCrossWindowGroup,
+  createModernWindowGroup,
+  createOakDoorGroup,
+  isTwoBlocksTall,
+} from './ArchitecturalObjects';
 
 interface HistoryAction {
   kind: 'place' | 'remove';
   entry: BrickEntry;
+}
+
+interface PlacedItem {
+  visualRoot: THREE.Object3D;
+  hitProxies: THREE.Mesh[];
+  entry: BrickEntry;
+  light?: THREE.PointLight;
+  doorPivot?: THREE.Group;
 }
 
 interface ParticleBurst {
@@ -17,25 +34,39 @@ interface ParticleBurst {
   maxAge: number;
 }
 
-const STORAGE_KEY = 'aetherbricks_world_v1';
+const STORAGE_KEY = 'aetherbricks_world_v2';
 
 export class VoxelWorld {
   public readonly scene: THREE.Scene;
   public readonly catalog: Map<number, BrickDefinition>;
   private readonly brickGeo: THREE.BufferGeometry;
+  private readonly proxyBoxGeo = new THREE.BoxGeometry(1, 1, 1);
+  private readonly proxyMat = new THREE.MeshBasicMaterial({
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+  });
   private readonly groundMesh: THREE.Mesh;
-  private readonly bricks = new Map<string, { mesh: THREE.Mesh; type: number; light?: THREE.PointLight }>();
+
+  // Map from "x,y,z" -> PlacedItem (for 2-block-tall doors, both (x,y,z) and (x,y+1,z) point to the same PlacedItem)
+  private readonly bricks = new Map<string, PlacedItem>();
+  private readonly uniqueItems = new Set<PlacedItem>();
   private readonly raycaster = new THREE.Raycaster();
   private readonly interactables: THREE.Object3D[] = [];
   private countryside?: CountrysideEnv;
 
   // Ghost block preview
   private readonly ghostGroup: THREE.Group;
-  private readonly ghostMesh: THREE.Mesh;
+  private readonly ghostBoxMesh: THREE.Mesh;
+  private readonly ghostWireframe: THREE.LineSegments;
+  public rotationStep = 0; // 0, 1, 2, 3 (90° increments)
+
   public currentTarget: {
     placePos: THREE.Vector3;
     removePos: THREE.Vector3 | null;
     hitBrickType: number | null;
+    isDoorHit: boolean;
+    doorIsOpen?: boolean;
   } | null = null;
 
   // Undo / Redo stacks
@@ -86,16 +117,16 @@ export class VoxelWorld {
       opacity: 0.24,
       depthWrite: false,
     });
-    this.ghostMesh = new THREE.Mesh(new THREE.BoxGeometry(1.005, 1.005, 1.005), ghostMat);
+    this.ghostBoxMesh = new THREE.Mesh(new THREE.BoxGeometry(1.005, 1.005, 1.005), ghostMat);
     const edgesGeo = new THREE.EdgesGeometry(new THREE.BoxGeometry(1.01, 1.01, 1.01));
     const edgesMat = new THREE.LineBasicMaterial({
       color: 0xffffff,
       transparent: true,
       opacity: 0.85,
     });
-    const wireframe = new THREE.LineSegments(edgesGeo, edgesMat);
-    this.ghostGroup.add(this.ghostMesh);
-    this.ghostGroup.add(wireframe);
+    this.ghostWireframe = new THREE.LineSegments(edgesGeo, edgesMat);
+    this.ghostGroup.add(this.ghostBoxMesh);
+    this.ghostGroup.add(this.ghostWireframe);
     this.ghostGroup.visible = false;
     this.scene.add(this.ghostGroup);
 
@@ -108,33 +139,134 @@ export class VoxelWorld {
     }
   }
 
+  public setGhostMode(selectedType: number): void {
+    const twoTall = isTwoBlocksTall(selectedType);
+    if (twoTall) {
+      this.ghostBoxMesh.scale.set(1, 2, 1);
+      this.ghostBoxMesh.position.set(0, 0.5, 0);
+      this.ghostWireframe.scale.set(1, 2, 1);
+      this.ghostWireframe.position.set(0, 0.5, 0);
+    } else {
+      this.ghostBoxMesh.scale.set(1, 1, 1);
+      this.ghostBoxMesh.position.set(0, 0, 0);
+      this.ghostWireframe.scale.set(1, 1, 1);
+      this.ghostWireframe.position.set(0, 0, 0);
+    }
+  }
+
+  public rotatePlacement(): number {
+    this.rotationStep = (this.rotationStep + 1) % 4;
+    return this.rotationStep;
+  }
+
   private key(x: number, y: number, z: number): string {
     return `${x},${y},${z}`;
   }
 
+  /**
+   * Utilisé pour les collisions physiques du joueur :
+   * Une porte ouverte (`type === 9` et `open === true`) laisse passer le joueur !
+   */
   public hasBrickAt(x: number, y: number, z: number): boolean {
-    return this.bricks.has(this.key(Math.round(x), Math.round(y), Math.round(z)));
+    const item = this.bricks.get(this.key(Math.round(x), Math.round(y), Math.round(z)));
+    if (!item) return false;
+    if (item.entry.type === BRICK_TYPE_DOOR_OAK && item.entry.open) {
+      return false;
+    }
+    return true;
   }
 
   public getBrickCount(): number {
-    return this.bricks.size;
+    return this.uniqueItems.size;
   }
 
-  public setBrick(x: number, y: number, z: number, type: number, recordHistory = true, spawnParticles = false): boolean {
+  public setBrick(
+    x: number,
+    y: number,
+    z: number,
+    type: number,
+    recordHistory = true,
+    spawnParticles = false,
+    rot = this.rotationStep,
+    open = false
+  ): boolean {
     const rx = Math.round(x);
     const ry = Math.round(y);
     const rz = Math.round(z);
     if (ry < 0 || ry > 120) return false;
 
-    const k = this.key(rx, ry, rz);
-    if (this.bricks.has(k)) return false;
+    const k1 = this.key(rx, ry, rz);
+    if (this.bricks.has(k1)) return false;
+
+    const twoTall = isTwoBlocksTall(type);
+    const k2 = this.key(rx, ry + 1, rz);
+    if (twoTall && this.bricks.has(k2)) return false;
 
     const def = this.catalog.get(type) ?? this.catalog.get(1)!;
-    const mesh = new THREE.Mesh(this.brickGeo, def.material);
-    mesh.position.set(rx, ry, rz);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    mesh.userData = { isBrick: true, x: rx, y: ry, z: rz, type: def.id };
+    const entry: BrickEntry = { x: rx, y: ry, z: rz, type: def.id, rot: rot % 4, open };
+
+    let visualRoot: THREE.Object3D;
+    let doorPivot: THREE.Group | undefined;
+    const hitProxies: THREE.Mesh[] = [];
+
+    if (def.id === BRICK_TYPE_WINDOW_CROSS) {
+      visualRoot = createCrossWindowGroup();
+      visualRoot.position.set(rx, ry, rz);
+      visualRoot.rotation.y = (entry.rot ?? 0) * (Math.PI / 2);
+      this.scene.add(visualRoot);
+
+      const proxy = new THREE.Mesh(this.proxyBoxGeo, this.proxyMat);
+      proxy.position.set(rx, ry, rz);
+      proxy.userData = { ...entry };
+      this.scene.add(proxy);
+      this.interactables.push(proxy);
+      hitProxies.push(proxy);
+    } else if (def.id === BRICK_TYPE_WINDOW_MODERN) {
+      visualRoot = createModernWindowGroup();
+      visualRoot.position.set(rx, ry, rz);
+      visualRoot.rotation.y = (entry.rot ?? 0) * (Math.PI / 2);
+      this.scene.add(visualRoot);
+
+      const proxy = new THREE.Mesh(this.proxyBoxGeo, this.proxyMat);
+      proxy.position.set(rx, ry, rz);
+      proxy.userData = { ...entry };
+      this.scene.add(proxy);
+      this.interactables.push(proxy);
+      hitProxies.push(proxy);
+    } else if (def.id === BRICK_TYPE_DOOR_OAK) {
+      const doorObj = createOakDoorGroup();
+      visualRoot = doorObj.root;
+      doorPivot = doorObj.doorPivot;
+      if (entry.open) {
+        doorPivot.rotation.y = Math.PI * 0.48;
+      }
+      visualRoot.position.set(rx, ry, rz);
+      visualRoot.rotation.y = (entry.rot ?? 0) * (Math.PI / 2);
+      this.scene.add(visualRoot);
+
+      // Deux boîtes de sélection (bloc bas ry et bloc haut ry+1)
+      const proxyBottom = new THREE.Mesh(this.proxyBoxGeo, this.proxyMat);
+      proxyBottom.position.set(rx, ry, rz);
+      proxyBottom.userData = { ...entry };
+
+      const proxyTop = new THREE.Mesh(this.proxyBoxGeo, this.proxyMat);
+      proxyTop.position.set(rx, ry + 1, rz);
+      proxyTop.userData = { ...entry };
+
+      this.scene.add(proxyBottom, proxyTop);
+      this.interactables.push(proxyBottom, proxyTop);
+      hitProxies.push(proxyBottom, proxyTop);
+    } else {
+      const mesh = new THREE.Mesh(this.brickGeo, def.material);
+      mesh.position.set(rx, ry, rz);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      mesh.userData = { ...entry };
+      visualRoot = mesh;
+      this.scene.add(mesh);
+      this.interactables.push(mesh);
+      hitProxies.push(mesh);
+    }
 
     let light: THREE.PointLight | undefined;
     if (def.isLight) {
@@ -143,16 +275,19 @@ export class VoxelWorld {
       this.scene.add(light);
     }
 
-    this.scene.add(mesh);
-    this.interactables.push(mesh);
-    this.bricks.set(k, { mesh, type: def.id, light });
+    const placed: PlacedItem = { visualRoot, hitProxies, entry, light, doorPivot };
+    this.uniqueItems.add(placed);
+    this.bricks.set(k1, placed);
+    if (twoTall) {
+      this.bricks.set(k2, placed);
+    }
 
     if (ry === 0) {
       this.countryside?.syncGrassAt(rx, rz, true);
     }
 
     if (recordHistory) {
-      this.undoStack.push({ kind: 'place', entry: { x: rx, y: ry, z: rz, type: def.id } });
+      this.undoStack.push({ kind: 'place', entry: { ...entry } });
       this.redoStack = [];
       this.saveToLocalStorage();
     }
@@ -164,6 +299,14 @@ export class VoxelWorld {
     return true;
   }
 
+  public toggleDoorAt(x: number, y: number, z: number): boolean | null {
+    const item = this.bricks.get(this.key(Math.round(x), Math.round(y), Math.round(z)));
+    if (!item || item.entry.type !== BRICK_TYPE_DOOR_OAK) return null;
+    item.entry.open = !item.entry.open;
+    this.saveToLocalStorage();
+    return item.entry.open;
+  }
+
   public removeBrick(x: number, y: number, z: number, recordHistory = true, spawnParticles = true): boolean {
     const rx = Math.round(x);
     const ry = Math.round(y);
@@ -172,28 +315,38 @@ export class VoxelWorld {
     const existing = this.bricks.get(k);
     if (!existing) return false;
 
-    this.scene.remove(existing.mesh);
+    const baseEntry = existing.entry;
+    this.scene.remove(existing.visualRoot);
     if (existing.light) {
       this.scene.remove(existing.light);
     }
-    const idx = this.interactables.indexOf(existing.mesh);
-    if (idx !== -1) {
-      this.interactables.splice(idx, 1);
-    }
-    this.bricks.delete(k);
 
-    if (ry === 0) {
-      this.countryside?.syncGrassAt(rx, rz, false);
+    for (const proxy of existing.hitProxies) {
+      this.scene.remove(proxy);
+      const idx = this.interactables.indexOf(proxy);
+      if (idx !== -1) {
+        this.interactables.splice(idx, 1);
+      }
+    }
+
+    this.uniqueItems.delete(existing);
+    this.bricks.delete(this.key(baseEntry.x, baseEntry.y, baseEntry.z));
+    if (isTwoBlocksTall(baseEntry.type)) {
+      this.bricks.delete(this.key(baseEntry.x, baseEntry.y + 1, baseEntry.z));
+    }
+
+    if (baseEntry.y === 0) {
+      this.countryside?.syncGrassAt(baseEntry.x, baseEntry.z, false);
     }
 
     if (recordHistory) {
-      this.undoStack.push({ kind: 'remove', entry: { x: rx, y: ry, z: rz, type: existing.type } });
+      this.undoStack.push({ kind: 'remove', entry: { ...baseEntry } });
       this.redoStack = [];
       this.saveToLocalStorage();
     }
 
     if (spawnParticles) {
-      this.spawnBurst(new THREE.Vector3(rx, ry, rz), 18);
+      this.spawnBurst(new THREE.Vector3(baseEntry.x, baseEntry.y, baseEntry.z), 18);
     }
 
     return true;
@@ -206,7 +359,16 @@ export class VoxelWorld {
     if (action.kind === 'place') {
       this.removeBrick(action.entry.x, action.entry.y, action.entry.z, false, true);
     } else {
-      this.setBrick(action.entry.x, action.entry.y, action.entry.z, action.entry.type, false, true);
+      this.setBrick(
+        action.entry.x,
+        action.entry.y,
+        action.entry.z,
+        action.entry.type,
+        false,
+        true,
+        action.entry.rot ?? 0,
+        action.entry.open ?? false
+      );
     }
     this.redoStack.push(action);
     this.saveToLocalStorage();
@@ -218,7 +380,16 @@ export class VoxelWorld {
     if (!action) return false;
 
     if (action.kind === 'place') {
-      this.setBrick(action.entry.x, action.entry.y, action.entry.z, action.entry.type, false, true);
+      this.setBrick(
+        action.entry.x,
+        action.entry.y,
+        action.entry.z,
+        action.entry.type,
+        false,
+        true,
+        action.entry.rot ?? 0,
+        action.entry.open ?? false
+      );
     } else {
       this.removeBrick(action.entry.x, action.entry.y, action.entry.z, false, true);
     }
@@ -228,14 +399,17 @@ export class VoxelWorld {
   }
 
   public clearAll(save = true): void {
-    for (const [, item] of this.bricks) {
-      this.scene.remove(item.mesh);
+    for (const item of this.uniqueItems) {
+      this.scene.remove(item.visualRoot);
       if (item.light) this.scene.remove(item.light);
-      const { x, y, z } = item.mesh.userData as BrickEntry;
-      if (y === 0) {
-        this.countryside?.syncGrassAt(x, z, false);
+      for (const proxy of item.hitProxies) {
+        this.scene.remove(proxy);
+      }
+      if (item.entry.y === 0) {
+        this.countryside?.syncGrassAt(item.entry.x, item.entry.z, false);
       }
     }
+    this.uniqueItems.clear();
     this.bricks.clear();
     this.interactables.length = 0;
     this.interactables.push(this.groundMesh);
@@ -249,7 +423,7 @@ export class VoxelWorld {
   public loadPreset(entries: BrickEntry[], save = true): void {
     this.clearAll(false);
     for (const e of entries) {
-      this.setBrick(e.x, e.y, e.z, e.type, false, false);
+      this.setBrick(e.x, e.y, e.z, e.type, false, false, e.rot ?? 0, e.open ?? false);
     }
     if (save) {
       this.saveToLocalStorage();
@@ -258,9 +432,8 @@ export class VoxelWorld {
 
   public serialize(): BrickEntry[] {
     const list: BrickEntry[] = [];
-    for (const [, item] of this.bricks) {
-      const { x, y, z, type } = item.mesh.userData as BrickEntry;
-      list.push({ x, y, z, type });
+    for (const item of this.uniqueItems) {
+      list.push({ ...item.entry });
     }
     return list;
   }
@@ -324,6 +497,18 @@ export class VoxelWorld {
   }
 
   public update(dt: number, camera: THREE.Camera): void {
+    // Animate doors smoothly
+    for (const item of this.uniqueItems) {
+      if (item.doorPivot) {
+        const targetAngle = item.entry.open ? Math.PI * 0.48 : 0;
+        item.doorPivot.rotation.y = THREE.MathUtils.lerp(
+          item.doorPivot.rotation.y,
+          targetAngle,
+          Math.min(1, dt * 10)
+        );
+      }
+    }
+
     this.raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
     const hits = this.raycaster.intersectObjects(this.interactables, false);
 
@@ -340,15 +525,20 @@ export class VoxelWorld {
           placePos,
           removePos: null,
           hitBrickType: null,
+          isDoorHit: false,
         };
       } else {
-        const { x, y, z, type } = hit.object.userData as BrickEntry;
-        const removePos = new THREE.Vector3(x, y, z);
-        const placePos = removePos.clone().add(normal);
+        const hitPos = hit.object.position.clone().round();
+        const data = hit.object.userData as BrickEntry;
+        const removePos = new THREE.Vector3(data.x, data.y, data.z);
+        const placePos = hitPos.clone().add(normal);
+        const placedItem = this.bricks.get(this.key(data.x, data.y, data.z));
         this.currentTarget = {
           placePos,
           removePos,
-          hitBrickType: type,
+          hitBrickType: data.type,
+          isDoorHit: data.type === BRICK_TYPE_DOOR_OAK,
+          doorIsOpen: placedItem?.entry.open,
         };
       }
 

@@ -8,6 +8,7 @@ import { VoxelWorld } from './world/VoxelWorld';
 import { CountrysideEnv } from './world/CountrysideEnv';
 import { PlayerController } from './player/PlayerController';
 import { SoundManager } from './audio/SoundManager';
+import { isTwoBlocksTall } from './world/ArchitecturalObjects';
 import {
   BrickEntry,
   getBrutalistArchPreset,
@@ -160,6 +161,7 @@ const world = new VoxelWorld(scene, countryside);
 
 const studioOverlay = document.getElementById('studio-overlay')!;
 const crosshairEl = document.getElementById('crosshair')!;
+const interactionHintEl = document.getElementById('interaction-hint')!;
 const statBricksEl = document.getElementById('stat-bricks')!;
 const statPosEl = document.getElementById('stat-pos')!;
 const statModeEl = document.getElementById('stat-mode')!;
@@ -208,6 +210,7 @@ function renderHotbar(): void {
   const activeDef = world.catalog.get(selectedBrickId)!;
   activeBrickNameEl.textContent = activeDef.name;
   activeBrickSubEl.textContent = activeDef.subtitle;
+  world.setGhostMode(selectedBrickId);
 }
 
 function selectBrick(id: number): void {
@@ -258,18 +261,19 @@ renderer.domElement.addEventListener('mousedown', (e) => {
   const target = world.currentTarget;
   if (!target) return;
 
-  // Left click: Place brick (unless Alt+Click)
+  // Left click: Place brick / window / door (unless Alt+Click)
   if (e.button === 0 && !e.altKey) {
     const { x, y, z } = target.placePos;
-    if (player.intersectsBrick(x, y, z)) {
+    const twoTall = isTwoBlocksTall(selectedBrickId);
+    if (player.intersectsBrick(x, y, z) || (twoTall && player.intersectsBrick(x, y + 1, z))) {
       showToast('Espace occupé par le joueur');
       return;
     }
-    if (world.setBrick(x, y, z, selectedBrickId, true, true)) {
+    if (world.setBrick(x, y, z, selectedBrickId, true, true, world.rotationStep, false)) {
       sound.playPlace();
     }
   }
-  // Right click (or Alt+Left click): Remove brick
+  // Right click (or Alt+Left click): Remove brick / door / window
   else if (e.button === 2 || (e.button === 0 && e.altKey)) {
     if (target.removePos) {
       const { x, y, z } = target.removePos;
@@ -301,11 +305,33 @@ window.addEventListener(
 );
 
 window.addEventListener('keydown', (e) => {
-  // Number keys 1..6
+  // Number keys 1..9
   if (e.code.startsWith('Digit')) {
     const num = Number(e.code.replace('Digit', ''));
-    if (num >= 1 && num <= 6) {
+    if (num >= 1 && num <= 9) {
       selectBrick(num);
+    }
+  }
+
+  // Rotate door / window orientation (R)
+  if (e.code === 'KeyR' && player.isLocked) {
+    const step = world.rotatePlacement();
+    sound.playSelect();
+    showToast(`Orientation : ${step * 90}°`);
+  }
+
+  // Open / Close Door (E)
+  if (e.code === 'KeyE' && player.isLocked) {
+    const target = world.currentTarget;
+    if (target?.removePos && target.isDoorHit) {
+      const newState = world.toggleDoorAt(
+        target.removePos.x,
+        target.removePos.y,
+        target.removePos.z
+      );
+      if (newState !== null) {
+        sound.playDoor(newState);
+      }
     }
   }
 
@@ -357,14 +383,14 @@ document.getElementById('btn-flat-empty')!.addEventListener('click', () => {
 document.getElementById('btn-starter')!.addEventListener('click', () => {
   world.loadPreset(getStarterScene(), true);
   player.resetPosition();
-  showToast('Socle initial en briques blanches chargé');
+  showToast('Façade avec porte en chêne et fenêtres chargée');
   player.requestLock();
 });
 
 document.getElementById('btn-pavilion')!.addEventListener('click', () => {
   world.loadPreset(getWhitePavilionPreset(), true);
   player.resetPosition();
-  showToast('Pavillon Blanc dans la prairie généré');
+  showToast('Maisonnette Blanche avec porte & fenêtres générée');
   player.requestLock();
 });
 
@@ -408,7 +434,7 @@ fileImportEl.addEventListener('change', () => {
       const entries = JSON.parse(String(reader.result)) as BrickEntry[];
       if (Array.isArray(entries)) {
         world.loadPreset(entries, true);
-        showToast(`${entries.length} briques blanches importées`);
+        showToast(`${entries.length} éléments importés`);
         player.requestLock();
       }
     } catch {
@@ -446,6 +472,15 @@ function animate(now: number): void {
 
   // HUD Updates
   crosshairEl.classList.toggle('active', world.currentTarget !== null);
+  if (world.currentTarget?.isDoorHit) {
+    interactionHintEl.innerHTML = `<kbd>E</kbd> ${
+      world.currentTarget.doorIsOpen ? 'Fermer la porte' : 'Ouvrir la porte'
+    }`;
+    interactionHintEl.classList.remove('hidden');
+  } else {
+    interactionHintEl.classList.add('hidden');
+  }
+
   statBricksEl.textContent = String(world.getBrickCount());
   statPosEl.textContent = `${Math.round(player.position.x)}, ${Math.round(player.position.y)}, ${Math.round(player.position.z)}`;
   statModeEl.textContent = player.isFlying ? 'VOL LIBRE' : 'MARCHE';

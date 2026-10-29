@@ -528,5 +528,34 @@ export function createBrickCatalog(): Map<number, BrickDefinition> {
     }),
   });
 
+  // 7. Fenêtre Croisée de Campagne (Chêne & Cadre Blanc)
+  catalog.set(7, {
+    id: 7,
+    name: 'Fenêtre Croisée',
+    subtitle: 'Fenêtre chêne & rebord pierre [R: Pivoter]',
+    previewCss:
+      'linear-gradient(90deg, transparent 44%, #9a6b3e 44%, #9a6b3e 56%, transparent 56%), linear-gradient(0deg, transparent 44%, #9a6b3e 44%, #9a6b3e 56%, transparent 56%), linear-gradient(135deg, #e0f2fe 0%, #bae6fd 100%)',
+    material: new THREE.MeshStandardMaterial({ color: 0xffffff }),
+  });
+
+  // 8. Baie Vitrée Blanche Architecturale
+  catalog.set(8, {
+    id: 8,
+    name: 'Fenêtre Panoramique',
+    subtitle: 'Châssis blanc épuré & double vitrage [R]',
+    previewCss:
+      'linear-gradient(135deg, #f8fafc 0%, #f8fafc 15%, #bae6fd 15%, #e0f2fe 85%, #f8fafc 85%)',
+    material: new THREE.MeshStandardMaterial({ color: 0xffffff }),
+  });
+
+  // 9. Porte de Campagne en Chêne & Cadre Blanc (Hauteur 2 blocs, ouvrable avec E)
+  catalog.set(9, {
+    id: 9,
+    name: 'Porte de Campagne',
+    subtitle: 'Porte 2m en chêne ouvrable [E: Ouvrir • R: Pivoter]',
+    previewCss: 'linear-gradient(180deg, #bae6fd 0%, #bae6fd 38%, #9a6b3e 38%, #7c532d 100%)',
+    material: new THREE.MeshStandardMaterial({ color: 0x9a6b3e }),
+  });
+
   return catalog;
 }

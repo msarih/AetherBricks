@@ -115,5 +115,37 @@ export class SoundManager {
     osc.start(now);
     osc.stop(now + 0.05);
   }
+
+  public playDoor(open: boolean): void {
+    const ctx = this.ensureContext();
+    if (!ctx) return;
+
+    const now = ctx.currentTime;
+    // Metallic latch click
+    const latchOsc = ctx.createOscillator();
+    const latchGain = ctx.createGain();
+    latchOsc.type = 'triangle';
+    latchOsc.frequency.setValueAtTime(open ? 640 : 480, now);
+    latchOsc.frequency.exponentialRampToValueAtTime(190, now + 0.045);
+    latchGain.gain.setValueAtTime(0.18, now);
+    latchGain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+    latchOsc.connect(latchGain);
+    latchGain.connect(ctx.destination);
+    latchOsc.start(now);
+    latchOsc.stop(now + 0.055);
+
+    // Warm wooden swing resonance
+    const woodOsc = ctx.createOscillator();
+    const woodGain = ctx.createGain();
+    woodOsc.type = 'sine';
+    woodOsc.frequency.setValueAtTime(open ? 135 : 165, now + 0.03);
+    woodOsc.frequency.exponentialRampToValueAtTime(open ? 185 : 92, now + 0.22);
+    woodGain.gain.setValueAtTime(0.16, now + 0.03);
+    woodGain.gain.exponentialRampToValueAtTime(0.001, now + 0.24);
+    woodOsc.connect(woodGain);
+    woodGain.connect(ctx.destination);
+    woodOsc.start(now + 0.03);
+    woodOsc.stop(now + 0.25);
+  }
 }
 

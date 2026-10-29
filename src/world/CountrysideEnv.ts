@@ -322,3 +322,4 @@ export class CountrysideEnv {
     this.grassShaderUniforms.uTime.value = elapsedSeconds;
   }
 }
+
