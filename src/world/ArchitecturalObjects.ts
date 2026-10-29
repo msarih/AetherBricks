@@ -4,6 +4,7 @@ import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.j
 export const BRICK_TYPE_WINDOW_CROSS = 7;
 export const BRICK_TYPE_WINDOW_MODERN = 8;
 export const BRICK_TYPE_DOOR_OAK = 9;
+export const BRICK_TYPE_WINDOW_FRAMELESS = 28;
 
 // Carrés plats pour Sols (posés au bas de la case : y - 0.42, épaisseur 0.16m)
 export const SLAB_TYPE_FLOOR_STONE = 10;
@@ -692,6 +693,39 @@ export function createModernWindowGroup(): THREE.Group {
       obj.receiveShadow = true;
     }
   });
+  return group;
+}
+
+/**
+ * Construit une Baie Vitrée Sans Bord (Vitre continue 1x1x0.05m bord à bord)
+ * Permet de créer de grands murs de verre panoramiques continus sans montant intermédiaire.
+ */
+export function createFramelessWindowGroup(): THREE.Group {
+  const mats = getSharedArchMaterials();
+  const group = new THREE.Group();
+
+  // Vitre pleine largeur/hauteur (1.0m x 1.0m) sans aucun cadre latéral
+  const glassPane = new THREE.Mesh(
+    new THREE.BoxGeometry(1.0, 1.0, 0.048),
+    mats.clearGlass
+  );
+  glassPane.castShadow = false;
+  glassPane.receiveShadow = true;
+
+  // Très fin reflet de tranche en verre trempé poli (imperceptible de face, donne du volume de biais)
+  const topEdge = new THREE.Mesh(
+    new THREE.BoxGeometry(1.0, 0.008, 0.05),
+    mats.clearGlass
+  );
+  topEdge.position.set(0, 0.5 - 0.004, 0);
+
+  const bottomEdge = new THREE.Mesh(
+    new THREE.BoxGeometry(1.0, 0.008, 0.05),
+    mats.clearGlass
+  );
+  bottomEdge.position.set(0, -0.5 + 0.004, 0);
+
+  group.add(glassPane, topEdge, bottomEdge);
   return group;
 }
 

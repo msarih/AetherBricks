@@ -6,6 +6,7 @@ import { CountrysideEnv } from './CountrysideEnv';
 import {
   BRICK_TYPE_DOOR_OAK,
   BRICK_TYPE_WINDOW_CROSS,
+  BRICK_TYPE_WINDOW_FRAMELESS,
   BRICK_TYPE_WINDOW_MODERN,
   OBJ_TYPE_ARCH_WHITE,
   OBJ_TYPE_BALUSTRADE_WHITE,
@@ -25,6 +26,7 @@ import {
   createBalustradeGroup,
   createCrossWindowGroup,
   createFlatSlabMesh,
+  createFramelessWindowGroup,
   createGableRoofMesh,
   createLadderGroup,
   createLanternPostGroup,
@@ -457,6 +459,18 @@ export class VoxelWorld {
       hitProxies.push(proxy);
     } else if (def.id === BRICK_TYPE_WINDOW_MODERN) {
       visualRoot = createModernWindowGroup();
+      visualRoot.position.set(rx, ry, rz);
+      visualRoot.rotation.y = (entry.rot ?? 0) * (Math.PI / 2);
+      this.scene.add(visualRoot);
+
+      const proxy = new THREE.Mesh(this.proxyBoxGeo, this.proxyMat);
+      proxy.position.set(rx, ry, rz);
+      proxy.userData = { ...entry };
+      this.scene.add(proxy);
+      this.interactables.push(proxy);
+      hitProxies.push(proxy);
+    } else if (def.id === BRICK_TYPE_WINDOW_FRAMELESS) {
+      visualRoot = createFramelessWindowGroup();
       visualRoot.position.set(rx, ry, rz);
       visualRoot.rotation.y = (entry.rot ?? 0) * (Math.PI / 2);
       this.scene.add(visualRoot);

@@ -96,9 +96,9 @@ export function getWhitePavilionPreset(): BrickEntry[] {
           continue;
         }
 
-        // Grandes baies vitrées sur les murs latéraux (x = -4 et x = 4, z = -7..-5, y = 1..2)
+        // Grandes baies vitrées sans bord sur les murs latéraux (x = -4 et x = 4, z = -7..-5, y = 1..2)
         if ((isLeft || isRight) && z >= -7 && z <= -5 && (y === 1 || y === 2)) {
-          bricks.push({ x, y, z, type: 8, rot: 1 });
+          bricks.push({ x, y, z, type: 28, rot: 1 });
           continue;
         }
 

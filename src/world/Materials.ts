@@ -627,6 +627,17 @@ export function createBrickCatalog(): Map<number, BrickDefinition> {
     material: new THREE.MeshStandardMaterial({ color: 0xffffff }),
   });
 
+  // 28. Baie Vitrée Sans Bord (Vitre continue bord à bord)
+  catalog.set(28, {
+    id: 28,
+    category: 'openings',
+    name: 'Baie Vitrée Sans Bord',
+    subtitle: 'Vitre pure continue sans cadre [R: Pivoter]',
+    previewCss:
+      'linear-gradient(135deg, rgba(186, 230, 253, 0.55) 0%, rgba(224, 242, 254, 0.9) 50%, rgba(125, 211, 252, 0.65) 100%)',
+    material: new THREE.MeshStandardMaterial({ color: 0xe0f2fe }),
+  });
+
   // 9. Porte de Campagne en Chêne & Cadre Blanc (Hauteur 2 blocs, ouvrable avec E)
   catalog.set(9, {
     id: 9,
