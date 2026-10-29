@@ -433,8 +433,39 @@ function applyLighting(index: number): void {
   });
 }
 
-// --- Mouse & Keyboard Construction Events ---
+// --- Mouse & Keyboard Construction Events (with Hold-and-Move Mass Creation) ---
 window.addEventListener('contextmenu', (e) => e.preventDefault());
+
+let isHoldingBuild = false;
+let isHoldingRemove = false;
+let lastDragPlacePos: THREE.Vector3 | null = null;
+let lastBuildSoundTime = 0;
+
+function canPlaceElementAt(x: number, y: number, z: number): boolean {
+  const twoTall = isTwoBlocksTall(selectedBrickId);
+  const flatSlab = isFlatSlab(selectedBrickId);
+  if (!flatSlab && (player.intersectsBrick(x, y, z) || (twoTall && player.intersectsBrick(x, y + 1, z)))) {
+    return false;
+  }
+  return true;
+}
+
+function stopDragActions(): void {
+  if (isHoldingBuild) {
+    isHoldingBuild = false;
+    lastDragPlacePos = null;
+    world.endDragStroke();
+  }
+  isHoldingRemove = false;
+}
+
+window.addEventListener('mouseup', () => {
+  stopDragActions();
+});
+
+window.addEventListener('blur', () => {
+  stopDragActions();
+});
 
 renderer.domElement.addEventListener('mousedown', (e) => {
   if (!player.isLocked) {
@@ -445,26 +476,29 @@ renderer.domElement.addEventListener('mousedown', (e) => {
   const target = world.currentTarget;
   if (!target) return;
 
+  // Left click: Place element & begin hold-to-mass-build stroke
   if (e.button === 0 && !e.altKey) {
     const { x, y, z } = target.placePos;
-    const twoTall = isTwoBlocksTall(selectedBrickId);
-    const flatSlab = isFlatSlab(selectedBrickId);
-    if (
-      !flatSlab &&
-      (player.intersectsBrick(x, y, z) || (twoTall && player.intersectsBrick(x, y + 1, z)))
-    ) {
+    if (!canPlaceElementAt(x, y, z)) {
       showToast('Espace occupé par le joueur');
       return;
     }
+    isHoldingBuild = true;
+    world.beginDragStroke(y);
+    lastDragPlacePos = target.placePos.clone();
+
     if (world.setBrick(x, y, z, selectedBrickId, true, true, world.rotationStep, false)) {
       sound.playPlace();
+      lastBuildSoundTime = performance.now();
       player.triggerActionAnimation();
     }
   } else if (e.button === 2 || (e.button === 0 && e.altKey)) {
+    isHoldingRemove = true;
     if (target.removePos) {
       const { x, y, z } = target.removePos;
       if (world.removeBrick(x, y, z, true, true)) {
         sound.playRemove();
+        lastBuildSoundTime = performance.now();
         player.triggerActionAnimation();
       }
     }
@@ -732,6 +766,32 @@ function animate(now: number): void {
   player.update(dt);
   countryside.update(now * 0.001);
   world.update(dt, camera, player.getEyePosition(), player.getAimDirection());
+
+  // Mass creation / removal while holding mouse button and moving the mouse
+  if (player.isLocked && isHoldingBuild && world.currentTarget) {
+    const curPos = world.currentTarget.placePos;
+    if (!lastDragPlacePos || !lastDragPlacePos.equals(curPos)) {
+      const fromPos = lastDragPlacePos ?? curPos;
+      const placed = world.placeLine(fromPos, curPos, selectedBrickId, canPlaceElementAt);
+      lastDragPlacePos = curPos.clone();
+      if (placed > 0) {
+        player.triggerActionAnimation();
+        if (now - lastBuildSoundTime > 55) {
+          sound.playPlace();
+          lastBuildSoundTime = now;
+        }
+      }
+    }
+  } else if (player.isLocked && isHoldingRemove && world.currentTarget?.removePos) {
+    if (now - lastBuildSoundTime > 95) {
+      const { x, y, z } = world.currentTarget.removePos;
+      if (world.removeBrick(x, y, z, true, true)) {
+        sound.playRemove();
+        lastBuildSoundTime = now;
+        player.triggerActionAnimation();
+      }
+    }
+  }
 
   sunLight.position.copy(player.position).addScaledVector(currentSunDir, 65);
   sunLight.target.position.copy(player.position);

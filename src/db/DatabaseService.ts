@@ -431,3 +431,4 @@ export class DatabaseService {
     await this.saveToIndexedDB(this.currentUser, this.worlds);
   }
 }
+

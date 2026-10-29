@@ -1,0 +1,181 @@
+{
+  "users": [],
+  "worlds": [
+    {
+      "id": "world_1793289578963_5wjp",
+      "ownerId": "guest_1793289578954",
+      "name": "Monde Récupéré #3",
+      "createdAt": 1793289578963,
+      "updatedAt": 1793289828838,
+      "bricks": [
+        {
+          "x": 1,
+          "y": 0,
+          "z": 1,
+          "type": 1,
+          "rot": 0,
+          "open": false
+        },
+        {
+          "x": 1,
+          "y": 1,
+          "z": 1,
+          "type": 1,
+          "rot": 0,
+          "open": false
+        },
+        {
+          "x": 3,
+          "y": 0,
+          "z": 1,
+          "type": 1,
+          "rot": 0,
+          "open": false
+        },
+        {
+          "x": 4,
+          "y": 0,
+          "z": 1,
+          "type": 1,
+          "rot": 0,
+          "open": false
+        },
+        {
+          "x": 5,
+          "y": 0,
+          "z": 1,
+          "type": 1,
+          "rot": 0,
+          "open": false
+        },
+        {
+          "x": 6,
+          "y": 0,
+          "z": 1,
+          "type": 1,
+          "rot": 0,
+          "open": false
+        },
+        {
+          "x": 6,
+          "y": 1,
+          "z": 1,
+          "type": 1,
+          "rot": 0,
+          "open": false
+        },
+        {
+          "x": 7,
+          "y": 0,
+          "z": 1,
+          "type": 1,
+          "rot": 0,
+          "open": false
+        },
+        {
+          "x": 7,
+          "y": 1,
+          "z": 1,
+          "type": 1,
+          "rot": 0,
+          "open": false
+        },
+        {
+          "x": 7,
+          "y": 0,
+          "z": 2,
+          "type": 1,
+          "rot": 0,
+          "open": false
+        },
+        {
+          "x": 7,
+          "y": 1,
+          "z": 2,
+          "type": 1,
+          "rot": 0,
+          "open": false
+        },
+        {
+          "x": 7,
+          "y": 0,
+          "z": 3,
+          "type": 2,
+          "rot": 0,
+          "open": false
+        },
+        {
+          "x": 7,
+          "y": 1,
+          "z": 3,
+          "type": 2,
+          "rot": 0,
+          "open": false
+        },
+        {
+          "x": 7,
+          "y": 1,
+          "z": 4,
+          "type": 2,
+          "rot": 0,
+          "open": false
+        },
+        {
+          "x": 6,
+          "y": 1,
+          "z": 4,
+          "type": 1,
+          "rot": 0,
+          "open": false
+        },
+        {
+          "x": 7,
+          "y": 1,
+          "z": 5,
+          "type": 1,
+          "rot": 0,
+          "open": false
+        },
+        {
+          "x": 5,
+          "y": 1,
+          "z": 1,
+          "type": 2,
+          "rot": 0,
+          "open": false
+        },
+        {
+          "x": 5,
+          "y": 2,
+          "z": 2,
+          "type": 1,
+          "rot": 0,
+          "open": false
+        },
+        {
+          "x": 4,
+          "y": 2,
+          "z": 2,
+          "type": 1,
+          "rot": 0,
+          "open": false
+        },
+        {
+          "x": 1,
+          "y": 0,
+          "z": 3,
+          "type": 1,
+          "rot": 0,
+          "open": false
+        }
+      ],
+      "playerState": {
+        "x": 3.838658836580671,
+        "y": 0.36,
+        "z": 6.371494957912115,
+        "viewMode": "tps-back",
+        "lightingIdx": 0
+      }
+    }
+  ]
+}

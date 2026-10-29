@@ -236,3 +236,4 @@ function aetherBricksDatabasePlugin(): Plugin {
 export default defineConfig({
   plugins: [aetherBricksDatabasePlugin()],
 });
+

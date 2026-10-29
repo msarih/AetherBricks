@@ -58,6 +58,9 @@ export class VoxelWorld {
   private readonly uniqueItems = new Set<PlacedItem>();
   private readonly raycaster = new THREE.Raycaster();
   private readonly interactables: THREE.Object3D[] = [];
+  private readonly strokeIgnoreProxies = new Set<THREE.Object3D>();
+  private isDragStrokeActive = false;
+  private dragFallbackPlaneY: number | null = null;
   private countryside?: CountrysideEnv;
   public onWorldChanged?: () => void;
 
@@ -172,6 +175,70 @@ export class VoxelWorld {
   public rotatePlacement(): number {
     this.rotationStep = (this.rotationStep + 1) % 4;
     return this.rotationStep;
+  }
+
+  public beginDragStroke(initialPlaneY?: number): void {
+    this.isDragStrokeActive = true;
+    this.strokeIgnoreProxies.clear();
+    this.dragFallbackPlaneY = initialPlaneY ?? null;
+  }
+
+  public endDragStroke(): void {
+    this.isDragStrokeActive = false;
+    this.strokeIgnoreProxies.clear();
+    this.dragFallbackPlaneY = null;
+  }
+
+  /**
+   * Trace et pose une ligne continue de briques/dalles entre `from` et `to`
+   * pour permettre la création en masse fluide même lors d'un mouvement rapide de la souris.
+   */
+  public placeLine(
+    from: THREE.Vector3,
+    to: THREE.Vector3,
+    type: number,
+    canPlaceAt: (x: number, y: number, z: number) => boolean
+  ): number {
+    const x0 = Math.round(from.x);
+    const y0 = Math.round(from.y);
+    const z0 = Math.round(from.z);
+    const x1 = Math.round(to.x);
+    const y1 = Math.round(to.y);
+    const z1 = Math.round(to.z);
+
+    const dx = x1 - x0;
+    const dy = y1 - y0;
+    const dz = z1 - z0;
+    const steps = Math.max(Math.abs(dx), Math.abs(dy), Math.abs(dz));
+
+    if (steps === 0) {
+      if (canPlaceAt(x1, y1, z1) && this.setBrick(x1, y1, z1, type, true, true, this.rotationStep, false)) {
+        return 1;
+      }
+      return 0;
+    }
+
+    // Limit max interpolation span per frame to avoid accidental huge lines across horizon
+    if (steps > 18) {
+      if (canPlaceAt(x1, y1, z1) && this.setBrick(x1, y1, z1, type, true, true, this.rotationStep, false)) {
+        return 1;
+      }
+      return 0;
+    }
+
+    let placedCount = 0;
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      const cx = Math.round(x0 + dx * t);
+      const cy = Math.round(y0 + dy * t);
+      const cz = Math.round(z0 + dz * t);
+      if (canPlaceAt(cx, cy, cz)) {
+        if (this.setBrick(cx, cy, cz, type, true, i === steps, this.rotationStep, false)) {
+          placedCount++;
+        }
+      }
+    }
+    return placedCount;
   }
 
   private key(x: number, y: number, z: number): string {
@@ -312,6 +379,15 @@ export class VoxelWorld {
     this.bricks.set(k1, placed);
     if (twoTall) {
       this.bricks.set(k2, placed);
+    }
+
+    if (this.isDragStrokeActive) {
+      for (const p of hitProxies) {
+        this.strokeIgnoreProxies.add(p);
+      }
+      if (this.dragFallbackPlaneY === null) {
+        this.dragFallbackPlaneY = ry;
+      }
     }
 
     if (ry === 0) {
@@ -552,9 +628,11 @@ export class VoxelWorld {
     } else {
       this.raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
     }
-    const hits = this.raycaster.intersectObjects(this.interactables, false);
+    const rawHits = this.raycaster.intersectObjects(this.interactables, false);
+    const hit = this.isDragStrokeActive
+      ? rawHits.find((h) => !this.strokeIgnoreProxies.has(h.object))
+      : rawHits[0];
 
-    const hit = hits[0];
     if (hit && hit.face) {
       const normal = hit.face.normal.clone();
       normal.transformDirection(hit.object.matrixWorld).round();
@@ -562,7 +640,11 @@ export class VoxelWorld {
       if (hit.object === this.groundMesh) {
         const px = Math.round(hit.point.x);
         const pz = Math.round(hit.point.z);
-        const placePos = new THREE.Vector3(px, 0, pz);
+        const targetY =
+          this.isDragStrokeActive && this.dragFallbackPlaneY !== null
+            ? this.dragFallbackPlaneY
+            : 0;
+        const placePos = new THREE.Vector3(px, targetY, pz);
         this.currentTarget = {
           placePos,
           removePos: null,
@@ -586,6 +668,34 @@ export class VoxelWorld {
 
       this.ghostGroup.position.copy(this.currentTarget.placePos);
       this.ghostGroup.visible = true;
+    } else if (this.isDragStrokeActive && this.dragFallbackPlaneY !== null) {
+      // Fallback sur le plan horizontal de construction en cours (ex: création d'un plafond ou plancher en plein air)
+      const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -(this.dragFallbackPlaneY - 0.5));
+      const intersectPt = new THREE.Vector3();
+      if (this.raycaster.ray.intersectPlane(plane, intersectPt)) {
+        const dist = intersectPt.distanceTo(this.raycaster.ray.origin);
+        if (dist <= this.raycaster.far) {
+          const placePos = new THREE.Vector3(
+            Math.round(intersectPt.x),
+            this.dragFallbackPlaneY,
+            Math.round(intersectPt.z)
+          );
+          this.currentTarget = {
+            placePos,
+            removePos: null,
+            hitBrickType: null,
+            isDoorHit: false,
+          };
+          this.ghostGroup.position.copy(placePos);
+          this.ghostGroup.visible = true;
+        } else {
+          this.currentTarget = null;
+          this.ghostGroup.visible = false;
+        }
+      } else {
+        this.currentTarget = null;
+        this.ghostGroup.visible = false;
+      }
     } else {
       this.currentTarget = null;
       this.ghostGroup.visible = false;
