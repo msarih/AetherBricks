@@ -137,6 +137,9 @@ export class VoxelWorld {
   private readonly ghostGroup: THREE.Group;
   private readonly ghostBoxMesh: THREE.Mesh;
   private readonly ghostWireframe: THREE.LineSegments;
+  private readonly paintGhostPlane: THREE.Mesh;
+  private readonly paintGhostMat: THREE.MeshBasicMaterial;
+  private isPaintGhostActive = false;
   public rotationStep = 0; // 0, 1, 2, 3 (90° increments)
   private activeSelectedType = 1;
 
@@ -259,6 +262,27 @@ export class VoxelWorld {
     this.ghostGroup.visible = false;
     this.scene.add(this.ghostGroup);
 
+    // Ghost surface fine de peinture (fine couche sur le mur au lieu d'un cube)
+    const paintPlaneGeo = new THREE.PlaneGeometry(1.006, 1.006);
+    this.paintGhostMat = new THREE.MeshBasicMaterial({
+      color: 0x38bdf8,
+      transparent: true,
+      opacity: 0.65,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -1,
+    });
+    this.paintGhostPlane = new THREE.Mesh(paintPlaneGeo, this.paintGhostMat);
+    const planeEdges = new THREE.LineSegments(
+      new THREE.EdgesGeometry(paintPlaneGeo),
+      new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9 })
+    );
+    this.paintGhostPlane.add(planeEdges);
+    this.paintGhostPlane.visible = false;
+    this.scene.add(this.paintGhostPlane);
+
     this.raycaster.near = 0.1;
     this.raycaster.far = 18.0;
 
@@ -290,6 +314,20 @@ export class VoxelWorld {
       this.ghostBoxMesh.position.set(0, 0, 0);
       this.ghostWireframe.scale.set(1, 1, 1);
       this.ghostWireframe.position.set(0, 0, 0);
+    }
+  }
+
+  public setPaintModeActive(active: boolean, colorHex?: string): void {
+    this.isPaintGhostActive = active;
+    if (active && colorHex) {
+      try {
+        this.paintGhostMat.color.setStyle(colorHex);
+      } catch {
+        this.paintGhostMat.color.setHex(0x38bdf8);
+      }
+    }
+    if (!active) {
+      this.paintGhostPlane.visible = false;
     }
   }
 
@@ -1433,11 +1471,25 @@ export class VoxelWorld {
         };
       }
 
-      this.ghostGroup.position.copy(this.currentTarget.placePos);
-      this.ghostGroup.visible = true;
+      if (this.isPaintGhostActive) {
+        this.ghostGroup.visible = false;
+        if (this.currentTarget.removePos) {
+          const hitPos = this.currentTarget.removePos;
+          this.paintGhostPlane.position.copy(hitPos).addScaledVector(normal, 0.504);
+          this.paintGhostPlane.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal);
+          this.paintGhostPlane.visible = true;
+        } else {
+          this.paintGhostPlane.visible = false;
+        }
+      } else {
+        this.paintGhostPlane.visible = false;
+        this.ghostGroup.position.copy(this.currentTarget.placePos);
+        this.ghostGroup.visible = true;
+      }
     } else {
       this.currentTarget = null;
       this.ghostGroup.visible = false;
+      this.paintGhostPlane.visible = false;
     }
 
     this.updateParticles(dt);

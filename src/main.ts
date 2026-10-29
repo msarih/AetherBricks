@@ -617,7 +617,12 @@ function renderInventoryUI(): void {
 
 function selectCategory(cat: ItemCategory, autoSelectFirst = true): void {
   activeCategory = cat;
-  if (cat !== 'paint') {
+  if (cat === 'paint') {
+    isPaintMode = true;
+    world.setPaintModeActive(true, selectedPaintColor);
+  } else {
+    isPaintMode = false;
+    world.setPaintModeActive(false);
     const items = getItemsByCategory(cat);
     if (autoSelectFirst && items.length > 0 && !items.some((i) => i.id === selectedBrickId)) {
       selectedBrickId = items[0].id;
@@ -670,6 +675,10 @@ window.addEventListener('contextmenu', (e) => e.preventDefault());
 
 let isHoldingBuild = false;
 let isHoldingRemove = false;
+let isHoldingPaint = false;
+let removeHoldStartTime = 0;
+let lastRemoveTime = 0;
+let lastRemovedPos: THREE.Vector3 | null = null;
 let lastDragPlacePos: THREE.Vector3 | null = null;
 let lastDragRemovePos: THREE.Vector3 | null = null;
 let lastBuildSoundTime = 0;
@@ -684,11 +693,13 @@ function canPlaceElementAt(x: number, y: number, z: number): boolean {
 }
 
 function stopDragActions(): void {
-  if (isHoldingBuild || isHoldingRemove) {
+  if (isHoldingBuild || isHoldingRemove || isHoldingPaint) {
     isHoldingBuild = false;
     isHoldingRemove = false;
+    isHoldingPaint = false;
     lastDragPlacePos = null;
     lastDragRemovePos = null;
+    lastRemovedPos = null;
     world.endDragStroke();
   }
 }
@@ -746,6 +757,8 @@ function initPaintPalette(): void {
         document.querySelectorAll('.paint-swatch').forEach((s) => s.classList.remove('active'));
         sw.classList.add('active');
         sound.playSelect();
+        isPaintMode = true;
+        world.setPaintModeActive(true, selectedPaintColor);
         updatePaintPreviewUI();
         const pName = PATTERN_NAMES[selectedPaintPattern] || selectedPaintPattern;
         toolStatusBarEl.textContent = `🖌️ Mode Peinture : Visez et cliquez pour peindre (${pName} - ${selectedPaintColor})`;
@@ -757,6 +770,8 @@ function initPaintPalette(): void {
   paintColorPicker?.addEventListener('input', (e) => {
     selectedPaintColor = (e.target as HTMLInputElement).value;
     document.querySelectorAll('.paint-swatch').forEach((s) => s.classList.remove('active'));
+    isPaintMode = true;
+    world.setPaintModeActive(true, selectedPaintColor);
     updatePaintPreviewUI();
     const pName = PATTERN_NAMES[selectedPaintPattern] || selectedPaintPattern;
     toolStatusBarEl.textContent = `🖌️ Mode Peinture : Visez et cliquez pour peindre (${pName} - ${selectedPaintColor})`;
@@ -769,6 +784,8 @@ function initPaintPalette(): void {
       (btn as HTMLElement).classList.add('active');
       selectedPaintPattern = (btn as HTMLElement).dataset.pattern || 'plain';
       sound.playSelect();
+      isPaintMode = true;
+      world.setPaintModeActive(true, selectedPaintColor);
       updatePaintPreviewUI();
       const pName = PATTERN_NAMES[selectedPaintPattern] || selectedPaintPattern;
       toolStatusBarEl.textContent = `🖌️ Mode Peinture : Visez et cliquez pour peindre (${pName} - ${selectedPaintColor})`;
@@ -793,7 +810,7 @@ function initPaintPalette(): void {
         lastBuildSoundTime = performance.now();
         player.triggerActionAnimation();
         const pName = PATTERN_NAMES[selectedPaintPattern] || selectedPaintPattern;
-        showToast(`Mur peint (${pName} • ${selectedPaintColor}) !`);
+        showToast(`Fine couche appliquée (${pName} • ${selectedPaintColor}) !`);
         return;
       }
     }
@@ -822,7 +839,12 @@ function togglePaintMode(force?: boolean): void {
     document.getElementById('tool-ruler')?.classList.remove('active');
     setSidebarOpen(true);
     selectCategory('paint', false);
+  } else {
+    if (activeCategory === 'paint') {
+      selectCategory('bricks', false);
+    }
   }
+  world.setPaintModeActive(isPaintMode, selectedPaintColor);
   toolPaintBtn?.classList.toggle('active', isPaintMode);
   toolStatusBarEl.classList.toggle('hidden', !isPaintMode && !isBoxMode && !isRulerMode);
   updatePaintPreviewUI();
@@ -975,19 +997,25 @@ renderer.domElement.addEventListener('mousedown', (e) => {
     }
   }
 
-  // Mode Peinture : peindre le mur visé au clic gauche
-  if (isPaintMode && e.button === 0) {
-    if (target.removePos) {
-      isHoldingBuild = true;
-      const { x, y, z } = target.removePos;
-      if (world.paintBrickAt(x, y, z, selectedPaintColor, selectedPaintPattern)) {
-        sound.playPaint();
-        lastBuildSoundTime = performance.now();
-        player.triggerActionAnimation();
-        showToast(`Mur peint (${selectedPaintPattern})`);
+  // Mode Peinture : appliquer la fine couche de peinture au mur visé (JAMAIS de cubes !)
+  if (isPaintMode) {
+    if (e.button === 0) {
+      if (target.removePos) {
+        isHoldingPaint = true;
+        lastDragPlacePos = target.removePos.clone();
+        const { x, y, z } = target.removePos;
+        if (world.paintBrickAt(x, y, z, selectedPaintColor, selectedPaintPattern)) {
+          sound.playPaint();
+          lastBuildSoundTime = performance.now();
+          player.triggerActionAnimation();
+          const pName = PATTERN_NAMES[selectedPaintPattern] || selectedPaintPattern;
+          showToast(`Fine couche appliquée (${pName} • ${selectedPaintColor})`);
+        }
+      } else {
+        showToast("⚠️ Visez un mur pour appliquer la peinture");
       }
     }
-    return;
+    return; // Dans le mode peinture, on ne pose JAMAIS de cubes !
   }
 
   // Left click: Place element & begin hold-to-mass-build stroke
@@ -1008,9 +1036,12 @@ renderer.domElement.addEventListener('mousedown', (e) => {
     }
   } else if (e.button === 2 || (e.button === 0 && e.altKey)) {
     isHoldingRemove = true;
+    removeHoldStartTime = performance.now();
+    lastRemoveTime = performance.now();
     world.beginDragStroke();
     if (target.removePos) {
       lastDragRemovePos = target.removePos.clone();
+      lastRemovedPos = target.removePos.clone();
       const { x, y, z } = target.removePos;
       if (world.removeBrick(x, y, z, true, true, target.removeType)) {
         if (target.removeType === BRICK_TYPE_DIRT) {
@@ -1379,7 +1410,7 @@ function animate(now: number): void {
   }
 
   // Mass painting / creation / removal while holding mouse button and moving the mouse
-  if (player.isLocked && isHoldingBuild && isPaintMode && world.currentTarget?.removePos) {
+  if (player.isLocked && isHoldingPaint && isPaintMode && world.currentTarget?.removePos) {
     const curPos = world.currentTarget.removePos;
     if (!lastDragPlacePos || !lastDragPlacePos.equals(curPos)) {
       world.paintBrickAt(curPos.x, curPos.y, curPos.z, selectedPaintColor, selectedPaintPattern);
@@ -1390,7 +1421,7 @@ function animate(now: number): void {
         lastBuildSoundTime = now;
       }
     }
-  } else if (player.isLocked && isHoldingBuild && world.currentTarget) {
+  } else if (player.isLocked && isHoldingBuild && !isPaintMode && world.currentTarget) {
     const curPos = world.currentTarget.placePos;
     if (!lastDragPlacePos || !lastDragPlacePos.equals(curPos)) {
       const fromPos = lastDragPlacePos ?? curPos;
@@ -1406,18 +1437,22 @@ function animate(now: number): void {
     }
   } else if (player.isLocked && isHoldingRemove && world.currentTarget?.removePos) {
     const curRemPos = world.currentTarget.removePos;
-    const fromRemPos = lastDragRemovePos ?? curRemPos;
-    const removed = world.removeLine(fromRemPos, curRemPos);
-    lastDragRemovePos = curRemPos.clone();
-    if (removed > 0) {
-      player.triggerActionAnimation();
-      if (now - lastBuildSoundTime > 55) {
-        if (world.currentTarget?.removeType === BRICK_TYPE_DIRT) {
-          sound.playDig();
-        } else {
-          sound.playRemove();
+    // Protection anti-destruction en profondeur :
+    // Un clic normal (relâché avant 320ms) ne détruit qu'un SEUL bloc et ne détruit JAMAIS les blocs derrière !
+    // Si la touche reste maintenue volontairement (> 320ms), destruction continue sécurisée avec cadence de 200ms
+    if (now - removeHoldStartTime > 320 && now - lastRemoveTime > 200) {
+      if (!lastRemovedPos || !curRemPos.equals(lastRemovedPos)) {
+        if (world.removeBrick(curRemPos.x, curRemPos.y, curRemPos.z, true, true, world.currentTarget.removeType)) {
+          lastRemovedPos = curRemPos.clone();
+          lastRemoveTime = now;
+          player.triggerActionAnimation();
+          if (world.currentTarget?.removeType === BRICK_TYPE_DIRT) {
+            sound.playDig();
+          } else {
+            sound.playRemove();
+          }
+          lastBuildSoundTime = now;
         }
-        lastBuildSoundTime = now;
       }
     }
   }
