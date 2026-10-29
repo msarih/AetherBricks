@@ -424,6 +424,120 @@ db.init().then(({ activeWorld }) => {
 let activeCategory: ItemCategory = 'bricks';
 let selectedBrickId = 1;
 
+// --- Atelier Peinture & Motifs Muraux (Intégré dans Éléments de Construction) ---
+let isPaintMode = false;
+let selectedPaintColor = '#f8fafc';
+let selectedPaintPattern = 'plain';
+
+export const PATTERN_NAMES: Record<string, string> = {
+  plain: 'Uni Lisse',
+  stripes: 'Rayures Haussmann',
+  floral: 'Damas Floral',
+  bricks: 'Briques Peintes',
+  tiles: 'Carrelage Métro',
+  wood: 'Boiserie Moulurée',
+  marble: 'Marbre Veiné',
+  geometric: 'Art Déco',
+};
+
+export const COLOR_NAMES: Record<string, string> = {
+  '#f8fafc': 'Blanc Albâtre',
+  '#fef3c7': 'Ivoire Chaud',
+  '#c2410c': 'Terracotta',
+  '#4d7c0f': 'Sauge Méditerranée',
+  '#1e3a8a': 'Bleu Nuit',
+  '#334155': 'Gris Graphite',
+  '#d97706': 'Ocre Doré',
+  '#f472b6': 'Rose Poudré',
+  '#15803d': 'Vert Forêt',
+  '#7c3aed': 'Violet Royal',
+};
+
+function updatePaintPreviewUI(): void {
+  const paintColorHexLabel = document.getElementById('paint-color-hex-label');
+  const paintSamplePreview = document.getElementById('paint-sample-preview');
+  const paintSamplePatternText = document.getElementById('paint-sample-pattern-text');
+  const paintSampleColorText = document.getElementById('paint-sample-color-text');
+  const btnSidebarTogglePaint = document.getElementById('btn-sidebar-toggle-paint');
+  const sidebarPaintBadge = document.getElementById('sidebar-paint-badge');
+  const sidebarPaintStatusDesc = document.getElementById('sidebar-paint-status-desc');
+
+  if (paintColorHexLabel) {
+    paintColorHexLabel.textContent = selectedPaintColor;
+  }
+  const colorName = COLOR_NAMES[selectedPaintColor.toLowerCase()] || selectedPaintColor;
+  const patternName = PATTERN_NAMES[selectedPaintPattern] || selectedPaintPattern;
+
+  if (paintSamplePatternText) {
+    paintSamplePatternText.textContent = `Motif : ${patternName}`;
+  }
+  if (paintSampleColorText) {
+    paintSampleColorText.textContent = `Teinte : ${selectedPaintColor} (${colorName})`;
+  }
+
+  // Échantillon visuel dynamique
+  if (paintSamplePreview) {
+    paintSamplePreview.style.backgroundColor = selectedPaintColor;
+    if (selectedPaintPattern === 'stripes') {
+      paintSamplePreview.style.backgroundImage = 'repeating-linear-gradient(90deg, transparent, transparent 4px, rgba(0,0,0,0.18) 4px, rgba(0,0,0,0.18) 8px)';
+      paintSamplePreview.style.backgroundSize = 'auto';
+    } else if (selectedPaintPattern === 'floral') {
+      paintSamplePreview.style.backgroundImage = 'radial-gradient(circle, rgba(255,255,255,0.4) 20%, transparent 20%), radial-gradient(circle, rgba(0,0,0,0.15) 20%, transparent 20%)';
+      paintSamplePreview.style.backgroundSize = '12px 12px';
+    } else if (selectedPaintPattern === 'bricks') {
+      paintSamplePreview.style.backgroundImage = 'linear-gradient(rgba(0,0,0,0.2) 1px, transparent 1px), linear-gradient(90deg, rgba(0,0,0,0.2) 1px, transparent 1px)';
+      paintSamplePreview.style.backgroundSize = '14px 7px';
+    } else if (selectedPaintPattern === 'tiles') {
+      paintSamplePreview.style.backgroundImage = 'linear-gradient(rgba(255,255,255,0.3) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.3) 1px, transparent 1px)';
+      paintSamplePreview.style.backgroundSize = '10px 10px';
+    } else if (selectedPaintPattern === 'wood') {
+      paintSamplePreview.style.backgroundImage = 'linear-gradient(to right, rgba(0,0,0,0.15), rgba(255,255,255,0.1), rgba(0,0,0,0.15))';
+      paintSamplePreview.style.backgroundSize = 'auto';
+    } else if (selectedPaintPattern === 'marble') {
+      paintSamplePreview.style.backgroundImage = 'linear-gradient(45deg, rgba(255,255,255,0.25) 25%, transparent 25%, transparent 75%, rgba(0,0,0,0.12) 75%)';
+      paintSamplePreview.style.backgroundSize = 'auto';
+    } else if (selectedPaintPattern === 'geometric') {
+      paintSamplePreview.style.backgroundImage = 'linear-gradient(135deg, rgba(0,0,0,0.18) 25%, transparent 25%), linear-gradient(225deg, rgba(0,0,0,0.18) 25%, transparent 25%)';
+      paintSamplePreview.style.backgroundSize = '12px 12px';
+    } else {
+      paintSamplePreview.style.backgroundImage = 'none';
+    }
+  }
+
+  // État du bouton d'activation dans la barre latérale
+  if (btnSidebarTogglePaint) {
+    btnSidebarTogglePaint.classList.toggle('active', isPaintMode);
+  }
+  if (sidebarPaintBadge) {
+    sidebarPaintBadge.className = `paint-badge ${isPaintMode ? 'on' : 'off'}`;
+    sidebarPaintBadge.textContent = isPaintMode ? 'ACTIF 🟢' : 'DÉSACTIVÉ ⚪';
+  }
+  if (sidebarPaintStatusDesc) {
+    sidebarPaintStatusDesc.textContent = isPaintMode
+      ? 'Mode Peinture activé - Visez un mur & Clic Gauche'
+      : 'Cliquez pour activer (Touche R)';
+  }
+
+  // Synchronisation de l'en-tête de la barre latérale si l'onglet Peinture est actif
+  if (activeCategory === 'paint') {
+    activeBrickNameEl.textContent = 'Atelier Peinture Murale';
+    activeBrickSubEl.textContent = `${patternName} • ${selectedPaintColor}`;
+    if (activeBrickPreviewEl) {
+      activeBrickPreviewEl.style.backgroundColor = selectedPaintColor;
+      activeBrickPreviewEl.style.backgroundImage = paintSamplePreview?.style.backgroundImage || 'none';
+      activeBrickPreviewEl.style.backgroundSize = paintSamplePreview?.style.backgroundSize || 'auto';
+    }
+    if (miniCurrentSwatchEl) {
+      miniCurrentSwatchEl.style.backgroundColor = selectedPaintColor;
+      miniCurrentSwatchEl.style.backgroundImage = paintSamplePreview?.style.backgroundImage || 'none';
+      miniCurrentSwatchEl.style.backgroundSize = paintSamplePreview?.style.backgroundSize || 'auto';
+    }
+    if (miniCurrentNameEl) {
+      miniCurrentNameEl.textContent = `Peinture ${patternName}`;
+    }
+  }
+}
+
 function getItemsByCategory(cat: ItemCategory): BrickDefinition[] {
   const list: BrickDefinition[] = [];
   for (const [, def] of world.catalog) {
@@ -447,6 +561,22 @@ function renderInventoryUI(): void {
     categoryTabsEl.appendChild(btn);
   }
 
+  const sidebarElementsSection = document.getElementById('sidebar-elements-section');
+  const sidebarPaintStudio = document.getElementById('sidebar-paint-studio');
+  const sidebarPaintQuickLink = document.getElementById('sidebar-paint-quick-link');
+
+  if (activeCategory === 'paint') {
+    sidebarElementsSection?.classList.add('hidden');
+    sidebarPaintStudio?.classList.remove('hidden');
+    sidebarPaintQuickLink?.classList.add('hidden');
+    updatePaintPreviewUI();
+    return;
+  }
+
+  sidebarElementsSection?.classList.remove('hidden');
+  sidebarPaintStudio?.classList.add('hidden');
+  sidebarPaintQuickLink?.classList.remove('hidden');
+
   hotbarEl.innerHTML = '';
   const items = getItemsByCategory(activeCategory);
   items.forEach((def, idx) => {
@@ -465,25 +595,33 @@ function renderInventoryUI(): void {
   });
 
   const activeDef = world.catalog.get(selectedBrickId)!;
-  activeBrickNameEl.textContent = activeDef.name;
-  activeBrickSubEl.textContent = activeDef.subtitle;
-  if (activeBrickPreviewEl) {
-    activeBrickPreviewEl.style.background = activeDef.previewCss;
+  if (activeDef) {
+    activeBrickNameEl.textContent = activeDef.name;
+    activeBrickSubEl.textContent = activeDef.subtitle;
+    if (activeBrickPreviewEl) {
+      activeBrickPreviewEl.style.backgroundColor = '';
+      activeBrickPreviewEl.style.backgroundImage = '';
+      activeBrickPreviewEl.style.background = activeDef.previewCss;
+    }
+    if (miniCurrentSwatchEl) {
+      miniCurrentSwatchEl.style.backgroundColor = '';
+      miniCurrentSwatchEl.style.backgroundImage = '';
+      miniCurrentSwatchEl.style.background = activeDef.previewCss;
+    }
+    if (miniCurrentNameEl) {
+      miniCurrentNameEl.textContent = activeDef.name;
+    }
+    world.setGhostMode(selectedBrickId);
   }
-  if (miniCurrentSwatchEl) {
-    miniCurrentSwatchEl.style.background = activeDef.previewCss;
-  }
-  if (miniCurrentNameEl) {
-    miniCurrentNameEl.textContent = activeDef.name;
-  }
-  world.setGhostMode(selectedBrickId);
 }
 
 function selectCategory(cat: ItemCategory, autoSelectFirst = true): void {
   activeCategory = cat;
-  const items = getItemsByCategory(cat);
-  if (autoSelectFirst && items.length > 0 && !items.some((i) => i.id === selectedBrickId)) {
-    selectedBrickId = items[0].id;
+  if (cat !== 'paint') {
+    const items = getItemsByCategory(cat);
+    if (autoSelectFirst && items.length > 0 && !items.some((i) => i.id === selectedBrickId)) {
+      selectedBrickId = items[0].id;
+    }
   }
   sound.playSelect();
   renderInventoryUI();
@@ -564,10 +702,6 @@ window.addEventListener('blur', () => {
 });
 
 // --- Tools: Peinture, Pipette, Box Fill, Ruler, Photo Mode & 3D Export ---
-let isPaintMode = false;
-let selectedPaintColor = '#f8fafc';
-let selectedPaintPattern = 'plain';
-
 let isBoxMode = false;
 let boxCornerA: THREE.Vector3 | null = null;
 let isRulerMode = false;
@@ -575,12 +709,13 @@ let isPhotoMode = false;
 
 const toolStatusBarEl = document.getElementById('tool-status-bar')!;
 const photoModeBarEl = document.getElementById('photo-mode-bar')!;
-const paintBarEl = document.getElementById('paint-bar')!;
 const toolPaintBtn = document.getElementById('tool-paint')!;
-const btnClosePaint = document.getElementById('btn-close-paint')!;
 const paintColorPicker = document.getElementById('paint-color-picker') as HTMLInputElement;
 const paintSwatchesEl = document.getElementById('paint-swatches')!;
 const paintPatternsEl = document.getElementById('paint-patterns')!;
+const btnSidebarTogglePaint = document.getElementById('btn-sidebar-toggle-paint');
+const btnSidebarApplyPaint = document.getElementById('btn-sidebar-apply-paint');
+const btnQuickOpenPaint = document.getElementById('btn-quick-open-paint');
 
 const PAINT_SWATCH_COLORS = [
   '#f8fafc',
@@ -596,29 +731,35 @@ const PAINT_SWATCH_COLORS = [
 ];
 
 function initPaintPalette(): void {
-  if (!paintSwatchesEl) return;
-  paintSwatchesEl.innerHTML = '';
-  for (const col of PAINT_SWATCH_COLORS) {
-    const sw = document.createElement('button');
-    sw.className = `paint-swatch ${col === selectedPaintColor ? 'active' : ''}`;
-    sw.style.backgroundColor = col;
-    sw.title = `Couleur ${col}`;
-    sw.addEventListener('click', (e) => {
-      e.stopPropagation();
-      selectedPaintColor = col;
-      if (paintColorPicker) paintColorPicker.value = col;
-      document.querySelectorAll('.paint-swatch').forEach((s) => s.classList.remove('active'));
-      sw.classList.add('active');
-      sound.playSelect();
-      toolStatusBarEl.textContent = `🖌️ Mode Peinture : Visez et cliquez pour peindre (${selectedPaintPattern} - ${selectedPaintColor})`;
-    });
-    paintSwatchesEl.appendChild(sw);
+  if (paintSwatchesEl) {
+    paintSwatchesEl.innerHTML = '';
+    for (const col of PAINT_SWATCH_COLORS) {
+      const sw = document.createElement('button');
+      sw.className = `paint-swatch ${col === selectedPaintColor ? 'active' : ''}`;
+      sw.style.backgroundColor = col;
+      const cName = COLOR_NAMES[col.toLowerCase()] || col;
+      sw.title = `${col} (${cName})`;
+      sw.addEventListener('click', (e) => {
+        e.stopPropagation();
+        selectedPaintColor = col;
+        if (paintColorPicker) paintColorPicker.value = col;
+        document.querySelectorAll('.paint-swatch').forEach((s) => s.classList.remove('active'));
+        sw.classList.add('active');
+        sound.playSelect();
+        updatePaintPreviewUI();
+        const pName = PATTERN_NAMES[selectedPaintPattern] || selectedPaintPattern;
+        toolStatusBarEl.textContent = `🖌️ Mode Peinture : Visez et cliquez pour peindre (${pName} - ${selectedPaintColor})`;
+      });
+      paintSwatchesEl.appendChild(sw);
+    }
   }
 
   paintColorPicker?.addEventListener('input', (e) => {
     selectedPaintColor = (e.target as HTMLInputElement).value;
     document.querySelectorAll('.paint-swatch').forEach((s) => s.classList.remove('active'));
-    toolStatusBarEl.textContent = `🖌️ Mode Peinture : Visez et cliquez pour peindre (${selectedPaintPattern} - ${selectedPaintColor})`;
+    updatePaintPreviewUI();
+    const pName = PATTERN_NAMES[selectedPaintPattern] || selectedPaintPattern;
+    toolStatusBarEl.textContent = `🖌️ Mode Peinture : Visez et cliquez pour peindre (${pName} - ${selectedPaintColor})`;
   });
 
   paintPatternsEl?.querySelectorAll('.paint-pattern-btn').forEach((btn) => {
@@ -628,10 +769,45 @@ function initPaintPalette(): void {
       (btn as HTMLElement).classList.add('active');
       selectedPaintPattern = (btn as HTMLElement).dataset.pattern || 'plain';
       sound.playSelect();
-      toolStatusBarEl.textContent = `🖌️ Mode Peinture : Visez et cliquez pour peindre (${selectedPaintPattern} - ${selectedPaintColor})`;
-      showToast(`Motif choisi : ${(btn as HTMLElement).textContent?.trim()}`);
+      updatePaintPreviewUI();
+      const pName = PATTERN_NAMES[selectedPaintPattern] || selectedPaintPattern;
+      toolStatusBarEl.textContent = `🖌️ Mode Peinture : Visez et cliquez pour peindre (${pName} - ${selectedPaintColor})`;
+      showToast(`Motif choisi : ${pName}`);
     });
   });
+
+  // Bouton Activer / Désactiver dans la barre latérale
+  btnSidebarTogglePaint?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    togglePaintMode();
+  });
+
+  // Bouton "Peindre le mur visé maintenant"
+  btnSidebarApplyPaint?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const target = world.currentTarget;
+    if (target?.removePos) {
+      const { x, y, z } = target.removePos;
+      if (world.paintBrickAt(x, y, z, selectedPaintColor, selectedPaintPattern)) {
+        sound.playPaint();
+        lastBuildSoundTime = performance.now();
+        player.triggerActionAnimation();
+        const pName = PATTERN_NAMES[selectedPaintPattern] || selectedPaintPattern;
+        showToast(`Mur peint (${pName} • ${selectedPaintColor}) !`);
+        return;
+      }
+    }
+    showToast("⚠️ Visez d'abord un mur avec votre regard, puis cliquez pour peindre");
+  });
+
+  // Raccourci basculant vers la catégorie peinture
+  btnQuickOpenPaint?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    selectCategory('paint');
+    togglePaintMode(true);
+  });
+
+  updatePaintPreviewUI();
 }
 
 initPaintPalette();
@@ -644,13 +820,16 @@ function togglePaintMode(force?: boolean): void {
     boxCornerA = null;
     document.getElementById('tool-box')?.classList.remove('active');
     document.getElementById('tool-ruler')?.classList.remove('active');
+    setSidebarOpen(true);
+    selectCategory('paint', false);
   }
-  paintBarEl?.classList.toggle('hidden', !isPaintMode);
   toolPaintBtn?.classList.toggle('active', isPaintMode);
   toolStatusBarEl.classList.toggle('hidden', !isPaintMode && !isBoxMode && !isRulerMode);
+  updatePaintPreviewUI();
   if (isPaintMode) {
-    toolStatusBarEl.textContent = `🖌️ Mode Peinture : Visez et cliquez sur un mur pour peindre (${selectedPaintPattern} - ${selectedPaintColor})`;
-    showToast('🖌️ Atelier Peinture activé : Cliquez sur un mur pour le peindre');
+    const pName = PATTERN_NAMES[selectedPaintPattern] || selectedPaintPattern;
+    toolStatusBarEl.textContent = `🖌️ Mode Peinture : Visez un mur et faites Clic Gauche pour peindre (${pName} - ${selectedPaintColor})`;
+    showToast('🖌️ Atelier Peinture activé : Visez un mur et cliquez');
   } else {
     showToast('Atelier Peinture fermé');
   }
@@ -710,7 +889,6 @@ function exportWorldOBJ(): void {
 
 // Tool button listeners
 toolPaintBtn?.addEventListener('click', () => togglePaintMode());
-btnClosePaint?.addEventListener('click', () => togglePaintMode(false));
 document.getElementById('tool-pipette')?.addEventListener('click', pickTargetBrick);
 document.getElementById('tool-box')?.addEventListener('click', toggleBoxMode);
 document.getElementById('tool-ruler')?.addEventListener('click', toggleRulerMode);
@@ -963,7 +1141,7 @@ window.addEventListener('keydown', (e) => {
     }
   }
 
-  if (e.code === 'KeyR' && player.isLocked) {
+  if (e.code === 'KeyO' && player.isLocked) {
     const step = world.rotatePlacement();
     sound.playSelect();
     showToast(`Orientation : ${step * 90}°`);
@@ -1251,6 +1429,10 @@ function animate(now: number): void {
   crosshairEl.classList.toggle('active', world.currentTarget !== null);
   if (player.isSitting) {
     interactionHintEl.innerHTML = `<kbd>E</kbd> ou <kbd>Flèches</kbd> Se relever`;
+    interactionHintEl.classList.remove('hidden');
+  } else if (isPaintMode && world.currentTarget?.removePos) {
+    const patternName = PATTERN_NAMES[selectedPaintPattern] || selectedPaintPattern;
+    interactionHintEl.innerHTML = `<kbd>Clic Gauche</kbd> Peindre ce mur (<strong>${patternName}</strong> <span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:${selectedPaintColor};border:1.5px solid rgba(255,255,255,0.7);vertical-align:middle;margin-left:4px;"></span>)`;
     interactionHintEl.classList.remove('hidden');
   } else if (world.currentTarget?.isDoorHit) {
     interactionHintEl.innerHTML = `<kbd>E</kbd> ${

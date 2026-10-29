@@ -7,7 +7,8 @@ export type ItemCategory =
   | 'openings'
   | 'decor'
   | 'furniture'
-  | 'nature';
+  | 'nature'
+  | 'paint';
 
 export const CATEGORY_DEFINITIONS: { id: ItemCategory; label: string; icon: string }[] = [
   { id: 'bricks', label: 'Briques & Murs', icon: '🧱' },
@@ -17,6 +18,7 @@ export const CATEGORY_DEFINITIONS: { id: ItemCategory; label: string; icon: stri
   { id: 'decor', label: 'Piliers & Clôtures', icon: '🏛️' },
   { id: 'furniture', label: 'Mobilier Intérieur', icon: '🛋️' },
   { id: 'nature', label: 'Nature & Eau', icon: '🌿' },
+  { id: 'paint', label: 'Peinture & Motifs', icon: '🎨' },
 ];
 
 export interface BrickDefinition {

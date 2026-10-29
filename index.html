@@ -91,7 +91,7 @@
 
       <div class="shortcut-card">
         <div><kbd>Clic G</kbd> Poser • <kbd>Clic D</kbd> Supprimer / Creuser la terre • <kbd>U</kbd>/<kbd>Y</kbd> Annuler/Rétablir</div>
-        <div><kbd>R</kbd> Peindre les murs • <kbd>Shift</kbd> Courir / Vol Turbo • <kbd>F</kbd> Vol Libre</div>
+        <div><kbd>R</kbd> Peindre les murs (Éléments) • <kbd>O</kbd> Rotation 90° • <kbd>F</kbd> Vol • <kbd>Shift</kbd> Turbo</div>
         <div><kbd>N</kbd> Mode Navigation (Menus) • <kbd>Tab</kbd> Éléments • <kbd>C</kbd> Pipette • <kbd>B</kbd> Boîte</div>
       </div>
     </div>
@@ -121,9 +121,105 @@
         <div class="sidebar-section-label">CATÉGORIES</div>
         <div id="category-tabs" class="category-tabs"></div>
 
-        <!-- Grille des Éléments avec Icônes Réduites -->
-        <div class="sidebar-section-label">ÉLÉMENTS DISPONIBLES</div>
-        <div id="hotbar" class="hotbar"></div>
+        <!-- Section 1 : Grille des Éléments de Construction -->
+        <div id="sidebar-elements-section">
+          <div class="sidebar-section-label">ÉLÉMENTS DISPONIBLES</div>
+          <div id="hotbar" class="hotbar"></div>
+        </div>
+
+        <!-- Section 2 : Atelier Peinture & Motifs Muraux Intégré -->
+        <div id="sidebar-paint-studio" class="sidebar-paint-studio hidden">
+          <div class="sidebar-section-label">ATELIER PEINTURE & FINITIONS</div>
+
+          <!-- Bouton Activer / Désactiver le Mode Peinture -->
+          <button id="btn-sidebar-toggle-paint" class="sidebar-paint-toggle-btn" title="Activer / Désactiver le mode peinture (Touche R)">
+            <span class="paint-toggle-icon">🖌️</span>
+            <div class="paint-toggle-info">
+              <span class="paint-toggle-title">Mode Peinture Murale</span>
+              <span id="sidebar-paint-status-desc" class="paint-toggle-desc">Cliquez pour activer</span>
+            </div>
+            <span id="sidebar-paint-badge" class="paint-badge off">DÉSACTIVÉ</span>
+          </button>
+
+          <!-- Bouton d'action directe : Peindre le mur actuellement visé -->
+          <button id="btn-sidebar-apply-paint" class="sidebar-apply-paint-btn" title="Appliquer immédiatement la peinture sur le mur actuellement ciblé">
+            <span>🎨</span> Peindre le mur visé maintenant
+          </button>
+
+          <!-- Guide d'utilisation clair -->
+          <div class="sidebar-paint-help-box">
+            <span>💡 <strong>Comment peindre :</strong> Visez un mur et faites <strong>Clic Gauche</strong> pour le peindre avec la couleur et le motif sélectionnés. Maintenez le clic pour peindre toute une façade en continu !</span>
+          </div>
+
+          <!-- Choix de la Couleur -->
+          <div class="sidebar-paint-group">
+            <div class="sidebar-group-title">
+              <span>COULEUR DU MUR</span>
+              <span id="paint-color-hex-label">#f8fafc</span>
+            </div>
+            <div class="paint-color-row">
+              <input type="color" id="paint-color-picker" value="#f8fafc" title="Couleur personnalisée / Pipette" />
+              <div id="paint-swatches" class="paint-swatches"></div>
+            </div>
+          </div>
+
+          <!-- Choix du Motif & Relief Mural (8 Styles) -->
+          <div class="sidebar-paint-group">
+            <div class="sidebar-group-title">
+              <span>MOTIFS & RELIEFS MURAUX (8 STYLES)</span>
+            </div>
+            <div id="paint-patterns" class="paint-patterns-grid">
+              <button data-pattern="plain" class="paint-pattern-btn active" title="Peinture unie mate soyeuse">
+                <span class="pattern-btn-icon">◻️</span>
+                <span class="pattern-btn-name">Uni Lisse</span>
+              </button>
+              <button data-pattern="stripes" class="paint-pattern-btn" title="Rayures élégantes haussmanniennes">
+                <span class="pattern-btn-icon">📜</span>
+                <span class="pattern-btn-name">Rayures</span>
+              </button>
+              <button data-pattern="floral" class="paint-pattern-btn" title="Papier peint damas baroque floral en relief">
+                <span class="pattern-btn-icon">🌺</span>
+                <span class="pattern-btn-name">Damas Floral</span>
+              </button>
+              <button data-pattern="bricks" class="paint-pattern-btn" title="Briques peintes en relief">
+                <span class="pattern-btn-icon">🧱</span>
+                <span class="pattern-btn-name">Briques</span>
+              </button>
+              <button data-pattern="tiles" class="paint-pattern-btn" title="Carrelage métro faïence biseauté">
+                <span class="pattern-btn-icon">🔲</span>
+                <span class="pattern-btn-name">Carrelage Métro</span>
+              </button>
+              <button data-pattern="wood" class="paint-pattern-btn" title="Boiserie à moulures classiques">
+                <span class="pattern-btn-icon">🪵</span>
+                <span class="pattern-btn-name">Boiserie Moulurée</span>
+              </button>
+              <button data-pattern="marble" class="paint-pattern-btn" title="Marbre noble blanc veiné">
+                <span class="pattern-btn-icon">🏛️</span>
+                <span class="pattern-btn-name">Marbre Veiné</span>
+              </button>
+              <button data-pattern="geometric" class="paint-pattern-btn" title="Motif losanges Art Déco">
+                <span class="pattern-btn-icon">💠</span>
+                <span class="pattern-btn-name">Art Déco</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Carte d'Aperçu du Mur Personnalisé -->
+          <div class="sidebar-paint-preview-card">
+            <div id="paint-sample-preview" class="paint-sample-preview"></div>
+            <div class="paint-sample-info">
+              <span id="paint-sample-pattern-text" class="paint-sample-title">Motif : Uni Lisse</span>
+              <span id="paint-sample-color-text" class="paint-sample-sub">Teinte : #f8fafc (Blanc Albâtre)</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Raccourci vers l'Atelier Peinture visible depuis les autres catégories -->
+        <div id="sidebar-paint-quick-link" class="sidebar-paint-quick-link">
+          <button id="btn-quick-open-paint" class="btn-quick-paint" title="Ouvrir l'Atelier Peinture & Motifs Muraux (R)">
+            <span>🎨</span> Atelier Peinture & Motifs Muraux <kbd>R</kbd>
+          </button>
+        </div>
 
         <!-- Historique Annuler / Rétablir -->
         <div class="sidebar-history-row">
@@ -151,41 +247,6 @@
         <button id="btn-quick-catalog" class="btn-mini-catalog" title="Ouvrir le catalogue d'éléments">
           Catalogue <kbd>Tab</kbd>
         </button>
-      </div>
-    </div>
-
-    <!-- Atelier Dédié Peinture & Motifs Muraux -->
-    <div id="paint-bar" class="paint-bar hidden">
-      <div class="paint-bar-header">
-        <span class="paint-bar-title">🖌️ ATELIER PEINTURE & MOTIFS MURAUX</span>
-        <span class="paint-bar-hint">Cliquez sur un mur pour le peindre</span>
-        <button id="btn-close-paint" class="btn-close-compact" title="Fermer l'atelier peinture (R)">✕</button>
-      </div>
-
-      <div class="paint-bar-body">
-        <div class="paint-group">
-          <span class="paint-label">COULEUR :</span>
-          <div class="paint-color-row">
-            <input type="color" id="paint-color-picker" value="#f8fafc" title="Pipette / Sélecteur couleur personnalisé" />
-            <div id="paint-swatches" class="paint-swatches"></div>
-          </div>
-        </div>
-
-        <div class="paint-divider"></div>
-
-        <div class="paint-group">
-          <span class="paint-label">MOTIF / TEXTURE :</span>
-          <div id="paint-patterns" class="paint-patterns">
-            <button data-pattern="plain" class="paint-pattern-btn active" title="Peinture unie mate soyeuse">◻️ Uni</button>
-            <button data-pattern="stripes" class="paint-pattern-btn" title="Rayures élégantes bicolores">📜 Rayures</button>
-            <button data-pattern="floral" class="paint-pattern-btn" title="Papier peint damas floral">🌺 Damas Floral</button>
-            <button data-pattern="bricks" class="paint-pattern-btn" title="Briques peintes en relief">🧱 Briques</button>
-            <button data-pattern="tiles" class="paint-pattern-btn" title="Carrelage métro faïence">🔲 Carrelage</button>
-            <button data-pattern="wood" class="paint-pattern-btn" title="Boiserie à moulures classiques">🪵 Boiserie</button>
-            <button data-pattern="marble" class="paint-pattern-btn" title="Marbre veiné noble">🏛️ Marbre</button>
-            <button data-pattern="geometric" class="paint-pattern-btn" title="Motif losanges Art Déco">💠 Géométrique</button>
-          </div>
-        </div>
       </div>
     </div>
 

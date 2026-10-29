@@ -6,7 +6,7 @@
       "ownerId": "guest_1793289578954",
       "name": "Monde Récupéré #3",
       "createdAt": 1793289578963,
-      "updatedAt": 1793308150409,
+      "updatedAt": 1793310066722,
       "bricks": [
         {
           "x": 1,
@@ -17,14 +17,6 @@
           "open": false
         },
         {
-          "x": 2,
-          "y": 0,
-          "z": 4,
-          "type": 10,
-          "rot": 0,
-          "open": false
-        },
-        {
           "x": 0,
           "y": 0,
           "z": 5,
@@ -674,14 +666,6 @@
         },
         {
           "x": 1,
-          "y": 1,
-          "z": 3,
-          "type": 1,
-          "rot": 0,
-          "open": false
-        },
-        {
-          "x": 2,
           "y": 1,
           "z": 3,
           "type": 1,
@@ -1385,14 +1369,6 @@
           "open": false
         },
         {
-          "x": 2,
-          "y": 0,
-          "z": 3,
-          "type": 1,
-          "rot": 2,
-          "open": false
-        },
-        {
           "x": 1,
           "y": 0,
           "z": 3,
@@ -1449,33 +1425,9 @@
           "open": false
         },
         {
-          "x": 9,
-          "y": 2,
-          "z": 3,
-          "type": 1,
-          "rot": 2,
-          "open": false
-        },
-        {
           "x": 8,
           "y": 2,
           "z": 3,
-          "type": 1,
-          "rot": 2,
-          "open": false
-        },
-        {
-          "x": 9,
-          "y": 2,
-          "z": 4,
-          "type": 1,
-          "rot": 2,
-          "open": false
-        },
-        {
-          "x": 9,
-          "y": 2,
-          "z": 5,
           "type": 1,
           "rot": 2,
           "open": false
@@ -2231,12 +2183,132 @@
           "type": 10,
           "rot": 0,
           "open": false
+        },
+        {
+          "x": 2,
+          "y": -1,
+          "z": 3,
+          "type": 39,
+          "rot": 0,
+          "open": false
+        },
+        {
+          "x": 3,
+          "y": 0,
+          "z": 1,
+          "type": 40,
+          "rot": 0,
+          "open": false
+        },
+        {
+          "x": 1,
+          "y": 0,
+          "z": 1,
+          "type": 40,
+          "rot": 0,
+          "open": false
+        },
+        {
+          "x": 2,
+          "y": 0,
+          "z": 0,
+          "type": 40,
+          "rot": 0,
+          "open": false
+        },
+        {
+          "x": 2,
+          "y": 0,
+          "z": 1,
+          "type": 39,
+          "rot": 0,
+          "open": false
+        },
+        {
+          "x": 2,
+          "y": 1,
+          "z": 3,
+          "type": 1,
+          "rot": 0,
+          "open": false
+        },
+        {
+          "x": 3,
+          "y": 0,
+          "z": 2,
+          "type": 40,
+          "rot": 0,
+          "open": false
+        },
+        {
+          "x": 1,
+          "y": 0,
+          "z": 2,
+          "type": 40,
+          "rot": 0,
+          "open": false
+        },
+        {
+          "x": 2,
+          "y": 0,
+          "z": 3,
+          "type": 1,
+          "rot": 0,
+          "open": false
+        },
+        {
+          "x": 2,
+          "y": -1,
+          "z": 4,
+          "type": 10,
+          "rot": 0,
+          "open": false
+        },
+        {
+          "x": 2,
+          "y": -1,
+          "z": 3,
+          "type": 10,
+          "rot": 0,
+          "open": false
+        },
+        {
+          "x": 2,
+          "y": 0,
+          "z": 4,
+          "type": 10,
+          "rot": 0,
+          "open": false
+        },
+        {
+          "x": 2,
+          "y": 0,
+          "z": 3,
+          "type": 10,
+          "rot": 0,
+          "open": false
+        },
+        {
+          "x": 9,
+          "y": 2,
+          "z": 3,
+          "type": 1,
+          "rot": 0,
+          "open": false
+        },
+        {
+          "x": 9,
+          "y": 2,
+          "z": 4,
+          "type": 1,
+          "rot": 0,
+          "open": false
         }
       ],
       "playerState": {
-        "x": 4.732251272916311,
+        "x": 8.708050142446677,
         "y": 0.36,
-        "z": 9.600149171915215,
+        "z": 5.433106404230106,
         "viewMode": "tps-back",
         "lightingIdx": 0
       }

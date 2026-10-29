@@ -1078,97 +1078,156 @@ body.photo-mode #tool-status-bar {
   display: none !important;
 }
 
-/* --- Atelier Peinture & Motifs --- */
-.paint-bar {
-  position: fixed;
-  top: 72px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 55;
-  background: rgba(15, 23, 42, 0.94);
-  backdrop-filter: blur(22px);
-  border: 1px solid rgba(148, 163, 184, 0.35);
-  border-radius: 16px;
-  padding: 10px 16px;
-  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.55);
+/* --- Atelier Peinture & Motifs Muraux (Intégré dans la barre latérale) --- */
+.sidebar-paint-studio {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  max-width: 95vw;
+  gap: 12px;
+  animation: fadeIn 0.18s ease-out;
 }
 
-.paint-bar-header {
+.sidebar-paint-toggle-btn {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.paint-bar-title {
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  color: #93c5fd;
-}
-
-.paint-bar-hint {
-  font-size: 11px;
-  color: #cbd5e1;
-}
-
-.btn-close-compact {
-  background: transparent;
-  border: none;
-  color: #94a3b8;
-  font-size: 13px;
-  font-weight: bold;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  border: 1.5px solid rgba(148, 163, 184, 0.3);
+  background: rgba(30, 41, 59, 0.8);
   cursor: pointer;
-  padding: 2px 6px;
-  border-radius: 6px;
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  text-align: left;
 }
 
-.btn-close-compact:hover {
-  background: rgba(255, 255, 255, 0.1);
+.sidebar-paint-toggle-btn:hover {
+  background: rgba(51, 65, 85, 0.95);
+  border-color: rgba(148, 163, 184, 0.5);
+  transform: translateY(-1px);
+}
+
+.sidebar-paint-toggle-btn.active {
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.35) 0%, rgba(30, 58, 138, 0.55) 100%);
+  border-color: #60a5fa;
+  box-shadow: 0 0 14px rgba(37, 99, 235, 0.35);
+}
+
+.paint-toggle-icon {
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.paint-toggle-info {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.paint-toggle-title {
+  font-size: 11.5px;
+  font-weight: 800;
   color: #f8fafc;
 }
 
-.paint-bar-body {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  flex-wrap: wrap;
-}
-
-.paint-group {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.paint-label {
+.paint-toggle-desc {
   font-size: 10px;
-  font-weight: 700;
   color: #94a3b8;
-  letter-spacing: 0.05em;
+}
+
+.paint-badge {
+  font-size: 9px;
+  font-weight: 800;
+  padding: 3px 7px;
+  border-radius: 999px;
+  letter-spacing: 0.04em;
+}
+
+.paint-badge.off {
+  background: rgba(71, 85, 105, 0.6);
+  color: #cbd5e1;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+}
+
+.paint-badge.on {
+  background: #10b981;
+  color: #ffffff;
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.5);
+}
+
+.sidebar-apply-paint-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.16s ease;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+}
+
+.sidebar-apply-paint-btn:hover {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(37, 99, 235, 0.45);
+}
+
+.sidebar-paint-help-box {
+  background: rgba(30, 41, 59, 0.55);
+  border: 1px dashed rgba(148, 163, 184, 0.28);
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 10.5px;
+  color: #cbd5e1;
+  line-height: 1.4;
+}
+
+.sidebar-paint-group {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.sidebar-group-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 9.5px;
+  font-weight: 800;
+  color: #94a3b8;
+  letter-spacing: 0.06em;
+}
+
+#paint-color-hex-label {
+  font-family: monospace;
+  font-size: 10px;
+  color: #93c5fd;
+  text-transform: uppercase;
 }
 
 .paint-color-row {
   display: flex;
   align-items: center;
   gap: 6px;
+  flex-wrap: wrap;
 }
 
 #paint-color-picker {
   -webkit-appearance: none;
   -moz-appearance: none;
   appearance: none;
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   border: none;
   border-radius: 50%;
   cursor: pointer;
   background: transparent;
   padding: 0;
+  flex-shrink: 0;
 }
 
 #paint-color-picker::-webkit-color-swatch-wrapper {
@@ -1176,67 +1235,144 @@ body.photo-mode #tool-status-bar {
 }
 
 #paint-color-picker::-webkit-color-swatch {
-  border: 2px solid rgba(255, 255, 255, 0.6);
+  border: 2px solid rgba(255, 255, 255, 0.7);
   border-radius: 50%;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
 }
 
 .paint-swatches {
   display: flex;
-  gap: 5px;
+  gap: 4px;
+  flex-wrap: wrap;
 }
 
 .paint-swatch {
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
-  border: 2px solid rgba(255, 255, 255, 0.2);
+  border: 1.5px solid rgba(255, 255, 255, 0.25);
   cursor: pointer;
-  transition: transform 0.15s ease, border-color 0.15s ease;
+  transition: transform 0.14s ease, border-color 0.14s ease;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.25);
 }
 
 .paint-swatch:hover {
-  transform: scale(1.18);
+  transform: scale(1.22);
   border-color: #ffffff;
 }
 
 .paint-swatch.active {
-  transform: scale(1.18);
+  transform: scale(1.22);
   border-color: #38bdf8;
-  box-shadow: 0 0 8px rgba(56, 189, 248, 0.6);
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.7);
 }
 
-.paint-divider {
-  width: 1px;
-  height: 24px;
-  background: rgba(148, 163, 184, 0.25);
-}
-
-.paint-patterns {
-  display: flex;
-  gap: 5px;
-  flex-wrap: wrap;
+.paint-patterns-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
 }
 
 .paint-pattern-btn {
-  padding: 4px 8px;
-  font-size: 11px;
-  font-weight: 600;
-  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 9px;
+  border-radius: 9px;
   border: 1px solid rgba(148, 163, 184, 0.25);
-  background: rgba(30, 41, 59, 0.7);
+  background: rgba(30, 41, 59, 0.75);
   color: #cbd5e1;
+  font-size: 10.5px;
+  font-weight: 600;
   cursor: pointer;
   transition: all 0.15s ease;
+  text-align: left;
+}
+
+.pattern-btn-icon {
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
+.pattern-btn-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .paint-pattern-btn:hover {
-  background: rgba(51, 65, 85, 0.9);
+  background: rgba(51, 65, 85, 0.95);
   color: #f8fafc;
+  transform: translateY(-1px);
 }
 
 .paint-pattern-btn.active {
   background: #2563eb;
   border-color: #60a5fa;
   color: #ffffff;
-  box-shadow: 0 0 10px rgba(37, 99, 235, 0.5);
+  box-shadow: 0 0 10px rgba(37, 99, 235, 0.45);
+}
+
+.sidebar-paint-preview-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: rgba(15, 23, 42, 0.75);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 10px;
+}
+
+.paint-sample-preview {
+  width: 34px;
+  height: 34px;
+  border-radius: 7px;
+  border: 1.5px solid rgba(255, 255, 255, 0.4);
+  background: #f8fafc;
+  flex-shrink: 0;
+  box-shadow: inset 0 0 8px rgba(0, 0, 0, 0.2);
+}
+
+.paint-sample-info {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.paint-sample-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: #f8fafc;
+}
+
+.paint-sample-sub {
+  font-size: 9.5px;
+  color: #94a3b8;
+}
+
+.sidebar-paint-quick-link {
+  margin-top: 4px;
+}
+
+.btn-quick-paint {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 7px 10px;
+  border-radius: 9px;
+  border: 1px dashed rgba(148, 163, 184, 0.35);
+  background: rgba(30, 41, 59, 0.55);
+  color: #93c5fd;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.16s ease;
+}
+
+.btn-quick-paint:hover {
+  background: rgba(37, 99, 235, 0.25);
+  border-color: #60a5fa;
+  color: #ffffff;
 }
