@@ -499,7 +499,7 @@ renderer.domElement.addEventListener('mousedown', (e) => {
     if (target.removePos) {
       lastDragRemovePos = target.removePos.clone();
       const { x, y, z } = target.removePos;
-      if (world.removeBrick(x, y, z, true, true)) {
+      if (world.removeBrick(x, y, z, true, true, target.removeType)) {
         sound.playRemove();
         lastBuildSoundTime = performance.now();
         player.triggerActionAnimation();
@@ -768,7 +768,7 @@ function animate(now: number): void {
 
   player.update(dt);
   countryside.update(now * 0.001);
-  world.update(dt, camera, player.getEyePosition(), player.getAimDirection());
+  world.update(dt, camera, player.getEyePosition());
 
   // Mass creation / removal while holding mouse button and moving the mouse
   if (player.isLocked && isHoldingBuild && world.currentTarget) {

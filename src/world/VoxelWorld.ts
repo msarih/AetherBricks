@@ -25,6 +25,7 @@ interface HistoryAction {
 }
 
 interface PlacedItem {
+  slotKey: string;
   visualRoot: THREE.Object3D;
   hitProxies: THREE.Mesh[];
   entry: BrickEntry;
@@ -47,6 +48,7 @@ export class VoxelWorld {
   public readonly catalog: Map<number, BrickDefinition>;
   private readonly brickGeo: THREE.BufferGeometry;
   private readonly proxyBoxGeo = new THREE.BoxGeometry(1, 1, 1);
+  private readonly proxySlabGeo = new THREE.BoxGeometry(1, SLAB_THICKNESS, 1);
   private readonly proxyMat = new THREE.MeshBasicMaterial({
     transparent: true,
     opacity: 0,
@@ -54,13 +56,13 @@ export class VoxelWorld {
   });
   private readonly groundMesh: THREE.Mesh;
 
+  // Map from slotKey ("main:x,y,z" | "floor:x,y,z" | "ceil:x,y,z") -> PlacedItem
   private readonly bricks = new Map<string, PlacedItem>();
   private readonly uniqueItems = new Set<PlacedItem>();
   private readonly raycaster = new THREE.Raycaster();
   private readonly interactables: THREE.Object3D[] = [];
-  private readonly strokeIgnoreProxies = new Set<THREE.Object3D>();
   private isDragStrokeActive = false;
-  private dragFallbackPlaneY: number | null = null;
+  private dragLockedY: number | null = null;
   private countryside?: CountrysideEnv;
   public onWorldChanged?: () => void;
 
@@ -69,10 +71,12 @@ export class VoxelWorld {
   private readonly ghostBoxMesh: THREE.Mesh;
   private readonly ghostWireframe: THREE.LineSegments;
   public rotationStep = 0; // 0, 1, 2, 3 (90° increments)
+  private activeSelectedType = 1;
 
   public currentTarget: {
     placePos: THREE.Vector3;
     removePos: THREE.Vector3 | null;
+    removeType: number | null;
     hitBrickType: number | null;
     isDoorHit: boolean;
     doorIsOpen?: boolean;
@@ -140,7 +144,7 @@ export class VoxelWorld {
     this.scene.add(this.ghostGroup);
 
     this.raycaster.near = 0.1;
-    this.raycaster.far = 14.5;
+    this.raycaster.far = 18.0;
 
     // Load saved world or starter scene
     if (!this.loadFromLocalStorage()) {
@@ -149,6 +153,7 @@ export class VoxelWorld {
   }
 
   public setGhostMode(selectedType: number): void {
+    this.activeSelectedType = selectedType;
     if (isTwoBlocksTall(selectedType)) {
       this.ghostBoxMesh.scale.set(1, 2, 1);
       this.ghostBoxMesh.position.set(0, 0.5, 0);
@@ -177,21 +182,49 @@ export class VoxelWorld {
     return this.rotationStep;
   }
 
-  public beginDragStroke(initialPlaneY?: number): void {
+  public beginDragStroke(initialPlaneY: number): void {
     this.isDragStrokeActive = true;
-    this.strokeIgnoreProxies.clear();
-    this.dragFallbackPlaneY = initialPlaneY ?? null;
+    this.dragLockedY = Math.round(initialPlaneY);
   }
 
   public endDragStroke(): void {
     this.isDragStrokeActive = false;
-    this.strokeIgnoreProxies.clear();
-    this.dragFallbackPlaneY = null;
+    this.dragLockedY = null;
+  }
+
+  /**
+   * Clé de stockage séparant :
+   * - les dalles de sol ("floor:x,y,z")
+   * - les dalles de plafond ("ceil:x,y,z")
+   * - les blocs/murs/portes/fenêtres principaux ("main:x,y,z")
+   * Ainsi, une dalle de sol ne force JAMAIS une brique posée dessus à flotter à y+1 !
+   */
+  private slotKeyForType(x: number, y: number, z: number, type: number): string {
+    const rx = Math.round(x);
+    const ry = Math.round(y);
+    const rz = Math.round(z);
+    if (isFloorSlab(type)) return `floor:${rx},${ry},${rz}`;
+    if (isCeilingSlab(type)) return `ceil:${rx},${ry},${rz}`;
+    return `main:${rx},${ry},${rz}`;
+  }
+
+  private findAnyItemAt(x: number, y: number, z: number, preferredType?: number | null): PlacedItem | undefined {
+    const rx = Math.round(x);
+    const ry = Math.round(y);
+    const rz = Math.round(z);
+    if (preferredType) {
+      const exact = this.bricks.get(this.slotKeyForType(rx, ry, rz, preferredType));
+      if (exact) return exact;
+    }
+    return (
+      this.bricks.get(`main:${rx},${ry},${rz}`) ||
+      this.bricks.get(`ceil:${rx},${ry},${rz}`) ||
+      this.bricks.get(`floor:${rx},${ry},${rz}`)
+    );
   }
 
   /**
    * Trace et pose une ligne continue de briques/dalles entre `from` et `to`
-   * pour permettre la création en masse fluide même lors d'un mouvement rapide de la souris.
    */
   public placeLine(
     from: THREE.Vector3,
@@ -211,15 +244,7 @@ export class VoxelWorld {
     const dz = z1 - z0;
     const steps = Math.max(Math.abs(dx), Math.abs(dy), Math.abs(dz));
 
-    if (steps === 0) {
-      if (canPlaceAt(x1, y1, z1) && this.setBrick(x1, y1, z1, type, true, true, this.rotationStep, false)) {
-        return 1;
-      }
-      return 0;
-    }
-
-    // Limit max interpolation span per frame to avoid accidental huge lines across horizon
-    if (steps > 18) {
+    if (steps === 0 || steps > 20) {
       if (canPlaceAt(x1, y1, z1) && this.setBrick(x1, y1, z1, type, true, true, this.rotationStep, false)) {
         return 1;
       }
@@ -257,7 +282,7 @@ export class VoxelWorld {
     const dz = z1 - z0;
     const steps = Math.max(Math.abs(dx), Math.abs(dy), Math.abs(dz));
 
-    if (steps === 0 || steps > 18) {
+    if (steps === 0 || steps > 20) {
       return this.removeBrick(x1, y1, z1, true, true) ? 1 : 0;
     }
 
@@ -274,22 +299,17 @@ export class VoxelWorld {
     return removedCount;
   }
 
-  private key(x: number, y: number, z: number): string {
-    return `${x},${y},${z}`;
-  }
-
   /**
    * Utilisé pour les collisions physiques du joueur :
-   * - Une porte ouverte laisse passer le joueur.
-   * - Une dalle plate de sol ou de plafond (`isFlatSlab`) laisse aussi circuler le joueur dans la pièce !
+   * Seuls les blocs principaux ("main:x,y,z") fermés bloquent le passage.
    */
   public hasBrickAt(x: number, y: number, z: number): boolean {
-    const item = this.bricks.get(this.key(Math.round(x), Math.round(y), Math.round(z)));
+    const rx = Math.round(x);
+    const ry = Math.round(y);
+    const rz = Math.round(z);
+    const item = this.bricks.get(`main:${rx},${ry},${rz}`);
     if (!item) return false;
     if (item.entry.type === BRICK_TYPE_DOOR_OAK && item.entry.open) {
-      return false;
-    }
-    if (isFlatSlab(item.entry.type)) {
       return false;
     }
     return true;
@@ -314,11 +334,11 @@ export class VoxelWorld {
     const rz = Math.round(z);
     if (ry < 0 || ry > 120) return false;
 
-    const k1 = this.key(rx, ry, rz);
+    const k1 = this.slotKeyForType(rx, ry, rz, type);
     if (this.bricks.has(k1)) return false;
 
     const twoTall = isTwoBlocksTall(type);
-    const k2 = this.key(rx, ry + 1, rz);
+    const k2 = `main:${rx},${ry + 1},${rz}`;
     if (twoTall && this.bricks.has(k2)) return false;
 
     const def = this.catalog.get(type) ?? this.catalog.get(1)!;
@@ -336,8 +356,9 @@ export class VoxelWorld {
       visualRoot = slabMesh;
       this.scene.add(slabMesh);
 
-      const proxy = new THREE.Mesh(this.proxyBoxGeo, this.proxyMat);
-      proxy.position.set(rx, ry, rz);
+      // Boîte de sélection plate (0.16m d'épaisseur seulement !) pour ne JAMAIS intercepter les rayons en l'air
+      const proxy = new THREE.Mesh(this.proxySlabGeo, this.proxyMat);
+      proxy.position.set(rx, ry + yOffset, rz);
       proxy.userData = { ...entry };
       this.scene.add(proxy);
       this.interactables.push(proxy);
@@ -407,20 +428,11 @@ export class VoxelWorld {
       this.scene.add(light);
     }
 
-    const placed: PlacedItem = { visualRoot, hitProxies, entry, light, doorPivot };
+    const placed: PlacedItem = { slotKey: k1, visualRoot, hitProxies, entry, light, doorPivot };
     this.uniqueItems.add(placed);
     this.bricks.set(k1, placed);
     if (twoTall) {
       this.bricks.set(k2, placed);
-    }
-
-    if (this.isDragStrokeActive) {
-      for (const p of hitProxies) {
-        this.strokeIgnoreProxies.add(p);
-      }
-      if (this.dragFallbackPlaneY === null) {
-        this.dragFallbackPlaneY = ry;
-      }
     }
 
     if (ry === 0) {
@@ -441,19 +453,22 @@ export class VoxelWorld {
   }
 
   public toggleDoorAt(x: number, y: number, z: number): boolean | null {
-    const item = this.bricks.get(this.key(Math.round(x), Math.round(y), Math.round(z)));
+    const item = this.bricks.get(`main:${Math.round(x)},${Math.round(y)},${Math.round(z)}`);
     if (!item || item.entry.type !== BRICK_TYPE_DOOR_OAK) return null;
     item.entry.open = !item.entry.open;
     this.saveToLocalStorage();
     return item.entry.open;
   }
 
-  public removeBrick(x: number, y: number, z: number, recordHistory = true, spawnParticles = true): boolean {
-    const rx = Math.round(x);
-    const ry = Math.round(y);
-    const rz = Math.round(z);
-    const k = this.key(rx, ry, rz);
-    const existing = this.bricks.get(k);
+  public removeBrick(
+    x: number,
+    y: number,
+    z: number,
+    recordHistory = true,
+    spawnParticles = true,
+    preferredType?: number | null
+  ): boolean {
+    const existing = this.findAnyItemAt(x, y, z, preferredType);
     if (!existing) return false;
 
     const baseEntry = existing.entry;
@@ -471,9 +486,9 @@ export class VoxelWorld {
     }
 
     this.uniqueItems.delete(existing);
-    this.bricks.delete(this.key(baseEntry.x, baseEntry.y, baseEntry.z));
+    this.bricks.delete(existing.slotKey);
     if (isTwoBlocksTall(baseEntry.type)) {
-      this.bricks.delete(this.key(baseEntry.x, baseEntry.y + 1, baseEntry.z));
+      this.bricks.delete(`main:${baseEntry.x},${baseEntry.y + 1},${baseEntry.z}`);
     }
 
     if (baseEntry.y === 0) {
@@ -498,7 +513,7 @@ export class VoxelWorld {
     if (!action) return false;
 
     if (action.kind === 'place') {
-      this.removeBrick(action.entry.x, action.entry.y, action.entry.z, false, true);
+      this.removeBrick(action.entry.x, action.entry.y, action.entry.z, false, true, action.entry.type);
     } else {
       this.setBrick(
         action.entry.x,
@@ -532,7 +547,7 @@ export class VoxelWorld {
         action.entry.open ?? false
       );
     } else {
-      this.removeBrick(action.entry.x, action.entry.y, action.entry.z, false, true);
+      this.removeBrick(action.entry.x, action.entry.y, action.entry.z, false, true, action.entry.type);
     }
     this.undoStack.push(action);
     this.saveToLocalStorage();
@@ -638,12 +653,7 @@ export class VoxelWorld {
     });
   }
 
-  public update(
-    dt: number,
-    camera: THREE.Camera,
-    aimOrigin?: THREE.Vector3,
-    aimDirection?: THREE.Vector3
-  ): void {
+  public update(dt: number, camera: THREE.Camera, playerEyePos?: THREE.Vector3): void {
     // Animate doors smoothly
     for (const item of this.uniqueItems) {
       if (item.doorPivot) {
@@ -656,15 +666,46 @@ export class VoxelWorld {
       }
     }
 
-    if (aimOrigin && aimDirection) {
-      this.raycaster.set(aimOrigin, aimDirection);
-    } else {
-      this.raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+    // Always cast directly from the camera through the exact center crosshair (0, 0)
+    // so there is ZERO parallax discrepancy between what the crosshair points at and what gets hit!
+    this.raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+
+    // Minimum distance filter so blocks behind the player (between 3rd-person camera and character back) are ignored
+    const minValidDist = playerEyePos
+      ? Math.max(0.2, camera.position.distanceTo(playerEyePos) - 0.45)
+      : 0.2;
+
+    // 1. If we are in a hold-and-drag mass creation stroke, lock strictly onto the horizontal plane y = dragLockedY!
+    // This guarantees that sweeping across the ground or a floor NEVER jumps up into the air!
+    if (this.isDragStrokeActive && this.dragLockedY !== null) {
+      const planeHeightWorld = this.dragLockedY - 0.5;
+      const dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -planeHeightWorld);
+      const pt = new THREE.Vector3();
+      if (this.raycaster.ray.intersectPlane(dragPlane, pt)) {
+        const dist = pt.distanceTo(camera.position);
+        if (dist >= minValidDist && dist <= this.raycaster.far) {
+          const placePos = new THREE.Vector3(
+            Math.round(pt.x),
+            this.dragLockedY,
+            Math.round(pt.z)
+          );
+          this.currentTarget = {
+            placePos,
+            removePos: null,
+            removeType: null,
+            hitBrickType: null,
+            isDoorHit: false,
+          };
+          this.ghostGroup.position.copy(placePos);
+          this.ghostGroup.visible = true;
+          this.updateParticles(dt);
+          return;
+        }
+      }
     }
+
     const rawHits = this.raycaster.intersectObjects(this.interactables, false);
-    const hit = this.isDragStrokeActive
-      ? rawHits.find((h) => !this.strokeIgnoreProxies.has(h.object))
-      : rawHits[0];
+    const hit = rawHits.find((h) => h.distance >= minValidDist);
 
     if (hit && hit.face) {
       const normal = hit.face.normal.clone();
@@ -673,26 +714,63 @@ export class VoxelWorld {
       if (hit.object === this.groundMesh) {
         const px = Math.round(hit.point.x);
         const pz = Math.round(hit.point.z);
-        const targetY =
-          this.isDragStrokeActive && this.dragFallbackPlaneY !== null
-            ? this.dragFallbackPlaneY
-            : 0;
-        const placePos = new THREE.Vector3(px, targetY, pz);
+        const placePos = new THREE.Vector3(px, 0, pz);
         this.currentTarget = {
           placePos,
           removePos: null,
+          removeType: null,
           hitBrickType: null,
           isDoorHit: false,
         };
       } else {
-        const hitPos = hit.object.position.clone().round();
         const data = hit.object.userData as BrickEntry;
         const removePos = new THREE.Vector3(data.x, data.y, data.z);
-        const placePos = hitPos.clone().add(normal);
-        const placedItem = this.bricks.get(this.key(data.x, data.y, data.z));
+        const placedItem = this.findAnyItemAt(data.x, data.y, data.z, data.type);
+
+        let placePos: THREE.Vector3;
+
+        // Si on pointe sur une dalle de sol (isFloorSlab) :
+        // - Si on tient une brique, porte ou fenêtre, on la pose SUR cette dalle au niveau data.y (et NON à data.y + 1 en l'air !)
+        // - Si on tient une autre dalle de sol et qu'on vise le dessus de la dalle, on calcule la case du sol directement sous le point précis visé
+        if (isFloorSlab(data.type)) {
+          if (!isFloorSlab(this.activeSelectedType) && normal.y > 0) {
+            placePos = new THREE.Vector3(data.x, data.y, data.z);
+          } else {
+            placePos = new THREE.Vector3(
+              Math.round(hit.point.x + normal.x * 0.5),
+              data.y,
+              Math.round(hit.point.z + normal.z * 0.5)
+            );
+          }
+        } else if (isCeilingSlab(data.type)) {
+          if (isCeilingSlab(this.activeSelectedType)) {
+            placePos = new THREE.Vector3(
+              Math.round(hit.point.x + normal.x * 0.5),
+              data.y,
+              Math.round(hit.point.z + normal.z * 0.5)
+            );
+          } else {
+            placePos = new THREE.Vector3(data.x, data.y, data.z).add(normal);
+          }
+        } else {
+          const hitVoxelPos = new THREE.Vector3(
+            Math.round(hit.object.position.x),
+            Math.round(hit.object.position.y),
+            Math.round(hit.object.position.z)
+          );
+          placePos = hitVoxelPos.add(normal);
+        }
+
+        // Sécurité supplémentaire : si le rayon touche la face latérale d'une brique mais très près du sol
+        // et que la case (placePos.x, 0, placePos.z) est vide, privilégier le sol (y = 0)
+        if (placePos.y > 0 && hit.point.y < -0.15 && !this.hasBrickAt(placePos.x, 0, placePos.z)) {
+          placePos.y = 0;
+        }
+
         this.currentTarget = {
           placePos,
           removePos,
+          removeType: data.type,
           hitBrickType: data.type,
           isDoorHit: data.type === BRICK_TYPE_DOOR_OAK,
           doorIsOpen: placedItem?.entry.open,
@@ -701,40 +779,15 @@ export class VoxelWorld {
 
       this.ghostGroup.position.copy(this.currentTarget.placePos);
       this.ghostGroup.visible = true;
-    } else if (this.isDragStrokeActive && this.dragFallbackPlaneY !== null) {
-      // Fallback sur le plan horizontal de construction en cours (ex: création d'un plafond ou plancher en plein air)
-      const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -(this.dragFallbackPlaneY - 0.5));
-      const intersectPt = new THREE.Vector3();
-      if (this.raycaster.ray.intersectPlane(plane, intersectPt)) {
-        const dist = intersectPt.distanceTo(this.raycaster.ray.origin);
-        if (dist <= this.raycaster.far) {
-          const placePos = new THREE.Vector3(
-            Math.round(intersectPt.x),
-            this.dragFallbackPlaneY,
-            Math.round(intersectPt.z)
-          );
-          this.currentTarget = {
-            placePos,
-            removePos: null,
-            hitBrickType: null,
-            isDoorHit: false,
-          };
-          this.ghostGroup.position.copy(placePos);
-          this.ghostGroup.visible = true;
-        } else {
-          this.currentTarget = null;
-          this.ghostGroup.visible = false;
-        }
-      } else {
-        this.currentTarget = null;
-        this.ghostGroup.visible = false;
-      }
     } else {
       this.currentTarget = null;
       this.ghostGroup.visible = false;
     }
 
-    // Update particle bursts
+    this.updateParticles(dt);
+  }
+
+  private updateParticles(dt: number): void {
     const dummy = new THREE.Object3D();
     for (let i = this.bursts.length - 1; i >= 0; i--) {
       const b = this.bursts[i];
