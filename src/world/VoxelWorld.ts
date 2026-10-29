@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
-import { BrickDefinition, createBrickCatalog, createGroundTexture } from './Materials';
+import { BrickDefinition, createBrickCatalog, createCountrysideGrassPBR } from './Materials';
 import { BrickEntry, getStarterScene } from './Presets';
+import { CountrysideEnv } from './CountrysideEnv';
 
 interface HistoryAction {
   kind: 'place' | 'remove';
@@ -26,6 +27,7 @@ export class VoxelWorld {
   private readonly bricks = new Map<string, { mesh: THREE.Mesh; type: number; light?: THREE.PointLight }>();
   private readonly raycaster = new THREE.Raycaster();
   private readonly interactables: THREE.Object3D[] = [];
+  private countryside?: CountrysideEnv;
 
   // Ghost block preview
   private readonly ghostGroup: THREE.Group;
@@ -44,24 +46,29 @@ export class VoxelWorld {
   private bursts: ParticleBurst[] = [];
   private readonly particleGeo = new THREE.BoxGeometry(0.14, 0.14, 0.14);
   private readonly particleMat = new THREE.MeshStandardMaterial({
-    color: 0xffffff,
-    roughness: 0.5,
+    color: 0xf8f6f0,
+    roughness: 0.65,
   });
 
-  constructor(scene: THREE.Scene) {
+  constructor(scene: THREE.Scene, countryside?: CountrysideEnv) {
     this.scene = scene;
+    this.countryside = countryside;
     this.catalog = createBrickCatalog();
 
-    // High-quality beveled cube geometry (subtle 2.5cm chamfer catches light like real architectural bricks)
-    this.brickGeo = new RoundedBoxGeometry(1, 1, 1, 3, 0.028);
+    // High-resolution beveled cube geometry (4 segments, 3.2cm chamfer)
+    this.brickGeo = new RoundedBoxGeometry(1, 1, 1, 4, 0.032);
 
-    // Flat architectural ground plane (160m x 160m)
-    const groundGeo = new THREE.PlaneGeometry(160, 160);
+    // Flat countryside grass ground plane (220m x 220m) with PBR Albedo + Normal + Roughness
+    const grassPBR = createCountrysideGrassPBR();
+    const groundGeo = new THREE.PlaneGeometry(220, 220);
     groundGeo.rotateX(-Math.PI / 2);
     const groundMat = new THREE.MeshStandardMaterial({
-      map: createGroundTexture(),
-      roughness: 0.85,
-      metalness: 0.02,
+      map: grassPBR.albedo,
+      normalMap: grassPBR.normal,
+      normalScale: new THREE.Vector2(0.75, 0.75),
+      roughnessMap: grassPBR.roughness,
+      roughness: 0.88,
+      metalness: 0.01,
     });
 
     this.groundMesh = new THREE.Mesh(groundGeo, groundMat);
@@ -71,28 +78,20 @@ export class VoxelWorld {
     this.scene.add(this.groundMesh);
     this.interactables.push(this.groundMesh);
 
-    // Subtle polar / horizon border ring
-    const gridHelper = new THREE.GridHelper(160, 160, 0x94a3b8, 0xcbd5e1);
-    gridHelper.position.set(0.5, -0.498, 0.5);
-    const gridMat = gridHelper.material as THREE.Material;
-    gridMat.transparent = true;
-    gridMat.opacity = 0.28;
-    this.scene.add(gridHelper);
-
     // Ghost placement indicator
     this.ghostGroup = new THREE.Group();
     const ghostMat = new THREE.MeshBasicMaterial({
       color: 0xffffff,
       transparent: true,
-      opacity: 0.28,
+      opacity: 0.24,
       depthWrite: false,
     });
     this.ghostMesh = new THREE.Mesh(new THREE.BoxGeometry(1.005, 1.005, 1.005), ghostMat);
     const edgesGeo = new THREE.EdgesGeometry(new THREE.BoxGeometry(1.01, 1.01, 1.01));
     const edgesMat = new THREE.LineBasicMaterial({
-      color: 0x0f172a,
+      color: 0xffffff,
       transparent: true,
-      opacity: 0.65,
+      opacity: 0.85,
     });
     const wireframe = new THREE.LineSegments(edgesGeo, edgesMat);
     this.ghostGroup.add(this.ghostMesh);
@@ -101,7 +100,7 @@ export class VoxelWorld {
     this.scene.add(this.ghostGroup);
 
     this.raycaster.near = 0.1;
-    this.raycaster.far = 11.0; // Portée de construction confortable (11 mètres)
+    this.raycaster.far = 11.5;
 
     // Load saved world or starter scene
     if (!this.loadFromLocalStorage()) {
@@ -139,7 +138,7 @@ export class VoxelWorld {
 
     let light: THREE.PointLight | undefined;
     if (def.isLight) {
-      light = new THREE.PointLight(0xf0f9ff, 3.5, 9, 1.6);
+      light = new THREE.PointLight(0xfffbeb, 4.2, 11, 1.5);
       light.position.set(rx, ry, rz);
       this.scene.add(light);
     }
@@ -147,6 +146,10 @@ export class VoxelWorld {
     this.scene.add(mesh);
     this.interactables.push(mesh);
     this.bricks.set(k, { mesh, type: def.id, light });
+
+    if (ry === 0) {
+      this.countryside?.syncGrassAt(rx, rz, true);
+    }
 
     if (recordHistory) {
       this.undoStack.push({ kind: 'place', entry: { x: rx, y: ry, z: rz, type: def.id } });
@@ -178,6 +181,10 @@ export class VoxelWorld {
       this.interactables.splice(idx, 1);
     }
     this.bricks.delete(k);
+
+    if (ry === 0) {
+      this.countryside?.syncGrassAt(rx, rz, false);
+    }
 
     if (recordHistory) {
       this.undoStack.push({ kind: 'remove', entry: { x: rx, y: ry, z: rz, type: existing.type } });
@@ -224,6 +231,10 @@ export class VoxelWorld {
     for (const [, item] of this.bricks) {
       this.scene.remove(item.mesh);
       if (item.light) this.scene.remove(item.light);
+      const { x, y, z } = item.mesh.userData as BrickEntry;
+      if (y === 0) {
+        this.countryside?.syncGrassAt(x, z, false);
+      }
     }
     this.bricks.clear();
     this.interactables.length = 0;
@@ -313,7 +324,6 @@ export class VoxelWorld {
   }
 
   public update(dt: number, camera: THREE.Camera): void {
-    // Update raycast target from screen center
     this.raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
     const hits = this.raycaster.intersectObjects(this.interactables, false);
 

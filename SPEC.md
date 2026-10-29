@@ -83,3 +83,4 @@ AetherBricks/
     └── audio/
         └── SoundManager.ts # Synthétiseur Web Audio API (pose, casse, pas, UI)
 ```
+

@@ -5,6 +5,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
 import { VoxelWorld } from './world/VoxelWorld';
+import { CountrysideEnv } from './world/CountrysideEnv';
 import { PlayerController } from './player/PlayerController';
 import { SoundManager } from './audio/SoundManager';
 import {
@@ -16,70 +17,84 @@ import {
 
 interface LightingPreset {
   name: string;
-  skyColor: number;
+  elevationDeg: number;
+  azimuthDeg: number;
+  turbidity: number;
+  rayleigh: number;
   fogColor: number;
+  fogDensity: number;
   hemiSky: number;
   hemiGround: number;
   hemiIntensity: number;
   sunColor: number;
   sunIntensity: number;
-  sunOffset: THREE.Vector3;
 }
 
 const LIGHTING_PRESETS: LightingPreset[] = [
   {
-    name: 'MATIN PUR',
-    skyColor: 0xdbeafe,
+    name: 'SOLEIL DE CAMPAGNE',
+    elevationDeg: 34,
+    azimuthDeg: 142,
+    turbidity: 2.8,
+    rayleigh: 1.5,
     fogColor: 0xdbeafe,
-    hemiSky: 0xf8fafc,
-    hemiGround: 0x94a3b8,
-    hemiIntensity: 0.9,
+    fogDensity: 0.0055,
+    hemiSky: 0xf0f9ff,
+    hemiGround: 0x4d7c38,
+    hemiIntensity: 0.78,
     sunColor: 0xfffbeb,
-    sunIntensity: 2.35,
-    sunOffset: new THREE.Vector3(38, 52, 32),
+    sunIntensity: 2.8,
   },
   {
-    name: 'ZÉNITH',
-    skyColor: 0xbae6fd,
+    name: 'ZÉNITH D’ÉTÉ',
+    elevationDeg: 62,
+    azimuthDeg: 170,
+    turbidity: 2.2,
+    rayleigh: 1.2,
     fogColor: 0xe0f2fe,
+    fogDensity: 0.0045,
     hemiSky: 0xffffff,
-    hemiGround: 0xcbd5e1,
-    hemiIntensity: 1.05,
+    hemiGround: 0x558b3e,
+    hemiIntensity: 0.9,
     sunColor: 0xffffff,
-    sunIntensity: 2.65,
-    sunOffset: new THREE.Vector3(14, 72, 16),
+    sunIntensity: 3.1,
   },
   {
     name: 'GOLDEN HOUR',
-    skyColor: 0xfed7aa,
-    fogColor: 0xffedd5,
+    elevationDeg: 11,
+    azimuthDeg: 215,
+    turbidity: 6.5,
+    rayleigh: 2.6,
+    fogColor: 0xfed7aa,
+    fogDensity: 0.0068,
     hemiSky: 0xffedd5,
-    hemiGround: 0x64748b,
-    hemiIntensity: 0.75,
+    hemiGround: 0x3f6229,
+    hemiIntensity: 0.65,
     sunColor: 0xfdba74,
-    sunIntensity: 2.5,
-    sunOffset: new THREE.Vector3(56, 22, 28),
+    sunIntensity: 2.6,
   },
   {
-    name: 'NUIT CLAIRE',
-    skyColor: 0x0f172a,
+    name: 'CLAIR DE LUNE',
+    elevationDeg: 24,
+    azimuthDeg: 40,
+    turbidity: 1.5,
+    rayleigh: 0.4,
     fogColor: 0x0f172a,
+    fogDensity: 0.0085,
     hemiSky: 0x38bdf8,
-    hemiGround: 0x020617,
-    hemiIntensity: 0.38,
+    hemiGround: 0x0f1f14,
+    hemiIntensity: 0.28,
     sunColor: 0x93c5fd,
-    sunIntensity: 0.95,
-    sunOffset: new THREE.Vector3(-32, 46, -24),
+    sunIntensity: 0.85,
   },
 ];
 
 // --- Scene, Camera & High-Fidelity Renderer ---
 const container = document.getElementById('canvas-container')!;
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(LIGHTING_PRESETS[0].skyColor);
-scene.fog = new THREE.FogExp2(LIGHTING_PRESETS[0].fogColor, 0.011);
+scene.fog = new THREE.FogExp2(LIGHTING_PRESETS[0].fogColor, LIGHTING_PRESETS[0].fogDensity);
 
-const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 220);
+const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 350);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -87,7 +102,7 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.02;
+renderer.toneMappingExposure = 0.96;
 container.appendChild(renderer.domElement);
 
 // Post-processing pipeline (RenderPass + subtle UnrealBloomPass + OutputPass)
@@ -95,9 +110,9 @@ const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
 const bloomPass = new UnrealBloomPass(
   new THREE.Vector2(window.innerWidth, window.innerHeight),
-  0.18, // subtle architectural glow
-  0.45,
-  0.88
+  0.14,
+  0.4,
+  0.9
 );
 composer.addPass(bloomPass);
 composer.addPass(new OutputPass());
@@ -115,25 +130,33 @@ const sunLight = new THREE.DirectionalLight(
   LIGHTING_PRESETS[0].sunColor,
   LIGHTING_PRESETS[0].sunIntensity
 );
-sunLight.position.copy(LIGHTING_PRESETS[0].sunOffset);
 sunLight.castShadow = true;
 sunLight.shadow.mapSize.width = 4096;
 sunLight.shadow.mapSize.height = 4096;
 sunLight.shadow.camera.near = 1;
-sunLight.shadow.camera.far = 150;
-const shadowExtent = 44;
+sunLight.shadow.camera.far = 160;
+const shadowExtent = 38;
 sunLight.shadow.camera.left = -shadowExtent;
 sunLight.shadow.camera.right = shadowExtent;
 sunLight.shadow.camera.top = shadowExtent;
 sunLight.shadow.camera.bottom = -shadowExtent;
-sunLight.shadow.bias = -0.0004;
-sunLight.shadow.normalBias = 0.02;
+sunLight.shadow.bias = -0.0003;
+sunLight.shadow.normalBias = 0.022;
 scene.add(sunLight);
 scene.add(sunLight.target);
 
+// --- Countryside Environment (3D Wind Grass, Wildflowers, Trees, Sky & PMREM Reflections) ---
+const countryside = new CountrysideEnv(scene, renderer);
+let currentSunDir = countryside.updateSunAndEnvironment(
+  LIGHTING_PRESETS[0].elevationDeg,
+  LIGHTING_PRESETS[0].azimuthDeg,
+  LIGHTING_PRESETS[0].turbidity,
+  LIGHTING_PRESETS[0].rayleigh
+);
+
 // --- Core Systems ---
 const sound = new SoundManager();
-const world = new VoxelWorld(scene);
+const world = new VoxelWorld(scene, countryside);
 
 const studioOverlay = document.getElementById('studio-overlay')!;
 const crosshairEl = document.getElementById('crosshair')!;
@@ -201,8 +224,15 @@ let currentLightingIdx = 0;
 function applyLighting(index: number): void {
   currentLightingIdx = (index + LIGHTING_PRESETS.length) % LIGHTING_PRESETS.length;
   const preset = LIGHTING_PRESETS[currentLightingIdx];
-  scene.background = new THREE.Color(preset.skyColor);
-  scene.fog = new THREE.FogExp2(preset.fogColor, 0.011);
+
+  currentSunDir = countryside.updateSunAndEnvironment(
+    preset.elevationDeg,
+    preset.azimuthDeg,
+    preset.turbidity,
+    preset.rayleigh
+  );
+
+  scene.fog = new THREE.FogExp2(preset.fogColor, preset.fogDensity);
   hemiLight.color.setHex(preset.hemiSky);
   hemiLight.groundColor.setHex(preset.hemiGround);
   hemiLight.intensity = preset.hemiIntensity;
@@ -228,7 +258,7 @@ renderer.domElement.addEventListener('mousedown', (e) => {
   const target = world.currentTarget;
   if (!target) return;
 
-  // Left click: Place brick (unless Shift+Click or Alt+Click)
+  // Left click: Place brick (unless Alt+Click)
   if (e.button === 0 && !e.altKey) {
     const { x, y, z } = target.placePos;
     if (player.intersectsBrick(x, y, z)) {
@@ -320,7 +350,7 @@ document.getElementById('btn-resume')!.addEventListener('click', () => {
 document.getElementById('btn-flat-empty')!.addEventListener('click', () => {
   world.clearAll(true);
   player.resetPosition();
-  showToast('Terrain plat vierge initialisé');
+  showToast('Prairie plate vierge initialisée');
   player.requestLock();
 });
 
@@ -334,14 +364,14 @@ document.getElementById('btn-starter')!.addEventListener('click', () => {
 document.getElementById('btn-pavilion')!.addEventListener('click', () => {
   world.loadPreset(getWhitePavilionPreset(), true);
   player.resetPosition();
-  showToast('Pavillon Minimaliste Blanc généré');
+  showToast('Pavillon Blanc dans la prairie généré');
   player.requestLock();
 });
 
 document.getElementById('btn-arch')!.addEventListener('click', () => {
   world.loadPreset(getBrutalistArchPreset(), true);
   player.resetPosition();
-  showToast('Arche Brutaliste Blanche générée');
+  showToast('Arche Blanche générée');
   player.requestLock();
 });
 
@@ -406,11 +436,11 @@ function animate(now: number): void {
   if (player.isLocked) {
     player.update(dt);
   }
+  countryside.update(now * 0.001);
   world.update(dt, camera);
 
   // Follow player with directional shadow frustum for ultra-sharp brick shadows everywhere
-  const preset = LIGHTING_PRESETS[currentLightingIdx];
-  sunLight.position.copy(player.position).add(preset.sunOffset);
+  sunLight.position.copy(player.position).addScaledVector(currentSunDir, 65);
   sunLight.target.position.copy(player.position);
   sunLight.target.updateMatrixWorld();
 

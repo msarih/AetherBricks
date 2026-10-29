@@ -55,3 +55,4 @@ npm run build
 ```
 
 Consultez [SPEC.md](./SPEC.md) pour la spécification fonctionnelle et technique détaillée.
+
