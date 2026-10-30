@@ -99,6 +99,10 @@ export function isCarpet(type: number): boolean {
   return type === OBJ_TYPE_CARPET;
 }
 
+export function isSteppingStone(type: number): boolean {
+  return type === OBJ_TYPE_STEPPING_STONE;
+}
+
 export function isArchitecturalObject(type: number): boolean {
   return type >= 7 && type <= 27;
 }

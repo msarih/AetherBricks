@@ -143,8 +143,8 @@ export function getWhitePavilionPreset(): BrickEntry[] {
     bricks.push({ x: 5, y, z: -3, type: 18, rot: 1 });
   }
 
-  // Escalier d'accueil (16), colonnes (22), jardinières (26) et lampadaires (27) devant la maisonnette
-  bricks.push({ x: 0, y: 0, z: 1, type: 16, rot: 0 });
+  // Perron d'accueil en dalle de pierre blanche (10), colonnes (22), jardinières (26) et lampadaires (27)
+  bricks.push({ x: 0, y: 0, z: 1, type: 10 });
   bricks.push({ x: -2, y: 0, z: -1, type: 22, rot: 0 });
   bricks.push({ x: 2, y: 0, z: -1, type: 22, rot: 0 });
   bricks.push({ x: -1, y: 0, z: -1, type: 26, rot: 0 });

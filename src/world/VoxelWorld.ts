@@ -72,6 +72,7 @@ import {
   isFloorSlab,
   isLadder,
   isStairOrSlope,
+  isSteppingStone,
   isTwoBlocksTall,
   isWater,
 } from './ArchitecturalObjects';
@@ -884,7 +885,12 @@ export class VoxelWorld {
     if (item.entry.type === BRICK_TYPE_DOOR_OAK && item.entry.open) {
       return false;
     }
-    if (isLadder(item.entry.type) || isWater(item.entry.type) || isCarpet(item.entry.type)) {
+    if (
+      isLadder(item.entry.type) ||
+      isWater(item.entry.type) ||
+      isCarpet(item.entry.type) ||
+      isSteppingStone(item.entry.type)
+    ) {
       return false;
     }
     return true;

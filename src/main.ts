@@ -1376,7 +1376,7 @@ document.querySelectorAll('.new-world-btn').forEach((btn) => {
     } else if (tpl === 'pavilion') {
       bricks = getWhitePavilionPreset();
       defaultTitle = 'Maisonnette Blanche';
-      defaultSpawn = { x: 0, y: 0.36, z: 4.5 };
+      defaultSpawn = { x: 0, y: 0.36, z: 6.0 };
     } else if (tpl === 'arch') {
       bricks = getBrutalistArchPreset();
       defaultTitle = 'Arche Blanche';

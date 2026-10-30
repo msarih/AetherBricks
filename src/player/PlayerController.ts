@@ -172,9 +172,11 @@ export class PlayerController {
 
   public resetPosition(spawnPos?: { x: number; y: number; z: number; yaw?: number; pitch?: number }): void {
     const x = spawnPos?.x ?? 0;
-    const z = spawnPos?.z ?? 4;
+    const z = spawnPos?.z ?? 6;
     const groundY = this.world.getTerrainHeightAt(x, z) + this.playerHeight * 0.5;
-    const y = spawnPos?.y ?? groundY;
+    let y = spawnPos?.y ?? groundY;
+    if (y < groundY) y = groundY;
+
     this.position.set(x, y, z);
     this.velocity.set(0, 0, 0);
     this.yaw = spawnPos?.yaw ?? 0;
@@ -183,6 +185,27 @@ export class PlayerController {
     this.isSitting = false;
     this.isFlying = false;
     this.clearKeys();
+
+    // Dégagement de sécurité anti-blocage au spawn
+    if (this.checkWorldCollision(this.position)) {
+      for (let offsetZ = 0.5; offsetZ <= 4.0; offsetZ += 0.5) {
+        const testPos = new THREE.Vector3(x, groundY, z + offsetZ);
+        if (!this.checkWorldCollision(testPos)) {
+          this.position.copy(testPos);
+          break;
+        }
+      }
+      if (this.checkWorldCollision(this.position)) {
+        for (let offsetY = 0.5; offsetY <= 3.0; offsetY += 0.5) {
+          const testPos = new THREE.Vector3(x, y + offsetY, z);
+          if (!this.checkWorldCollision(testPos)) {
+            this.position.copy(testPos);
+            break;
+          }
+        }
+      }
+    }
+
     this.syncCamera(0.016);
   }
 
