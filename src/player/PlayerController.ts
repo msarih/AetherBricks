@@ -19,6 +19,7 @@ export class PlayerController {
   public isGrounded = false;
   public isLocked = false;
   public isSitting = false;
+  private currentChairPos: THREE.Vector3 | null = null;
   public isInWater = false;
   public isOnLadder = false;
   public isSprinting = false;
@@ -132,6 +133,9 @@ export class PlayerController {
   }
 
   public toggleFlyMode(): void {
+    if (this.isSitting) {
+      this.standUp();
+    }
     this.isFlying = !this.isFlying;
     this.velocity.y = 0;
     this.sound.playSelect();
@@ -183,6 +187,7 @@ export class PlayerController {
     this.pitch = spawnPos?.pitch ?? -0.08;
     this.characterFacingYaw = this.yaw;
     this.isSitting = false;
+    this.currentChairPos = null;
     this.isFlying = false;
     this.clearKeys();
 
@@ -253,15 +258,62 @@ export class PlayerController {
     return false;
   }
 
+  public standUp(): void {
+    if (!this.isSitting) return;
+    this.isSitting = false;
+
+    const chair = this.currentChairPos || this.position.clone();
+    this.currentChairPos = null;
+
+    // Calculer la hauteur naturelle du sol sous les pieds
+    const groundY = this.world.getTerrainHeightAt(chair.x, chair.z) + this.playerHeight * 0.5;
+
+    // Directions candidates pour poser le joueur debout hors du fauteuil (vers l'avant du regard, ou les 4 points cardinaux)
+    const forward = new THREE.Vector3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw)).normalize();
+    const candidates: THREE.Vector3[] = [
+      forward,
+      new THREE.Vector3(0, 0, -1),
+      new THREE.Vector3(0, 0, 1),
+      new THREE.Vector3(1, 0, 0),
+      new THREE.Vector3(-1, 0, 0),
+    ];
+
+    let placed = false;
+    for (const dir of candidates) {
+      for (const dist of [0.85, 1.15, 1.45]) {
+        const testX = chair.x + dir.x * dist;
+        const testZ = chair.z + dir.z * dist;
+        const testGroundY = this.world.getTerrainHeightAt(testX, testZ) + this.playerHeight * 0.5;
+        const testPos = new THREE.Vector3(testX, testGroundY, testZ);
+
+        if (!this.checkWorldCollision(testPos)) {
+          this.position.copy(testPos);
+          placed = true;
+          break;
+        }
+      }
+      if (placed) break;
+    }
+
+    // Si entouré d'obstacles sur tous les côtés, surélever au-dessus du dossier
+    if (!placed) {
+      this.position.set(chair.x, chair.y + 1.25, chair.z);
+    }
+
+    this.velocity.set(0, 0, 0);
+    this.clearKeys();
+    this.syncCamera(0.016);
+  }
+
   public toggleSitting(chairPos?: THREE.Vector3): boolean {
     if (this.isSitting) {
-      this.isSitting = false;
-      this.position.y += 0.45;
+      this.standUp();
       return false;
     }
     if (chairPos) {
       this.isSitting = true;
       this.isFlying = false;
+      this.currentChairPos = chairPos.clone();
       this.velocity.set(0, 0, 0);
       this.position.set(chairPos.x, chairPos.y + 0.14, chairPos.z);
       return true;
@@ -327,11 +379,10 @@ export class PlayerController {
     if (this.keys.has('KeyA') || this.keys.has('KeyQ') || this.keys.has('ArrowLeft')) moveDir.sub(right);
 
     this.isMovingInput = moveDir.lengthSq() > 0.001;
+    if (this.isSitting && (this.isMovingInput || this.keys.has('Space'))) {
+      this.standUp();
+    }
     if (this.isMovingInput) {
-      if (this.isSitting) {
-        this.isSitting = false;
-        this.position.y += 0.45;
-      }
       moveDir.normalize();
       // Le personnage change immédiatement de face selon la flèche de direction pressée (Haut, Bas, Gauche, Droite)
       this.characterFacingYaw = Math.atan2(-moveDir.x, -moveDir.z);
