@@ -174,6 +174,10 @@ export class PlayerController {
     this.avatar.triggerArmSwing();
   }
 
+  public getYaw(): number {
+    return this.yaw;
+  }
+
   public resetPosition(spawnPos?: { x: number; y: number; z: number; yaw?: number; pitch?: number }): void {
     const x = spawnPos?.x ?? 0;
     const z = spawnPos?.z ?? 6;

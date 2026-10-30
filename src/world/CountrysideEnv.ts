@@ -49,12 +49,19 @@ export class CountrysideEnv {
 
   private readonly pmremGenerator: THREE.PMREMGenerator;
   private currentEnvMap: THREE.Texture | null = null;
+  private lastEnvMapElevation: number = -999;
+  private lastEnvMapTime: number = 0;
 
   // Système de pluie douce de campagne
   public isRaining = false;
   private rainPoints?: THREE.Points;
   private rainPositions?: Float32Array;
   private readonly rainCount = 2600;
+
+  // Ciel nocturne & Lune luminescente
+  private starsMesh?: THREE.Points;
+  private starsMaterial?: THREE.PointsMaterial;
+  private moonGroup?: THREE.Group;
 
   constructor(private readonly scene: THREE.Scene, renderer: THREE.WebGLRenderer) {
     this.pmremGenerator = new THREE.PMREMGenerator(renderer);
@@ -64,6 +71,9 @@ export class CountrysideEnv {
     this.sky = new Sky();
     this.sky.scale.setScalar(8000);
     this.scene.add(this.sky);
+
+    // 1b. Ciel étoilé & Lune procédurale
+    this.initStarfieldAndMoon();
 
     // 2. Instanced 3D Grass Tufts with GPU Wind Shader
     this.grassMesh = this.createInstancedMeadowGrass(22000);
@@ -102,6 +112,56 @@ export class CountrysideEnv {
     this.scene.add(this.rainPoints);
   }
 
+  private initStarfieldAndMoon(): void {
+    // 1. Ciel étoilé (1600 étoiles scintillantes)
+    const starCount = 1600;
+    const starGeo = new THREE.BufferGeometry();
+    const starPositions = new Float32Array(starCount * 3);
+    for (let i = 0; i < starCount; i++) {
+      const u = Math.random();
+      const v = Math.random();
+      const theta = u * 2.0 * Math.PI;
+      const phi = Math.acos(2.0 * v - 1.0) * 0.5;
+      const r = 3400 + Math.random() * 200;
+      starPositions[i * 3 + 0] = r * Math.sin(phi) * Math.cos(theta);
+      starPositions[i * 3 + 1] = Math.max(120, r * Math.cos(phi));
+      starPositions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+    }
+    starGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
+    this.starsMaterial = new THREE.PointsMaterial({
+      color: 0xffffff,
+      size: 2.2,
+      transparent: true,
+      opacity: 0.0,
+      sizeAttenuation: false,
+    });
+    this.starsMesh = new THREE.Points(starGeo, this.starsMaterial);
+    this.scene.add(this.starsMesh);
+
+    // 2. Lune luminescente en 3D
+    this.moonGroup = new THREE.Group();
+    const moonGeo = new THREE.SphereGeometry(68, 32, 16);
+    const moonMat = new THREE.MeshBasicMaterial({
+      color: 0xfef9c3,
+      transparent: true,
+      opacity: 0.0,
+    });
+    const moonMesh = new THREE.Mesh(moonGeo, moonMat);
+    this.moonGroup.add(moonMesh);
+
+    const glowGeo = new THREE.SphereGeometry(95, 16, 16);
+    const glowMat = new THREE.MeshBasicMaterial({
+      color: 0x93c5fd,
+      transparent: true,
+      opacity: 0.0,
+      side: THREE.BackSide,
+    });
+    const glowMesh = new THREE.Mesh(glowGeo, glowMat);
+    this.moonGroup.add(glowMesh);
+
+    this.scene.add(this.moonGroup);
+  }
+
   public toggleRain(): boolean {
     this.isRaining = !this.isRaining;
     if (this.rainPoints) {
@@ -114,7 +174,8 @@ export class CountrysideEnv {
     elevationDeg: number,
     azimuthDeg: number,
     turbidity = 1.6,
-    rayleigh = 2.2
+    rayleigh = 2.2,
+    forceEnvMap = false
   ): THREE.Vector3 {
     const skyUniforms = this.sky.material.uniforms;
     skyUniforms['turbidity'].value = turbidity;
@@ -127,22 +188,51 @@ export class CountrysideEnv {
     this.sunVec.setFromSphericalCoords(1, phi, theta);
     skyUniforms['sunPosition'].value.copy(this.sunVec);
 
-    if (this.currentEnvMap) {
-      this.currentEnvMap.dispose();
+    const now = performance.now();
+    const shouldUpdateEnv =
+      forceEnvMap ||
+      this.currentEnvMap === null ||
+      Math.abs(elevationDeg - this.lastEnvMapElevation) > 10 ||
+      now - this.lastEnvMapTime > 3000;
+
+    if (shouldUpdateEnv) {
+      if (this.currentEnvMap) {
+        this.currentEnvMap.dispose();
+      }
+      const envScene = new THREE.Scene();
+      envScene.background = new THREE.Color(elevationDeg > 5 ? 0x7faad4 : 0x0f172a);
+
+      const bounceGround = new THREE.Mesh(
+        new THREE.PlaneGeometry(200, 200).rotateX(-Math.PI / 2),
+        new THREE.MeshBasicMaterial({ color: elevationDeg > 5 ? 0x456e32 : 0x0f172a })
+      );
+      bounceGround.position.y = -2;
+      envScene.add(bounceGround);
+
+      this.currentEnvMap = this.pmremGenerator.fromScene(envScene, 0.04).texture;
+      this.scene.environment = this.currentEnvMap;
+      this.scene.environmentIntensity = elevationDeg > 5 ? 0.26 : 0.15;
+      this.lastEnvMapElevation = elevationDeg;
+      this.lastEnvMapTime = now;
     }
-    const envScene = new THREE.Scene();
-    envScene.background = new THREE.Color(elevationDeg > 5 ? 0x7faad4 : 0x0f172a);
 
-    const bounceGround = new THREE.Mesh(
-      new THREE.PlaneGeometry(200, 200).rotateX(-Math.PI / 2),
-      new THREE.MeshBasicMaterial({ color: elevationDeg > 5 ? 0x456e32 : 0x0f172a })
-    );
-    bounceGround.position.y = -2;
-    envScene.add(bounceGround);
-
-    this.currentEnvMap = this.pmremGenerator.fromScene(envScene, 0.04).texture;
-    this.scene.environment = this.currentEnvMap;
-    this.scene.environmentIntensity = elevationDeg > 5 ? 0.26 : 0.15;
+    // Mise à jour visuelle des étoiles et de la lune
+    const nightFactor = THREE.MathUtils.clamp((8 - elevationDeg) / 16, 0, 1);
+    if (this.starsMaterial) {
+      this.starsMaterial.opacity = nightFactor * 0.95;
+    }
+    if (this.moonGroup) {
+      this.moonGroup.visible = nightFactor > 0.01;
+      const moonMesh = this.moonGroup.children[0] as THREE.Mesh;
+      const glowMesh = this.moonGroup.children[1] as THREE.Mesh;
+      if (moonMesh && glowMesh) {
+        (moonMesh.material as THREE.MeshBasicMaterial).opacity = nightFactor * 0.98;
+        (glowMesh.material as THREE.MeshBasicMaterial).opacity = nightFactor * 0.22;
+      }
+      const moonPhi = THREE.MathUtils.degToRad(90 + elevationDeg);
+      const moonTheta = THREE.MathUtils.degToRad(azimuthDeg + 180);
+      this.moonGroup.position.setFromSphericalCoords(3000, moonPhi, moonTheta);
+    }
 
     return this.sunVec.clone();
   }
@@ -550,6 +640,13 @@ export class CountrysideEnv {
 
     if (playerPos) {
       this.sky.position.set(playerPos.x, 0, playerPos.z);
+      if (this.starsMesh) {
+        this.starsMesh.position.set(playerPos.x, 0, playerPos.z);
+      }
+      if (this.moonGroup) {
+        this.moonGroup.position.x = playerPos.x;
+        this.moonGroup.position.z = playerPos.z;
+      }
     }
 
     if (this.isRaining && this.rainPositions && this.rainPoints) {

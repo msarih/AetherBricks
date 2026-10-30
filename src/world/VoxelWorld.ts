@@ -38,18 +38,24 @@ import {
   OBJ_TYPE_TRIANGLE_OAK,
   OBJ_TYPE_TRIANGLE_WHITE,
   OBJ_TYPE_WATER,
+  OBJ_TYPE_CAMPFIRE,
+  OBJ_TYPE_FOUNTAIN,
+  OBJ_TYPE_FLOWERS,
+  OBJ_TYPE_TORCH,
   SLAB_OFFSET_Y,
   SLAB_THICKNESS,
   createArchBlockGroup,
   createBalustradeGroup,
   createBedGroup,
   createBookshelfGroup,
+  createCampfireGroup,
   createCarpetMesh,
   createChairGroup,
   createCrossWindowGroup,
   createCypressGroup,
   createFireplaceGroup,
   createFlatSlabMesh,
+  createFountainGroup,
   createFramelessWindowGroup,
   createGableRoofMesh,
   createHedgeMesh,
@@ -63,8 +69,10 @@ import {
   createStairsGroup,
   createSteppingStoneMesh,
   createTableGroup,
+  createTorchGroup,
   createTriangleWedgeMesh,
   createWaterMesh,
+  createWildflowersGroup,
   isCarpet,
   isCeilingSlab,
   isChair,
@@ -75,6 +83,7 @@ import {
   isSteppingStone,
   isTwoBlocksTall,
   isWater,
+  isWildflowers,
 } from './ArchitecturalObjects';
 
 interface HistoryAction {
@@ -889,7 +898,8 @@ export class VoxelWorld {
       isLadder(item.entry.type) ||
       isWater(item.entry.type) ||
       isCarpet(item.entry.type) ||
-      isSteppingStone(item.entry.type)
+      isSteppingStone(item.entry.type) ||
+      isWildflowers(item.entry.type)
     ) {
       return false;
     }
@@ -926,6 +936,58 @@ export class VoxelWorld {
     const rz = Math.round(z);
     const item = this.bricks.get(`main:${rx},${ry},${rz}`);
     return Boolean(item && isStairOrSlope(item.entry.type));
+  }
+
+  public checkNearbyEnvironment(
+    pos: THREE.Vector3,
+    radius: number = 7
+  ): { nearFire: boolean; nearWater: boolean } {
+    let nearFire = false;
+    let nearWater = false;
+    const r2 = radius * radius;
+    const px = pos.x;
+    const py = pos.y;
+    const pz = pos.z;
+
+    for (const item of this.bricks.values()) {
+      const e = item.entry;
+      const dx = e.x - px;
+      const dy = e.y - py;
+      const dz = e.z - pz;
+      const distSq = dx * dx + dy * dy + dz * dz;
+      if (distSq <= r2) {
+        const t = e.type;
+        if (t === OBJ_TYPE_CAMPFIRE || t === OBJ_TYPE_FIREPLACE || t === OBJ_TYPE_TORCH) {
+          nearFire = true;
+        }
+        if (t === OBJ_TYPE_WATER || t === OBJ_TYPE_FOUNTAIN) {
+          nearWater = true;
+        }
+        if (nearFire && nearWater) break;
+      }
+    }
+    return { nearFire, nearWater };
+  }
+
+  public getFireEmitters(playerPos: THREE.Vector3, maxDist: number = 50): THREE.Vector3[] {
+    const emitters: THREE.Vector3[] = [];
+    const maxScanDistSq = maxDist * maxDist;
+    const px = playerPos.x;
+    const pz = playerPos.z;
+
+    for (const item of this.bricks.values()) {
+      const e = item.entry;
+      const t = e.type;
+      if (t === OBJ_TYPE_CAMPFIRE || t === OBJ_TYPE_FIREPLACE || t === OBJ_TYPE_TORCH) {
+        const dx = e.x - px;
+        const dz = e.z - pz;
+        if (dx * dx + dz * dz < maxScanDistSq) {
+          const spawnY = t === OBJ_TYPE_FIREPLACE ? e.y + 1.2 : e.y + 0.35;
+          emitters.push(new THREE.Vector3(e.x, spawnY, e.z));
+        }
+      }
+    }
+    return emitters;
   }
 
   public getBrickCount(): number {
@@ -1066,7 +1128,11 @@ export class VoxelWorld {
       def.id === OBJ_TYPE_WATER ||
       def.id === OBJ_TYPE_STEPPING_STONE ||
       def.id === OBJ_TYPE_HEDGE ||
-      def.id === OBJ_TYPE_CYPRESS
+      def.id === OBJ_TYPE_CYPRESS ||
+      def.id === OBJ_TYPE_CAMPFIRE ||
+      def.id === OBJ_TYPE_FOUNTAIN ||
+      def.id === OBJ_TYPE_FLOWERS ||
+      def.id === OBJ_TYPE_TORCH
     ) {
       switch (def.id) {
         case OBJ_TYPE_STAIRS_WHITE:
@@ -1133,6 +1199,20 @@ export class VoxelWorld {
           visualRoot = createHedgeMesh();
           break;
         case OBJ_TYPE_CYPRESS:
+          visualRoot = createCypressGroup();
+          break;
+        case OBJ_TYPE_CAMPFIRE:
+          visualRoot = createCampfireGroup();
+          break;
+        case OBJ_TYPE_FOUNTAIN:
+          visualRoot = createFountainGroup();
+          break;
+        case OBJ_TYPE_FLOWERS:
+          visualRoot = createWildflowersGroup();
+          break;
+        case OBJ_TYPE_TORCH:
+          visualRoot = createTorchGroup();
+          break;
         default:
           visualRoot = createCypressGroup();
           break;

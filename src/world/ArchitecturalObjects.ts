@@ -24,6 +24,10 @@ export const BRICK_TYPE_GRASS_BLOCK = 40;
 export const BRICK_TYPE_STONE = 41;
 export const BRICK_TYPE_SAND = 42;
 export const BRICK_TYPE_GRAVEL = 43;
+export const OBJ_TYPE_CAMPFIRE = 44;
+export const OBJ_TYPE_FOUNTAIN = 45;
+export const OBJ_TYPE_FLOWERS = 46;
+export const OBJ_TYPE_TORCH = 47;
 
 // Carrés plats pour Sols (posés au bas de la case : y - 0.42, épaisseur 0.16m)
 export const SLAB_TYPE_FLOOR_STONE = 10;
@@ -101,6 +105,18 @@ export function isCarpet(type: number): boolean {
 
 export function isSteppingStone(type: number): boolean {
   return type === OBJ_TYPE_STEPPING_STONE;
+}
+
+export function isWildflowers(type: number): boolean {
+  return type === OBJ_TYPE_FLOWERS;
+}
+
+export function isCampfire(type: number): boolean {
+  return type === OBJ_TYPE_CAMPFIRE || type === OBJ_TYPE_TORCH;
+}
+
+export function isFountain(type: number): boolean {
+  return type === OBJ_TYPE_FOUNTAIN;
 }
 
 export function isArchitecturalObject(type: number): boolean {
@@ -1272,5 +1288,241 @@ export function createCypressGroup(): THREE.Group {
       o.receiveShadow = true;
     }
   });
+  return group;
+}
+
+/**
+ * Feu de Camp Chaleureux avec Pierres et Braises
+ */
+export function createCampfireGroup(): THREE.Group {
+  const mats = getSharedArchMaterials();
+  const group = new THREE.Group();
+
+  // Cercle de 8 galets de rivière
+  const stoneGeo = new THREE.DodecahedronGeometry(0.12, 0);
+  for (let i = 0; i < 8; i++) {
+    const angle = (i / 8) * Math.PI * 2;
+    const stone = new THREE.Mesh(stoneGeo, mats.slatePaver);
+    stone.position.set(Math.cos(angle) * 0.42, -0.42, Math.sin(angle) * 0.42);
+    stone.rotation.set(Math.random(), Math.random(), Math.random());
+    stone.castShadow = true;
+    group.add(stone);
+  }
+
+  // 4 Bûches de chêne croisées
+  const logGeo = new THREE.CylinderGeometry(0.065, 0.07, 0.62, 8);
+  logGeo.rotateX(Math.PI / 2);
+  for (let i = 0; i < 4; i++) {
+    const log = new THREE.Mesh(logGeo, mats.oakWood);
+    log.position.set(0, -0.38 + i * 0.03, 0);
+    log.rotation.y = (i * Math.PI) / 4;
+    log.rotation.z = (Math.random() - 0.5) * 0.15;
+    log.castShadow = true;
+    group.add(log);
+  }
+
+  // Lit de braises incandescentes
+  const embers = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.28, 0.32, 0.08, 8),
+    mats.fireEmbers
+  );
+  embers.position.set(0, -0.42, 0);
+  group.add(embers);
+
+  // Cœur de flammes chaleureuses
+  const flameMat = new THREE.MeshBasicMaterial({ color: 0xff7700 });
+  const flameCore = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.46, 6), flameMat);
+  flameCore.position.set(0, -0.15, 0);
+  group.add(flameCore);
+
+  const innerFlameMat = new THREE.MeshBasicMaterial({ color: 0xffe066 });
+  const innerFlame = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.28, 5), innerFlameMat);
+  innerFlame.position.set(0, -0.18, 0);
+  group.add(innerFlame);
+
+  // Lumière chaleureuse vacillante
+  const fireLight = new THREE.PointLight(0xff6611, 1.8, 8.5, 1.4);
+  fireLight.position.set(0, 0.1, 0);
+  group.add(fireLight);
+
+  group.userData = { isCampfire: true, fireLight };
+  return group;
+}
+
+/**
+ * Fontaine Monumentale en Pierre avec Bassin d'Eau
+ */
+export function createFountainGroup(): THREE.Group {
+  const mats = getSharedArchMaterials();
+  const group = new THREE.Group();
+
+  // Grand bassin octogonal en pierre
+  const basin = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.48, 0.44, 0.42, 8),
+    mats.stoneTile
+  );
+  basin.position.set(0, -0.29, 0);
+  basin.castShadow = true;
+  basin.receiveShadow = true;
+  group.add(basin);
+
+  // Margelle supérieure arrondie
+  const rim = new THREE.Mesh(
+    new THREE.TorusGeometry(0.44, 0.05, 8, 8),
+    mats.marbleTile
+  );
+  rim.rotation.x = Math.PI / 2;
+  rim.position.set(0, -0.08, 0);
+  group.add(rim);
+
+  // Eau cristalline du bassin
+  const water = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.41, 0.41, 0.04, 8),
+    mats.waterMat
+  );
+  water.position.set(0, -0.11, 0);
+  group.add(water);
+
+  // Colonne centrale à jet d'eau
+  const pillar = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.12, 0.16, 0.55, 8),
+    mats.stoneSill
+  );
+  pillar.position.set(0, 0.08, 0);
+  pillar.castShadow = true;
+  group.add(pillar);
+
+  // Vasque supérieure
+  const upperBowl = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.24, 0.08, 0.14, 8),
+    mats.stoneTile
+  );
+  upperBowl.position.set(0, 0.38, 0);
+  group.add(upperBowl);
+
+  // Eau vasque supérieure
+  const upperWater = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.2, 0.2, 0.03, 8),
+    mats.waterMat
+  );
+  upperWater.position.set(0, 0.42, 0);
+  group.add(upperWater);
+
+  group.userData = { isFountain: true };
+  return group;
+}
+
+/**
+ * Parterre de Fleurs Sauvages Colorées (Lavandes, Coquelicots & Marguerites)
+ */
+export function createWildflowersGroup(): THREE.Group {
+  const mats = getSharedArchMaterials();
+  const group = new THREE.Group();
+
+  // Sol d'humus meuble
+  const soil = new THREE.Mesh(
+    new THREE.BoxGeometry(0.96, 0.04, 0.96),
+    mats.soilDark
+  );
+  soil.position.set(0, -0.48, 0);
+  group.add(soil);
+
+  const lavenderMat = new THREE.MeshStandardMaterial({ color: 0x8b5cf6, roughness: 0.6 });
+  const poppyMat = new THREE.MeshStandardMaterial({ color: 0xef4444, roughness: 0.5 });
+  const buttercupMat = new THREE.MeshStandardMaterial({ color: 0xfacc15, roughness: 0.4 });
+  const stemMat = new THREE.MeshStandardMaterial({ color: 0x4d7c0f, roughness: 0.8 });
+
+  const stemGeo = new THREE.CylinderGeometry(0.015, 0.018, 0.42, 5);
+  const headGeo = new THREE.DodecahedronGeometry(0.065, 0);
+  const lavenderGeo = new THREE.ConeGeometry(0.05, 0.22, 6);
+
+  const flowerDefs = [
+    { x: -0.28, z: -0.25, mat: poppyMat, type: 'poppy' },
+    { x: -0.12, z: -0.32, mat: lavenderMat, type: 'lavender' },
+    { x: 0.22, z: -0.28, mat: buttercupMat, type: 'buttercup' },
+    { x: 0.35, z: -0.15, mat: poppyMat, type: 'poppy' },
+    { x: -0.35, z: 0.12, mat: lavenderMat, type: 'lavender' },
+    { x: -0.15, z: 0.05, mat: buttercupMat, type: 'buttercup' },
+    { x: 0.08, z: -0.05, mat: poppyMat, type: 'poppy' },
+    { x: 0.28, z: 0.18, mat: lavenderMat, type: 'lavender' },
+    { x: -0.22, z: 0.32, mat: poppyMat, type: 'poppy' },
+    { x: 0.05, z: 0.28, mat: buttercupMat, type: 'buttercup' },
+    { x: -0.05, z: -0.18, mat: mats.flowerPink, type: 'poppy' },
+    { x: 0.18, z: 0.34, mat: lavenderMat, type: 'lavender' },
+  ];
+
+  for (const f of flowerDefs) {
+    const stem = new THREE.Mesh(stemGeo, stemMat);
+    stem.position.set(f.x, -0.28, f.z);
+    stem.rotation.z = (Math.random() - 0.5) * 0.18;
+    stem.rotation.x = (Math.random() - 0.5) * 0.18;
+    group.add(stem);
+
+    let head: THREE.Mesh;
+    if (f.type === 'lavender') {
+      head = new THREE.Mesh(lavenderGeo, f.mat);
+      head.position.set(f.x, -0.08, f.z);
+    } else {
+      head = new THREE.Mesh(headGeo, f.mat);
+      head.position.set(f.x, -0.06, f.z);
+      head.scale.set(1.1, 0.85, 1.1);
+    }
+    head.castShadow = true;
+    group.add(head);
+  }
+
+  group.userData = { isFlowers: true };
+  return group;
+}
+
+/**
+ * Braséro / Torche de Jardin en Fer Forgé
+ */
+export function createTorchGroup(): THREE.Group {
+  const mats = getSharedArchMaterials();
+  const group = new THREE.Group();
+
+  const base = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.18, 0.22, 0.08, 8),
+    mats.darkIron
+  );
+  base.position.set(0, -0.46, 0);
+  base.castShadow = true;
+  group.add(base);
+
+  const pole = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.04, 0.045, 0.82, 8),
+    mats.darkIron
+  );
+  pole.position.set(0, -0.05, 0);
+  pole.castShadow = true;
+  group.add(pole);
+
+  const bowl = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.22, 0.12, 0.16, 8),
+    mats.darkIron
+  );
+  bowl.position.set(0, 0.38, 0);
+  group.add(bowl);
+
+  const embers = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.19, 0.19, 0.04, 8),
+    mats.fireEmbers
+  );
+  embers.position.set(0, 0.44, 0);
+  group.add(embers);
+
+  const flame = new THREE.Mesh(
+    new THREE.ConeGeometry(0.12, 0.32, 6),
+    new THREE.MeshBasicMaterial({ color: 0xff6600 })
+  );
+  flame.position.set(0, 0.62, 0);
+  group.add(flame);
+
+  const light = new THREE.PointLight(0xff7722, 1.4, 7.5, 1.4);
+  light.position.set(0, 0.72, 0);
+  group.add(light);
+
+  group.userData = { isTorch: true, fireLight: light };
   return group;
 }

@@ -1370,5 +1370,63 @@ export function createBrickCatalog(): Map<number, BrickDefinition> {
     }),
   });
 
+  // 44. Feu de Camp Crépitant
+  catalog.set(44, {
+    id: 44,
+    category: 'nature',
+    name: 'Feu de Camp Crépitant',
+    subtitle: 'Bûches croisées, braises ardentes & flammes chaleureuses',
+    previewCss: 'radial-gradient(circle, #f59e0b 20%, #ea580c 60%, #451a03 100%)',
+    material: new THREE.MeshStandardMaterial({
+      color: 0xff5500,
+      emissive: 0xff3b00,
+      emissiveIntensity: 0.85,
+      roughness: 0.5,
+    }),
+    isLight: true,
+  });
+
+  // 45. Fontaine en Pierre Vivante
+  catalog.set(45, {
+    id: 45,
+    category: 'nature',
+    name: 'Fontaine Monumentale',
+    subtitle: 'Bassin octogonal sculpté avec eau ruisselante',
+    previewCss: 'radial-gradient(circle, #38bdf8 30%, #94a3b8 70%)',
+    material: new THREE.MeshStandardMaterial({
+      color: 0x38bdf8,
+      roughness: 0.2,
+      metalness: 0.1,
+    }),
+  });
+
+  // 46. Parterre de Fleurs Sauvages
+  catalog.set(46, {
+    id: 46,
+    category: 'nature',
+    name: 'Fleurs Sauvages des Champs',
+    subtitle: 'Lavandes mauves, coquelicots écarlates & boutons d\'or',
+    previewCss: 'linear-gradient(135deg, #a855f7 0%, #ef4444 50%, #eab308 100%)',
+    material: new THREE.MeshStandardMaterial({
+      color: 0xa855f7,
+      roughness: 0.6,
+    }),
+  });
+
+  // 47. Braséro / Torche de Jardin
+  catalog.set(47, {
+    id: 47,
+    category: 'decor',
+    name: 'Braséro en Fer Forgé',
+    subtitle: 'Torche sur pied avec flamme vacillante et braises',
+    previewCss: 'linear-gradient(180deg, #f97316 30%, #1e293b 80%)',
+    material: new THREE.MeshStandardMaterial({
+      color: 0x1e293b,
+      roughness: 0.5,
+      metalness: 0.8,
+    }),
+    isLight: true,
+  });
+
   return catalog;
 }

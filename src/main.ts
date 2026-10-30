@@ -4,6 +4,7 @@ import { VoxelWorld } from './world/VoxelWorld';
 import { CountrysideEnv } from './world/CountrysideEnv';
 import { PlayerController, CameraViewMode } from './player/PlayerController';
 import { SoundManager } from './audio/SoundManager';
+import { AmbientParticleSystem } from './world/AmbientParticles';
 import { isFlatSlab, isTwoBlocksTall, BRICK_TYPE_DIRT } from './world/ArchitecturalObjects';
 import { BrickDefinition, CATEGORY_DEFINITIONS, ItemCategory } from './world/Materials';
 import {
@@ -148,6 +149,7 @@ let currentSunDir = countryside.updateSunAndEnvironment(
 // --- Core Systems & Database ---
 const sound = new SoundManager();
 const world = new VoxelWorld(scene, countryside);
+const ambientParticles = new AmbientParticleSystem(scene, world);
 const db = new DatabaseService();
 
 const studioOverlay = document.getElementById('studio-overlay')!;
@@ -156,6 +158,7 @@ const interactionHintEl = document.getElementById('interaction-hint')!;
 const hudAccountWorldEl = document.getElementById('hud-account-world')!;
 const statBricksEl = document.getElementById('stat-bricks')!;
 const statPosEl = document.getElementById('stat-pos')!;
+const statCompassEl = document.getElementById('stat-compass');
 const statModeEl = document.getElementById('stat-mode')!;
 const statViewEl = document.getElementById('stat-view')!;
 const statTimeEl = document.getElementById('stat-time')!;
@@ -165,6 +168,38 @@ const activeBrickPreviewEl = document.getElementById('active-brick-preview');
 const categoryTabsEl = document.getElementById('category-tabs')!;
 const hotbarEl = document.getElementById('hotbar')!;
 const toastEl = document.getElementById('toast')!;
+
+// Boutons rapides d'ambiance et raccourcis
+const btnDayNightAuto = document.getElementById('quick-btn-daynight');
+const btnAmbienceAudio = document.getElementById('quick-btn-ambience-audio');
+const btnTeleportHome = document.getElementById('quick-btn-teleport-home');
+
+// Gestion du Cycle Jour/Nuit Automatique
+let isDayNightAutoCycle = false;
+let dayNightProgress = 0.28; // Départ en plein après-midi ensoleillé doux
+const DAY_NIGHT_CYCLE_DURATION = 240; // 4 minutes pour une révolution céleste complète
+
+function toggleDayNightAutoCycle(): void {
+  isDayNightAutoCycle = !isDayNightAutoCycle;
+  btnDayNightAuto?.classList.toggle('active', isDayNightAutoCycle);
+  if (isDayNightAutoCycle) {
+    showToast('⏳ Cycle Jour/Nuit dynamique automatique activé !');
+  } else {
+    showToast('⏳ Cycle automatique arrêté (Ambiance manuelle)');
+  }
+}
+
+function toggleAmbienceAudio(): void {
+  const enabled = sound.toggleAmbience();
+  btnAmbienceAudio?.classList.toggle('active', enabled);
+  showToast(enabled ? '🎶 Ambiance sonore vivante activée' : '🔇 Ambiance sonore coupée');
+}
+
+function teleportHome(): void {
+  player.resetPosition({ x: 0, z: 6, y: 0.36 });
+  sound.playTeleportHome();
+  showToast('⌂ Retour au Foyer immédiat !');
+}
 
 // Navigation vs Creation Mode elements
 const btnModeCreation = document.getElementById('btn-mode-creation')!;
@@ -980,6 +1015,18 @@ document.getElementById('quick-btn-rain')?.addEventListener('click', (e) => {
   showToast(raining ? '🌧️ Pluie douce activée' : '☀️ Pluie arrêtée');
 });
 
+btnDayNightAuto?.addEventListener('click', () => {
+  toggleDayNightAutoCycle();
+});
+
+btnAmbienceAudio?.addEventListener('click', () => {
+  toggleAmbienceAudio();
+});
+
+btnTeleportHome?.addEventListener('click', () => {
+  teleportHome();
+});
+
 renderer.domElement.addEventListener('mousedown', (e) => {
   // En Mode Navigation :
   if (currentUIMode === 'navigation' && e.button === 0) {
@@ -1285,6 +1332,14 @@ window.addEventListener('keydown', (e) => {
     sound.playSelect();
     showToast(`Lumière : ${LIGHTING_PRESETS[currentLightingIdx].name}`);
   }
+
+  if (e.code === 'KeyL') {
+    toggleDayNightAutoCycle();
+  }
+
+  if (e.code === 'KeyH') {
+    teleportHome();
+  }
 });
 
 // --- Studio Modal & Auth Controls ---
@@ -1469,6 +1524,67 @@ function animate(now: number): void {
   player.update(dt);
   countryside.update(now * 0.001, player.position);
   world.update(dt, camera, player.getEyePosition(), currentUIMode === 'creation');
+
+  // --- 1. Cycle Jour/Nuit Dynamique & Continu ---
+  let isNight = currentLightingIdx === 3;
+  if (isDayNightAutoCycle) {
+    dayNightProgress = (dayNightProgress + dt / DAY_NIGHT_CYCLE_DURATION) % 1.0;
+    const sunElevation = Math.sin(dayNightProgress * Math.PI * 2) * 58;
+    const sunAzimuth = (dayNightProgress * 360 + 90) % 360;
+    isNight = sunElevation < 0;
+
+    currentSunDir = countryside.updateSunAndEnvironment(
+      Math.max(-10, sunElevation),
+      sunAzimuth,
+      isNight ? 1.4 : 1.8,
+      isNight ? 0.4 : 2.2
+    );
+
+    if (sunElevation > 14) {
+      const t = Math.min(1, (sunElevation - 14) / 36);
+      hemiLight.color.lerpColors(new THREE.Color(0xfed7aa), new THREE.Color(0xcbd5e1), t);
+      hemiLight.groundColor.lerpColors(new THREE.Color(0x3b5926), new THREE.Color(0x456b34), t);
+      hemiLight.intensity = THREE.MathUtils.lerp(0.46, 0.54, t);
+      sunLight.color.lerpColors(new THREE.Color(0xfdba74), new THREE.Color(0xfef3c7), t);
+      sunLight.intensity = THREE.MathUtils.lerp(1.1, 1.25, t);
+      if (scene.fog) (scene.fog as THREE.FogExp2).color.lerpColors(new THREE.Color(0xd6a87c), new THREE.Color(0x8fb3d4), t);
+      statTimeEl.textContent = 'JOUR (AUTO)';
+    } else if (sunElevation > -4) {
+      const t = Math.max(0, (sunElevation + 4) / 18);
+      hemiLight.color.lerpColors(new THREE.Color(0x38bdf8), new THREE.Color(0xfed7aa), t);
+      hemiLight.groundColor.lerpColors(new THREE.Color(0x0f1f14), new THREE.Color(0x3b5926), t);
+      hemiLight.intensity = THREE.MathUtils.lerp(0.26, 0.46, t);
+      sunLight.color.lerpColors(new THREE.Color(0x93c5fd), new THREE.Color(0xfdba74), t);
+      sunLight.intensity = THREE.MathUtils.lerp(0.5, 1.1, t);
+      if (scene.fog) (scene.fog as THREE.FogExp2).color.lerpColors(new THREE.Color(0x0f172a), new THREE.Color(0xd6a87c), t);
+      statTimeEl.textContent = sunElevation >= 0 ? 'CRÉPUSCULE' : 'AUBE';
+    } else {
+      hemiLight.color.setHex(0x38bdf8);
+      hemiLight.groundColor.setHex(0x0f1f14);
+      hemiLight.intensity = 0.22;
+      sunLight.color.setHex(0x93c5fd);
+      sunLight.intensity = 0.45;
+      if (scene.fog) (scene.fog as THREE.FogExp2).color.setHex(0x0f172a);
+      statTimeEl.textContent = 'NUIT ÉTOILÉE (AUTO)';
+    }
+  }
+
+  // --- 2. Particules Ambiantes Vivantes ---
+  ambientParticles.update(dt, now * 0.001, player.position, isNight);
+
+  // --- 3. Ambiance Sonore Adaptative et Réactive ---
+  const envCheck = world.checkNearbyEnvironment(player.position, 7);
+  sound.updateAmbience(dt, isNight, countryside.isRaining, envCheck.nearFire, envCheck.nearWater);
+
+  // --- 4. Boussole 3D & Distance au Foyer ---
+  if (statCompassEl) {
+    const yaw = player.getYaw();
+    const headingDeg = Math.round(((-yaw * 180 / Math.PI) % 360 + 360) % 360);
+    const cardinals = ['N', 'NE', 'E', 'SE', 'S', 'SO', 'O', 'NO'];
+    const card = cardinals[Math.round(headingDeg / 45) % 8];
+    const distHome = Math.round(Math.hypot(player.position.x, player.position.z));
+    statCompassEl.textContent = `🧭 ${card} ${headingDeg}° • ⌂ ${distHome}m`;
+  }
 
   // Règle / Mesure en direct
   if (isRulerMode && world.currentTarget) {
