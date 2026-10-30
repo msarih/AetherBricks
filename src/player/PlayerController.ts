@@ -20,6 +20,7 @@ export class PlayerController {
   public isLocked = false;
   public isSitting = false;
   public isInWater = false;
+  public isOnLadder = false;
   public isSprinting = false;
   public viewMode: CameraViewMode = 'tps-back';
 
@@ -28,6 +29,7 @@ export class PlayerController {
   private readonly playerHeight = 1.72;
   private readonly eyeOffset = 0.62;
   private stepTimer = 0;
+  private ladderClimbDistance = 0;
 
   constructor(
     camera: THREE.PerspectiveCamera,
@@ -328,6 +330,7 @@ export class PlayerController {
     this.velocity.z = moveDir.z * speed;
 
     const onLadder = !this.isFlying && this.isTouchingLadder();
+    this.isOnLadder = onLadder;
 
     if (this.isFlying) {
       const vertSpeed = this.isSprinting ? 22.0 : 9.0;
@@ -348,16 +351,44 @@ export class PlayerController {
       }
       this.isGrounded = false;
     } else if (onLadder) {
-      // Escalade fluide sur les échelles : Espace ou Flèche Haut / W fait monter, sinon descente douce contrôlée
-      const ladderSpeed = this.isSprinting ? 7.5 : 4.8;
-      if (this.keys.has('Space') || this.keys.has('KeyW') || this.keys.has('ArrowUp')) {
-        this.velocity.y = ladderSpeed;
-      } else if (this.keys.has('KeyS') || this.keys.has('ArrowDown')) {
-        this.velocity.y = -ladderSpeed;
+      // Escalade réaliste et naturelle sur les échelles :
+      // - Monter : Espace ou Avancer (W / Flèche Haut)
+      // - Descendre : Reculer (S / Flèche Bas) ou S'accroupir (C / Shift / Ctrl)
+      // - Arrêt : Si aucune commande n'est pressée, le joueur reste solidement agrippé aux échelons (vitesse = 0) !
+      const isClimbUp =
+        this.keys.has('Space') ||
+        this.keys.has('KeyW') ||
+        this.keys.has('ArrowUp');
+      const isClimbDown =
+        this.keys.has('KeyS') ||
+        this.keys.has('ArrowDown') ||
+        this.keys.has('KeyC') ||
+        this.keys.has('ShiftLeft') ||
+        this.keys.has('ShiftRight') ||
+        this.keys.has('ControlLeft') ||
+        this.keys.has('ControlRight');
+
+      const climbSpeed = this.isSprinting ? 3.6 : 2.5;
+      let targetVy = 0;
+      if (isClimbUp) {
+        targetVy = climbSpeed;
+      } else if (isClimbDown) {
+        targetVy = -climbSpeed;
       } else {
-        this.velocity.y = -1.6;
+        targetVy = 0; // Prise ferme sur les barreaux (zéro glissade involontaire !)
       }
+
+      this.velocity.y = THREE.MathUtils.lerp(this.velocity.y, targetVy, clampedDt * 14.0);
       this.isGrounded = true;
+
+      // Son régulier d'échelons en bois à chaque prise de barreau
+      if (Math.abs(this.velocity.y) > 0.35) {
+        this.ladderClimbDistance += Math.abs(this.velocity.y) * clampedDt;
+        if (this.ladderClimbDistance >= 0.38) {
+          this.sound.playStep();
+          this.ladderClimbDistance = 0;
+        }
+      }
     } else {
       this.velocity.y -= 23.0 * clampedDt;
       if (this.keys.has('Space') && this.isGrounded) {
@@ -513,7 +544,9 @@ export class PlayerController {
       this.isGrounded,
       this.isFlying,
       isThirdPerson,
-      this.isSitting
+      this.isSitting,
+      this.isOnLadder,
+      this.velocity.y
     );
 
     const headPos = this.getEyePosition();

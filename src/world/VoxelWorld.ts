@@ -578,43 +578,68 @@ export class VoxelWorld {
 
   /**
    * Creuse la terre naturelle comme dans Minecraft.
-   * Découpe un trou dans la surface herbeuse et matérialise les parois et le fond en terre/roche.
+   * Découpe un trou dans la surface herbeuse et matérialise les parois souterraines et le fond en terre/roche.
    */
   public digGroundAt(x: number, y: number, z: number): boolean {
     const rx = Math.round(x);
     const ry = Math.round(y);
     const rz = Math.round(z);
-    const k = `${rx},${ry},${rz}`;
-    if (this.dugVoxels.has(k)) return false;
 
-    this.dugVoxels.add(k);
-    if (ry >= 0) {
-      this.dugColumns.add(`${rx},${rz}`);
-      this.setGroundHoleMask(rx, rz, true);
-      this.countryside?.syncGrassAt(rx, rz, true);
-    }
-
-    // Poser le sol de terre/roche au fond du trou (ry - 1)
-    const floorY = ry - 1;
-    if (!this.hasBrickAt(rx, floorY, rz) && !this.dugVoxels.has(`${rx},${floorY},${rz}`)) {
-      const bottomType = floorY <= -3 ? BRICK_TYPE_STONE : BRICK_TYPE_DIRT;
-      this.setBrick(rx, floorY, rz, bottomType, false, false);
-    }
-
-    // Parois de terre sur les 4 côtés
     const neighbors = [
       [rx + 1, rz],
       [rx - 1, rz],
       [rx, rz + 1],
       [rx, rz - 1],
     ];
-    for (const [nx, nz] of neighbors) {
-      if (!this.dugColumns.has(`${nx},${nz}`) && !this.hasBrickAt(nx, ry, nz)) {
-        this.setBrick(nx, ry, nz, ry === 0 ? BRICK_TYPE_GRASS_BLOCK : BRICK_TYPE_DIRT, false, false);
+
+    if (ry >= 0) {
+      // 1. Creusement de surface à travers le sol herbeux
+      const colKey = `${rx},${rz}`;
+      const voxelKey = `${rx},-1,${rz}`;
+      if (this.dugVoxels.has(voxelKey) && this.dugColumns.has(colKey)) {
+        return false;
+      }
+
+      this.dugColumns.add(colKey);
+      this.dugVoxels.add(voxelKey);
+      this.setGroundHoleMask(rx, rz, true);
+      this.countryside?.syncGrassAt(rx, rz, true);
+
+      // Fond de terre à y = -2 (donne une profondeur de 1 mètre sous le sol)
+      const floorY = -2;
+      if (!this.hasBrickAt(rx, floorY, rz)) {
+        this.setBrick(rx, floorY, rz, BRICK_TYPE_DIRT, false, false);
+      }
+
+      // Parois souterraines en terre à y = -1 (affleurant exactement sous l'herbe à y = -0.5)
+      // Aucun bloc n'est posé à y = 0 : la surface autour du trou reste parfaitement plane et sans blocs !
+      for (const [nx, nz] of neighbors) {
+        if (!this.dugColumns.has(`${nx},${nz}`) && !this.hasBrickAt(nx, -1, nz)) {
+          this.setBrick(nx, -1, nz, BRICK_TYPE_DIRT, false, false);
+        }
+      }
+    } else {
+      // 2. Creusement en profondeur sous terre (ex: ry = -1, -2, -3...)
+      const voxelKey = `${rx},${ry},${rz}`;
+      if (this.dugVoxels.has(voxelKey)) return false;
+      this.dugVoxels.add(voxelKey);
+
+      // Placer le nouveau fond encore plus bas
+      const floorY = ry - 1;
+      const bottomType = floorY <= -3 ? BRICK_TYPE_STONE : BRICK_TYPE_DIRT;
+      if (!this.hasBrickAt(rx, floorY, rz)) {
+        this.setBrick(rx, floorY, rz, bottomType, false, false);
+      }
+
+      // Prolonger les parois latérales jusqu'à ce niveau
+      for (const [nx, nz] of neighbors) {
+        if (!this.dugColumns.has(`${nx},${nz}`) && !this.hasBrickAt(nx, ry, nz)) {
+          this.setBrick(nx, ry, nz, bottomType, false, false);
+        }
       }
     }
 
-    this.spawnBurst(new THREE.Vector3(rx, ry, rz), 18);
+    this.spawnBurst(new THREE.Vector3(rx, ry >= 0 ? -1 : ry, rz), 18);
     this.recordHistoryAction({
       kind: 'remove',
       entry: { x: rx, y: ry, z: rz, type: BRICK_TYPE_DIRT },
@@ -801,6 +826,13 @@ export class VoxelWorld {
     const ry = Math.round(y);
     const rz = Math.round(z);
     if (ry < -32 || ry > 120) return false;
+
+    // Si on rebouche un trou de surface (bloc posé à y = 0 ou y = -1, hors échelle)
+    if (this.dugColumns.has(`${rx},${rz}`) && ry >= -1 && !isLadder(type)) {
+      this.dugColumns.delete(`${rx},${rz}`);
+      this.setGroundHoleMask(rx, rz, false);
+      this.countryside?.syncGrassAt(rx, rz, false);
+    }
 
     const k1 = this.slotKeyForType(rx, ry, rz, type);
     if (this.bricks.has(k1)) return false;
@@ -1093,10 +1125,10 @@ export class VoxelWorld {
 
     if (baseEntry.y < 0) {
       this.dugVoxels.add(`${baseEntry.x},${baseEntry.y},${baseEntry.z}`);
-    }
-    if (baseEntry.y === 0) {
-      this.dugColumns.add(`${baseEntry.x},${baseEntry.z}`);
-      this.setGroundHoleMask(baseEntry.x, baseEntry.z, true);
+      // Si on creuse la terre au fond du trou (ex: bloc de sol à y <= -2), creuser plus profond !
+      if (!this.hasBrickAt(baseEntry.x, baseEntry.y - 1, baseEntry.z)) {
+        this.digGroundAt(baseEntry.x, baseEntry.y, baseEntry.z);
+      }
     }
 
     if (baseEntry.y === 0 && !this.hasAnyGroundItemAt(baseEntry.x, baseEntry.z)) {

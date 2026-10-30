@@ -12,6 +12,7 @@ export class CharacterAvatar {
   private readonly heldBrickMesh: THREE.Mesh;
 
   private walkPhase = 0;
+  private climbPhase = 0;
   private swingProgress = 0;
   private isSwinging = false;
   private currentBodyYaw = 0;
@@ -183,7 +184,9 @@ export class CharacterAvatar {
     isGrounded: boolean,
     isFlying: boolean,
     visible: boolean,
-    isSitting = false
+    isSitting = false,
+    isOnLadder = false,
+    ladderClimbSpeed = 0
   ): void {
     this.root.visible = visible;
     this.root.position.copy(position);
@@ -208,6 +211,33 @@ export class CharacterAvatar {
       this.leftArmPivot.rotation.x = -0.25;
       this.rightArmPivot.rotation.x = -0.25;
       this.bodyGroup.position.y = -0.62;
+    } else if (isOnLadder) {
+      // Escalade réaliste sur échelle
+      if (Math.abs(ladderClimbSpeed) > 0.15) {
+        this.climbPhase += dt * Math.abs(ladderClimbSpeed) * 4.2;
+        const armSwing = Math.sin(this.climbPhase) * 0.48;
+        const legSwing = Math.sin(this.climbPhase) * 0.38;
+        // Bras levés en avant qui alternent pour attraper les barreaux
+        this.leftArmPivot.rotation.x = -Math.PI * 0.45 + armSwing;
+        this.rightArmPivot.rotation.x = -Math.PI * 0.45 - armSwing;
+        this.leftArmPivot.rotation.z = 0.12;
+        this.rightArmPivot.rotation.z = -0.12;
+        // Jambes qui montent en rythme
+        this.leftLegPivot.rotation.x = -legSwing;
+        this.rightLegPivot.rotation.x = legSwing;
+        this.leftLegPivot.rotation.z = 0;
+        this.rightLegPivot.rotation.z = 0;
+        this.bodyGroup.position.y = -0.86 + Math.abs(Math.sin(this.climbPhase * 2)) * 0.028;
+      } else {
+        // En suspension immobile sur l'échelle : maintien ferme à deux mains aux échelons
+        this.leftArmPivot.rotation.x = THREE.MathUtils.lerp(this.leftArmPivot.rotation.x, -Math.PI * 0.42, dt * 10);
+        this.rightArmPivot.rotation.x = THREE.MathUtils.lerp(this.rightArmPivot.rotation.x, -Math.PI * 0.42, dt * 10);
+        this.leftArmPivot.rotation.z = 0.12;
+        this.rightArmPivot.rotation.z = -0.12;
+        this.leftLegPivot.rotation.x = THREE.MathUtils.lerp(this.leftLegPivot.rotation.x, -0.16, dt * 10);
+        this.rightLegPivot.rotation.x = THREE.MathUtils.lerp(this.rightLegPivot.rotation.x, 0.16, dt * 10);
+        this.bodyGroup.position.y = -0.86;
+      }
     } else if (isMoving && isGrounded && !isFlying) {
       this.walkPhase += dt * Math.max(4.5, moveSpeed) * 1.65;
       const swing = Math.sin(this.walkPhase) * 0.75;
