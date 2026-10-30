@@ -11789,7 +11789,7 @@
       "ownerId": "guest_1793289578954",
       "name": "Maisonnette Blanche #13",
       "createdAt": 1793353471277,
-      "updatedAt": 1793369279549,
+      "updatedAt": 1793370021665,
       "bricks": [
         {
           "x": -3,
@@ -14406,14 +14406,38 @@
           "type": 35,
           "rot": 0,
           "open": false
+        },
+        {
+          "x": -4,
+          "y": 0,
+          "z": -17,
+          "type": 35,
+          "rot": 0,
+          "open": false
+        },
+        {
+          "x": -4,
+          "y": 0,
+          "z": -16,
+          "type": 35,
+          "rot": 0,
+          "open": false
+        },
+        {
+          "x": -5,
+          "y": 0,
+          "z": -17,
+          "type": 35,
+          "rot": 0,
+          "open": false
         }
       ],
       "playerState": {
-        "x": 9.988106497135396,
+        "x": -3.4252755532929497,
         "y": 0.36,
-        "z": 0.5306608856457098,
+        "z": -18.783008249573346,
         "viewMode": "tps-back",
-        "lightingIdx": 0
+        "lightingIdx": 1
       }
     }
   ]

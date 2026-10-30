@@ -5,6 +5,8 @@ import {
   createBrickCatalog,
   createCountrysideGrassPBR,
   applyPaintToVisual,
+  getLocalFaceKey,
+  getOrCreatePitMaterial,
 } from './Materials';
 import { BrickEntry, getStarterScene } from './Presets';
 import { CountrysideEnv } from './CountrysideEnv';
@@ -91,6 +93,7 @@ interface HistoryAction {
   entry: BrickEntry;
   prevColor?: string;
   prevPattern?: string;
+  prevFacePaints?: Record<string, { color: string; pattern: string }>;
 }
 
 interface PlacedItem {
@@ -162,6 +165,7 @@ export class VoxelWorld {
     hitBrickType: number | null;
     isDoorHit: boolean;
     doorIsOpen?: boolean;
+    normal?: THREE.Vector3;
   } | null = null;
 
   public lastValidTarget: {
@@ -171,6 +175,7 @@ export class VoxelWorld {
     hitBrickType: number | null;
     isDoorHit: boolean;
     doorIsOpen?: boolean;
+    normal?: THREE.Vector3;
   } | null = null;
 
   // Undo / Redo stacks (chaque étape peut contenir 1 bloc ou tout un tracé en masse)
@@ -594,6 +599,7 @@ export class VoxelWorld {
 
   /**
    * Construit une géométrie de fosse/trou ouverte vers le haut (5 faces intérieures).
+   * Découpe des strates géologiques colorées de 1 mètre chacune pour observer visuellement la profondeur !
    * Zéro polygone sur le dessus ou à l'extérieur : aucun conflit avec la prairie environnante !
    */
   private createPitGeometry(
@@ -607,8 +613,26 @@ export class VoxelWorld {
     const positions: number[] = [];
     const normals: number[] = [];
     const uvs: number[] = [];
+    const colors: number[] = [];
 
-    // 1. Fond horizontal du trou orienté vers le haut (normal 0, 1, 0)
+    const depth = Math.max(1, Math.round(topY - floorY));
+
+    // Couleurs géologiques distinctes par niveau de profondeur
+    const STRATA_COLORS: THREE.Color[] = [
+      new THREE.Color(0x8d5b4c), // Niveau 1 (-1m) : Humus & Terreau fertile brun chaud
+      new THREE.Color(0xd97706), // Niveau 2 (-2m) : Argile ocre dorée
+      new THREE.Color(0xe2d9c8), // Niveau 3 (-3m) : Calcaire & Grès sédimentaire clair
+      new THREE.Color(0x64748b), // Niveau 4 (-4m) : Granit gris & Ardoise minérale
+      new THREE.Color(0xb45309), // Niveau 5 (-5m) : Basalte volcanique & Veine d'or
+      new THREE.Color(0x7c3aed), // Niveau 6+ (-6m et +) : Abysse tellurique & Cristaux d'Améthyste luminescents
+    ];
+
+    const getStrataColor = (step: number): THREE.Color => {
+      const idx = Math.min(step, STRATA_COLORS.length - 1);
+      return STRATA_COLORS[idx];
+    };
+
+    // 1. Fond horizontal du trou au niveau floorY (tourné vers le haut : normal 0, 1, 0)
     positions.push(
       -0.5, floorY, -0.5,
       -0.5, floorY,  0.5,
@@ -619,69 +643,89 @@ export class VoxelWorld {
     );
     for (let i = 0; i < 6; i++) normals.push(0, 1, 0);
     uvs.push(0, 0, 0, 1, 1, 1, 0, 0, 1, 1, 1, 0);
-
-    const h = topY - floorY;
-
-    // 2. Paroi Nord (z = -0.5) tournée vers l'intérieur (+Z)
-    if (hasNorth) {
-      positions.push(
-        -0.5, floorY, -0.5,
-         0.5, floorY, -0.5,
-         0.5, topY,   -0.5,
-        -0.5, floorY, -0.5,
-         0.5, topY,   -0.5,
-        -0.5, topY,   -0.5
-      );
-      for (let i = 0; i < 6; i++) normals.push(0, 0, 1);
-      uvs.push(0, 0, 1, 0, 1, h, 0, 0, 1, h, 0, h);
+    const bottomColor = getStrataColor(depth - 1);
+    for (let i = 0; i < 6; i++) {
+      colors.push(bottomColor.r, bottomColor.g, bottomColor.b);
     }
 
-    // 3. Paroi Sud (z = 0.5) tournée vers l'intérieur (-Z)
-    if (hasSouth) {
-      positions.push(
-         0.5, floorY,  0.5,
-        -0.5, floorY,  0.5,
-        -0.5, topY,    0.5,
-         0.5, floorY,  0.5,
-        -0.5, topY,    0.5,
-         0.5, topY,    0.5
-      );
-      for (let i = 0; i < 6; i++) normals.push(0, 0, -1);
-      uvs.push(0, 0, 1, 0, 1, h, 0, 0, 1, h, 0, h);
-    }
+    // Helper pour pousser un rectangle vertical (paroi de 1m) avec sa couleur de strate géologique
+    const pushQuad = (
+      p1: [number, number, number],
+      p2: [number, number, number],
+      p3: [number, number, number],
+      p4: [number, number, number],
+      norm: [number, number, number],
+      col: THREE.Color
+    ) => {
+      // 2 triangles : p1-p2-p3 et p1-p3-p4
+      positions.push(...p1, ...p2, ...p3, ...p1, ...p3, ...p4);
+      for (let i = 0; i < 6; i++) {
+        normals.push(...norm);
+        colors.push(col.r, col.g, col.b);
+      }
+      uvs.push(0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1);
+    };
 
-    // 4. Paroi Ouest (x = -0.5) tournée vers l'intérieur (+X)
-    if (hasWest) {
-      positions.push(
-        -0.5, floorY,  0.5,
-        -0.5, floorY, -0.5,
-        -0.5, topY,   -0.5,
-        -0.5, floorY,  0.5,
-        -0.5, topY,   -0.5,
-        -0.5, topY,    0.5
-      );
-      for (let i = 0; i < 6; i++) normals.push(1, 0, 0);
-      uvs.push(0, 0, 1, 0, 1, h, 0, 0, 1, h, 0, h);
-    }
+    // Découpage en strates verticales de 1 mètre pour chaque paroi visible
+    for (let step = 0; step < depth; step++) {
+      const segTop = topY - step;
+      const segBottom = topY - (step + 1);
+      const col = getStrataColor(step);
 
-    // 5. Paroi Est (x = 0.5) tournée vers l'intérieur (-X)
-    if (hasEast) {
-      positions.push(
-         0.5, floorY, -0.5,
-         0.5, floorY,  0.5,
-         0.5, topY,    0.5,
-         0.5, floorY, -0.5,
-         0.5, topY,    0.5,
-         0.5, topY,   -0.5
-      );
-      for (let i = 0; i < 6; i++) normals.push(-1, 0, 0);
-      uvs.push(0, 0, 1, 0, 1, h, 0, 0, 1, h, 0, h);
+      // 2. Paroi Nord (z = -0.5) tournée vers l'intérieur (+Z)
+      if (hasNorth) {
+        pushQuad(
+          [-0.5, segBottom, -0.5],
+          [ 0.5, segBottom, -0.5],
+          [ 0.5, segTop,    -0.5],
+          [-0.5, segTop,    -0.5],
+          [0, 0, 1],
+          col
+        );
+      }
+
+      // 3. Paroi Sud (z = 0.5) tournée vers l'intérieur (-Z)
+      if (hasSouth) {
+        pushQuad(
+          [ 0.5, segBottom,  0.5],
+          [-0.5, segBottom,  0.5],
+          [-0.5, segTop,     0.5],
+          [ 0.5, segTop,     0.5],
+          [0, 0, -1],
+          col
+        );
+      }
+
+      // 4. Paroi Ouest (x = -0.5) tournée vers l'intérieur (+X)
+      if (hasWest) {
+        pushQuad(
+          [-0.5, segBottom,  0.5],
+          [-0.5, segBottom, -0.5],
+          [-0.5, segTop,   -0.5],
+          [-0.5, segTop,     0.5],
+          [1, 0, 0],
+          col
+        );
+      }
+
+      // 5. Paroi Est (x = 0.5) tournée vers l'intérieur (-X)
+      if (hasEast) {
+        pushQuad(
+          [ 0.5, segBottom, -0.5],
+          [ 0.5, segBottom,  0.5],
+          [ 0.5, segTop,     0.5],
+          [ 0.5, segTop,    -0.5],
+          [-1, 0, 0],
+          col
+        );
+      }
     }
 
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
     geo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
     geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
     return geo;
   }
 
@@ -711,13 +755,12 @@ export class VoxelWorld {
     const hasEast  = !this.dugColumns.has(`${rx + 1},${rz}`);
 
     const geo = this.createPitGeometry(hasNorth, hasSouth, hasWest, hasEast, floorY, topY);
-    const def = this.catalog.get(BRICK_TYPE_DIRT);
-    const mat = def ? def.material : new THREE.MeshStandardMaterial({ color: 0x4a3222, roughness: 0.95 });
+    const mat = getOrCreatePitMaterial();
 
     const pitMesh = new THREE.Mesh(geo, mat);
     pitMesh.position.set(rx, 0, rz);
     pitMesh.receiveShadow = true;
-    pitMesh.castShadow = true;
+    pitMesh.castShadow = false;
     pitMesh.userData = { x: rx, y: -depth, z: rz, type: BRICK_TYPE_DIRT, isPit: true };
 
     this.scene.add(pitMesh);
@@ -777,6 +820,7 @@ export class VoxelWorld {
 
   /**
    * Peint un mur ou élément avec une couleur et un motif décoratif.
+   * Si hitNormal est fourni, seule la face visée (ex: face intérieure du mur) est peinte !
    */
   public paintBrickAt(
     x: number,
@@ -784,6 +828,7 @@ export class VoxelWorld {
     z: number,
     color: string,
     pattern = 'plain',
+    hitNormal?: THREE.Vector3,
     recordHistory = true
   ): boolean {
     const item = this.findAnyItemAt(x, y, z);
@@ -791,11 +836,20 @@ export class VoxelWorld {
 
     const prevColor = item.entry.color;
     const prevPattern = item.entry.pattern;
+    const prevFacePaints = item.entry.facePaints ? JSON.parse(JSON.stringify(item.entry.facePaints)) : undefined;
 
     item.entry.color = color;
     item.entry.pattern = pattern;
 
-    applyPaintToVisual(item.visualRoot, color, pattern);
+    if (hitNormal) {
+      const rotRad = (item.entry.rot ?? 0) * (Math.PI / 2);
+      const faceKey = getLocalFaceKey(hitNormal, rotRad);
+      if (!item.entry.facePaints) item.entry.facePaints = {};
+      item.entry.facePaints[faceKey] = { color, pattern };
+    }
+
+    const def = this.catalog.get(item.entry.type);
+    applyPaintToVisual(item.visualRoot, color, pattern, def?.material, item.entry.facePaints);
 
     if (recordHistory) {
       this.recordHistoryAction({
@@ -803,6 +857,7 @@ export class VoxelWorld {
         entry: { ...item.entry },
         prevColor,
         prevPattern,
+        prevFacePaints,
       });
       this.saveToLocalStorage();
     }
@@ -822,6 +877,7 @@ export class VoxelWorld {
     removePos: THREE.Vector3 | null;
     removeType: number | null;
     hitBrickType: number | null;
+    normal?: THREE.Vector3;
   } | null {
     const picker = new THREE.Raycaster();
     picker.setFromCamera(normalizedMouse, camera);
@@ -837,6 +893,7 @@ export class VoxelWorld {
           removePos: new THREE.Vector3(px, Math.max(0, Math.round(hit.point.y)), pz),
           removeType: BRICK_TYPE_DIRT,
           hitBrickType: BRICK_TYPE_GRASS_BLOCK,
+          normal: hit.face ? hit.face.normal.clone() : new THREE.Vector3(0, 1, 0),
         };
       }
       if (hit.object.userData && hit.object.userData.isHill) {
@@ -848,6 +905,7 @@ export class VoxelWorld {
           removePos: new THREE.Vector3(px, py, pz),
           removeType: BRICK_TYPE_DIRT,
           hitBrickType: BRICK_TYPE_GRASS_BLOCK,
+          normal: hit.face ? hit.face.normal.clone() : new THREE.Vector3(0, 1, 0),
         };
       }
       const data = hit.object.userData as BrickEntry;
@@ -856,6 +914,7 @@ export class VoxelWorld {
         removePos: new THREE.Vector3(data.x, data.y, data.z),
         removeType: data.type,
         hitBrickType: data.type,
+        normal: hit.face ? hit.face.normal.clone() : new THREE.Vector3(0, 1, 0),
       };
     }
     return null;
@@ -1127,7 +1186,8 @@ export class VoxelWorld {
     rot = this.rotationStep,
     open = false,
     color?: string,
-    pattern?: string
+    pattern?: string,
+    facePaints?: Record<string, { color: string; pattern: string }>
   ): boolean {
     const rx = Math.round(x);
     const ry = Math.round(y);
@@ -1150,7 +1210,7 @@ export class VoxelWorld {
     if (twoTall && this.bricks.has(k2)) return false;
 
     const def = this.catalog.get(type) ?? this.catalog.get(1)!;
-    const entry: BrickEntry = { x: rx, y: ry, z: rz, type: def.id, rot: rot % 4, open, color, pattern };
+    const entry: BrickEntry = { x: rx, y: ry, z: rz, type: def.id, rot: rot % 4, open, color, pattern, facePaints };
 
     let visualRoot: THREE.Object3D;
     let doorPivot: THREE.Group | undefined;
@@ -1371,8 +1431,8 @@ export class VoxelWorld {
       this.scene.add(light);
     }
 
-    if (color || pattern) {
-      applyPaintToVisual(visualRoot, color ?? '#f8fafc', pattern ?? 'plain');
+    if (color || pattern || facePaints) {
+      applyPaintToVisual(visualRoot, color ?? '#f8fafc', pattern ?? 'plain', def.material, entry.facePaints);
     }
 
     const placed: PlacedItem = { slotKey: k1, visualRoot, hitProxies, entry, light, doorPivot };
@@ -1492,21 +1552,28 @@ export class VoxelWorld {
           action.entry.rot ?? 0,
           action.entry.open ?? false,
           action.entry.color,
-          action.entry.pattern
+          action.entry.pattern,
+          action.entry.facePaints
         );
       } else if (action.kind === 'paint') {
-        if (action.prevColor) {
-          this.paintBrickAt(action.entry.x, action.entry.y, action.entry.z, action.prevColor, action.prevPattern ?? 'plain', false);
-        } else {
-          const it = this.findAnyItemAt(action.entry.x, action.entry.y, action.entry.z);
-          if (it) {
+        const it = this.findAnyItemAt(action.entry.x, action.entry.y, action.entry.z);
+        if (it) {
+          it.entry.facePaints = action.prevFacePaints ? { ...action.prevFacePaints } : undefined;
+          if (action.prevColor) {
+            it.entry.color = action.prevColor;
+            it.entry.pattern = action.prevPattern ?? 'plain';
+          } else {
             delete it.entry.color;
             delete it.entry.pattern;
-            const def = this.catalog.get(it.entry.type);
-            if (def && it.visualRoot instanceof THREE.Mesh) {
-              it.visualRoot.material = def.material;
-            }
           }
+          const def = this.catalog.get(it.entry.type);
+          applyPaintToVisual(
+            it.visualRoot,
+            it.entry.color ?? '#f8fafc',
+            it.entry.pattern ?? 'plain',
+            def?.material,
+            it.entry.facePaints
+          );
         }
       }
     }
@@ -1532,7 +1599,8 @@ export class VoxelWorld {
           action.entry.rot ?? 0,
           action.entry.open ?? false,
           action.entry.color,
-          action.entry.pattern
+          action.entry.pattern,
+          action.entry.facePaints
         );
       } else if (action.kind === 'remove') {
         this.removeBrick(
@@ -1544,14 +1612,20 @@ export class VoxelWorld {
           action.entry.type
         );
       } else if (action.kind === 'paint') {
-        this.paintBrickAt(
-          action.entry.x,
-          action.entry.y,
-          action.entry.z,
-          action.entry.color ?? '#f8fafc',
-          action.entry.pattern ?? 'plain',
-          false
-        );
+        const it = this.findAnyItemAt(action.entry.x, action.entry.y, action.entry.z);
+        if (it) {
+          it.entry.facePaints = action.entry.facePaints ? { ...action.entry.facePaints } : undefined;
+          it.entry.color = action.entry.color;
+          it.entry.pattern = action.entry.pattern;
+          const def = this.catalog.get(it.entry.type);
+          applyPaintToVisual(
+            it.visualRoot,
+            it.entry.color ?? '#f8fafc',
+            it.entry.pattern ?? 'plain',
+            def?.material,
+            it.entry.facePaints
+          );
+        }
       }
     }
     this.undoStack.push(batch);
@@ -1607,7 +1681,7 @@ export class VoxelWorld {
         this.setGroundHoleMask(e.x, e.z, true);
         this.updatePitNeighborhood(e.x, e.z);
       }
-      this.setBrick(e.x, e.y, e.z, e.type, false, false, e.rot ?? 0, e.open ?? false, e.color, e.pattern);
+      this.setBrick(e.x, e.y, e.z, e.type, false, false, e.rot ?? 0, e.open ?? false, e.color, e.pattern, e.facePaints);
     }
     if (save) {
       this.saveToLocalStorage();
@@ -1835,6 +1909,7 @@ export class VoxelWorld {
           removeType: BRICK_TYPE_DIRT,
           hitBrickType: BRICK_TYPE_GRASS_BLOCK,
           isDoorHit: false,
+          normal: normal.clone(),
         };
       } else {
         const data = hit.object.userData as BrickEntry;
@@ -1888,6 +1963,7 @@ export class VoxelWorld {
           hitBrickType: data.type,
           isDoorHit: data.type === BRICK_TYPE_DOOR_OAK,
           doorIsOpen: placedItem?.entry.open,
+          normal: normal.clone(),
         };
       }
 

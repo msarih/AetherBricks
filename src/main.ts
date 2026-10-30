@@ -871,7 +871,7 @@ function initPaintPalette(): void {
     const target = world.currentTarget ?? world.lastValidTarget;
     if (target?.removePos) {
       const { x, y, z } = target.removePos;
-      if (world.paintBrickAt(x, y, z, selectedPaintColor, selectedPaintPattern)) {
+      if (world.paintBrickAt(x, y, z, selectedPaintColor, selectedPaintPattern, target.normal)) {
         sound.playPaint();
         lastBuildSoundTime = performance.now();
         player.triggerActionAnimation();
@@ -1039,7 +1039,7 @@ renderer.domElement.addEventListener('mousedown', (e) => {
       const hit = world.raycastFromMouse(mouse, camera);
       if (hit?.removePos) {
         const { x, y, z } = hit.removePos;
-        if (world.paintBrickAt(x, y, z, selectedPaintColor, selectedPaintPattern)) {
+        if (world.paintBrickAt(x, y, z, selectedPaintColor, selectedPaintPattern, hit.normal)) {
           sound.playPaint();
           player.triggerActionAnimation();
           const pName = PATTERN_NAMES[selectedPaintPattern] || selectedPaintPattern;
@@ -1101,7 +1101,7 @@ renderer.domElement.addEventListener('mousedown', (e) => {
         isHoldingPaint = true;
         lastDragPlacePos = target.removePos.clone();
         const { x, y, z } = target.removePos;
-        if (world.paintBrickAt(x, y, z, selectedPaintColor, selectedPaintPattern)) {
+        if (world.paintBrickAt(x, y, z, selectedPaintColor, selectedPaintPattern, target.normal)) {
           sound.playPaint();
           lastBuildSoundTime = performance.now();
           player.triggerActionAnimation();
@@ -1601,7 +1601,7 @@ function animate(now: number): void {
   if (player.isLocked && isHoldingPaint && isPaintMode && world.currentTarget?.removePos) {
     const curPos = world.currentTarget.removePos;
     if (!lastDragPlacePos || !lastDragPlacePos.equals(curPos)) {
-      world.paintBrickAt(curPos.x, curPos.y, curPos.z, selectedPaintColor, selectedPaintPattern);
+      world.paintBrickAt(curPos.x, curPos.y, curPos.z, selectedPaintColor, selectedPaintPattern, world.currentTarget.normal);
       lastDragPlacePos = curPos.clone();
       player.triggerActionAnimation();
       if (now - lastBuildSoundTime > 65) {

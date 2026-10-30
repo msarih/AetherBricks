@@ -7,6 +7,7 @@ export interface BrickEntry {
   open?: boolean; // Pour les portes ouvrables
   color?: string; // Teinte personnalisée de peinture (hex ex: #f8fafc)
   pattern?: string; // Motif personnalisé (ex: 'plain', 'stripes', 'floral', 'bricks', 'tiles', 'wood', 'marble', 'geometric')
+  facePaints?: Record<string, { color: string; pattern: string }>; // Peinture indépendante par face ('+x', '-x', '+y', '-y', '+z', '-z')
 }
 
 /**

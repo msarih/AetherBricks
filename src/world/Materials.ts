@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { SLAB_THICKNESS } from './ArchitecturalObjects';
 
 export type ItemCategory =
   | 'bricks'
@@ -700,13 +701,54 @@ export function getOrCreatePaintedMaterial(
 }
 
 const flatBoxGeo = new THREE.BoxGeometry(1, 1, 1);
+const flatSlabGeo = new THREE.BoxGeometry(1, SLAB_THICKNESS, 1);
 
-export function applyPaintToVisual(root: THREE.Object3D, color: string, pattern = 'plain'): void {
-  const mat = getOrCreatePaintedMaterial(color, pattern);
+export function getLocalFaceKey(worldNormal: THREE.Vector3, rotationYRad = 0): string {
+  const local = worldNormal.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), -rotationYRad);
+  const ax = Math.abs(local.x);
+  const ay = Math.abs(local.y);
+  const az = Math.abs(local.z);
+
+  if (ax >= ay && ax >= az) {
+    return local.x > 0 ? '+x' : '-x';
+  } else if (ay >= ax && ay >= az) {
+    return local.y > 0 ? '+y' : '-y';
+  } else {
+    return local.z > 0 ? '+z' : '-z';
+  }
+}
+
+export function applyPaintToVisual(
+  root: THREE.Object3D,
+  color: string,
+  pattern = 'plain',
+  defaultMaterial?: THREE.Material,
+  facePaints?: Record<string, { color: string; pattern: string }>
+): void {
+  const FACE_ORDER = ['+x', '-x', '+y', '-y', '+z', '-z'];
+  const fallbackMat = defaultMaterial || getOrCreatePaintedMaterial('#ffffff', 'plain');
+
+  let multiMaterials: THREE.Material[] | null = null;
+  if (facePaints && Object.keys(facePaints).length > 0) {
+    multiMaterials = FACE_ORDER.map((faceKey) => {
+      if (facePaints[faceKey]) {
+        return getOrCreatePaintedMaterial(facePaints[faceKey].color, facePaints[faceKey].pattern);
+      }
+      return fallbackMat;
+    });
+  }
+
+  const singleMat = getOrCreatePaintedMaterial(color, pattern);
+
   root.traverse((child) => {
     if (child instanceof THREE.Mesh && !child.userData.isProxy) {
-      child.material = mat;
-      // Remplace les géométries biseautées/arrondies résiduelles par un cube plat sans joints
+      if (multiMaterials) {
+        child.material = multiMaterials;
+      } else {
+        child.material = singleMat;
+      }
+
+      // Remplace les géométries biseautées/arrondies résiduelles par une boîte plate sans joints
       if (child.geometry) {
         if (!child.geometry.boundingBox) child.geometry.computeBoundingBox();
         const box = child.geometry.boundingBox;
@@ -714,13 +756,76 @@ export function applyPaintToVisual(root: THREE.Object3D, color: string, pattern 
           const dx = box.max.x - box.min.x;
           const dy = box.max.y - box.min.y;
           const dz = box.max.z - box.min.z;
-          if (Math.abs(dx - 1) < 0.08 && Math.abs(dy - 1) < 0.08 && Math.abs(dz - 1) < 0.08) {
-            child.geometry = flatBoxGeo;
+          if (Math.abs(dx - 1) < 0.08 && Math.abs(dz - 1) < 0.08) {
+            if (Math.abs(dy - 1) < 0.08) {
+              child.geometry = flatBoxGeo;
+            } else if (Math.abs(dy - SLAB_THICKNESS) < 0.05) {
+              child.geometry = flatSlabGeo;
+            }
           }
         }
       }
     }
   });
+}
+
+let cachedPitMaterial: THREE.MeshStandardMaterial | null = null;
+
+export function getOrCreatePitMaterial(): THREE.MeshStandardMaterial {
+  if (cachedPitMaterial) return cachedPitMaterial;
+
+  const size = 512;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+
+  // 1. Base neutre claire pour que les couleurs de vertex s'expriment avec vivacité
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, size, size);
+
+  // 2. Strates géologiques horizontales de sédimentation
+  for (let y = 0; y < size; y += 8) {
+    const isMajor = y % 64 === 0;
+    const isMedium = y % 32 === 0;
+    if (isMajor) {
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.28)';
+      ctx.fillRect(0, y, size, 5);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
+      ctx.fillRect(0, y + 5, size, 2);
+    } else if (isMedium) {
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.14)';
+      ctx.fillRect(0, y, size, 3);
+    } else {
+      ctx.fillStyle = (y % 16 === 0) ? 'rgba(0, 0, 0, 0.06)' : 'rgba(255, 255, 255, 0.08)';
+      ctx.fillRect(0, y, size, 2);
+    }
+  }
+
+  // 3. Inclusions minérales, pépites et petits cristaux
+  for (let i = 0; i < 900; i++) {
+    const px = Math.random() * size;
+    const py = Math.random() * size;
+    const pr = 1 + Math.random() * 3.5;
+    ctx.fillStyle = Math.random() > 0.45 ? 'rgba(255, 255, 255, 0.45)' : 'rgba(0, 0, 0, 0.22)';
+    ctx.beginPath();
+    ctx.arc(px, py, pr, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+
+  cachedPitMaterial = new THREE.MeshStandardMaterial({
+    map: texture,
+    vertexColors: true,
+    roughness: 0.72,
+    metalness: 0.15,
+    emissive: new THREE.Color(0x382c22),
+    emissiveIntensity: 0.48, // Élimine tout trou noir : visibilité parfaite et chaleureuse même sous terre !
+  });
+
+  return cachedPitMaterial;
 }
 
 export function createDirtPBR(): { albedo: THREE.CanvasTexture; normal: THREE.CanvasTexture } {
