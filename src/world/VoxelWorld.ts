@@ -950,7 +950,7 @@ export class VoxelWorld {
     const rx = Math.round(x);
     const rz = Math.round(z);
 
-    const startY = Math.min(30, Math.floor(maxFeetY + 0.5));
+    const startY = Math.min(30, Math.floor(maxFeetY + 1.2));
     const endY = Math.max(-25, Math.floor(highest - 0.5));
 
     for (let y = startY; y >= endY; y--) {
@@ -958,7 +958,7 @@ export class VoxelWorld {
       const ceilItem = this.bricks.get(`ceil:${rx},${y},${rz}`);
       if (ceilItem) {
         const topY = y + 0.50;
-        if (topY <= maxFeetY + 0.35 && topY > highest) {
+        if (topY <= maxFeetY + 0.65 && topY > highest) {
           highest = topY;
         }
       }
@@ -974,7 +974,7 @@ export class VoxelWorld {
           !(t === BRICK_TYPE_DOOR_OAK && mainItem.entry.open)
         ) {
           const topY = y + 0.50;
-          if (topY <= maxFeetY + 0.35 && topY > highest) {
+          if (topY <= maxFeetY + 0.65 && topY > highest) {
             highest = topY;
           }
         }
@@ -984,7 +984,7 @@ export class VoxelWorld {
       const floorItem = this.bricks.get(`floor:${rx},${y},${rz}`);
       if (floorItem) {
         const topY = y - 0.34;
-        if (topY <= maxFeetY + 0.35 && topY > highest) {
+        if (topY <= maxFeetY + 0.65 && topY > highest) {
           highest = topY;
         }
       }
@@ -1012,30 +1012,22 @@ export class VoxelWorld {
       for (let y = minCellY; y <= maxCellY; y++) {
         for (let z = minCellZ; z <= maxCellZ; z++) {
           // 1. Plafonds (dalles de plafond posées en haut de la case : [y + 0.34, y + 0.50])
+          // Empêche la tête de traverser le plafond par en-dessous.
+          // Si le joueur marche au-dessus du plafond (ses pieds sont au niveau y + 0.50 ou plus), le plafond ne bloque pas ses déplacements horizontaux !
           const ceilItem = this.bricks.get(`ceil:${x},${y},${z}`);
           if (ceilItem) {
             const cMinY = y + 0.34;
-            const cMaxY = y + 0.50;
-            if (maxY > cMinY && minY < cMaxY) {
+            if (maxY > cMinY && minY < cMinY + 0.05) {
               if (maxX > x - 0.5 && minX < x + 0.5 && maxZ > z - 0.5 && minZ < z + 0.5) {
                 return true;
               }
             }
           }
 
-          // 2. Sols (dalles de sol posées en bas de la case : [y - 0.50, y - 0.34])
-          const floorItem = this.bricks.get(`floor:${x},${y},${z}`);
-          if (floorItem) {
-            const fMinY = y - 0.50;
-            const fMaxY = y - 0.34;
-            if (maxY > fMinY && minY < fMaxY) {
-              if (maxX > x - 0.5 && minX < x + 0.5 && maxZ > z - 0.5 && minZ < z + 0.5) {
-                return true;
-              }
-            }
-          }
+          // Note : Les dalles de sol ("floor:x,y,z") ne sont JAMAIS des obstacles bloquants horizontaux !
+          // Ce sont des revêtements de sol minces (16cm) sur lesquels le personnage marche directement via getGroundHeight.
 
-          // 3. Blocs principaux ("main:x,y,z") : briques, toitures, triangles, piliers, etc.
+          // 2. Blocs principaux ("main:x,y,z") : briques, toitures, triangles, piliers, etc.
           const mainItem = this.bricks.get(`main:${x},${y},${z}`);
           if (mainItem) {
             const t = mainItem.entry.type;
@@ -1052,7 +1044,10 @@ export class VoxelWorld {
 
             const bMinY = y - 0.50;
             const bMaxY = y + 0.50;
-            if (maxY > bMinY && minY < bMaxY) {
+            // Pour être un obstacle solide bloquant le passage horizontal,
+            // le sommet du bloc doit être nettement au-dessus des pieds (au moins 0.40m au-dessus de minY),
+            // afin de ne pas bloquer le joueur qui marche sur une surface de blocs ou qui franchit une marche.
+            if (maxY > bMinY && bMaxY > minY + 0.40) {
               if (maxX > x - 0.5 && minX < x + 0.5 && maxZ > z - 0.5 && minZ < z + 0.5) {
                 return true;
               }

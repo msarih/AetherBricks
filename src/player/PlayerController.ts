@@ -491,7 +491,7 @@ export class PlayerController {
       this.camera.updateProjectionMatrix();
     }
 
-    // Apply X movement (with automatic step-up on stairs, slopes & rolling hills)
+    // Apply X movement (with automatic step-up on stairs, slopes, slabs & rolling hills)
     const nextX = this.position.clone();
     nextX.x += this.velocity.x * clampedDt;
 
@@ -509,10 +509,12 @@ export class PlayerController {
       if (this.isGrounded && !this.isFlying) {
         this.position.y = nextX.y;
       }
-    } else if (this.isGrounded && this.hasStepUpStairOrSlopeAt(nextX)) {
+    } else if (this.isGrounded && !this.isFlying) {
       const stepX = nextX.clone();
       stepX.y = targetGroundYX;
-      if (targetGroundYX - this.position.y <= 1.05 && !this.checkWorldCollision(stepX)) {
+      const stepDeltaX = targetGroundYX - this.position.y;
+      const maxStepX = this.hasStepUpStairOrSlopeAt(nextX) ? 1.05 : 0.65;
+      if (stepDeltaX > 0 && stepDeltaX <= maxStepX && !this.checkWorldCollision(stepX)) {
         this.position.copy(stepX);
       } else {
         this.velocity.x = 0;
@@ -521,7 +523,7 @@ export class PlayerController {
       this.velocity.x = 0;
     }
 
-    // Apply Z movement (with automatic step-up on stairs, slopes & rolling hills)
+    // Apply Z movement (with automatic step-up on stairs, slopes, slabs & rolling hills)
     const nextZ = this.position.clone();
     nextZ.z += this.velocity.z * clampedDt;
 
@@ -538,10 +540,12 @@ export class PlayerController {
       if (this.isGrounded && !this.isFlying) {
         this.position.y = nextZ.y;
       }
-    } else if (this.isGrounded && this.hasStepUpStairOrSlopeAt(nextZ)) {
+    } else if (this.isGrounded && !this.isFlying) {
       const stepZ = nextZ.clone();
       stepZ.y = targetGroundYZ;
-      if (targetGroundYZ - this.position.y <= 1.05 && !this.checkWorldCollision(stepZ)) {
+      const stepDeltaZ = targetGroundYZ - this.position.y;
+      const maxStepZ = this.hasStepUpStairOrSlopeAt(nextZ) ? 1.05 : 0.65;
+      if (stepDeltaZ > 0 && stepDeltaZ <= maxStepZ && !this.checkWorldCollision(stepZ)) {
         this.position.copy(stepZ);
       } else {
         this.velocity.z = 0;
@@ -574,7 +578,7 @@ export class PlayerController {
     // Maintien au sol en descente de colline ou de toit (évite les soubresauts)
     if (this.isGrounded && !this.isFlying && this.isMovingInput) {
       const currentSnapY = this.world.getGroundHeight(this.position.x, this.position.z, this.position.y - this.playerHeight * 0.5) + this.playerHeight * 0.5;
-      if (Math.abs(this.position.y - currentSnapY) < 0.28) {
+      if (Math.abs(this.position.y - currentSnapY) < 0.42) {
         this.position.y = currentSnapY;
         this.velocity.y = 0;
         this.isGrounded = true;
