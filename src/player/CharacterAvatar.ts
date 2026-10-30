@@ -10,6 +10,7 @@ export class CharacterAvatar {
   private readonly leftLegPivot = new THREE.Group();
   private readonly rightLegPivot = new THREE.Group();
   private readonly heldBrickMesh: THREE.Mesh;
+  private readonly backpackMesh: THREE.Mesh;
 
   private walkPhase = 0;
   private climbPhase = 0;
@@ -69,12 +70,12 @@ export class CharacterAvatar {
     this.bodyGroup.add(shirtStrip);
 
     // Sac à dos sur le dos (+Z)
-    const backpack = new THREE.Mesh(
+    this.backpackMesh = new THREE.Mesh(
       new RoundedBoxGeometry(0.34, 0.42, 0.14, 3, 0.03),
       backpackMat
     );
-    backpack.position.set(0, 1.01, 0.18);
-    this.bodyGroup.add(backpack);
+    this.backpackMesh.position.set(0, 1.01, 0.18);
+    this.bodyGroup.add(this.backpackMesh);
 
     // --- 2. Tête articulée (Pivot au cou y = 1.30) ---
     this.headPivot.position.set(0, 1.32, 0);
@@ -206,56 +207,70 @@ export class CharacterAvatar {
 
     if (isSleeping) {
       this.heldBrickMesh.visible = false;
+      this.backpackMesh.visible = false;
+
       // Respiration paisible et douce dans le lit
       this.walkPhase += dt * 1.5;
-      const sleepBreathe = Math.sin(this.walkPhase) * 0.012;
+      const sleepBreathe = Math.sin(this.walkPhase) * 0.008;
 
       // Position allongée sur le dos : tête sur les oreillers (+Z), pieds vers le pied du lit (-Z)
+      // Corps reposant bien au-dessus du matelas
       this.bodyGroup.rotation.x = Math.PI * 0.5;
-      this.bodyGroup.position.set(0, -0.62 + sleepBreathe, -0.82);
+      this.bodyGroup.position.set(0, 0.10 + sleepBreathe, -0.93);
 
       // Tête reposée confortablement
-      this.headPivot.rotation.x = -0.06;
+      this.headPivot.rotation.x = 0.18;
       this.headPivot.rotation.y = 0;
 
       // Bras posés délicatement en travers du ventre / poitrine
-      this.leftArmPivot.rotation.x = 0.12;
-      this.rightArmPivot.rotation.x = 0.12;
-      this.leftArmPivot.rotation.z = 0.18;
-      this.rightArmPivot.rotation.z = -0.18;
+      this.leftArmPivot.rotation.x = 0.15;
+      this.rightArmPivot.rotation.x = 0.15;
+      this.leftArmPivot.rotation.z = 0.12;
+      this.rightArmPivot.rotation.z = -0.12;
 
       // Jambes allongées bien droites et détendues
       this.leftLegPivot.rotation.x = 0;
       this.rightLegPivot.rotation.x = 0;
+      this.leftLegPivot.rotation.z = -0.02;
+      this.rightLegPivot.rotation.z = 0.02;
+      return;
+    }
+
+    if (isSitting) {
+      this.heldBrickMesh.visible = false;
+      this.backpackMesh.visible = false;
+
+      // Hanches reposant parfaitement sur le coussin, buste droit sans reculer dans le dossier
+      this.bodyGroup.position.set(0, -0.68, 0.08);
+      this.bodyGroup.rotation.x = 0;
+
+      // Jambes pliées vers l'AVANT (angle positif Math.PI * 0.44 = +80° pour faire pointer les jambes vers -Z !)
+      this.leftLegPivot.rotation.x = Math.PI * 0.44;
+      this.rightLegPivot.rotation.x = Math.PI * 0.44;
       this.leftLegPivot.rotation.z = -0.04;
       this.rightLegPivot.rotation.z = 0.04;
+
+      // Bras détendus et reposant le long du corps à l'intérieur des accoudoirs
+      this.leftArmPivot.rotation.x = 0.28;
+      this.rightArmPivot.rotation.x = 0.28;
+      this.leftArmPivot.rotation.z = 0.08;
+      this.rightArmPivot.rotation.z = -0.08;
+
+      this.headPivot.rotation.y = 0;
+      this.headPivot.rotation.x = THREE.MathUtils.clamp(cameraPitch * 0.45, -0.45, 0.45);
       return;
     }
 
     this.heldBrickMesh.visible = true;
+    this.backpackMesh.visible = true;
     this.bodyGroup.position.z = 0;
+    this.bodyGroup.rotation.x = 0;
 
     // La tête regarde dans la direction où fait face le personnage
     this.headPivot.rotation.y = 0;
     this.headPivot.rotation.x = THREE.MathUtils.clamp(cameraPitch * 0.45, -0.45, 0.45);
 
-    // Cycle d'animation des jambes et des bras
-    if (isSitting) {
-      // Jambes pliées naturellement vers le sol devant le fauteuil
-      this.leftLegPivot.rotation.x = -Math.PI * 0.39;
-      this.rightLegPivot.rotation.x = -Math.PI * 0.39;
-      this.leftLegPivot.rotation.z = -0.08;
-      this.rightLegPivot.rotation.z = 0.08;
-      // Bras détendus et posés confortablement sur les accoudoirs latéraux
-      this.leftArmPivot.rotation.x = -0.32;
-      this.rightArmPivot.rotation.x = -0.32;
-      this.leftArmPivot.rotation.z = 0.22;
-      this.rightArmPivot.rotation.z = -0.22;
-      this.bodyGroup.position.y = -0.60;
-      this.bodyGroup.rotation.x = -0.06; // Buste légèrement appuyé contre le dossier
-    } else {
-      this.bodyGroup.rotation.x = 0;
-      if (isOnLadder) {
+    if (isOnLadder) {
       // Escalade réaliste sur échelle
       if (Math.abs(ladderClimbSpeed) > 0.15) {
         this.climbPhase += dt * Math.abs(ladderClimbSpeed) * 4.2;
@@ -309,7 +324,6 @@ export class CharacterAvatar {
       this.rightArmPivot.rotation.z = -0.05;
       this.bodyGroup.position.y = -0.86;
     }
-  }
 
     // Animation du bras droit lors de la pose ou casse d'une brique
     if (this.isSwinging) {

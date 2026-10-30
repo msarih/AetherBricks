@@ -183,6 +183,8 @@ interactionHintEl.addEventListener('click', (e) => {
     showToast('Personnage debout');
     return;
   }
+
+  const aimDir = player.getAimDirection();
   const bed =
     (world.currentTarget?.removePos &&
       world.isBedAt(
@@ -191,7 +193,7 @@ interactionHintEl.addEventListener('click', (e) => {
         world.currentTarget.removePos.z
       )
       ? world.currentTarget.removePos
-      : null) ?? world.getNearbyBed(player.position, 3.2);
+      : null) ?? world.getFacingBed(player.position, aimDir, 2.5);
 
   if (bed) {
     player.toggleSleeping(bed);
@@ -208,7 +210,7 @@ interactionHintEl.addEventListener('click', (e) => {
         world.currentTarget.removePos.z
       )
       ? world.currentTarget.removePos
-      : null) ?? world.getNearbyChair(player.position, 3.2);
+      : null) ?? world.getFacingChair(player.position, aimDir, 2.2);
 
   if (chair) {
     player.toggleSitting(chair);
@@ -1086,18 +1088,22 @@ renderer.domElement.addEventListener('mousedown', (e) => {
 
     // Si on clique sur un lit, s'allonger immédiatement !
     if (hit?.removePos && world.isBedAt(hit.removePos.x, hit.removePos.y, hit.removePos.z)) {
-      player.toggleSleeping(hit.removePos);
-      sound.playSelect();
-      showToast('Allongé dans le grand lit • Appuyez sur E ou Déplacement pour vous réveiller');
-      return;
+      if (player.position.distanceTo(hit.removePos) <= 3.5) {
+        player.toggleSleeping(hit.removePos);
+        sound.playSelect();
+        showToast('Allongé dans le grand lit • Appuyez sur E ou Déplacement pour vous réveiller');
+        return;
+      }
     }
 
     // Si on clique sur un fauteuil, s'asseoir immédiatement !
     if (hit?.removePos && world.isChairAt(hit.removePos.x, hit.removePos.y, hit.removePos.z)) {
-      player.toggleSitting(hit.removePos);
-      sound.playSelect();
-      showToast('Assis sur le fauteuil • Appuyez sur E ou Déplacement pour vous relever');
-      return;
+      if (player.position.distanceTo(hit.removePos) <= 3.5) {
+        player.toggleSitting(hit.removePos);
+        sound.playSelect();
+        showToast('Assis sur le fauteuil • Appuyez sur E ou Déplacement pour vous relever');
+        return;
+      }
     }
 
     // Si le mode peinture est actif, permet de cliquer directement sur un mur de la scène pour le peindre immédiatement !
@@ -1373,11 +1379,13 @@ window.addEventListener('keydown', (e) => {
       return;
     }
 
-    // Lit visé directement par le réticule OU lit le plus proche (détection automatique)
+    const aimDir = player.getAimDirection();
+
+    // Lit visé directement par le réticule OU lit face au joueur
     const bed =
       (target?.removePos && world.isBedAt(target.removePos.x, target.removePos.y, target.removePos.z)
         ? target.removePos
-        : null) ?? world.getNearbyBed(player.position, 3.2);
+        : null) ?? world.getFacingBed(player.position, aimDir, 2.5);
 
     if (bed) {
       player.toggleSleeping(bed);
@@ -1386,11 +1394,11 @@ window.addEventListener('keydown', (e) => {
       return;
     }
 
-    // Chaise visée directement par le réticule OU chaise la plus proche (détection automatique)
+    // Chaise visée directement par le réticule OU chaise face au joueur
     const chair =
       (target?.removePos && world.isChairAt(target.removePos.x, target.removePos.y, target.removePos.z)
         ? target.removePos
-        : null) ?? world.getNearbyChair(player.position, 3.2);
+        : null) ?? world.getFacingChair(player.position, aimDir, 2.2);
 
     if (chair) {
       player.toggleSitting(chair);
@@ -1744,6 +1752,7 @@ function animate(now: number): void {
 
   crosshairEl.classList.toggle('active', world.currentTarget !== null);
 
+  const playerAimDir = player.getAimDirection();
   const targetedBed =
     world.currentTarget?.removePos &&
     world.isBedAt(
@@ -1754,7 +1763,10 @@ function animate(now: number): void {
       ? world.currentTarget.removePos
       : null;
 
-  const nearbyBed = targetedBed ?? world.getNearbyBed(player.position, 3.2);
+  const nearbyBed =
+    (targetedBed && player.position.distanceTo(targetedBed) <= 2.6
+      ? targetedBed
+      : null) ?? world.getFacingBed(player.position, playerAimDir, 2.5);
 
   const targetedChair =
     world.currentTarget?.removePos &&
@@ -1766,7 +1778,18 @@ function animate(now: number): void {
       ? world.currentTarget.removePos
       : null;
 
-  const nearbyChair = targetedChair ?? world.getNearbyChair(player.position, 3.2);
+  let validTargetedChair: THREE.Vector3 | null = null;
+  if (targetedChair && player.position.distanceTo(targetedChair) <= 2.3) {
+    const chairRot = world.getChairRotation(targetedChair.x, targetedChair.y, targetedChair.z);
+    const chairYaw = chairRot * (Math.PI / 2);
+    const chairFront = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), chairYaw);
+    const chairToPlayer = new THREE.Vector3(player.position.x - targetedChair.x, 0, player.position.z - targetedChair.z).normalize();
+    if (chairToPlayer.dot(chairFront) >= 0.05) {
+      validTargetedChair = targetedChair;
+    }
+  }
+
+  const nearbyChair = validTargetedChair ?? world.getFacingChair(player.position, playerAimDir, 2.2);
 
   if (player.isSleeping) {
     interactionHintEl.className = 'interaction-hint chair-hint';

@@ -20,8 +20,10 @@ export class PlayerController {
   public isLocked = false;
   public isSitting = false;
   private currentChairPos: THREE.Vector3 | null = null;
+  private preSitPosition: THREE.Vector3 | null = null;
   public isSleeping = false;
   private currentBedPos: THREE.Vector3 | null = null;
+  private preSleepPosition: THREE.Vector3 | null = null;
   public isInWater = false;
   public isOnLadder = false;
   public isSprinting = false;
@@ -195,8 +197,10 @@ export class PlayerController {
     this.characterFacingYaw = this.yaw;
     this.isSitting = false;
     this.currentChairPos = null;
+    this.preSitPosition = null;
     this.isSleeping = false;
     this.currentBedPos = null;
+    this.preSleepPosition = null;
     this.isFlying = false;
     this.clearKeys();
 
@@ -269,38 +273,29 @@ export class PlayerController {
     const chair = this.currentChairPos || this.position.clone();
     this.currentChairPos = null;
 
-    // Calculer la hauteur naturelle du sol ou plancher sous les pieds
-    const groundY = this.world.getGroundHeight(chair.x, chair.z, chair.y) + this.playerHeight * 0.5;
-
-    // Directions candidates pour poser le joueur debout hors du fauteuil (vers l'avant du regard, ou les 4 points cardinaux)
-    const forward = new THREE.Vector3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw)).normalize();
-    const candidates: THREE.Vector3[] = [
-      forward,
-      new THREE.Vector3(0, 0, -1),
-      new THREE.Vector3(0, 0, 1),
-      new THREE.Vector3(1, 0, 0),
-      new THREE.Vector3(-1, 0, 0),
-    ];
-
-    let placed = false;
-    for (const dir of candidates) {
-      for (const dist of [0.85, 1.15, 1.45]) {
-        const testX = chair.x + dir.x * dist;
-        const testZ = chair.z + dir.z * dist;
-        const testGroundY = this.world.getGroundHeight(testX, testZ, chair.y) + this.playerHeight * 0.5;
-        const testPos = new THREE.Vector3(testX, testGroundY, testZ);
-
-        if (!this.checkWorldCollision(testPos)) {
-          this.position.copy(testPos);
-          placed = true;
-          break;
-        }
-      }
-      if (placed) break;
+    // 1. Restaurer en priorité absolue la position pré-assise (intérieure et garantie libre)
+    if (this.preSitPosition && !this.checkWorldCollision(this.preSitPosition)) {
+      this.position.copy(this.preSitPosition);
+      this.preSitPosition = null;
+      this.velocity.set(0, 0, 0);
+      this.clearKeys();
+      this.syncCamera(0.016);
+      return;
     }
+    this.preSitPosition = null;
 
-    // Si entouré d'obstacles sur tous les côtés, surélever au-dessus du dossier
-    if (!placed) {
+    // 2. Repli sécurisé : poser le joueur debout immédiatement devant la chaise (à 0.72m dans la direction où la chaise fait face)
+    const chairRot = this.world.getChairRotation(chair.x, chair.y, chair.z);
+    const chairYaw = chairRot * (Math.PI / 2);
+    const forward = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), chairYaw);
+
+    const groundY = this.world.getGroundHeight(chair.x, chair.z, chair.y) + this.playerHeight * 0.5;
+    const testPos = chair.clone().addScaledVector(forward, 0.72);
+    testPos.y = groundY;
+
+    if (!this.checkWorldCollision(testPos)) {
+      this.position.copy(testPos);
+    } else {
       this.position.set(chair.x, chair.y + 1.25, chair.z);
     }
 
@@ -316,34 +311,34 @@ export class PlayerController {
     const bed = this.currentBedPos || this.position.clone();
     this.currentBedPos = null;
 
-    // Calculer la hauteur naturelle du sol ou plancher sous les pieds
-    const groundY = this.world.getGroundHeight(bed.x, bed.z, bed.y) + this.playerHeight * 0.5;
+    // 1. Restaurer en priorité absolue la position pré-sommeil (intérieure dans la chambre, garantie sans collision)
+    if (this.preSleepPosition && !this.checkWorldCollision(this.preSleepPosition)) {
+      this.position.copy(this.preSleepPosition);
+      this.preSleepPosition = null;
+      this.velocity.set(0, 0, 0);
+      this.clearKeys();
+      this.syncCamera(0.016);
+      return;
+    }
+    this.preSleepPosition = null;
 
-    // Directions candidates pour poser le joueur debout à côté du lit
-    const forward = new THREE.Vector3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw)).normalize();
-    const candidates: THREE.Vector3[] = [
-      forward,
-      new THREE.Vector3(1, 0, 0),
-      new THREE.Vector3(-1, 0, 0),
-      new THREE.Vector3(0, 0, -1),
-      new THREE.Vector3(0, 0, 1),
-    ];
+    // 2. Repli sécurisé : poser le joueur debout sur le côté intérieur libre du lit (sans jamais traverser un mur !)
+    const groundY = this.world.getGroundHeight(bed.x, bed.z, bed.y) + this.playerHeight * 0.5;
+    const bedRot = this.world.getBedRotation(bed.x, bed.y, bed.z);
+    const bedYaw = bedRot * (Math.PI / 2);
+    const sideLeft = new THREE.Vector3(-1, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), bedYaw);
+    const sideRight = sideLeft.clone().negate();
+    const foot = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), bedYaw);
 
     let placed = false;
-    for (const dir of candidates) {
-      for (const dist of [1.1, 1.45, 1.85]) {
-        const testX = bed.x + dir.x * dist;
-        const testZ = bed.z + dir.z * dist;
-        const testGroundY = this.world.getGroundHeight(testX, testZ, bed.y) + this.playerHeight * 0.5;
-        const testPos = new THREE.Vector3(testX, testGroundY, testZ);
-
-        if (!this.checkWorldCollision(testPos)) {
-          this.position.copy(testPos);
-          placed = true;
-          break;
-        }
+    for (const dir of [sideLeft, sideRight, foot]) {
+      const testPos = bed.clone().addScaledVector(dir, 0.85);
+      testPos.y = groundY;
+      if (!this.checkWorldCollision(testPos)) {
+        this.position.copy(testPos);
+        placed = true;
+        break;
       }
-      if (placed) break;
     }
 
     if (!placed) {
@@ -364,6 +359,9 @@ export class PlayerController {
       this.standUp();
     }
     if (bedPos) {
+      // Sauvegarder la position exacte où se trouvait le joueur avant de dormir
+      this.preSleepPosition = this.position.clone();
+
       this.isSleeping = true;
       this.isFlying = false;
       this.currentBedPos = bedPos.clone();
@@ -378,9 +376,9 @@ export class PlayerController {
       this.yaw = bedYaw;
       this.pitch = 0.35;
 
-      // Centrer le joueur sur le matelas du lit
+      // Positionner le joueur sur le lit (au niveau du sol de base du bloc lit)
       const liePos = bedPos.clone();
-      liePos.y = bedPos.y + 0.35;
+      liePos.y = bedPos.y;
 
       this.position.copy(liePos);
       this.syncCamera(0.016);
@@ -398,6 +396,9 @@ export class PlayerController {
       return false;
     }
     if (chairPos) {
+      // Sauvegarder la position exacte où se trouvait le joueur avant de s'asseoir
+      this.preSitPosition = this.position.clone();
+
       this.isSitting = true;
       this.isFlying = false;
       this.currentChairPos = chairPos.clone();
@@ -412,11 +413,9 @@ export class PlayerController {
       this.yaw = chairYaw;
       this.pitch = 0.02;
 
-      // Positionner le personnage au creux du dossier avec les jambes en avant
-      const forward = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), chairYaw);
-      const backward = forward.clone().negate();
-      const sitPos = chairPos.clone().addScaledVector(backward, 0.06);
-      sitPos.y = chairPos.y + 0.12;
+      // Positionner le joueur sur le fauteuil
+      const sitPos = chairPos.clone();
+      sitPos.y = chairPos.y;
 
       this.position.copy(sitPos);
       this.syncCamera(0.016);

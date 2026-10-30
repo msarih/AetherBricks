@@ -1097,7 +1097,7 @@ export class VoxelWorld {
     const rx = Math.round(x);
     const ry = Math.round(y);
     const rz = Math.round(z);
-    const item = this.bricks.get(`main:${rx},${ry},${rz}`);
+    const item = this.findAnyItemAt(rx, ry, rz, OBJ_TYPE_CHAIR);
     return Boolean(item && isChair(item.entry.type));
   }
 
@@ -1105,38 +1105,15 @@ export class VoxelWorld {
     const rx = Math.round(x);
     const ry = Math.round(y);
     const rz = Math.round(z);
-    const item = this.bricks.get(`main:${rx},${ry},${rz}`);
+    const item = this.findAnyItemAt(rx, ry, rz, OBJ_TYPE_CHAIR);
     return item?.entry.rot ?? 0;
-  }
-
-  /**
-   * Trouve le fauteuil / canapé interactif le plus proche du joueur.
-   * Permet de s'asseoir sans avoir besoin d'aligner le réticule au millimètre près !
-   */
-  public getNearbyChair(playerPos: THREE.Vector3, maxDist = 3.2): THREE.Vector3 | null {
-    let closestChair: THREE.Vector3 | null = null;
-    let closestDistSq = maxDist * maxDist;
-
-    for (const item of this.uniqueItems) {
-      if (isChair(item.entry.type)) {
-        const dx = item.entry.x - playerPos.x;
-        const dy = (item.entry.y + 0.2) - playerPos.y;
-        const dz = item.entry.z - playerPos.z;
-        const distSq = dx * dx + dy * dy + dz * dz;
-        if (distSq < closestDistSq) {
-          closestDistSq = distSq;
-          closestChair = new THREE.Vector3(item.entry.x, item.entry.y, item.entry.z);
-        }
-      }
-    }
-    return closestChair;
   }
 
   public isBedAt(x: number, y: number, z: number): boolean {
     const rx = Math.round(x);
     const ry = Math.round(y);
     const rz = Math.round(z);
-    const item = this.bricks.get(`main:${rx},${ry},${rz}`);
+    const item = this.findAnyItemAt(rx, ry, rz, OBJ_TYPE_BED);
     return Boolean(item && isBed(item.entry.type));
   }
 
@@ -1144,31 +1121,115 @@ export class VoxelWorld {
     const rx = Math.round(x);
     const ry = Math.round(y);
     const rz = Math.round(z);
-    const item = this.bricks.get(`main:${rx},${ry},${rz}`);
+    const item = this.findAnyItemAt(rx, ry, rz, OBJ_TYPE_BED);
     return item?.entry.rot ?? 0;
   }
 
   /**
-   * Trouve le lit interactif le plus proche du joueur.
-   * Permet de s'allonger et dormir sans avoir besoin d'aligner le réticule au millimètre près !
+   * Trouve le fauteuil face auquel se trouve le joueur.
+   * Ne propose de s'asseoir QUE si le joueur est EN FACE du fauteuil (pas derrière le dossier).
    */
-  public getNearbyBed(playerPos: THREE.Vector3, maxDist = 3.2): THREE.Vector3 | null {
-    let closestBed: THREE.Vector3 | null = null;
-    let closestDistSq = maxDist * maxDist;
+  public getFacingChair(
+    playerPos: THREE.Vector3,
+    aimDir: THREE.Vector3,
+    maxDist = 2.2
+  ): THREE.Vector3 | null {
+    let bestChair: THREE.Vector3 | null = null;
+    let bestScore = -1;
 
     for (const item of this.uniqueItems) {
-      if (isBed(item.entry.type)) {
-        const dx = item.entry.x - playerPos.x;
-        const dy = (item.entry.y + 0.2) - playerPos.y;
-        const dz = item.entry.z - playerPos.z;
-        const distSq = dx * dx + dy * dy + dz * dz;
-        if (distSq < closestDistSq) {
-          closestDistSq = distSq;
-          closestBed = new THREE.Vector3(item.entry.x, item.entry.y, item.entry.z);
+      if (isChair(item.entry.type)) {
+        const cx = item.entry.x;
+        const cy = item.entry.y;
+        const cz = item.entry.z;
+
+        const dx = cx - playerPos.x;
+        const dy = (cy + 0.1) - playerPos.y;
+        const dz = cz - playerPos.z;
+        const dist = Math.hypot(dx, dy, dz);
+        if (dist > maxDist) continue;
+
+        // Le joueur doit regarder en direction du fauteuil
+        const toChair = new THREE.Vector3(dx, dy, dz).normalize();
+        const lookDot = aimDir.dot(toChair);
+        if (lookDot < 0.45) continue;
+
+        // Le joueur doit se situer du côté de l'assise (devant le fauteuil), JAMAIS derrière le dossier !
+        const chairRot = item.entry.rot ?? 0;
+        const chairYaw = chairRot * (Math.PI / 2);
+        // L'avant de la chaise pointe vers (0, 0, -1) tourné de chairYaw
+        const chairFront = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), chairYaw);
+
+        const chairToPlayer = new THREE.Vector3(playerPos.x - cx, 0, playerPos.z - cz).normalize();
+        const frontDot = chairToPlayer.dot(chairFront);
+
+        // Si le joueur est derrière le dossier (frontDot < 0.1), NE PAS proposer de s'asseoir
+        if (frontDot < 0.1) continue;
+
+        const score = lookDot * 2.0 + frontDot * 1.5 - dist;
+        if (score > bestScore) {
+          bestScore = score;
+          bestChair = new THREE.Vector3(cx, cy, cz);
         }
       }
     }
-    return closestBed;
+    return bestChair;
+  }
+
+  /**
+   * Trouve le lit face auquel se trouve le joueur.
+   * Ne propose de dormir QUE si le joueur regarde le lit et n'est pas bloqué derrière la tête de lit.
+   */
+  public getFacingBed(
+    playerPos: THREE.Vector3,
+    aimDir: THREE.Vector3,
+    maxDist = 2.5
+  ): THREE.Vector3 | null {
+    let bestBed: THREE.Vector3 | null = null;
+    let bestScore = -1;
+
+    for (const item of this.uniqueItems) {
+      if (isBed(item.entry.type)) {
+        const bx = item.entry.x;
+        const by = item.entry.y;
+        const bz = item.entry.z;
+
+        const dx = bx - playerPos.x;
+        const dy = (by + 0.1) - playerPos.y;
+        const dz = bz - playerPos.z;
+        const dist = Math.hypot(dx, dy, dz);
+        if (dist > maxDist) continue;
+
+        // Le joueur doit regarder en direction du lit
+        const toBed = new THREE.Vector3(dx, dy, dz).normalize();
+        const lookDot = aimDir.dot(toBed);
+        if (lookDot < 0.4) continue;
+
+        // Ne pas proposer si le joueur est derrière la tête de lit (+Z local)
+        const bedRot = item.entry.rot ?? 0;
+        const bedYaw = bedRot * (Math.PI / 2);
+        const headboardDir = new THREE.Vector3(0, 0, 1).applyAxisAngle(new THREE.Vector3(0, 1, 0), bedYaw);
+
+        const bedToPlayer = new THREE.Vector3(playerPos.x - bx, 0, playerPos.z - bz);
+        const headDot = bedToPlayer.dot(headboardDir);
+        if (headDot > 0.75) continue; // Derrière la tête de lit
+
+        const score = lookDot * 2.0 - dist;
+        if (score > bestScore) {
+          bestScore = score;
+          bestBed = new THREE.Vector3(bx, by, bz);
+        }
+      }
+    }
+    return bestBed;
+  }
+
+  public getNearbyChair(playerPos: THREE.Vector3, maxDist = 2.2): THREE.Vector3 | null {
+    return this.getFacingChair(playerPos, new THREE.Vector3(0, 0, -1), maxDist);
+  }
+
+  public getNearbyBed(playerPos: THREE.Vector3, maxDist = 2.5): THREE.Vector3 | null {
+    return this.getFacingBed(playerPos, new THREE.Vector3(0, 0, -1), maxDist);
   }
 
   public hasLadderAt(x: number, y: number, z: number): boolean {
