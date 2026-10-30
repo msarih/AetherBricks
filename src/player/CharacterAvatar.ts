@@ -191,12 +191,17 @@ export class CharacterAvatar {
     this.root.visible = visible;
     this.root.position.copy(position);
 
-    // Rotation 360° fluide vers la direction choisie par les flèches directionnelles (Haut, Bas, Gauche, Droite)
-    let yawDiff = targetFacingYaw - this.currentBodyYaw;
-    while (yawDiff > Math.PI) yawDiff -= Math.PI * 2;
-    while (yawDiff < -Math.PI) yawDiff += Math.PI * 2;
-    this.currentBodyYaw += yawDiff * Math.min(1, dt * 16);
-    this.root.rotation.y = this.currentBodyYaw;
+    // Rotation 360° fluide vers la direction choisie (verrouillée fermement sur l'orientation du fauteuil si assis)
+    if (isSitting) {
+      this.currentBodyYaw = targetFacingYaw;
+      this.root.rotation.y = targetFacingYaw;
+    } else {
+      let yawDiff = targetFacingYaw - this.currentBodyYaw;
+      while (yawDiff > Math.PI) yawDiff -= Math.PI * 2;
+      while (yawDiff < -Math.PI) yawDiff += Math.PI * 2;
+      this.currentBodyYaw += yawDiff * Math.min(1, dt * 16);
+      this.root.rotation.y = this.currentBodyYaw;
+    }
 
     // La tête regarde dans la direction où fait face le personnage
     this.headPivot.rotation.y = 0;
@@ -204,14 +209,21 @@ export class CharacterAvatar {
 
     // Cycle d'animation des jambes et des bras
     if (isSitting) {
-      this.leftLegPivot.rotation.x = -Math.PI * 0.48;
-      this.rightLegPivot.rotation.x = -Math.PI * 0.48;
+      // Jambes pliées naturellement vers le sol devant le fauteuil
+      this.leftLegPivot.rotation.x = -Math.PI * 0.39;
+      this.rightLegPivot.rotation.x = -Math.PI * 0.39;
       this.leftLegPivot.rotation.z = -0.08;
       this.rightLegPivot.rotation.z = 0.08;
-      this.leftArmPivot.rotation.x = -0.25;
-      this.rightArmPivot.rotation.x = -0.25;
-      this.bodyGroup.position.y = -0.62;
-    } else if (isOnLadder) {
+      // Bras détendus et posés confortablement sur les accoudoirs latéraux
+      this.leftArmPivot.rotation.x = -0.32;
+      this.rightArmPivot.rotation.x = -0.32;
+      this.leftArmPivot.rotation.z = 0.22;
+      this.rightArmPivot.rotation.z = -0.22;
+      this.bodyGroup.position.y = -0.60;
+      this.bodyGroup.rotation.x = -0.06; // Buste légèrement appuyé contre le dossier
+    } else {
+      this.bodyGroup.rotation.x = 0;
+      if (isOnLadder) {
       // Escalade réaliste sur échelle
       if (Math.abs(ladderClimbSpeed) > 0.15) {
         this.climbPhase += dt * Math.abs(ladderClimbSpeed) * 4.2;
@@ -265,6 +277,7 @@ export class CharacterAvatar {
       this.rightArmPivot.rotation.z = -0.05;
       this.bodyGroup.position.y = -0.86;
     }
+  }
 
     // Animation du bras droit lors de la pose ou casse d'une brique
     if (this.isSwinging) {

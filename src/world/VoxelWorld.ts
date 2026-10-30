@@ -425,7 +425,7 @@ export class VoxelWorld {
     return `main:${rx},${ry},${rz}`;
   }
 
-  private findAnyItemAt(x: number, y: number, z: number, preferredType?: number | null): PlacedItem | undefined {
+  public findAnyItemAt(x: number, y: number, z: number, preferredType?: number | null): PlacedItem | undefined {
     const rx = Math.round(x);
     const ry = Math.round(y);
     const rz = Math.round(z);
@@ -1097,6 +1097,14 @@ export class VoxelWorld {
     const rz = Math.round(z);
     const item = this.bricks.get(`main:${rx},${ry},${rz}`);
     return Boolean(item && isChair(item.entry.type));
+  }
+
+  public getChairRotation(x: number, y: number, z: number): number {
+    const rx = Math.round(x);
+    const ry = Math.round(y);
+    const rz = Math.round(z);
+    const item = this.bricks.get(`main:${rx},${ry},${rz}`);
+    return item?.entry.rot ?? 0;
   }
 
   /**

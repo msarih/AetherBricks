@@ -311,7 +311,24 @@ export class PlayerController {
       this.isFlying = false;
       this.currentChairPos = chairPos.clone();
       this.velocity.set(0, 0, 0);
-      this.position.set(chairPos.x, chairPos.y + 0.14, chairPos.z);
+
+      // Récupérer l'orientation réelle du fauteuil dans le monde
+      const chairRot = this.world.getChairRotation(chairPos.x, chairPos.y, chairPos.z);
+      const chairYaw = chairRot * (Math.PI / 2);
+
+      // Aligner immédiatement le regard et le corps du personnage face à l'avant du fauteuil
+      this.characterFacingYaw = chairYaw;
+      this.yaw = chairYaw;
+      this.pitch = 0.02;
+
+      // Positionner le personnage au creux du dossier avec les jambes en avant
+      const forward = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), chairYaw);
+      const backward = forward.clone().negate();
+      const sitPos = chairPos.clone().addScaledVector(backward, 0.06);
+      sitPos.y = chairPos.y + 0.12;
+
+      this.position.copy(sitPos);
+      this.syncCamera(0.016);
       return true;
     }
     return false;
