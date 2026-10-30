@@ -181,7 +181,8 @@ export class PlayerController {
   public resetPosition(spawnPos?: { x: number; y: number; z: number; yaw?: number; pitch?: number }): void {
     const x = spawnPos?.x ?? 0;
     const z = spawnPos?.z ?? 6;
-    const groundY = this.world.getTerrainHeightAt(x, z) + this.playerHeight * 0.5;
+    const feetEstimate = spawnPos?.y !== undefined ? spawnPos.y - this.playerHeight * 0.5 : 10;
+    const groundY = this.world.getGroundHeight(x, z, feetEstimate) + this.playerHeight * 0.5;
     let y = spawnPos?.y ?? groundY;
     if (y < groundY) y = groundY;
 
@@ -242,24 +243,15 @@ export class PlayerController {
       return true;
     }
 
-    // 2. Collision avec les blocs de construction (briques, dalles, toits, meubles...)
-    const minX = Math.floor(pos.x - this.playerRadius + 0.5);
-    const maxX = Math.floor(pos.x + this.playerRadius + 0.5);
-    const minY = Math.floor(pos.y - this.playerHeight * 0.5 + 0.5);
-    const maxY = Math.floor(pos.y + this.playerHeight * 0.5 + 0.5);
-    const minZ = Math.floor(pos.z - this.playerRadius + 0.5);
-    const maxZ = Math.floor(pos.z + this.playerRadius + 0.5);
+    // 2. Collision solide précise avec les voxels (murs, plafonds, toits, triangles...)
+    const pMinX = pos.x - this.playerRadius;
+    const pMaxX = pos.x + this.playerRadius;
+    const pMinY = pos.y - this.playerHeight * 0.5;
+    const pMaxY = pos.y + this.playerHeight * 0.5;
+    const pMinZ = pos.z - this.playerRadius;
+    const pMaxZ = pos.z + this.playerRadius;
 
-    for (let x = minX; x <= maxX; x++) {
-      for (let y = minY; y <= maxY; y++) {
-        for (let z = minZ; z <= maxZ; z++) {
-          if (this.world.hasBrickAt(x, y, z)) {
-            return true;
-          }
-        }
-      }
-    }
-    return false;
+    return this.world.checkSolidCollision(pMinX, pMaxX, pMinY, pMaxY, pMinZ, pMaxZ);
   }
 
   public standUp(): void {
@@ -269,8 +261,8 @@ export class PlayerController {
     const chair = this.currentChairPos || this.position.clone();
     this.currentChairPos = null;
 
-    // Calculer la hauteur naturelle du sol sous les pieds
-    const groundY = this.world.getTerrainHeightAt(chair.x, chair.z) + this.playerHeight * 0.5;
+    // Calculer la hauteur naturelle du sol ou plancher sous les pieds
+    const groundY = this.world.getGroundHeight(chair.x, chair.z, chair.y) + this.playerHeight * 0.5;
 
     // Directions candidates pour poser le joueur debout hors du fauteuil (vers l'avant du regard, ou les 4 points cardinaux)
     const forward = new THREE.Vector3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw)).normalize();
@@ -287,7 +279,7 @@ export class PlayerController {
       for (const dist of [0.85, 1.15, 1.45]) {
         const testX = chair.x + dir.x * dist;
         const testZ = chair.z + dir.z * dist;
-        const testGroundY = this.world.getTerrainHeightAt(testX, testZ) + this.playerHeight * 0.5;
+        const testGroundY = this.world.getGroundHeight(testX, testZ, chair.y) + this.playerHeight * 0.5;
         const testPos = new THREE.Vector3(testX, testGroundY, testZ);
 
         if (!this.checkWorldCollision(testPos)) {
@@ -503,7 +495,8 @@ export class PlayerController {
     const nextX = this.position.clone();
     nextX.x += this.velocity.x * clampedDt;
 
-    const targetGroundYX = this.world.getTerrainHeightAt(nextX.x, nextX.z) + this.playerHeight * 0.5;
+    const feetY = this.position.y - this.playerHeight * 0.5;
+    const targetGroundYX = this.world.getGroundHeight(nextX.x, nextX.z, feetY) + this.playerHeight * 0.5;
     if (this.isGrounded && !this.isFlying) {
       const slopeDeltaX = targetGroundYX - this.position.y;
       if (slopeDeltaX > 0 && slopeDeltaX <= 0.65) {
@@ -518,8 +511,8 @@ export class PlayerController {
       }
     } else if (this.isGrounded && this.hasStepUpStairOrSlopeAt(nextX)) {
       const stepX = nextX.clone();
-      stepX.y += 1.02;
-      if (!this.checkWorldCollision(stepX)) {
+      stepX.y = targetGroundYX;
+      if (targetGroundYX - this.position.y <= 1.05 && !this.checkWorldCollision(stepX)) {
         this.position.copy(stepX);
       } else {
         this.velocity.x = 0;
@@ -532,7 +525,7 @@ export class PlayerController {
     const nextZ = this.position.clone();
     nextZ.z += this.velocity.z * clampedDt;
 
-    const targetGroundYZ = this.world.getTerrainHeightAt(this.position.x, nextZ.z) + this.playerHeight * 0.5;
+    const targetGroundYZ = this.world.getGroundHeight(this.position.x, nextZ.z, feetY) + this.playerHeight * 0.5;
     if (this.isGrounded && !this.isFlying) {
       const slopeDeltaZ = targetGroundYZ - this.position.y;
       if (slopeDeltaZ > 0 && slopeDeltaZ <= 0.65) {
@@ -547,8 +540,8 @@ export class PlayerController {
       }
     } else if (this.isGrounded && this.hasStepUpStairOrSlopeAt(nextZ)) {
       const stepZ = nextZ.clone();
-      stepZ.y += 1.02;
-      if (!this.checkWorldCollision(stepZ)) {
+      stepZ.y = targetGroundYZ;
+      if (targetGroundYZ - this.position.y <= 1.05 && !this.checkWorldCollision(stepZ)) {
         this.position.copy(stepZ);
       } else {
         this.velocity.z = 0;
@@ -557,10 +550,11 @@ export class PlayerController {
       this.velocity.z = 0;
     }
 
-    // Apply Y movement (with real-time terrain collision on hills and ground plane)
+    // Apply Y movement (with real-time terrain, ceiling and roof collision)
     const nextY = this.position.clone();
     nextY.y += this.velocity.y * clampedDt;
-    const terrainY = this.world.getTerrainHeightAt(this.position.x, this.position.z);
+    const currentFeetY = this.position.y - this.playerHeight * 0.5;
+    const terrainY = this.world.getGroundHeight(this.position.x, this.position.z, currentFeetY);
     const groundMinY = terrainY + this.playerHeight * 0.5;
 
     this.isGrounded = false;
@@ -577,9 +571,9 @@ export class PlayerController {
       this.velocity.y = 0;
     }
 
-    // Maintien au sol en descente de colline (évite les soubresauts)
+    // Maintien au sol en descente de colline ou de toit (évite les soubresauts)
     if (this.isGrounded && !this.isFlying && this.isMovingInput) {
-      const currentSnapY = this.world.getTerrainHeightAt(this.position.x, this.position.z) + this.playerHeight * 0.5;
+      const currentSnapY = this.world.getGroundHeight(this.position.x, this.position.z, this.position.y - this.playerHeight * 0.5) + this.playerHeight * 0.5;
       if (Math.abs(this.position.y - currentSnapY) < 0.28) {
         this.position.y = currentSnapY;
         this.velocity.y = 0;

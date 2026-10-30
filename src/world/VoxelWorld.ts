@@ -885,11 +885,134 @@ export class VoxelWorld {
     return this.countryside ? this.countryside.hasObstacleAt(pos, radius, height) : false;
   }
 
+  public getGroundHeight(x: number, z: number, maxFeetY: number): number {
+    let highest = this.getTerrainHeightAt(x, z);
+
+    const rx = Math.round(x);
+    const rz = Math.round(z);
+
+    const startY = Math.min(30, Math.floor(maxFeetY + 0.5));
+    const endY = Math.max(-25, Math.floor(highest - 0.5));
+
+    for (let y = startY; y >= endY; y--) {
+      // 1. Dalle de plafond à y : surface supérieure solide à y + 0.50
+      const ceilItem = this.bricks.get(`ceil:${rx},${y},${rz}`);
+      if (ceilItem) {
+        const topY = y + 0.50;
+        if (topY <= maxFeetY + 0.35 && topY > highest) {
+          highest = topY;
+        }
+      }
+
+      // 2. Bloc principal, toiture ou triangle à y : surface supérieure solide à y + 0.50
+      const mainItem = this.bricks.get(`main:${rx},${y},${rz}`);
+      if (mainItem) {
+        const t = mainItem.entry.type;
+        if (
+          !isWater(t) &&
+          !isLadder(t) &&
+          !isWildflowers(t) &&
+          !(t === BRICK_TYPE_DOOR_OAK && mainItem.entry.open)
+        ) {
+          const topY = y + 0.50;
+          if (topY <= maxFeetY + 0.35 && topY > highest) {
+            highest = topY;
+          }
+        }
+      }
+
+      // 3. Dalle de sol à y : surface supérieure à y - 0.34
+      const floorItem = this.bricks.get(`floor:${rx},${y},${rz}`);
+      if (floorItem) {
+        const topY = y - 0.34;
+        if (topY <= maxFeetY + 0.35 && topY > highest) {
+          highest = topY;
+        }
+      }
+    }
+
+    return highest;
+  }
+
+  public checkSolidCollision(
+    minX: number,
+    maxX: number,
+    minY: number,
+    maxY: number,
+    minZ: number,
+    maxZ: number
+  ): boolean {
+    const minCellX = Math.floor(minX + 0.5);
+    const maxCellX = Math.floor(maxX + 0.5);
+    const minCellY = Math.floor(minY + 0.5);
+    const maxCellY = Math.floor(maxY + 0.5);
+    const minCellZ = Math.floor(minZ + 0.5);
+    const maxCellZ = Math.floor(maxZ + 0.5);
+
+    for (let x = minCellX; x <= maxCellX; x++) {
+      for (let y = minCellY; y <= maxCellY; y++) {
+        for (let z = minCellZ; z <= maxCellZ; z++) {
+          // 1. Plafonds (dalles de plafond posées en haut de la case : [y + 0.34, y + 0.50])
+          const ceilItem = this.bricks.get(`ceil:${x},${y},${z}`);
+          if (ceilItem) {
+            const cMinY = y + 0.34;
+            const cMaxY = y + 0.50;
+            if (maxY > cMinY && minY < cMaxY) {
+              if (maxX > x - 0.5 && minX < x + 0.5 && maxZ > z - 0.5 && minZ < z + 0.5) {
+                return true;
+              }
+            }
+          }
+
+          // 2. Sols (dalles de sol posées en bas de la case : [y - 0.50, y - 0.34])
+          const floorItem = this.bricks.get(`floor:${x},${y},${z}`);
+          if (floorItem) {
+            const fMinY = y - 0.50;
+            const fMaxY = y - 0.34;
+            if (maxY > fMinY && minY < fMaxY) {
+              if (maxX > x - 0.5 && minX < x + 0.5 && maxZ > z - 0.5 && minZ < z + 0.5) {
+                return true;
+              }
+            }
+          }
+
+          // 3. Blocs principaux ("main:x,y,z") : briques, toitures, triangles, piliers, etc.
+          const mainItem = this.bricks.get(`main:${x},${y},${z}`);
+          if (mainItem) {
+            const t = mainItem.entry.type;
+            if (
+              (t === BRICK_TYPE_DOOR_OAK && mainItem.entry.open) ||
+              isLadder(t) ||
+              isWater(t) ||
+              isCarpet(t) ||
+              isSteppingStone(t) ||
+              isWildflowers(t)
+            ) {
+              continue;
+            }
+
+            const bMinY = y - 0.50;
+            const bMaxY = y + 0.50;
+            if (maxY > bMinY && minY < bMaxY) {
+              if (maxX > x - 0.5 && minX < x + 0.5 && maxZ > z - 0.5 && minZ < z + 0.5) {
+                return true;
+              }
+            }
+          }
+        }
+      }
+    }
+    return false;
+  }
+
   public hasBrickAt(x: number, y: number, z: number): boolean {
     const rx = Math.round(x);
     const ry = Math.round(y);
     const rz = Math.round(z);
-    const item = this.bricks.get(`main:${rx},${ry},${rz}`);
+    const item =
+      this.bricks.get(`main:${rx},${ry},${rz}`) ||
+      this.bricks.get(`ceil:${rx},${ry},${rz}`) ||
+      this.bricks.get(`floor:${rx},${ry},${rz}`);
     if (!item) return false;
     if (item.entry.type === BRICK_TYPE_DOOR_OAK && item.entry.open) {
       return false;

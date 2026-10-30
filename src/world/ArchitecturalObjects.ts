@@ -83,7 +83,8 @@ export function isStairOrSlope(type: number): boolean {
     type === OBJ_TYPE_STAIRS_WHITE ||
     type === OBJ_TYPE_STAIRS_OAK ||
     type === OBJ_TYPE_TRIANGLE_WHITE ||
-    type === OBJ_TYPE_TRIANGLE_OAK
+    type === OBJ_TYPE_TRIANGLE_OAK ||
+    type === OBJ_TYPE_GABLE_ROOF
   );
 }
 
