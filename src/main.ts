@@ -171,12 +171,35 @@ const toastEl = document.getElementById('toast')!;
 
 interactionHintEl.addEventListener('click', (e) => {
   e.stopPropagation();
+  if (player.isSleeping) {
+    player.toggleSleeping();
+    sound.playSelect();
+    showToast('Personnage réveillé');
+    return;
+  }
   if (player.isSitting) {
     player.toggleSitting();
     sound.playSelect();
     showToast('Personnage debout');
     return;
   }
+  const bed =
+    (world.currentTarget?.removePos &&
+      world.isBedAt(
+        world.currentTarget.removePos.x,
+        world.currentTarget.removePos.y,
+        world.currentTarget.removePos.z
+      )
+      ? world.currentTarget.removePos
+      : null) ?? world.getNearbyBed(player.position, 3.2);
+
+  if (bed) {
+    player.toggleSleeping(bed);
+    sound.playSelect();
+    showToast('Allongé dans le grand lit • Appuyez sur E ou Déplacement pour vous réveiller');
+    return;
+  }
+
   const chair =
     (world.currentTarget?.removePos &&
       world.isChairAt(
@@ -1061,6 +1084,14 @@ renderer.domElement.addEventListener('mousedown', (e) => {
     );
     const hit = world.raycastFromMouse(mouse, camera);
 
+    // Si on clique sur un lit, s'allonger immédiatement !
+    if (hit?.removePos && world.isBedAt(hit.removePos.x, hit.removePos.y, hit.removePos.z)) {
+      player.toggleSleeping(hit.removePos);
+      sound.playSelect();
+      showToast('Allongé dans le grand lit • Appuyez sur E ou Déplacement pour vous réveiller');
+      return;
+    }
+
     // Si on clique sur un fauteuil, s'asseoir immédiatement !
     if (hit?.removePos && world.isChairAt(hit.removePos.x, hit.removePos.y, hit.removePos.z)) {
       player.toggleSitting(hit.removePos);
@@ -1316,8 +1347,15 @@ window.addEventListener('keydown', (e) => {
   }
 
   if (e.code === 'KeyE' && player.isLocked) {
+    if (player.isSleeping) {
+      player.toggleSleeping();
+      sound.playSelect();
+      showToast('Personnage réveillé');
+      return;
+    }
     if (player.isSitting) {
       player.toggleSitting();
+      sound.playSelect();
       showToast('Personnage debout');
       return;
     }
@@ -1332,6 +1370,19 @@ window.addEventListener('keydown', (e) => {
         sound.playDoor(newState);
         player.triggerActionAnimation();
       }
+      return;
+    }
+
+    // Lit visé directement par le réticule OU lit le plus proche (détection automatique)
+    const bed =
+      (target?.removePos && world.isBedAt(target.removePos.x, target.removePos.y, target.removePos.z)
+        ? target.removePos
+        : null) ?? world.getNearbyBed(player.position, 3.2);
+
+    if (bed) {
+      player.toggleSleeping(bed);
+      sound.playSelect();
+      showToast('Allongé dans le grand lit • Appuyez sur E ou Déplacement pour vous réveiller');
       return;
     }
 
@@ -1692,6 +1743,19 @@ function animate(now: number): void {
   sunLight.target.updateMatrixWorld();
 
   crosshairEl.classList.toggle('active', world.currentTarget !== null);
+
+  const targetedBed =
+    world.currentTarget?.removePos &&
+    world.isBedAt(
+      world.currentTarget.removePos.x,
+      world.currentTarget.removePos.y,
+      world.currentTarget.removePos.z
+    )
+      ? world.currentTarget.removePos
+      : null;
+
+  const nearbyBed = targetedBed ?? world.getNearbyBed(player.position, 3.2);
+
   const targetedChair =
     world.currentTarget?.removePos &&
     world.isChairAt(
@@ -1704,9 +1768,17 @@ function animate(now: number): void {
 
   const nearbyChair = targetedChair ?? world.getNearbyChair(player.position, 3.2);
 
-  if (player.isSitting) {
+  if (player.isSleeping) {
+    interactionHintEl.className = 'interaction-hint chair-hint';
+    interactionHintEl.innerHTML = `<span class="hint-icon">☀️</span> <kbd>E</kbd> ou <kbd>Déplacement</kbd> <span>Se réveiller</span>`;
+    interactionHintEl.classList.remove('hidden');
+  } else if (player.isSitting) {
     interactionHintEl.className = 'interaction-hint chair-hint';
     interactionHintEl.innerHTML = `<span class="hint-icon">🧍</span> <kbd>E</kbd> ou <kbd>Déplacement</kbd> <span>Se relever</span>`;
+    interactionHintEl.classList.remove('hidden');
+  } else if (nearbyBed) {
+    interactionHintEl.className = 'interaction-hint chair-hint';
+    interactionHintEl.innerHTML = `<span class="hint-icon">🛏️</span> <kbd>E</kbd> <span>Dormir dans le lit</span>`;
     interactionHintEl.classList.remove('hidden');
   } else if (nearbyChair) {
     interactionHintEl.className = 'interaction-hint chair-hint';
@@ -1729,7 +1801,9 @@ function animate(now: number): void {
 
   statBricksEl.textContent = String(world.getBrickCount());
   statPosEl.textContent = `${Math.round(player.position.x)}, ${Math.round(player.position.y)}, ${Math.round(player.position.z)}`;
-  statModeEl.textContent = player.isSitting
+  statModeEl.textContent = player.isSleeping
+    ? 'ENDORMI 🌙'
+    : player.isSitting
     ? 'ASSIS'
     : player.isInWater
     ? (player.isSprinting ? 'NAGE RAPIDE' : 'NAGE')

@@ -186,13 +186,14 @@ export class CharacterAvatar {
     visible: boolean,
     isSitting = false,
     isOnLadder = false,
-    ladderClimbSpeed = 0
+    ladderClimbSpeed = 0,
+    isSleeping = false
   ): void {
     this.root.visible = visible;
     this.root.position.copy(position);
 
-    // Rotation 360° fluide vers la direction choisie (verrouillée fermement sur l'orientation du fauteuil si assis)
-    if (isSitting) {
+    // Rotation 360° fluide vers la direction choisie (verrouillée fermement sur l'orientation du fauteuil ou lit si assis/couché)
+    if (isSitting || isSleeping) {
       this.currentBodyYaw = targetFacingYaw;
       this.root.rotation.y = targetFacingYaw;
     } else {
@@ -202,6 +203,37 @@ export class CharacterAvatar {
       this.currentBodyYaw += yawDiff * Math.min(1, dt * 16);
       this.root.rotation.y = this.currentBodyYaw;
     }
+
+    if (isSleeping) {
+      this.heldBrickMesh.visible = false;
+      // Respiration paisible et douce dans le lit
+      this.walkPhase += dt * 1.5;
+      const sleepBreathe = Math.sin(this.walkPhase) * 0.012;
+
+      // Position allongée sur le dos : tête sur les oreillers (+Z), pieds vers le pied du lit (-Z)
+      this.bodyGroup.rotation.x = Math.PI * 0.5;
+      this.bodyGroup.position.set(0, -0.62 + sleepBreathe, -0.82);
+
+      // Tête reposée confortablement
+      this.headPivot.rotation.x = -0.06;
+      this.headPivot.rotation.y = 0;
+
+      // Bras posés délicatement en travers du ventre / poitrine
+      this.leftArmPivot.rotation.x = 0.12;
+      this.rightArmPivot.rotation.x = 0.12;
+      this.leftArmPivot.rotation.z = 0.18;
+      this.rightArmPivot.rotation.z = -0.18;
+
+      // Jambes allongées bien droites et détendues
+      this.leftLegPivot.rotation.x = 0;
+      this.rightLegPivot.rotation.x = 0;
+      this.leftLegPivot.rotation.z = -0.04;
+      this.rightLegPivot.rotation.z = 0.04;
+      return;
+    }
+
+    this.heldBrickMesh.visible = true;
+    this.bodyGroup.position.z = 0;
 
     // La tête regarde dans la direction où fait face le personnage
     this.headPivot.rotation.y = 0;

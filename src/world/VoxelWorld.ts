@@ -75,6 +75,7 @@ import {
   createTriangleWedgeMesh,
   createWaterMesh,
   createWildflowersGroup,
+  isBed,
   isCarpet,
   isCeilingSlab,
   isChair,
@@ -121,6 +122,7 @@ export class VoxelWorld {
   private readonly brickGeo: THREE.BufferGeometry;
   private readonly proxyBoxGeo = new THREE.BoxGeometry(1, 1, 1);
   private readonly proxySlabGeo = new THREE.BoxGeometry(1, SLAB_THICKNESS, 1);
+  private readonly proxyBedGeo = new THREE.BoxGeometry(1.3, 0.8, 1.9);
   private readonly proxyMat = new THREE.MeshBasicMaterial({
     transparent: true,
     opacity: 0,
@@ -1130,6 +1132,45 @@ export class VoxelWorld {
     return closestChair;
   }
 
+  public isBedAt(x: number, y: number, z: number): boolean {
+    const rx = Math.round(x);
+    const ry = Math.round(y);
+    const rz = Math.round(z);
+    const item = this.bricks.get(`main:${rx},${ry},${rz}`);
+    return Boolean(item && isBed(item.entry.type));
+  }
+
+  public getBedRotation(x: number, y: number, z: number): number {
+    const rx = Math.round(x);
+    const ry = Math.round(y);
+    const rz = Math.round(z);
+    const item = this.bricks.get(`main:${rx},${ry},${rz}`);
+    return item?.entry.rot ?? 0;
+  }
+
+  /**
+   * Trouve le lit interactif le plus proche du joueur.
+   * Permet de s'allonger et dormir sans avoir besoin d'aligner le réticule au millimètre près !
+   */
+  public getNearbyBed(playerPos: THREE.Vector3, maxDist = 3.2): THREE.Vector3 | null {
+    let closestBed: THREE.Vector3 | null = null;
+    let closestDistSq = maxDist * maxDist;
+
+    for (const item of this.uniqueItems) {
+      if (isBed(item.entry.type)) {
+        const dx = item.entry.x - playerPos.x;
+        const dy = (item.entry.y + 0.2) - playerPos.y;
+        const dz = item.entry.z - playerPos.z;
+        const distSq = dx * dx + dy * dy + dz * dz;
+        if (distSq < closestDistSq) {
+          closestDistSq = distSq;
+          closestBed = new THREE.Vector3(item.entry.x, item.entry.y, item.entry.z);
+        }
+      }
+    }
+    return closestBed;
+  }
+
   public hasLadderAt(x: number, y: number, z: number): boolean {
     const rx = Math.round(x);
     const ry = Math.round(y);
@@ -1444,8 +1485,12 @@ export class VoxelWorld {
       visualRoot.rotation.y = (entry.rot ?? 0) * (Math.PI / 2);
       this.scene.add(visualRoot);
 
-      const proxy = new THREE.Mesh(this.proxyBoxGeo, this.proxyMat);
+      const isBedObj = def.id === OBJ_TYPE_BED;
+      const proxy = new THREE.Mesh(isBedObj ? this.proxyBedGeo : this.proxyBoxGeo, this.proxyMat);
       proxy.position.set(rx, ry, rz);
+      if (isBedObj) {
+        proxy.rotation.y = (entry.rot ?? 0) * (Math.PI / 2);
+      }
       proxy.userData = { ...entry };
       this.scene.add(proxy);
       this.interactables.push(proxy);

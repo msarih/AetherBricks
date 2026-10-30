@@ -20,6 +20,8 @@ export class PlayerController {
   public isLocked = false;
   public isSitting = false;
   private currentChairPos: THREE.Vector3 | null = null;
+  public isSleeping = false;
+  private currentBedPos: THREE.Vector3 | null = null;
   public isInWater = false;
   public isOnLadder = false;
   public isSprinting = false;
@@ -193,6 +195,8 @@ export class PlayerController {
     this.characterFacingYaw = this.yaw;
     this.isSitting = false;
     this.currentChairPos = null;
+    this.isSleeping = false;
+    this.currentBedPos = null;
     this.isFlying = false;
     this.clearKeys();
 
@@ -255,6 +259,10 @@ export class PlayerController {
   }
 
   public standUp(): void {
+    if (this.isSleeping) {
+      this.wakeUp();
+      return;
+    }
     if (!this.isSitting) return;
     this.isSitting = false;
 
@@ -301,7 +309,90 @@ export class PlayerController {
     this.syncCamera(0.016);
   }
 
+  public wakeUp(): void {
+    if (!this.isSleeping) return;
+    this.isSleeping = false;
+
+    const bed = this.currentBedPos || this.position.clone();
+    this.currentBedPos = null;
+
+    // Calculer la hauteur naturelle du sol ou plancher sous les pieds
+    const groundY = this.world.getGroundHeight(bed.x, bed.z, bed.y) + this.playerHeight * 0.5;
+
+    // Directions candidates pour poser le joueur debout à côté du lit
+    const forward = new THREE.Vector3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw)).normalize();
+    const candidates: THREE.Vector3[] = [
+      forward,
+      new THREE.Vector3(1, 0, 0),
+      new THREE.Vector3(-1, 0, 0),
+      new THREE.Vector3(0, 0, -1),
+      new THREE.Vector3(0, 0, 1),
+    ];
+
+    let placed = false;
+    for (const dir of candidates) {
+      for (const dist of [1.1, 1.45, 1.85]) {
+        const testX = bed.x + dir.x * dist;
+        const testZ = bed.z + dir.z * dist;
+        const testGroundY = this.world.getGroundHeight(testX, testZ, bed.y) + this.playerHeight * 0.5;
+        const testPos = new THREE.Vector3(testX, testGroundY, testZ);
+
+        if (!this.checkWorldCollision(testPos)) {
+          this.position.copy(testPos);
+          placed = true;
+          break;
+        }
+      }
+      if (placed) break;
+    }
+
+    if (!placed) {
+      this.position.set(bed.x, bed.y + 1.25, bed.z);
+    }
+
+    this.velocity.set(0, 0, 0);
+    this.clearKeys();
+    this.syncCamera(0.016);
+  }
+
+  public toggleSleeping(bedPos?: THREE.Vector3): boolean {
+    if (this.isSleeping) {
+      this.wakeUp();
+      return false;
+    }
+    if (this.isSitting) {
+      this.standUp();
+    }
+    if (bedPos) {
+      this.isSleeping = true;
+      this.isFlying = false;
+      this.currentBedPos = bedPos.clone();
+      this.velocity.set(0, 0, 0);
+
+      // Récupérer l'orientation réelle du lit dans le monde
+      const bedRot = this.world.getBedRotation(bedPos.x, bedPos.y, bedPos.z);
+      const bedYaw = bedRot * (Math.PI / 2);
+
+      // Aligner le corps du joueur avec l'axe longitudinal du lit
+      this.characterFacingYaw = bedYaw;
+      this.yaw = bedYaw;
+      this.pitch = 0.35;
+
+      // Centrer le joueur sur le matelas du lit
+      const liePos = bedPos.clone();
+      liePos.y = bedPos.y + 0.35;
+
+      this.position.copy(liePos);
+      this.syncCamera(0.016);
+      return true;
+    }
+    return false;
+  }
+
   public toggleSitting(chairPos?: THREE.Vector3): boolean {
+    if (this.isSleeping) {
+      this.wakeUp();
+    }
     if (this.isSitting) {
       this.standUp();
       return false;
@@ -392,6 +483,9 @@ export class PlayerController {
     if (this.keys.has('KeyA') || this.keys.has('KeyQ') || this.keys.has('ArrowLeft')) moveDir.sub(right);
 
     this.isMovingInput = moveDir.lengthSq() > 0.001;
+    if (this.isSleeping && (this.isMovingInput || this.keys.has('Space'))) {
+      this.wakeUp();
+    }
     if (this.isSitting && (this.isMovingInput || this.keys.has('Space'))) {
       this.standUp();
     }
@@ -401,7 +495,7 @@ export class PlayerController {
       this.characterFacingYaw = Math.atan2(-moveDir.x, -moveDir.z);
     }
 
-    if (this.isSitting) {
+    if (this.isSleeping || this.isSitting) {
       this.velocity.set(0, 0, 0);
       this.syncCamera(clampedDt);
       return;
@@ -647,7 +741,8 @@ export class PlayerController {
       isThirdPerson,
       this.isSitting,
       this.isOnLadder,
-      this.velocity.y
+      this.velocity.y,
+      this.isSleeping
     );
 
     const headPos = this.getEyePosition();

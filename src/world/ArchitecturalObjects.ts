@@ -96,6 +96,10 @@ export function isChair(type: number): boolean {
   return type === OBJ_TYPE_CHAIR;
 }
 
+export function isBed(type: number): boolean {
+  return type === OBJ_TYPE_BED;
+}
+
 export function isWater(type: number): boolean {
   return type === OBJ_TYPE_WATER;
 }
@@ -1045,47 +1049,92 @@ export function createChairGroup(): THREE.Group {
 }
 
 /**
- * Lit Douillet Moderne avec Cadre en Chêne, Matelas Blanc, Couette et Oreiller (1x1x1m)
+ * Grand Lit Douillet King Size Moderne (1.28m de large x 1.88m de long)
+ * - Tête de lit en chêne massif avec panneau capitonné
+ * - 4 Pieds et cadre solide en chêne
+ * - Matelas haut de gamme épais et confortable
+ * - 2 Grands oreillers moelleux côte à côte au chevet
+ * - Grande couette douillette gonflante avec revers de drap blanc
+ * - Entièrement interactif : s'allonger et dormir avec la touche E !
  */
 export function createBedGroup(): THREE.Group {
   const mats = getSharedArchMaterials();
   const group = new THREE.Group();
 
-  // Cadre et tête de lit en chêne
+  // 1. Cadre et structure en chêne massif (1.28m large x 1.88m long)
   const frame = new THREE.Mesh(
-    new RoundedBoxGeometry(0.96, 0.24, 0.96, 2, 0.015),
+    new RoundedBoxGeometry(1.28, 0.22, 1.88, 2, 0.015),
     mats.oakWood
   );
   frame.position.set(0, -0.34, 0);
 
+  // 4 Pieds en chêne
+  const legGeo = new THREE.CylinderGeometry(0.038, 0.03, 0.16, 8);
+  const legPositions = [
+    [-0.56, -0.42, -0.84],
+    [0.56, -0.42, -0.84],
+    [-0.56, -0.42, 0.84],
+    [0.56, -0.42, 0.84],
+  ];
+  legPositions.forEach(([lx, ly, lz]) => {
+    const leg = new THREE.Mesh(legGeo, mats.oakWood);
+    leg.position.set(lx, ly, lz);
+    group.add(leg);
+  });
+
+  // Tête de lit sculptée en chêne (+Z)
   const headboard = new THREE.Mesh(
-    new RoundedBoxGeometry(0.96, 0.52, 0.12, 2, 0.02),
+    new RoundedBoxGeometry(1.30, 0.68, 0.12, 3, 0.02),
     mats.oakWood
   );
-  headboard.position.set(0, 0.04, 0.44);
+  headboard.position.set(0, 0.10, 0.88);
 
-  // Matelas confortable
+  // Rembourrage / capitonnage tête de lit en tissu clair doux
+  const headCushion = new THREE.Mesh(
+    new RoundedBoxGeometry(1.14, 0.50, 0.06, 2, 0.02),
+    mats.pillowWhite
+  );
+  headCushion.position.set(0, 0.12, 0.84);
+
+  // Pied de lit bas en chêne (-Z)
+  const footboard = new THREE.Mesh(
+    new RoundedBoxGeometry(1.30, 0.32, 0.08, 2, 0.015),
+    mats.oakWood
+  );
+  footboard.position.set(0, -0.22, -0.88);
+
+  // 2. Grand matelas épais et moelleux (1.20m x 1.76m)
   const mattress = new THREE.Mesh(
-    new RoundedBoxGeometry(0.88, 0.2, 0.86, 2, 0.02),
+    new RoundedBoxGeometry(1.20, 0.22, 1.76, 2, 0.025),
     mats.pillowWhite
   );
-  mattress.position.set(0, -0.16, 0.02);
+  mattress.position.set(0, -0.14, 0.02);
 
-  // Oreiller douillet
-  const pillow = new THREE.Mesh(
-    new RoundedBoxGeometry(0.72, 0.1, 0.26, 3, 0.03),
-    mats.pillowWhite
-  );
-  pillow.position.set(0, -0.02, 0.26);
+  // 3. Deux grands oreillers moelleux côte à côte au chevet (+Z)
+  const pillowGeo = new RoundedBoxGeometry(0.50, 0.11, 0.30, 3, 0.03);
+  const pillowL = new THREE.Mesh(pillowGeo, mats.pillowWhite);
+  pillowL.position.set(-0.30, 0.01, 0.60);
+  pillowL.rotation.x = -0.12;
 
-  // Couette élégante repliée sur les deux tiers avant
+  const pillowR = new THREE.Mesh(pillowGeo, mats.pillowWhite);
+  pillowR.position.set(0.30, 0.01, 0.60);
+  pillowR.rotation.x = -0.12;
+
+  // 4. Grande couette douillette gonflante couvrant les deux tiers inférieurs du lit
   const blanket = new THREE.Mesh(
-    new RoundedBoxGeometry(0.9, 0.14, 0.56, 3, 0.025),
+    new RoundedBoxGeometry(1.22, 0.16, 1.18, 3, 0.03),
     mats.fabricBlanket
   );
-  blanket.position.set(0, -0.06, -0.14);
+  blanket.position.set(0, -0.04, -0.22);
 
-  group.add(frame, headboard, mattress, pillow, blanket);
+  // Revers de drap blanc soyeux plié au sommet de la couette
+  const sheetFold = new THREE.Mesh(
+    new RoundedBoxGeometry(1.22, 0.04, 0.16, 2, 0.015),
+    mats.pillowWhite
+  );
+  sheetFold.position.set(0, 0.04, 0.34);
+
+  group.add(frame, headboard, headCushion, footboard, mattress, pillowL, pillowR, blanket, sheetFold);
   group.traverse((o) => {
     if (o instanceof THREE.Mesh) {
       o.castShadow = true;
