@@ -170,12 +170,19 @@ export class PlayerController {
     this.avatar.triggerArmSwing();
   }
 
-  public resetPosition(): void {
-    this.position.set(0, 1.2, 4);
+  public resetPosition(spawnPos?: { x: number; y: number; z: number; yaw?: number; pitch?: number }): void {
+    const x = spawnPos?.x ?? 0;
+    const z = spawnPos?.z ?? 4;
+    const groundY = this.world.getTerrainHeightAt(x, z) + this.playerHeight * 0.5;
+    const y = spawnPos?.y ?? groundY;
+    this.position.set(x, y, z);
     this.velocity.set(0, 0, 0);
-    this.yaw = 0;
-    this.pitch = -0.18;
-    this.characterFacingYaw = 0;
+    this.yaw = spawnPos?.yaw ?? 0;
+    this.pitch = spawnPos?.pitch ?? -0.08;
+    this.characterFacingYaw = this.yaw;
+    this.isSitting = false;
+    this.isFlying = false;
+    this.clearKeys();
     this.syncCamera(0.016);
   }
 
@@ -291,10 +298,10 @@ export class PlayerController {
     const right = new THREE.Vector3(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
 
     const moveDir = new THREE.Vector3();
-    if (this.keys.has('KeyW') || this.keys.has('ArrowUp')) moveDir.add(forward);
+    if (this.keys.has('KeyW') || this.keys.has('KeyZ') || this.keys.has('ArrowUp')) moveDir.add(forward);
     if (this.keys.has('KeyS') || this.keys.has('ArrowDown')) moveDir.sub(forward);
     if (this.keys.has('KeyD') || this.keys.has('ArrowRight')) moveDir.add(right);
-    if (this.keys.has('KeyA') || this.keys.has('ArrowLeft')) moveDir.sub(right);
+    if (this.keys.has('KeyA') || this.keys.has('KeyQ') || this.keys.has('ArrowLeft')) moveDir.sub(right);
 
     this.isMovingInput = moveDir.lengthSq() > 0.001;
     if (this.isMovingInput) {
@@ -358,6 +365,7 @@ export class PlayerController {
       const isClimbUp =
         this.keys.has('Space') ||
         this.keys.has('KeyW') ||
+        this.keys.has('KeyZ') ||
         this.keys.has('ArrowUp');
       const isClimbDown =
         this.keys.has('KeyS') ||

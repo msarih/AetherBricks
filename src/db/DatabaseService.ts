@@ -353,7 +353,7 @@ export class DatabaseService {
       createdAt: Date.now(),
       updatedAt: Date.now(),
       bricks: initialBricks,
-      playerState: playerState || { x: 0, y: 1.2, z: 4 },
+      playerState: playerState || { x: 0, y: 0.36, z: 4.5 },
     };
 
     this.worlds.unshift(newWorld);

@@ -202,6 +202,22 @@ function showToast(msg: string): void {
 export type AppUIMode = 'creation' | 'navigation';
 let currentUIMode: AppUIMode = 'creation';
 
+function closeStudioModal(requestPointerLock = true): void {
+  studioOverlay.classList.add('hidden');
+  if (document.activeElement instanceof HTMLElement) {
+    document.activeElement.blur();
+  }
+  setUIMode('creation', false);
+  player.clearKeys();
+  if (requestPointerLock) {
+    try {
+      player.requestLock();
+    } catch {
+      // browser may block if not direct user gesture
+    }
+  }
+}
+
 function setUIMode(mode: AppUIMode, notify = true): void {
   currentUIMode = mode;
   player.clearKeys();
@@ -209,7 +225,13 @@ function setUIMode(mode: AppUIMode, notify = true): void {
     document.body.classList.remove('mode-navigation');
     btnModeCreation.classList.add('active');
     btnModeNavigation.classList.remove('active');
-    player.requestLock();
+    studioOverlay.classList.add('hidden');
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+    try {
+      player.requestLock();
+    } catch {}
     if (notify) showToast('🛠️ Mode Création : Visez et cliquez pour construire');
   } else {
     document.body.classList.add('mode-navigation');
@@ -326,12 +348,7 @@ function loadWorldIntoScene(bricks: BrickEntry[], pos?: { x: number; y: number; 
   const prevCallback = world.onWorldChanged;
   world.onWorldChanged = undefined;
   world.loadPreset(bricks, false);
-  if (pos && typeof pos.x === 'number') {
-    player.position.set(pos.x, pos.y, pos.z);
-    player.velocity.set(0, 0, 0);
-  } else {
-    player.resetPosition();
-  }
+  player.resetPosition(pos);
   world.onWorldChanged = prevCallback;
   updateHudAccountHeader();
   renderDatabaseModalUI();
@@ -380,6 +397,7 @@ function renderDatabaseModalUI(): void {
     const loadBtn = item.querySelector('.btn-load-world');
     if (loadBtn) {
       loadBtn.addEventListener('click', async () => {
+        closeStudioModal(true);
         await triggerImmediateSave();
         const target = await db.switchWorld(w.id);
         if (target) {
@@ -1142,6 +1160,12 @@ document.getElementById('btn-hud-redo')!.addEventListener('click', (e) => {
 });
 
 window.addEventListener('keydown', (e) => {
+  // Fermer la modale studio avec la touche Échap
+  if (e.code === 'Escape' && !studioOverlay.classList.contains('hidden')) {
+    closeStudioModal(false);
+    return;
+  }
+
   // Ignore shortcuts when typing in an input field inside the modal
   if (document.activeElement instanceof HTMLInputElement) return;
 
@@ -1264,8 +1288,18 @@ window.addEventListener('keydown', (e) => {
 });
 
 // --- Studio Modal & Auth Controls ---
-document.getElementById('btn-resume')!.addEventListener('click', () => {
-  player.requestLock();
+document.getElementById('btn-resume')?.addEventListener('click', () => {
+  closeStudioModal(true);
+});
+
+document.getElementById('btn-close-studio')?.addEventListener('click', () => {
+  closeStudioModal(false);
+});
+
+studioOverlay.addEventListener('click', (e) => {
+  if (e.target === studioOverlay) {
+    closeStudioModal(false);
+  }
 });
 
 document.getElementById('btn-save-now')!.addEventListener('click', async () => {
@@ -1326,29 +1360,35 @@ document.getElementById('btn-guest')!.addEventListener('click', async () => {
 // Create New World buttons (never overwrites existing worlds!)
 document.querySelectorAll('.new-world-btn').forEach((btn) => {
   btn.addEventListener('click', async () => {
-    await triggerImmediateSave();
+    // 1. Fermer immédiatement la modale Studio, retirer le focus des champs et verrouiller le curseur
+    closeStudioModal(true);
+
     const tpl = (btn as HTMLElement).dataset.template;
     const customName = newWorldNameEl.value.trim();
     let bricks: BrickEntry[] = [];
     let defaultTitle = 'Prairie Vierge';
+    let defaultSpawn = { x: 0, y: 0.36, z: 0 };
 
     if (tpl === 'starter') {
       bricks = getStarterScene();
       defaultTitle = 'Terrasse & Façade';
+      defaultSpawn = { x: 0, y: 0.36, z: 4.0 };
     } else if (tpl === 'pavilion') {
       bricks = getWhitePavilionPreset();
       defaultTitle = 'Maisonnette Blanche';
+      defaultSpawn = { x: 0, y: 0.36, z: 4.5 };
     } else if (tpl === 'arch') {
       bricks = getBrutalistArchPreset();
       defaultTitle = 'Arche Blanche';
+      defaultSpawn = { x: 0, y: 0.36, z: 6.0 };
     }
 
     const worldTitle = customName || `${defaultTitle} #${db.worlds.length + 1}`;
-    const created = await db.createNewWorld(worldTitle, bricks);
+    await triggerImmediateSave();
+    const created = await db.createNewWorld(worldTitle, bricks, defaultSpawn);
     newWorldNameEl.value = '';
     loadWorldIntoScene(created.bricks, created.playerState);
     showToast(`Nouveau monde "${created.name}" créé et sauvegardé !`);
-    player.requestLock();
   });
 });
 
