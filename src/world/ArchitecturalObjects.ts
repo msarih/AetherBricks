@@ -1188,12 +1188,12 @@ export function createFireplaceGroup(): THREE.Group {
 }
 
 /**
- * Tapis de Sol Décoratif Ultra-Fin (1x1m, épaisseur 0.035m)
+ * Tapis de Sol Décoratif Ultra-Fin (1.12x1.12m, épaisseur 0.026m)
  */
 export function createCarpetMesh(): THREE.Mesh {
   const mats = getSharedArchMaterials();
   const mesh = new THREE.Mesh(
-    new RoundedBoxGeometry(1.0, 0.035, 1.0, 2, 0.01),
+    new RoundedBoxGeometry(1.12, 0.026, 1.12, 2, 0.006),
     mats.carpetFabric
   );
   mesh.castShadow = false;

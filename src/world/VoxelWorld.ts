@@ -1099,6 +1099,29 @@ export class VoxelWorld {
     return Boolean(item && isChair(item.entry.type));
   }
 
+  /**
+   * Trouve le fauteuil / canapé interactif le plus proche du joueur.
+   * Permet de s'asseoir sans avoir besoin d'aligner le réticule au millimètre près !
+   */
+  public getNearbyChair(playerPos: THREE.Vector3, maxDist = 3.2): THREE.Vector3 | null {
+    let closestChair: THREE.Vector3 | null = null;
+    let closestDistSq = maxDist * maxDist;
+
+    for (const item of this.uniqueItems) {
+      if (isChair(item.entry.type)) {
+        const dx = item.entry.x - playerPos.x;
+        const dy = (item.entry.y + 0.2) - playerPos.y;
+        const dz = item.entry.z - playerPos.z;
+        const distSq = dx * dx + dy * dy + dz * dz;
+        if (distSq < closestDistSq) {
+          closestDistSq = distSq;
+          closestChair = new THREE.Vector3(item.entry.x, item.entry.y, item.entry.z);
+        }
+      }
+    }
+    return closestChair;
+  }
+
   public hasLadderAt(x: number, y: number, z: number): boolean {
     const rx = Math.round(x);
     const ry = Math.round(y);
@@ -1218,6 +1241,14 @@ export class VoxelWorld {
       slabMesh.rotation.y = (entry.rot ?? 0) * (Math.PI / 2);
       visualRoot = slabMesh;
       this.scene.add(slabMesh);
+
+      // Si un tapis est déjà posé sur cette case, ajuster sa hauteur pour qu'il repose parfaitement sur la dalle
+      if (isFloorSlab(def.id)) {
+        const existingMain = this.bricks.get(`main:${rx},${ry},${rz}`);
+        if (existingMain && existingMain.entry.type === OBJ_TYPE_CARPET) {
+          existingMain.visualRoot.position.y = ry - 0.34 + 0.013;
+        }
+      }
 
       // Boîte de sélection plate (0.16m d'épaisseur seulement !) pour ne JAMAIS intercepter les rayons en l'air
       const proxy = new THREE.Mesh(this.proxySlabGeo, this.proxyMat);
@@ -1395,7 +1426,13 @@ export class VoxelWorld {
           visualRoot = createCypressGroup();
           break;
       }
-      visualRoot.position.set(rx, ry, rz);
+      if (def.id === OBJ_TYPE_CARPET) {
+        const hasFloor = this.bricks.has(`floor:${rx},${ry},${rz}`);
+        const carpetY = hasFloor ? ry - 0.34 + 0.013 : ry - 0.50 + 0.013;
+        visualRoot.position.set(rx, carpetY, rz);
+      } else {
+        visualRoot.position.set(rx, ry, rz);
+      }
       visualRoot.rotation.y = (entry.rot ?? 0) * (Math.PI / 2);
       this.scene.add(visualRoot);
 
@@ -1502,6 +1539,13 @@ export class VoxelWorld {
     this.bricks.delete(existing.slotKey);
     if (isTwoBlocksTall(baseEntry.type)) {
       this.bricks.delete(`main:${baseEntry.x},${baseEntry.y + 1},${baseEntry.z}`);
+    }
+
+    if (isFloorSlab(baseEntry.type)) {
+      const existingMain = this.bricks.get(`main:${baseEntry.x},${baseEntry.y},${baseEntry.z}`);
+      if (existingMain && existingMain.entry.type === OBJ_TYPE_CARPET) {
+        existingMain.visualRoot.position.y = baseEntry.y - 0.50 + 0.013;
+      }
     }
 
     if (baseEntry.y < 0) {

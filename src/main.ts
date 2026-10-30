@@ -169,6 +169,31 @@ const categoryTabsEl = document.getElementById('category-tabs')!;
 const hotbarEl = document.getElementById('hotbar')!;
 const toastEl = document.getElementById('toast')!;
 
+interactionHintEl.addEventListener('click', (e) => {
+  e.stopPropagation();
+  if (player.isSitting) {
+    player.toggleSitting();
+    sound.playSelect();
+    showToast('Personnage debout');
+    return;
+  }
+  const chair =
+    (world.currentTarget?.removePos &&
+      world.isChairAt(
+        world.currentTarget.removePos.x,
+        world.currentTarget.removePos.y,
+        world.currentTarget.removePos.z
+      )
+      ? world.currentTarget.removePos
+      : null) ?? world.getNearbyChair(player.position, 3.2);
+
+  if (chair) {
+    player.toggleSitting(chair);
+    sound.playSelect();
+    showToast('Assis sur le fauteuil • Appuyez sur E ou Déplacement pour vous relever');
+  }
+});
+
 // Boutons rapides d'ambiance et raccourcis
 const btnDayNightAuto = document.getElementById('quick-btn-daynight');
 const btnAmbienceAudio = document.getElementById('quick-btn-ambience-audio');
@@ -1030,13 +1055,22 @@ btnTeleportHome?.addEventListener('click', () => {
 renderer.domElement.addEventListener('mousedown', (e) => {
   // En Mode Navigation :
   if (currentUIMode === 'navigation' && e.button === 0) {
+    const mouse = new THREE.Vector2(
+      (e.clientX / window.innerWidth) * 2 - 1,
+      -(e.clientY / window.innerHeight) * 2 + 1
+    );
+    const hit = world.raycastFromMouse(mouse, camera);
+
+    // Si on clique sur un fauteuil, s'asseoir immédiatement !
+    if (hit?.removePos && world.isChairAt(hit.removePos.x, hit.removePos.y, hit.removePos.z)) {
+      player.toggleSitting(hit.removePos);
+      sound.playSelect();
+      showToast('Assis sur le fauteuil • Appuyez sur E ou Déplacement pour vous relever');
+      return;
+    }
+
     // Si le mode peinture est actif, permet de cliquer directement sur un mur de la scène pour le peindre immédiatement !
     if (isPaintMode) {
-      const mouse = new THREE.Vector2(
-        (e.clientX / window.innerWidth) * 2 - 1,
-        -(e.clientY / window.innerHeight) * 2 + 1
-      );
-      const hit = world.raycastFromMouse(mouse, camera);
       if (hit?.removePos) {
         const { x, y, z } = hit.removePos;
         if (world.paintBrickAt(x, y, z, selectedPaintColor, selectedPaintPattern, hit.normal)) {
@@ -1288,22 +1322,30 @@ window.addEventListener('keydown', (e) => {
       return;
     }
     const target = world.currentTarget;
-    if (target?.removePos) {
-      if (target.isDoorHit) {
-        const newState = world.toggleDoorAt(
-          target.removePos.x,
-          target.removePos.y,
-          target.removePos.z
-        );
-        if (newState !== null) {
-          sound.playDoor(newState);
-          player.triggerActionAnimation();
-        }
-      } else if (world.isChairAt(target.removePos.x, target.removePos.y, target.removePos.z)) {
-        player.toggleSitting(target.removePos);
-        sound.playSelect();
-        showToast('Assis sur le fauteuil • Appuyez sur E ou Déplacement pour vous relever');
+    if (target?.isDoorHit && target.removePos) {
+      const newState = world.toggleDoorAt(
+        target.removePos.x,
+        target.removePos.y,
+        target.removePos.z
+      );
+      if (newState !== null) {
+        sound.playDoor(newState);
+        player.triggerActionAnimation();
       }
+      return;
+    }
+
+    // Chaise visée directement par le réticule OU chaise la plus proche (détection automatique)
+    const chair =
+      (target?.removePos && world.isChairAt(target.removePos.x, target.removePos.y, target.removePos.z)
+        ? target.removePos
+        : null) ?? world.getNearbyChair(player.position, 3.2);
+
+    if (chair) {
+      player.toggleSitting(chair);
+      sound.playSelect();
+      showToast('Assis sur le fauteuil • Appuyez sur E ou Déplacement pour vous relever');
+      return;
     }
   }
 
@@ -1650,30 +1692,39 @@ function animate(now: number): void {
   sunLight.target.updateMatrixWorld();
 
   crosshairEl.classList.toggle('active', world.currentTarget !== null);
-  if (player.isSitting) {
-    interactionHintEl.innerHTML = `<kbd>E</kbd> ou <kbd>Flèches</kbd> Se relever`;
-    interactionHintEl.classList.remove('hidden');
-  } else if (isPaintMode && world.currentTarget?.removePos) {
-    const patternName = PATTERN_NAMES[selectedPaintPattern] || selectedPaintPattern;
-    interactionHintEl.innerHTML = `<kbd>Clic Gauche</kbd> Peindre ce mur (<strong>${patternName}</strong> <span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:${selectedPaintColor};border:1.5px solid rgba(255,255,255,0.7);vertical-align:middle;margin-left:4px;"></span>)`;
-    interactionHintEl.classList.remove('hidden');
-  } else if (world.currentTarget?.isDoorHit) {
-    interactionHintEl.innerHTML = `<kbd>E</kbd> ${
-      world.currentTarget.doorIsOpen ? 'Fermer la porte' : 'Ouvrir la porte'
-    }`;
-    interactionHintEl.classList.remove('hidden');
-  } else if (
+  const targetedChair =
     world.currentTarget?.removePos &&
     world.isChairAt(
       world.currentTarget.removePos.x,
       world.currentTarget.removePos.y,
       world.currentTarget.removePos.z
     )
-  ) {
-    interactionHintEl.innerHTML = `<kbd>E</kbd> S'asseoir confortablement`;
+      ? world.currentTarget.removePos
+      : null;
+
+  const nearbyChair = targetedChair ?? world.getNearbyChair(player.position, 3.2);
+
+  if (player.isSitting) {
+    interactionHintEl.className = 'interaction-hint chair-hint';
+    interactionHintEl.innerHTML = `<span class="hint-icon">🧍</span> <kbd>E</kbd> ou <kbd>Déplacement</kbd> <span>Se relever</span>`;
+    interactionHintEl.classList.remove('hidden');
+  } else if (nearbyChair) {
+    interactionHintEl.className = 'interaction-hint chair-hint';
+    interactionHintEl.innerHTML = `<span class="hint-icon">🪑</span> <kbd>E</kbd> <span>S'asseoir sur le fauteuil</span>`;
+    interactionHintEl.classList.remove('hidden');
+  } else if (isPaintMode && world.currentTarget?.removePos) {
+    interactionHintEl.className = 'interaction-hint';
+    const patternName = PATTERN_NAMES[selectedPaintPattern] || selectedPaintPattern;
+    interactionHintEl.innerHTML = `<kbd>Clic Gauche</kbd> Peindre ce mur (<strong>${patternName}</strong> <span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:${selectedPaintColor};border:1.5px solid rgba(255,255,255,0.7);vertical-align:middle;margin-left:4px;"></span>)`;
+    interactionHintEl.classList.remove('hidden');
+  } else if (world.currentTarget?.isDoorHit) {
+    interactionHintEl.className = 'interaction-hint';
+    interactionHintEl.innerHTML = `<kbd>E</kbd> ${
+      world.currentTarget.doorIsOpen ? 'Fermer la porte' : 'Ouvrir la porte'
+    }`;
     interactionHintEl.classList.remove('hidden');
   } else {
-    interactionHintEl.classList.add('hidden');
+    interactionHintEl.className = 'interaction-hint hidden';
   }
 
   statBricksEl.textContent = String(world.getBrickCount());
