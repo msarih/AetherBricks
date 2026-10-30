@@ -122,6 +122,8 @@ export class VoxelWorld {
   private readonly maskTexture: THREE.CanvasTexture;
   public readonly dugColumns = new Set<string>(); // "x,z"
   public readonly dugVoxels = new Set<string>(); // "x,y,z"
+  public readonly pitMeshes = new Map<string, THREE.Mesh>();
+  public readonly pitDepths = new Map<string, number>();
 
   // Map from slotKey ("main:x,y,z" | "floor:x,y,z" | "ceil:x,y,z") -> PlacedItem
   private readonly bricks = new Map<string, PlacedItem>();
@@ -192,6 +194,7 @@ export class VoxelWorld {
     this.maskTexture = new THREE.CanvasTexture(this.maskCanvas);
     this.maskTexture.minFilter = THREE.NearestFilter;
     this.maskTexture.magFilter = THREE.NearestFilter;
+    this.maskTexture.flipY = false;
 
     // Immense prairie infinie (4000m x 4000m) avec PBR Albedo + Normal + Roughness
     const grassPBR = createCountrysideGrassPBR();
@@ -206,7 +209,7 @@ export class VoxelWorld {
       metalness: 0.01,
     });
 
-    // Shader hook pour découper les trous creusés dans le sol en direct
+    // Shader hook pour découper les trous creusés dans le sol en direct avec alignement exact au voxel
     groundMat.onBeforeCompile = (shader) => {
       shader.uniforms.uHoleMask = { value: this.maskTexture };
       shader.vertexShader = `
@@ -227,7 +230,8 @@ export class VoxelWorld {
         '#include <dithering_fragment>',
         `
         #include <dithering_fragment>
-        vec2 maskCoord = vWorldPos.xz / 512.0 + 0.5;
+        vec2 voxelCoord = floor(vWorldPos.xz + 0.5);
+        vec2 maskCoord = (voxelCoord + 256.0 + 0.5) / 512.0;
         if (maskCoord.x >= 0.0 && maskCoord.x <= 1.0 && maskCoord.y >= 0.0 && maskCoord.y <= 1.0) {
           vec4 holeSample = texture2D(uHoleMask, maskCoord);
           if (holeSample.r < 0.5) {
@@ -567,8 +571,10 @@ export class VoxelWorld {
   }
 
   public setGroundHoleMask(x: number, z: number, isHole: boolean): void {
-    const px = Math.floor(x + 256);
-    const pz = Math.floor(z + 256);
+    const rx = Math.round(x);
+    const rz = Math.round(z);
+    const px = rx + 256;
+    const pz = rz + 256;
     if (px >= 0 && px < this.maskSize && pz >= 0 && pz < this.maskSize) {
       this.maskCtx.fillStyle = isHole ? '#000000' : '#ffffff';
       this.maskCtx.fillRect(px, pz, 1, 1);
@@ -577,69 +583,178 @@ export class VoxelWorld {
   }
 
   /**
+   * Construit une géométrie de fosse/trou ouverte vers le haut (5 faces intérieures).
+   * Zéro polygone sur le dessus ou à l'extérieur : aucun conflit avec la prairie environnante !
+   */
+  private createPitGeometry(
+    hasNorth: boolean,
+    hasSouth: boolean,
+    hasWest: boolean,
+    hasEast: boolean,
+    floorY: number,
+    topY = -0.5
+  ): THREE.BufferGeometry {
+    const positions: number[] = [];
+    const normals: number[] = [];
+    const uvs: number[] = [];
+
+    // 1. Fond horizontal du trou orienté vers le haut (normal 0, 1, 0)
+    positions.push(
+      -0.5, floorY, -0.5,
+      -0.5, floorY,  0.5,
+       0.5, floorY,  0.5,
+      -0.5, floorY, -0.5,
+       0.5, floorY,  0.5,
+       0.5, floorY, -0.5
+    );
+    for (let i = 0; i < 6; i++) normals.push(0, 1, 0);
+    uvs.push(0, 0, 0, 1, 1, 1, 0, 0, 1, 1, 1, 0);
+
+    const h = topY - floorY;
+
+    // 2. Paroi Nord (z = -0.5) tournée vers l'intérieur (+Z)
+    if (hasNorth) {
+      positions.push(
+        -0.5, floorY, -0.5,
+         0.5, floorY, -0.5,
+         0.5, topY,   -0.5,
+        -0.5, floorY, -0.5,
+         0.5, topY,   -0.5,
+        -0.5, topY,   -0.5
+      );
+      for (let i = 0; i < 6; i++) normals.push(0, 0, 1);
+      uvs.push(0, 0, 1, 0, 1, h, 0, 0, 1, h, 0, h);
+    }
+
+    // 3. Paroi Sud (z = 0.5) tournée vers l'intérieur (-Z)
+    if (hasSouth) {
+      positions.push(
+         0.5, floorY,  0.5,
+        -0.5, floorY,  0.5,
+        -0.5, topY,    0.5,
+         0.5, floorY,  0.5,
+        -0.5, topY,    0.5,
+         0.5, topY,    0.5
+      );
+      for (let i = 0; i < 6; i++) normals.push(0, 0, -1);
+      uvs.push(0, 0, 1, 0, 1, h, 0, 0, 1, h, 0, h);
+    }
+
+    // 4. Paroi Ouest (x = -0.5) tournée vers l'intérieur (+X)
+    if (hasWest) {
+      positions.push(
+        -0.5, floorY,  0.5,
+        -0.5, floorY, -0.5,
+        -0.5, topY,   -0.5,
+        -0.5, floorY,  0.5,
+        -0.5, topY,   -0.5,
+        -0.5, topY,    0.5
+      );
+      for (let i = 0; i < 6; i++) normals.push(1, 0, 0);
+      uvs.push(0, 0, 1, 0, 1, h, 0, 0, 1, h, 0, h);
+    }
+
+    // 5. Paroi Est (x = 0.5) tournée vers l'intérieur (-X)
+    if (hasEast) {
+      positions.push(
+         0.5, floorY, -0.5,
+         0.5, floorY,  0.5,
+         0.5, topY,    0.5,
+         0.5, floorY, -0.5,
+         0.5, topY,    0.5,
+         0.5, topY,   -0.5
+      );
+      for (let i = 0; i < 6; i++) normals.push(-1, 0, 0);
+      uvs.push(0, 0, 1, 0, 1, h, 0, 0, 1, h, 0, h);
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    return geo;
+  }
+
+  public updatePitMeshAt(rx: number, rz: number): void {
+    const key = `${rx},${rz}`;
+    const oldMesh = this.pitMeshes.get(key);
+    if (oldMesh) {
+      this.scene.remove(oldMesh);
+      oldMesh.geometry.dispose();
+      const idx = this.interactables.indexOf(oldMesh);
+      if (idx !== -1) this.interactables.splice(idx, 1);
+      this.pitMeshes.delete(key);
+    }
+
+    if (!this.dugColumns.has(key)) {
+      this.pitDepths.delete(key);
+      return;
+    }
+
+    const depth = this.pitDepths.get(key) ?? 1;
+    const floorY = -0.5 - depth;
+    const topY = -0.5;
+
+    const hasNorth = !this.dugColumns.has(`${rx},${rz - 1}`);
+    const hasSouth = !this.dugColumns.has(`${rx},${rz + 1}`);
+    const hasWest  = !this.dugColumns.has(`${rx - 1},${rz}`);
+    const hasEast  = !this.dugColumns.has(`${rx + 1},${rz}`);
+
+    const geo = this.createPitGeometry(hasNorth, hasSouth, hasWest, hasEast, floorY, topY);
+    const def = this.catalog.get(BRICK_TYPE_DIRT);
+    const mat = def ? def.material : new THREE.MeshStandardMaterial({ color: 0x4a3222, roughness: 0.95 });
+
+    const pitMesh = new THREE.Mesh(geo, mat);
+    pitMesh.position.set(rx, 0, rz);
+    pitMesh.receiveShadow = true;
+    pitMesh.castShadow = true;
+    pitMesh.userData = { x: rx, y: -depth, z: rz, type: BRICK_TYPE_DIRT, isPit: true };
+
+    this.scene.add(pitMesh);
+    this.pitMeshes.set(key, pitMesh);
+    this.interactables.push(pitMesh);
+  }
+
+  public updatePitNeighborhood(rx: number, rz: number): void {
+    this.updatePitMeshAt(rx, rz);
+    this.updatePitMeshAt(rx + 1, rz);
+    this.updatePitMeshAt(rx - 1, rz);
+    this.updatePitMeshAt(rx, rz + 1);
+    this.updatePitMeshAt(rx, rz - 1);
+  }
+
+  /**
    * Creuse la terre naturelle comme dans Minecraft.
-   * Découpe un trou dans la surface herbeuse et matérialise les parois souterraines et le fond en terre/roche.
+   * Découpe un trou net dans la prairie et matérialise une fosse en terre/roche avec parois intérieures.
    */
   public digGroundAt(x: number, y: number, z: number): boolean {
     const rx = Math.round(x);
     const ry = Math.round(y);
     const rz = Math.round(z);
-
-    const neighbors = [
-      [rx + 1, rz],
-      [rx - 1, rz],
-      [rx, rz + 1],
-      [rx, rz - 1],
-    ];
+    const colKey = `${rx},${rz}`;
 
     if (ry >= 0) {
-      // 1. Creusement de surface à travers le sol herbeux
-      const colKey = `${rx},${rz}`;
-      const voxelKey = `${rx},-1,${rz}`;
-      if (this.dugVoxels.has(voxelKey) && this.dugColumns.has(colKey)) {
-        return false;
-      }
-
-      this.dugColumns.add(colKey);
-      this.dugVoxels.add(voxelKey);
-      this.setGroundHoleMask(rx, rz, true);
-      this.countryside?.syncGrassAt(rx, rz, true);
-
-      // Fond de terre à y = -2 (donne une profondeur de 1 mètre sous le sol)
-      const floorY = -2;
-      if (!this.hasBrickAt(rx, floorY, rz)) {
-        this.setBrick(rx, floorY, rz, BRICK_TYPE_DIRT, false, false);
-      }
-
-      // Parois souterraines en terre à y = -1 (affleurant exactement sous l'herbe à y = -0.5)
-      // Aucun bloc n'est posé à y = 0 : la surface autour du trou reste parfaitement plane et sans blocs !
-      for (const [nx, nz] of neighbors) {
-        if (!this.dugColumns.has(`${nx},${nz}`) && !this.hasBrickAt(nx, -1, nz)) {
-          this.setBrick(nx, -1, nz, BRICK_TYPE_DIRT, false, false);
-        }
+      if (this.dugColumns.has(colKey)) {
+        // Déjà creusé en surface, creuse un niveau de plus en profondeur
+        const curDepth = this.pitDepths.get(colKey) ?? 1;
+        this.pitDepths.set(colKey, curDepth + 1);
+        this.dugVoxels.add(`${rx},-${curDepth + 1},${rz}`);
+      } else {
+        this.dugColumns.add(colKey);
+        this.dugVoxels.add(`${rx},-1,${rz}`);
+        this.pitDepths.set(colKey, 1);
+        this.setGroundHoleMask(rx, rz, true);
+        this.countryside?.syncGrassAt(rx, rz, true);
       }
     } else {
-      // 2. Creusement en profondeur sous terre (ex: ry = -1, -2, -3...)
-      const voxelKey = `${rx},${ry},${rz}`;
-      if (this.dugVoxels.has(voxelKey)) return false;
-      this.dugVoxels.add(voxelKey);
-
-      // Placer le nouveau fond encore plus bas
-      const floorY = ry - 1;
-      const bottomType = floorY <= -3 ? BRICK_TYPE_STONE : BRICK_TYPE_DIRT;
-      if (!this.hasBrickAt(rx, floorY, rz)) {
-        this.setBrick(rx, floorY, rz, bottomType, false, false);
-      }
-
-      // Prolonger les parois latérales jusqu'à ce niveau
-      for (const [nx, nz] of neighbors) {
-        if (!this.dugColumns.has(`${nx},${nz}`) && !this.hasBrickAt(nx, ry, nz)) {
-          this.setBrick(nx, ry, nz, bottomType, false, false);
-        }
-      }
+      const curDepth = this.pitDepths.get(colKey) ?? Math.max(1, Math.abs(ry));
+      this.pitDepths.set(colKey, curDepth + 1);
+      this.dugVoxels.add(`${rx},-${curDepth + 1},${rz}`);
     }
 
-    this.spawnBurst(new THREE.Vector3(rx, ry >= 0 ? -1 : ry, rz), 18);
+    this.updatePitNeighborhood(rx, rz);
+
+    this.spawnBurst(new THREE.Vector3(rx, -0.5, rz), 18);
     this.recordHistoryAction({
       kind: 'remove',
       entry: { x: rx, y: ry, z: rz, type: BRICK_TYPE_DIRT },
@@ -750,7 +865,8 @@ export class VoxelWorld {
           return y + 0.5;
         }
       }
-      return -1.5;
+      const depth = this.pitDepths.get(`${rx},${rz}`) ?? 1;
+      return -0.5 - depth;
     }
     return this.countryside ? this.countryside.getTerrainHeight(x, z) : -0.5;
   }
@@ -832,6 +948,7 @@ export class VoxelWorld {
       this.dugColumns.delete(`${rx},${rz}`);
       this.setGroundHoleMask(rx, rz, false);
       this.countryside?.syncGrassAt(rx, rz, false);
+      this.updatePitNeighborhood(rx, rz);
     }
 
     const k1 = this.slotKeyForType(rx, ry, rz, type);
@@ -1244,6 +1361,13 @@ export class VoxelWorld {
         this.countryside?.syncGrassAt(item.entry.x, item.entry.z, false);
       }
     }
+    for (const [, mesh] of this.pitMeshes) {
+      this.scene.remove(mesh);
+      mesh.geometry.dispose();
+    }
+    this.pitMeshes.clear();
+    this.pitDepths.clear();
+
     this.uniqueItems.clear();
     this.bricks.clear();
     this.dugColumns.clear();
@@ -1272,6 +1396,7 @@ export class VoxelWorld {
       if (e.y < 0) {
         this.dugColumns.add(`${e.x},${e.z}`);
         this.setGroundHoleMask(e.x, e.z, true);
+        this.updatePitNeighborhood(e.x, e.z);
       }
       this.setBrick(e.x, e.y, e.z, e.type, false, false, e.rot ?? 0, e.open ?? false, e.color, e.pattern);
     }
