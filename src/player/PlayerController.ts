@@ -104,7 +104,7 @@ export class PlayerController {
       this.pitch = Math.max(-maxPitch, Math.min(maxPitch, this.pitch));
 
       // Keep relative facing offset when rotating camera with mouse if standing still
-      if (!this.isMovingInput) {
+      if (!this.isMovingInput && !this.isSitting && !this.isSleeping) {
         this.characterFacingYaw += this.yaw - prevYaw;
       }
     });
@@ -725,15 +725,32 @@ export class PlayerController {
     return dir.normalize();
   }
 
+  public getCharacterFacingYaw(): number {
+    return this.characterFacingYaw;
+  }
+
   private syncCamera(dt: number): void {
     const isThirdPerson = this.viewMode !== 'fps';
     const horizSpeed = Math.hypot(this.velocity.x, this.velocity.z);
+
+    // Verrouiller de manière absolue l'orientation du corps sur le lit ou le fauteuil pour que bouger la caméra n'altère jamais la pose
+    let avatarFacingYaw = this.characterFacingYaw;
+    if (this.isSleeping && this.currentBedPos) {
+      const bedRot = this.world.getBedRotation(this.currentBedPos.x, this.currentBedPos.y, this.currentBedPos.z);
+      avatarFacingYaw = bedRot * (Math.PI / 2);
+      this.characterFacingYaw = avatarFacingYaw;
+    } else if (this.isSitting && this.currentChairPos) {
+      const chairRot = this.world.getChairRotation(this.currentChairPos.x, this.currentChairPos.y, this.currentChairPos.z);
+      avatarFacingYaw = chairRot * (Math.PI / 2);
+      this.characterFacingYaw = avatarFacingYaw;
+    }
+
     this.avatar.update(
       dt,
       this.position,
       this.isMovingInput,
       horizSpeed,
-      this.characterFacingYaw,
+      avatarFacingYaw,
       this.pitch,
       this.isGrounded,
       this.isFlying,

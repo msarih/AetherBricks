@@ -184,7 +184,7 @@ interactionHintEl.addEventListener('click', (e) => {
     return;
   }
 
-  const aimDir = player.getAimDirection();
+  const charFacingYaw = player.getCharacterFacingYaw();
   const bed =
     (world.currentTarget?.removePos &&
       world.isBedAt(
@@ -193,7 +193,7 @@ interactionHintEl.addEventListener('click', (e) => {
         world.currentTarget.removePos.z
       )
       ? world.currentTarget.removePos
-      : null) ?? world.getFacingBed(player.position, aimDir, 2.5);
+      : null) ?? world.getFacingBed(player.position, charFacingYaw, 2.6);
 
   if (bed) {
     player.toggleSleeping(bed);
@@ -210,7 +210,7 @@ interactionHintEl.addEventListener('click', (e) => {
         world.currentTarget.removePos.z
       )
       ? world.currentTarget.removePos
-      : null) ?? world.getFacingChair(player.position, aimDir, 2.2);
+      : null) ?? world.getFacingChair(player.position, charFacingYaw, 2.4);
 
   if (chair) {
     player.toggleSitting(chair);
@@ -1379,13 +1379,13 @@ window.addEventListener('keydown', (e) => {
       return;
     }
 
-    const aimDir = player.getAimDirection();
+    const charFacingYaw = player.getCharacterFacingYaw();
 
-    // Lit visé directement par le réticule OU lit face au joueur
+    // Lit visé directement par le réticule OU lit devant le personnage
     const bed =
       (target?.removePos && world.isBedAt(target.removePos.x, target.removePos.y, target.removePos.z)
         ? target.removePos
-        : null) ?? world.getFacingBed(player.position, aimDir, 2.5);
+        : null) ?? world.getFacingBed(player.position, charFacingYaw, 2.6);
 
     if (bed) {
       player.toggleSleeping(bed);
@@ -1394,11 +1394,11 @@ window.addEventListener('keydown', (e) => {
       return;
     }
 
-    // Chaise visée directement par le réticule OU chaise face au joueur
+    // Chaise visée directement par le réticule OU chaise devant le personnage
     const chair =
       (target?.removePos && world.isChairAt(target.removePos.x, target.removePos.y, target.removePos.z)
         ? target.removePos
-        : null) ?? world.getFacingChair(player.position, aimDir, 2.2);
+        : null) ?? world.getFacingChair(player.position, charFacingYaw, 2.4);
 
     if (chair) {
       player.toggleSitting(chair);
@@ -1763,10 +1763,12 @@ function animate(now: number): void {
       ? world.currentTarget.removePos
       : null;
 
+  const charFacingYaw = player.getCharacterFacingYaw();
+
   const nearbyBed =
     (targetedBed && player.position.distanceTo(targetedBed) <= 2.6
       ? targetedBed
-      : null) ?? world.getFacingBed(player.position, playerAimDir, 2.5);
+      : null) ?? world.getFacingBed(player.position, charFacingYaw, 2.6);
 
   const targetedChair =
     world.currentTarget?.removePos &&
@@ -1779,17 +1781,17 @@ function animate(now: number): void {
       : null;
 
   let validTargetedChair: THREE.Vector3 | null = null;
-  if (targetedChair && player.position.distanceTo(targetedChair) <= 2.3) {
+  if (targetedChair && player.position.distanceTo(targetedChair) <= 2.4) {
     const chairRot = world.getChairRotation(targetedChair.x, targetedChair.y, targetedChair.z);
     const chairYaw = chairRot * (Math.PI / 2);
     const chairFront = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), chairYaw);
     const chairToPlayer = new THREE.Vector3(player.position.x - targetedChair.x, 0, player.position.z - targetedChair.z).normalize();
-    if (chairToPlayer.dot(chairFront) >= 0.05) {
+    if (chairToPlayer.dot(chairFront) >= -0.2) {
       validTargetedChair = targetedChair;
     }
   }
 
-  const nearbyChair = validTargetedChair ?? world.getFacingChair(player.position, playerAimDir, 2.2);
+  const nearbyChair = validTargetedChair ?? world.getFacingChair(player.position, charFacingYaw, 2.4);
 
   if (player.isSleeping) {
     interactionHintEl.className = 'interaction-hint chair-hint';

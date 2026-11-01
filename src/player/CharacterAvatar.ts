@@ -9,6 +9,8 @@ export class CharacterAvatar {
   private readonly rightArmPivot = new THREE.Group();
   private readonly leftLegPivot = new THREE.Group();
   private readonly rightLegPivot = new THREE.Group();
+  private readonly leftKneePivot = new THREE.Group();
+  private readonly rightKneePivot = new THREE.Group();
   private readonly heldBrickMesh: THREE.Mesh;
   private readonly backpackMesh: THREE.Mesh;
 
@@ -142,25 +144,42 @@ export class CharacterAvatar {
     this.heldBrickMesh.position.set(0, -0.54, -0.1);
     this.rightArmPivot.add(this.heldBrickMesh);
 
-    // --- 4. Jambe Gauche et Jambe Droite (Pivots aux hanches y = 0.68) ---
+    // --- 4. Jambe Gauche et Jambe Droite articulées (Hanches à y = 0.68, Genoux à y = -0.34) ---
     this.leftLegPivot.position.set(-0.12, 0.68, 0);
     this.rightLegPivot.position.set(0.12, 0.68, 0);
     this.bodyGroup.add(this.leftLegPivot, this.rightLegPivot);
 
-    const legGeo = new RoundedBoxGeometry(0.2, 0.54, 0.2, 3, 0.03);
+    // Cuisse (haut de jambe) : hauteur 0.34
+    const thighGeo = new RoundedBoxGeometry(0.2, 0.34, 0.2, 3, 0.03);
+    const leftThigh = new THREE.Mesh(thighGeo, pantsMat);
+    leftThigh.position.set(0, -0.17, 0);
+    this.leftLegPivot.add(leftThigh);
+
+    const rightThigh = new THREE.Mesh(thighGeo, pantsMat);
+    rightThigh.position.set(0, -0.17, 0);
+    this.rightLegPivot.add(rightThigh);
+
+    // Genou articulé (pivot à y = -0.34)
+    this.leftKneePivot.position.set(0, -0.34, 0);
+    this.rightKneePivot.position.set(0, -0.34, 0);
+    this.leftLegPivot.add(this.leftKneePivot);
+    this.rightLegPivot.add(this.rightKneePivot);
+
+    // Mollet (hauteur 0.20) + Botte (hauteur 0.16)
+    const shinGeo = new RoundedBoxGeometry(0.19, 0.2, 0.19, 2, 0.025);
     const bootGeo = new RoundedBoxGeometry(0.21, 0.16, 0.26, 2, 0.03);
 
-    const leftPants = new THREE.Mesh(legGeo, pantsMat);
-    leftPants.position.set(0, -0.27, 0);
+    const leftShin = new THREE.Mesh(shinGeo, pantsMat);
+    leftShin.position.set(0, -0.1, 0);
     const leftBoot = new THREE.Mesh(bootGeo, bootsMat);
-    leftBoot.position.set(0, -0.6, -0.02);
-    this.leftLegPivot.add(leftPants, leftBoot);
+    leftBoot.position.set(0, -0.26, -0.02);
+    this.leftKneePivot.add(leftShin, leftBoot);
 
-    const rightPants = new THREE.Mesh(legGeo, pantsMat);
-    rightPants.position.set(0, -0.27, 0);
+    const rightShin = new THREE.Mesh(shinGeo, pantsMat);
+    rightShin.position.set(0, -0.1, 0);
     const rightBoot = new THREE.Mesh(bootGeo, bootsMat);
-    rightBoot.position.set(0, -0.6, -0.02);
-    this.rightLegPivot.add(rightPants, rightBoot);
+    rightBoot.position.set(0, -0.26, -0.02);
+    this.rightKneePivot.add(rightShin, rightBoot);
 
     this.root.traverse((obj) => {
       if (obj instanceof THREE.Mesh) {
@@ -233,6 +252,8 @@ export class CharacterAvatar {
       this.rightLegPivot.rotation.x = 0;
       this.leftLegPivot.rotation.z = -0.02;
       this.rightLegPivot.rotation.z = 0.02;
+      this.leftKneePivot.rotation.x = 0;
+      this.rightKneePivot.rotation.x = 0;
       return;
     }
 
@@ -240,15 +261,19 @@ export class CharacterAvatar {
       this.heldBrickMesh.visible = false;
       this.backpackMesh.visible = false;
 
-      // Hanches reposant parfaitement sur le coussin, buste droit sans reculer dans le dossier
-      this.bodyGroup.position.set(0, -0.68, 0.08);
+      // Hanches reposant parfaitement sur le coussin, buste droit au contact du dossier
+      this.bodyGroup.position.set(0, -0.66, 0.08);
       this.bodyGroup.rotation.x = 0;
 
-      // Jambes pliées vers l'AVANT (angle positif Math.PI * 0.44 = +80° pour faire pointer les jambes vers -Z !)
-      this.leftLegPivot.rotation.x = Math.PI * 0.44;
-      this.rightLegPivot.rotation.x = Math.PI * 0.44;
+      // Cuisses pliées horizontalement vers l'AVANT (angle +90°) sur l'assise
+      this.leftLegPivot.rotation.x = Math.PI * 0.48;
+      this.rightLegPivot.rotation.x = Math.PI * 0.48;
       this.leftLegPivot.rotation.z = -0.04;
       this.rightLegPivot.rotation.z = 0.04;
+
+      // Genoux pliés à 90° vers le BAS devant le fauteuil pour que les mollets et bottes descendent vers le sol
+      this.leftKneePivot.rotation.x = -Math.PI * 0.48;
+      this.rightKneePivot.rotation.x = -Math.PI * 0.48;
 
       // Bras détendus et reposant le long du corps à l'intérieur des accoudoirs
       this.leftArmPivot.rotation.x = 0.28;
@@ -265,6 +290,8 @@ export class CharacterAvatar {
     this.backpackMesh.visible = true;
     this.bodyGroup.position.z = 0;
     this.bodyGroup.rotation.x = 0;
+    this.leftKneePivot.rotation.x = 0;
+    this.rightKneePivot.rotation.x = 0;
 
     // La tête regarde dans la direction où fait face le personnage
     this.headPivot.rotation.y = 0;
