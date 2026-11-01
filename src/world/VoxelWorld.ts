@@ -1061,6 +1061,125 @@ export class VoxelWorld {
     return false;
   }
 
+  /**
+   * Vérifie si un point 3D (x, y, z) se trouve à l'intérieur d'un élément solide (mur, plafond, toiture, sol).
+   * Utilisé pour la caméra spring-arm anti-traversée des murs et plafonds.
+   */
+  public isPointInsideSolid(x: number, y: number, z: number): boolean {
+    const rx = Math.round(x);
+    const ry = Math.round(y);
+    const rz = Math.round(z);
+
+    // 1. Dalles de plafond (posées à y = ry, hauteur dans [ry + 0.30, ry + 0.52])
+    const ceilItem = this.bricks.get(`ceil:${rx},${ry},${rz}`);
+    if (ceilItem) {
+      if (y >= ry + 0.28 && y <= ry + 0.52) {
+        if (Math.abs(x - rx) <= 0.50 && Math.abs(z - rz) <= 0.50) {
+          return true;
+        }
+      }
+    }
+
+    // 2. Blocs principaux (murs, briques, toitures, fenêtres, etc.)
+    const mainItem = this.bricks.get(`main:${rx},${ry},${rz}`);
+    if (mainItem) {
+      const t = mainItem.entry.type;
+      if (
+        (t === BRICK_TYPE_DOOR_OAK && mainItem.entry.open) ||
+        isWater(t) ||
+        isCarpet(t) ||
+        isSteppingStone(t) ||
+        isWildflowers(t)
+      ) {
+        return false;
+      }
+
+      if (isFloorSlab(t)) {
+        return (
+          y >= ry - 0.52 &&
+          y <= ry - 0.32 &&
+          Math.abs(x - rx) <= 0.50 &&
+          Math.abs(z - rz) <= 0.50
+        );
+      }
+
+      if (
+        Math.abs(x - rx) <= 0.50 &&
+        Math.abs(y - ry) <= 0.50 &&
+        Math.abs(z - rz) <= 0.50
+      ) {
+        return true;
+      }
+    }
+
+    // 3. Sol naturel du monde (en-dessous de y = 0, hors trous creusés)
+    if (y < 0.05 && !this.dugColumns.has(`${rx},${rz}`)) {
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Calcule la distance de recul maximale sécurisée pour la caméra 3ème personne.
+   * Empêche catégoriquement la caméra de traverser les murs, plafonds et toitures.
+   */
+  public getCameraCollisionDistance(
+    from: THREE.Vector3,
+    to: THREE.Vector3,
+    minDist: number = 0.55,
+    padding: number = 0.22
+  ): number {
+    const dir = new THREE.Vector3().subVectors(to, from);
+    const targetDist = dir.length();
+    if (targetDist < 0.001) return targetDist;
+    dir.normalize();
+
+    // Échantillonnage serré (pas de 8 cm) le long du rayon de la caméra
+    const stepSize = 0.08;
+    const steps = Math.ceil(targetDist / stepSize);
+
+    for (let i = 1; i <= steps; i++) {
+      const curDist = Math.min(targetDist, i * stepSize);
+      const testX = from.x + dir.x * curDist;
+      const testY = from.y + dir.y * curDist;
+      const testZ = from.z + dir.z * curDist;
+
+      if (this.isPointInsideSolid(testX, testY, testZ)) {
+        return Math.max(minDist, curDist - padding);
+      }
+    }
+
+    return targetDist;
+  }
+
+  /**
+   * Détecte si une position est à l'intérieur d'un bâtiment (abritée sous un plafond ou un toit).
+   */
+  public isUnderCeiling(x: number, z: number, y: number): boolean {
+    const rx = Math.round(x);
+    const rz = Math.round(z);
+    const startY = Math.max(0, Math.round(y));
+
+    for (let cy = startY; cy <= startY + 6; cy++) {
+      if (this.bricks.has(`ceil:${rx},${cy},${rz}`)) return true;
+      const main = this.bricks.get(`main:${rx},${cy},${rz}`);
+      if (main) {
+        const t = main.entry.type;
+        if (
+          t === OBJ_TYPE_GABLE_ROOF ||
+          t === OBJ_TYPE_TRIANGLE_WHITE ||
+          t === OBJ_TYPE_TRIANGLE_OAK ||
+          isCeilingSlab(t) ||
+          t === 1
+        ) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
   public hasBrickAt(x: number, y: number, z: number): boolean {
     const rx = Math.round(x);
     const ry = Math.round(y);

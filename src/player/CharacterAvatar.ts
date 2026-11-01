@@ -13,6 +13,7 @@ export class CharacterAvatar {
   private readonly rightKneePivot = new THREE.Group();
   private readonly heldBrickMesh: THREE.Mesh;
   private readonly backpackMesh: THREE.Mesh;
+  private readonly avatarMaterials: THREE.Material[] = [];
 
   private walkPhase = 0;
   private climbPhase = 0;
@@ -52,6 +53,17 @@ export class CharacterAvatar {
       roughness: 0.65,
     });
     const eyeMat = new THREE.MeshBasicMaterial({ color: 0x0f172a });
+
+    this.avatarMaterials.push(
+      skinMat,
+      hairMat,
+      jacketMat,
+      shirtMat,
+      pantsMat,
+      bootsMat,
+      backpackMat,
+      eyeMat
+    );
 
     // Le personnage mesure ~1.72m au total. Son centre physique est à y=0 (pieds à y = -0.86, sommet tête à y = +0.86)
     this.bodyGroup.position.y = -0.86;
@@ -192,6 +204,15 @@ export class CharacterAvatar {
   public triggerArmSwing(): void {
     this.isSwinging = true;
     this.swingProgress = 0;
+  }
+
+  public setOpacity(opacity: number): void {
+    const isTrans = opacity < 0.98;
+    for (const mat of this.avatarMaterials) {
+      mat.transparent = isTrans;
+      mat.opacity = opacity;
+      mat.needsUpdate = true;
+    }
   }
 
   public update(

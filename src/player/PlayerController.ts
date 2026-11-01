@@ -35,6 +35,8 @@ export class PlayerController {
   private readonly eyeOffset = 0.62;
   private stepTimer = 0;
   private ladderClimbDistance = 0;
+  private userTpsDist = 3.2;
+  private currentCamDist = 3.2;
 
   constructor(
     camera: THREE.PerspectiveCamera,
@@ -114,6 +116,13 @@ export class PlayerController {
       this.clearKeys();
       this.onLockChange?.(this.isLocked);
     });
+
+    window.addEventListener('wheel', (e) => {
+      if (this.viewMode === 'tps-back' || this.viewMode === 'tps-front') {
+        const zoomDelta = e.deltaY * 0.0022;
+        this.userTpsDist = THREE.MathUtils.clamp(this.userTpsDist + zoomDelta, 0.85, 4.8);
+      }
+    }, { passive: true });
   }
 
   public clearKeys(): void {
@@ -764,35 +773,53 @@ export class PlayerController {
     const headPos = this.getEyePosition();
 
     if (this.viewMode === 'fps') {
+      this.avatar.setOpacity(1.0);
       this.camera.position.copy(headPos);
       this.camera.rotation.y = this.yaw;
       this.camera.rotation.x = this.pitch;
     } else if (this.viewMode === 'tps-back') {
-      const dist = 3.6;
-      const aimDir = this.getAimDirection();
-      const rightOffset = new THREE.Vector3(Math.cos(this.yaw), 0, -Math.sin(this.yaw)).multiplyScalar(0.35);
-      const camPos = headPos
-        .clone()
-        .add(rightOffset)
-        .addScaledVector(aimDir, -dist)
-        .add(new THREE.Vector3(0, 0.35, 0));
+      const isIndoors = this.world.isUnderCeiling(this.position.x, this.position.z, this.position.y);
+      const targetBaseDist = isIndoors ? Math.min(this.userTpsDist, 2.1) : this.userTpsDist;
+      const shoulderOffset = isIndoors ? 0.22 : 0.32;
+      const vertOffset = isIndoors ? 0.16 : 0.30;
 
-      camPos.y = Math.max(-0.15, camPos.y);
+      const aimDir = this.getAimDirection();
+      const rightOffset = new THREE.Vector3(Math.cos(this.yaw), 0, -Math.sin(this.yaw)).multiplyScalar(shoulderOffset);
+      const camOrigin = headPos.clone().add(new THREE.Vector3(0, vertOffset, 0));
+      const idealCamPos = camOrigin.clone().add(rightOffset).addScaledVector(aimDir, -targetBaseDist);
+
+      const safeDist = this.world.getCameraCollisionDistance(camOrigin, idealCamPos, 0.55, 0.20);
+      const lerpSpeed = safeDist < this.currentCamDist ? 24 : 10;
+      this.currentCamDist = THREE.MathUtils.lerp(this.currentCamDist, safeDist, Math.min(1, dt * lerpSpeed));
+
+      const actualShoulder = rightOffset.clone().multiplyScalar(Math.min(1, this.currentCamDist / 1.4));
+      const camPos = camOrigin.clone().add(actualShoulder).addScaledVector(aimDir, -this.currentCamDist);
+      camPos.y = Math.max(0.12, camPos.y);
 
       this.camera.position.copy(camPos);
-      const lookTarget = headPos.clone().add(rightOffset).addScaledVector(aimDir, 6.0);
+      const lookTarget = headPos.clone().add(actualShoulder).addScaledVector(aimDir, 6.0);
       this.camera.lookAt(lookTarget);
+
+      if (this.currentCamDist < 1.05) {
+        const opacity = THREE.MathUtils.clamp((this.currentCamDist - 0.45) / 0.60, 0.35, 1.0);
+        this.avatar.setOpacity(opacity);
+      } else {
+        this.avatar.setOpacity(1.0);
+      }
     } else {
-      const dist = 3.2;
+      const isIndoors = this.world.isUnderCeiling(this.position.x, this.position.z, this.position.y);
+      const targetBaseDist = isIndoors ? Math.min(this.userTpsDist, 2.1) : this.userTpsDist;
       const forwardFlat = new THREE.Vector3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw));
-      const camPos = headPos
-        .clone()
-        .addScaledVector(forwardFlat, dist)
-        .add(new THREE.Vector3(0, 0.25, 0));
-      camPos.y = Math.max(-0.15, camPos.y);
+      const camOrigin = headPos.clone().add(new THREE.Vector3(0, 0.20, 0));
+      const idealCamPos = camOrigin.clone().addScaledVector(forwardFlat, targetBaseDist);
+
+      const safeDist = this.world.getCameraCollisionDistance(camOrigin, idealCamPos, 0.6, 0.20);
+      const camPos = camOrigin.clone().addScaledVector(forwardFlat, safeDist);
+      camPos.y = Math.max(0.12, camPos.y);
 
       this.camera.position.copy(camPos);
       this.camera.lookAt(this.position.x, this.position.y + 0.25, this.position.z);
+      this.avatar.setOpacity(1.0);
     }
   }
 }
