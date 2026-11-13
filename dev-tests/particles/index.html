@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <title>Test des particules</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #000;
+      }
+      canvas {
+        display: block;
+      }
+      #feuille {
+        position: fixed;
+        left: 0;
+        top: 0;
+        display: none;
+        image-rendering: pixelated;
+        background: #404858;
+      }
+      #aide {
+        position: fixed;
+        left: 8px;
+        bottom: 8px;
+        color: #fff;
+        font: 12px/1.4 monospace;
+        text-shadow: 0 1px 2px #000;
+        white-space: pre;
+        pointer-events: none;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="feuille"></canvas>
+    <div id="aide"></div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

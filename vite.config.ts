@@ -235,5 +235,14 @@ function aetherBricksDatabasePlugin(): Plugin {
 
 export default defineConfig({
   plugins: [aetherBricksDatabasePlugin()],
+  build: {
+    rollupOptions: {
+      // index.html : le jeu ; legacy.html : l'ancien constructeur 3D
+      input: {
+        main: path.resolve(process.cwd(), 'index.html'),
+        legacy: path.resolve(process.cwd(), 'legacy.html'),
+      },
+    },
+  },
 });
 

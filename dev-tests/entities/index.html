@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <title>Test des entités, de la main et des icônes</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #20232a;
+        color: #fff;
+        font: 12px/1.4 monospace;
+      }
+      canvas {
+        display: block;
+      }
+      #aide {
+        position: fixed;
+        left: 8px;
+        bottom: 8px;
+        text-shadow: 0 1px 2px #000;
+        white-space: pre;
+        pointer-events: none;
+      }
+      #icones {
+        position: absolute;
+        left: 0;
+        top: 0;
+        padding: 10px;
+      }
+      #icones h2 {
+        margin: 10px 0 4px;
+        font: bold 13px monospace;
+      }
+      #icones .grille {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 2px;
+        max-width: 1380px;
+      }
+      #icones .case {
+        width: 48px;
+        height: 48px;
+        background-color: #8b8b8b;
+        border: 2px solid;
+        border-color: #373737 #fff #fff #373737;
+        box-sizing: border-box;
+        background-origin: content-box;
+        padding: 3px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="icones"></div>
+    <div id="aide"></div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
