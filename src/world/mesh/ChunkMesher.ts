@@ -320,6 +320,7 @@ let qR = 255;
 let qG = 255;
 let qB = 255;
 let fancy = true;
+let smooth = true;
 let tints: Uint8Array = new Uint8Array(256 * 9);
 let baseX = 0;
 let baseZ = 0;
@@ -423,6 +424,12 @@ function cornerLight(i: number, f: number): void {
   const F = i + NOFF[f];
   const fs = rsky[F];
   const fb = rblk[F];
+  if (!smooth) {
+    CS[0] = CS[1] = CS[2] = CS[3] = fs;
+    CB[0] = CB[1] = CB[2] = CB[3] = fb;
+    CA[0] = CA[1] = CA[2] = CA[3] = 1;
+    return;
+  }
   for (let k = 0; k < 4; k++) {
     const a = F + AO1[f * 4 + k];
     const b = F + AO2[f * 4 + k];
@@ -1157,6 +1164,7 @@ export function buildChunkMesh(req: MeshRequest): MeshResult {
   opaquePass.reset();
   translucentPass.reset();
   fancy = req.fancy;
+  smooth = req.smoothLighting !== false;
   tints = req.tints;
   baseX = req.cx * 16;
   baseZ = req.cz * 16;
@@ -1206,6 +1214,7 @@ export function buildBlockModel(id: number, meta: number): { opaque: PassData | 
   opaquePass.reset();
   translucentPass.reset();
   fancy = true;
+  smooth = true;
   tints = DEFAULT_TINTS;
   baseX = 0;
   baseZ = 0;

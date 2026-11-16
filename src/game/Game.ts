@@ -356,8 +356,9 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
   applySettings(): void {
     const s = this.settings;
     this.chunks.viewDistance = s.renderDistance;
-    if (this.chunks.fancy !== s.fancyGraphics) {
+    if (this.chunks.fancy !== s.fancyGraphics || this.chunks.smoothLighting !== s.smoothLighting) {
       this.chunks.fancy = s.fancyGraphics;
+      this.chunks.smoothLighting = s.smoothLighting;
       this.chunks.remeshAll();
     }
     this.sky.setCloudsVisible(s.clouds);

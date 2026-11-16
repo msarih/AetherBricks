@@ -231,6 +231,35 @@ const dbg = (page) => ev(page, () => { const d = window.__game.debugLines(); ret
     const li = await ev(page, (s) => { const w = window.__game.world; return [w.getBlockLight(s.x, s.y, s.z - 1), w.getBlockLight(s.x, s.y, s.z + 1), w.getBlockLight(s.x + 5, s.y + 1, s.z - 1)]; }, spot);
     check('la torche éclaire : 14 sur place, 12 à deux blocs, 8 à six', before === 0 && li[0] === 14 && li[1] === 12 && li[2] === 8, `avant ${before}, après ${JSON.stringify(li)}`);
     await shot(page, '48-torche-nuit');
+    // éclairage adouci : basculer smoothLighting remaille les chunks avec éclairage plat par face (sans dégradé ni AO aux coins)
+    const countSmoothQuads = (s) => ev(page, (s) => {
+      const g = window.__game;
+      const cx = s.x >> 4, cz = s.z >> 4;
+      const mesh = g.chunkRenderer.group.children.find((m) => m.renderOrder === 0 && m.position.x === cx * 16 && m.position.z === cz * 16);
+      if (!mesh) return -1;
+      const col = mesh.geometry.getAttribute('tint').array;
+      const lit = mesh.geometry.getAttribute('light').array;
+      let graded = 0;
+      for (let o = 0; o < lit.length; o += 16) {
+        const sameShade = col[o + 3] === col[o + 7] && col[o + 3] === col[o + 11] && col[o + 3] === col[o + 15];
+        const sameBlockLight = lit[o + 1] === lit[o + 5] && lit[o + 1] === lit[o + 9] && lit[o + 1] === lit[o + 13];
+        if (!sameShade || !sameBlockLight) graded++;
+      }
+      return graded;
+    }, s);
+    const gradedSmooth = await countSmoothQuads(spot);
+    await ev(page, () => { const g = window.__game; g.settings.smoothLighting = false; g.applySettings(); });
+    await page.waitForFunction((s) => {
+      const c = window.__game.world.getChunk(s.x >> 4, s.z >> 4);
+      return c && !c.meshDirty && !c.meshPending;
+    }, { timeout: 10000 }, spot);
+    const gradedFlat = await countSmoothQuads(spot);
+    await ev(page, () => { const g = window.__game; g.settings.smoothLighting = true; g.applySettings(); });
+    await page.waitForFunction((s) => {
+      const c = window.__game.world.getChunk(s.x >> 4, s.z >> 4);
+      return c && !c.meshDirty && !c.meshPending;
+    }, { timeout: 10000 }, spot);
+    check('éclairage adouci (smoothLighting) : actif lisse les coins, désactivé uniformise les faces', gradedSmooth > 0 && gradedFlat === 0, `lissé=${gradedSmooth} quads dégradés, plat=${gradedFlat}`);
     // porte
     await ev(page, (s) => { T.select('oak_door'); T.aim(s.x + 1.5, s.y, s.z + 0.5); }, spot);
     await ticks(page, 2); await rclick(page);

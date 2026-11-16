@@ -29,6 +29,8 @@ export interface MeshRequest {
   top: number;
   /** Feuillages détaillés (toutes les faces) ou rapides. */
   fancy: boolean;
+  /** Éclairage adouci (moyenne des 4 cellules voisines et occlusion ambiante aux coins). */
+  smoothLighting: boolean;
 }
 
 export interface MeshResult {
