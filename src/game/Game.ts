@@ -44,6 +44,7 @@ import { World, type BlockEntity, type WorldEffect, type WorldHost } from '../wo
 import { BIOMES } from '../world/gen/Biomes';
 import { WorldGen } from '../world/gen/WorldGen';
 import { blockEntityItems, tickBlockEntities } from './BlockEntities';
+import { ADVANCEMENTS } from './Advancements';
 import { explode as runExplosion } from './Explosion';
 import { Interaction, particleTile, particleTint, type InteractionHost } from './Interaction';
 import { CreativeMenu, HOTBAR_SIZE, InventoryMenu, type Inventory, type Menu } from './Inventory';
@@ -676,8 +677,25 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     this.time++;
     this.tickWeather();
     this.tickSleep();
+    this.tickAdvancements();
 
     if (!p.alive && !this.deathShown) this.showDeath();
+  }
+
+  private tickAdvancements(): void {
+    const p = this.player;
+    if (p.creative) return;
+    // Vérifie toutes les demi-secondes (ou pendant le sommeil)
+    if (this.time % 10 !== 0 && !p.sleeping) return;
+    for (const adv of ADVANCEMENTS) {
+      if (p.advancements.has(adv.id)) continue;
+      if (adv.check(p)) {
+        p.advancements.add(adv.id);
+        this.sfx.play('levelup', { volume: 0.55, pitch: 1.1 });
+        this.ui.showAdvancement(adv.title, adv.detail, adv.icon);
+        this.ui.addMessage(`[Progrès] ${adv.title} — ${adv.detail}`);
+      }
+    }
   }
 
   private tickWeather(): void {
@@ -1229,6 +1247,14 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
   get fade(): number {
     const p = this.player;
     return p.sleeping ? Math.min(1, p.sleepTicks / SLEEP_TICKS) : 0;
+  }
+
+  get guideGoal(): string {
+    const p = this.player;
+    for (const adv of ADVANCEMENTS) {
+      if (!p.advancements.has(adv.id)) return adv.goal;
+    }
+    return '';
   }
 
   debugLines(): { left: string[]; right: string[] } {

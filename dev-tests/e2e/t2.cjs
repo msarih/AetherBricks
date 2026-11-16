@@ -63,6 +63,8 @@ async function useOnGround(page, x, z) {
   let s = await state(page);
   console.log('état initial', JSON.stringify(s));
   check('apparition au sol du monde plat', s.onGround && Math.abs(s.pos[1] - 4) < 0.01, `pos ${s.pos}`);
+  const initialGoal = await page.evaluate(() => { const e = document.querySelector('[data-mc="guide"]'); return e ? e.textContent : ''; });
+  check('progression guidée : objectif initial affiché en survie', initialGoal.includes('bois'), initialGoal);
   await ev(page, () => { window.__game.difficulty = 0; }); // paisible le temps des tests de mouvement
   await shot(page, '10-plat');
 
@@ -211,6 +213,16 @@ async function useOnGround(page, x, z) {
     check('livre de recettes : un clic remplit la grille et produit un résultat', resStack > 0, `résultat id=${resStack}`);
     await page.keyboard.press('Escape');
     await sleep(300);
+    await ticks(page, 12);
+    const advInfo = await page.evaluate(() => ({
+      advs: Array.from(window.__game.player.advancements),
+      toastShown: document.querySelector('[data-mc="toast"]')?.classList.contains('mc-shown') ?? false,
+      goal: document.querySelector('[data-mc="guide"]')?.textContent ?? '',
+    }));
+    check('progression guidée : progrès débloqués (bois, planches, pierre) et notification affichée',
+      advInfo.advs.includes('wood') && advInfo.advs.includes('planks') && advInfo.advs.includes('cobblestone') && advInfo.toastShown,
+      JSON.stringify(advInfo));
+    await shot(page, '14c-progres-toast');
   });
 
   await section('chat et commandes', async () => {
@@ -480,7 +492,7 @@ async function useOnGround(page, x, z) {
     await useOnGround(page, 70, 67);
     await chat(page, '/summon cow');
     await ticks(page, 10);
-    marker = await ev(page, () => { const g = window.__game; return { block: T.block(70, 4, 67), inv: T.inv(), time: g.time, pos: [g.player.x, g.player.y, g.player.z], cows: T.mobs('cow').filter((e) => Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, near: T.mobs('cow').filter((e) => Math.hypot(e.x - 70.5, e.z - 67.5) < 6).length, hole: null, bed: g.player.bed, chest: T.block(40, 4, 38), health: g.player.health, mode: g.player.gameMode }; });
+    marker = await ev(page, () => { const g = window.__game; return { block: T.block(70, 4, 67), inv: T.inv(), time: g.time, pos: [g.player.x, g.player.y, g.player.z], cows: T.mobs('cow').filter((e) => Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, near: T.mobs('cow').filter((e) => Math.hypot(e.x - 70.5, e.z - 67.5) < 6).length, hole: null, bed: g.player.bed, chest: T.block(40, 4, 38), health: g.player.health, mode: g.player.gameMode, advs: Array.from(g.player.advancements).sort() }; });
     if (holeAt) marker.hole = await ev(page, (h) => T.block(h.x, h.y, h.z), holeAt);
     console.log('  repères avant sauvegarde :', JSON.stringify(marker));
     await page.keyboard.press('Escape');
@@ -498,7 +510,7 @@ async function useOnGround(page, x, z) {
     await page.waitForFunction('window.__game && window.__game.ready === true', { timeout: 120000 });
     await install(page);
     await ticks(page, 20);
-    const now = await ev(page, () => { const g = window.__game; return { block: T.block(70, 4, 67), inv: T.inv(), time: g.time, pos: [g.player.x, g.player.y, g.player.z], cows: T.mobs('cow').filter((e) => Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, near: T.mobs('cow').filter((e) => Math.hypot(e.x - 70.5, e.z - 67.5) < 6).length, bed: g.player.bed, chest: T.block(40, 4, 38), health: g.player.health, mode: g.player.gameMode }; });
+    const now = await ev(page, () => { const g = window.__game; return { block: T.block(70, 4, 67), inv: T.inv(), time: g.time, pos: [g.player.x, g.player.y, g.player.z], cows: T.mobs('cow').filter((e) => Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, near: T.mobs('cow').filter((e) => Math.hypot(e.x - 70.5, e.z - 67.5) < 6).length, bed: g.player.bed, chest: T.block(40, 4, 38), health: g.player.health, mode: g.player.gameMode, advs: Array.from(g.player.advancements).sort() }; });
     if (holeAt) now.hole = await ev(page, (h) => T.block(h.x, h.y, h.z), holeAt);
     console.log('  repères après rechargement :', JSON.stringify(now));
     check('bloc posé persistant', now.block === marker.block && now.block !== 0);
@@ -508,6 +520,7 @@ async function useOnGround(page, x, z) {
     check('heure persistante', now.time >= marker.time && now.time < marker.time + 200, `${marker.time} → ${now.time}`);
     check('animaux persistants (rayon 48 blocs)', Math.abs(now.cows - marker.cows) <= 2 && now.near >= 1 && marker.near >= 1, `${marker.cows} → ${now.cows} ; vache invoquée à proximité : ${marker.near} → ${now.near}`);
     check('lit et blocs à entité persistants', JSON.stringify(now.bed) === JSON.stringify(marker.bed) && now.chest === marker.chest);
+    check('progrès persistants', JSON.stringify(now.advs) === JSON.stringify(marker.advs) && now.advs.includes('slept'), JSON.stringify(now.advs));
     await shot(page, '33-recharge');
   });
 

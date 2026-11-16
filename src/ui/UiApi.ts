@@ -34,6 +34,8 @@ export interface UiGame {
   readonly onFire: boolean;
   /** Voile noir plein écran (0..1) : endormissement dans un lit. */
   readonly fade: number;
+  /** Prochain objectif guidé (en survie), ou chaîne vide si tout est terminé. */
+  readonly guideGoal: string;
   /** 0 paisible, 1 facile, 2 normal, 3 difficile. */
   difficulty: number;
 
@@ -119,6 +121,8 @@ export interface UiApi {
   addMessage(text: string): void;
   /** Message bref au-dessus de la barre d'objets (« Vous ne pouvez dormir que la nuit »). */
   actionBar(text: string): void;
+  /** Notification de progrès accompli en haut à droite de l'écran. */
+  showAdvancement(title: string, detail: string, iconId: number): void;
   /** Affiche ou cache l'écran de débogage (F3). */
   toggleDebug(): void;
   /** Cache tout le HUD (F1). */

@@ -66,6 +66,8 @@ export class Player extends Living implements PlayerLike {
   /** Cause et auteur du dernier coup mortel (pour le message de mort). */
   deathCause: DamageCause = 'generic';
   deathBy: Entity | null = null;
+  /** Identifiants des progrès (étape guidée) déjà accomplis par le joueur. */
+  readonly advancements = new Set<string>();
 
   /** Balancement de la vue : amplitude (0..1) et distance parcourue, avec leurs valeurs du tick précédent. */
   pBob = 0;
@@ -457,6 +459,7 @@ export class Player extends Living implements PlayerLike {
       xpProgress: round3(this.xpProgress),
       flying: this.flying,
       bed: this.bed ? [this.bed.x, this.bed.y, this.bed.z] : null,
+      advancements: [...this.advancements],
       inventory: this.inventory.save(),
     };
   }
@@ -482,6 +485,10 @@ export class Player extends Living implements PlayerLike {
       Array.isArray(bed) && bed.length === 3 && bed.every((v) => typeof v === 'number')
         ? { x: bed[0] as number, y: bed[1] as number, z: bed[2] as number }
         : null;
+    this.advancements.clear();
+    if (Array.isArray(d.advancements)) {
+      for (const id of d.advancements) if (typeof id === 'string') this.advancements.add(id);
+    }
     this.inventory.load(d.inventory);
     if (this.health <= 0) this.deathTime = 20;
   }
