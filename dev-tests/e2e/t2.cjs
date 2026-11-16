@@ -574,7 +574,18 @@ async function useOnGround(page, x, z) {
     await shot(page, '27-sommeil');
     await page.waitForFunction(() => window.__game.player.sleeping === false, { timeout: 20000 });
     s = await state(page);
+    const wakeInfo = await ev(page, () => {
+      const p = window.__game.player;
+      const bx = Math.floor(p.x);
+      const by = Math.floor(p.y);
+      const bz = Math.floor(p.z);
+      const blockAtFeet = T.block(bx, by, bz);
+      const bed = p.bed;
+      const dist = bed ? Math.hypot(p.x - (bed.x + 0.5), p.z - (bed.z + 0.5)) : 0;
+      return { blockAtFeet, bed, dist, onGround: p.onGround, y: p.y };
+    });
     check('réveil au matin suivant', Math.floor(s.time / 24000) === day0 + 1 && s.time % 24000 < 1000, `time ${s.time}`);
+    check('au réveil, le joueur est debout à côté du lit (pas dessus)', wakeInfo.onGround && wakeInfo.blockAtFeet === 0 && wakeInfo.dist >= 0.8 && wakeInfo.dist <= 2.5 && Math.abs(wakeInfo.y - 4) < 0.01, JSON.stringify(wakeInfo));
     check('le lit devient le point de réapparition', await ev(page, () => !!window.__game.player.bed));
   });
 

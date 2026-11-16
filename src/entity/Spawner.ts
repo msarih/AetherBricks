@@ -204,7 +204,7 @@ export class Spawner {
     return n;
   }
 
-  /** Nombre d'animaux vivants chargés (plafond de reproduction : ANIMAL_CAP). */
+  /** Nombre d'animaux vivants chargés. */
   countAnimals(game: GameApi): number {
     let n = 0;
     for (const e of game.entities) if (e.kind === 'mob' && !e.dead && this.passive.has(e.mobKind)) n++;

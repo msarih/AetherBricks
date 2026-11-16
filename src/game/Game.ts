@@ -754,8 +754,60 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
 
   private wake(): void {
     const p = this.player;
+    const bed = p.bed;
     p.sleeping = false;
     p.sleepTicks = 0;
+    if (bed) {
+      const spot = this.bedStandSpot(bed.x, bed.y, bed.z);
+      if (spot) {
+        p.teleport(spot.x, spot.y, spot.z);
+        p.vx = p.vy = p.vz = 0;
+        p.fallDistance = 0;
+      }
+    }
+  }
+
+  /** Case libre pour tenir debout à côté du lit (tête en hx, by, hz), ou null si toutes sont obstruées. */
+  private bedStandSpot(hx: number, by: number, hz: number): { x: number; y: number; z: number } | null {
+    const w = this.world;
+    if (!w.isLoaded(hx, hz) || w.getBlock(hx, by, hz) !== B.BED) return null;
+    const d = w.getMeta(hx, by, hz) & 3;
+    const fx = hx - FACING_DX[d];
+    const fz = hz - FACING_DZ[d];
+    const hasFoot = w.getBlock(fx, by, fz) === B.BED;
+    const candidates: Array<[number, number]> = [];
+    const seen = new Set<string>();
+    const push = (x: number, z: number): void => {
+      if ((x === hx && z === hz) || (hasFoot && x === fx && z === fz)) return;
+      const k = `${x},${z}`;
+      if (seen.has(k)) return;
+      seen.add(k);
+      candidates.push([x, z]);
+    };
+    for (const [ax, az] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) push(hx + ax, hz + az);
+    if (hasFoot) for (const [ax, az] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) push(fx + ax, fz + az);
+    for (const [ax, az] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) push(hx + ax, hz + az);
+    if (hasFoot) for (const [ax, az] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) push(fx + ax, fz + az);
+
+    const p = this.player;
+    const hw = p.width / 2;
+    for (const cy of [by, by - 1, by + 1]) {
+      if (cy < 1 || cy + 2 >= CHUNK_HEIGHT) continue;
+      for (const [cx, cz] of candidates) {
+        if (!w.isLoaded(cx, cz)) continue;
+        const below = w.getBlock(cx, cy - 1, cz);
+        if (BLOCK_SOLID[below] !== 1 || below === B.CACTUS) continue;
+        const feet = w.getBlock(cx, cy, cz);
+        const head = w.getBlock(cx, cy + 1, cz);
+        if (BLOCK_SHAPE[feet] === SHAPE.FLUID || BLOCK_SHAPE[head] === SHAPE.FLUID) continue;
+        if (feet === B.FIRE || head === B.FIRE || feet === B.CACTUS || head === B.CACTUS) continue;
+        const sx = cx + 0.5;
+        const sz = cz + 0.5;
+        if (!isBoxFree(w, sx - hw, cy, sz - hw, sx + hw, cy + p.height, sz + hw)) continue;
+        return { x: sx, y: cy, z: sz };
+      }
+    }
+    return null;
   }
 
   private showDeath(): void {
@@ -1341,9 +1393,16 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     if (bed) {
       // lit dans un chunk déchargé : on lui fait confiance
       if (!this.world.isLoaded(bed.x, bed.z) || this.world.getBlock(bed.x, bed.y, bed.z) === B.BED) {
-        x = bed.x + 0.5;
-        y = bed.y + 0.5625;
-        z = bed.z + 0.5;
+        const spot = this.bedStandSpot(bed.x, bed.y, bed.z);
+        if (spot) {
+          x = spot.x;
+          y = spot.y;
+          z = spot.z;
+        } else {
+          x = bed.x + 0.5;
+          y = bed.y + 0.5625;
+          z = bed.z + 0.5;
+        }
       } else {
         p.bed = null;
         this.ui.addMessage('Votre lit a disparu ou est obstrué');

@@ -170,27 +170,69 @@ const dbg = (page) => ev(page, () => { const d = window.__game.debugLines(); ret
     await ev(page, () => { window.__game.input.buttons[2] = false; });
     const r = await ev(page, () => ({ hunger: window.__game.player.hunger, bread: T.count('bread') }));
     check('le pain rend 5 points de faim', r.hunger === 15 && r.bread === 2, JSON.stringify(r));
-    // reproduction en monde normal malgré ~56 animaux chargés dans le monde : plafond local par rayon
+    // reproduction en monde normal malgré >= 60 animaux chargés au total (> ANIMAL_CAP global) : plafond local par rayon (32 blocs, max 24)
     if (spot) {
-      await chat(page, '/give wheat 2');
+      await chat(page, '/give wheat 4');
       const breedNormal = await ev(page, async (s) => {
         const M = await import('/src/entity/Mobs.ts');
         const g = window.__game;
+        const w = g.world;
         T.select('wheat');
-        const totalAnimals = g.entities.filter((e) => e.kind === 'mob' && ['pig', 'cow', 'sheep', 'chicken'].includes(e.mobKind) && !e.dead).length;
+        const isAnimal = (e) => e.kind === 'mob' && ['pig', 'cow', 'sheep', 'chicken'].includes(e.mobKind) && !e.dead;
+        const farX = s.x + 40;
+        const farZ = s.z;
+        const farY = Math.max(2, w.heightAt(farX, farZ));
+        const spawned = [];
+        while (g.entities.filter(isAnimal).length < 62) {
+          const m = M.createMob('pig', g.rng);
+          m.setPosition(farX + 0.5, farY, farZ + 0.5);
+          g.spawn(m);
+          spawned.push(m);
+        }
+        const totalBefore = g.entities.filter(isAnimal).length;
         const c1 = M.createMob('cow', g.rng);
         const c2 = M.createMob('cow', g.rng);
         c1.setPosition(s.x + 0.5, s.y, s.z + 0.5);
         c2.setPosition(s.x + 1.0, s.y, s.z + 0.5);
         g.spawn(c1);
         g.spawn(c2);
+        spawned.push(c1, c2);
         const fed1 = c1.interact(g, g.player);
         const fed2 = c2.interact(g, g.player);
         for (let i = 0; i < 40; i++) g.tick();
-        const calves = g.entities.filter((e) => e.kind === 'mob' && e.mobKind === 'cow' && !e.dead && e.baby);
-        return { totalAnimals, fed1, fed2, calves: calves.length };
+        const calves1 = g.entities.filter((e) => e.kind === 'mob' && e.mobKind === 'cow' && !e.dead && e.baby);
+        // Contrôle inverse : avec 24 animaux dans le rayon de 32 blocs, aucun nouveau petit ne naît
+        const inRadius = () => g.entities.filter((e) => isAnimal(e) && Math.hypot(e.x - (s.x + 0.5), e.z - (s.z + 0.5)) <= M.ANIMAL_RADIUS).length;
+        while (inRadius() < M.ANIMAL_CAP) {
+          const m = M.createMob('sheep', g.rng);
+          m.setPosition(s.x + 0.5, s.y, s.z + 0.5);
+          g.spawn(m);
+          spawned.push(m);
+        }
+        const localAtCap = inRadius();
+        const c3 = M.createMob('cow', g.rng);
+        const c4 = M.createMob('cow', g.rng);
+        c3.setPosition(s.x + 0.5, s.y, s.z + 0.5);
+        c4.setPosition(s.x + 1.0, s.y, s.z + 0.5);
+        g.spawn(c3);
+        g.spawn(c4);
+        spawned.push(c3, c4);
+        const fed3 = c3.interact(g, g.player);
+        const fed4 = c4.interact(g, g.player);
+        for (let i = 0; i < 40; i++) g.tick();
+        const calves2 = g.entities.filter((e) => e.kind === 'mob' && e.mobKind === 'cow' && !e.dead && e.baby);
+        const bredBlocked = c3.breedCooldown > 0 && c4.breedCooldown > 0;
+        for (const m of spawned) m.dead = true;
+        for (const m of calves2) m.dead = true;
+        g.tick();
+        return { totalBefore, fed1, fed2, calves1: calves1.length, localAtCap, fed3, fed4, calves2: calves2.length, bredBlocked };
       }, spot);
-      check('monde normal : deux vaches nourries donnent un veau malgré la population globale', breedNormal.fed1 && breedNormal.fed2 && breedNormal.calves >= 1, JSON.stringify(breedNormal));
+      check('monde normal : deux vaches nourries donnent un veau malgré >= 60 animaux chargés au loin',
+        breedNormal.totalBefore >= 62 && breedNormal.fed1 && breedNormal.fed2 && breedNormal.calves1 === 1,
+        JSON.stringify(breedNormal));
+      check('plafond local : avec 24 animaux dans le rayon (32 blocs), aucun petit ne naît',
+        breedNormal.localAtCap >= 24 && breedNormal.fed3 && breedNormal.fed4 && breedNormal.bredBlocked && breedNormal.calves2 === 1,
+        JSON.stringify(breedNormal));
     }
   });
 
