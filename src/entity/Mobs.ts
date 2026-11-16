@@ -532,6 +532,8 @@ export abstract class Animal extends Mob {
   /** Agresseur fui pendant la panique. */
   private fleeFrom: Entity | null = null;
   private mate: Animal | null = null;
+  /** Adulte suivi par un petit. */
+  private parent: Animal | null = null;
 
   constructor(kind: MobKind, health: number, walkSpeed: number, food: number) {
     super(kind, health, walkSpeed);
@@ -568,8 +570,34 @@ export abstract class Animal extends Mob {
       if (this.seekMate(game)) return;
     }
     if (this.tempted(game)) return;
+    if (this.baby && this.followParent(game)) return;
     if (this.special(game)) return;
-    this.wander(game, this.baby ? 1.3 : 1);
+    this.wander(game);
+  }
+
+  /**
+   * Un petit rejoint l'adulte de son espèce le plus proche (8 blocs alentour) dès qu'il s'en
+   * éloigne de plus de 3 blocs. Retourne true s'il occupe le tick.
+   */
+  private followParent(game: GameApi): boolean {
+    let a = this.parent;
+    if (a && (!a.alive || a.baby || this.distanceSqTo(a) > 256)) a = this.parent = null;
+    if (!a && ((this.age + this.id) % 20) === 0) {
+      let best = 64;
+      for (const e of game.entitiesInBox(this.x - 8, this.y - 4, this.z - 8, this.x + 8, this.y + 4 + this.height, this.z + 8, this)) {
+        if (!(e instanceof Animal) || e.mobKind !== this.mobKind || !e.alive || e.baby) continue;
+        const d = this.distanceSqTo(e);
+        if (d < best) {
+          best = d;
+          a = e;
+        }
+      }
+      this.parent = a;
+    }
+    if (!a || this.distanceSqTo(a) < 9) return false;
+    this.lookAt(a, 5);
+    this.pathTo(game, a.x, a.y, a.z, 1.1, true);
+    return true;
   }
 
   /** Comportement propre à l'espèce, prioritaire sur l'errance. Retourne true s'il occupe le tick. */

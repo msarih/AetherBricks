@@ -237,7 +237,10 @@ const dbg = (page) => ev(page, () => { const d = window.__game.debugLines(); ret
   });
 
   await section('chute', async () => {
-    await ev(page, () => { const p = window.__game.player; p.health = 20; p.teleport(p.x, p.y + 12, p.z); });
+    // paisible : un monstre qui frappe pendant la chute rend le joueur invulnérable 10 ticks et fausse la mesure
+    await chat(page, '/difficulty peaceful');
+    await ticks(page, 12);
+    await ev(page, () => { const p = window.__game.player; p.health = 20; p.invulnerable = 0; p.teleport(p.x, p.y + 12, p.z); });
     await ticks(page, 3);
     check('le joueur tombe', await ev(page, () => !window.__game.player.onGround));
     await page.waitForFunction(() => window.__game.player.onGround, { timeout: 10000 });

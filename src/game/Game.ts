@@ -39,12 +39,13 @@ import { B } from '../world/Ids';
 import { ITEMS, getItem, itemLabel } from '../world/Items';
 import { makeStack } from '../world/ItemStack';
 import { newRayHit, raycast } from '../world/Raycast';
+import { formatKeyCode } from '../world/Storage';
 import type { Settings, Storage, WorldInfo } from '../world/Storage';
 import { World, type BlockEntity, type WorldEffect, type WorldHost } from '../world/World';
 import { BIOMES } from '../world/gen/Biomes';
 import { WorldGen } from '../world/gen/WorldGen';
 import { blockEntityItems, tickBlockEntities } from './BlockEntities';
-import { ADVANCEMENTS } from './Advancements';
+import { ADVANCEMENTS, advancementText } from './Advancements';
 import { explode as runExplosion } from './Explosion';
 import { Interaction, particleTile, particleTint, type InteractionHost } from './Interaction';
 import { CreativeMenu, HOTBAR_SIZE, InventoryMenu, type Inventory, type Menu } from './Inventory';
@@ -700,8 +701,9 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
         p.advancements.add(adv.id);
         highestUnlocked = i;
         this.sfx.play('levelup', { volume: 0.55, pitch: 1.1 });
-        this.ui.showAdvancement(adv.title, adv.detail, adv.icon);
-        this.ui.addMessage(`[Progrès] ${adv.title} — ${adv.detail}`);
+        const detail = this.advText(adv.detail);
+        this.ui.showAdvancement(adv.title, detail, adv.icon);
+        this.ui.addMessage(`[Progrès] ${adv.title} — ${detail}`);
       }
     }
     // Toute étape antérieure à la dernière étape atteinte est validée d'office sans notification
@@ -1319,9 +1321,14 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
   get guideGoal(): string {
     const p = this.player;
     for (const adv of ADVANCEMENTS) {
-      if (!p.advancements.has(adv.id)) return adv.goal;
+      if (!p.advancements.has(adv.id)) return this.advText(adv.goal);
     }
     return '';
+  }
+
+  /** Texte d'un progrès avec la touche d'inventaire réellement configurée. */
+  private advText(text: string): string {
+    return advancementText(text, formatKeyCode(this.settings.keybinds.inventory, this.settings.keyboardLayout));
   }
 
   debugLines(): { left: string[]; right: string[] } {

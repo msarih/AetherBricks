@@ -220,6 +220,25 @@ async function useOnGround(page, x, z) {
       goal: document.querySelector('[data-mc="guide"]')?.textContent ?? '',
       msgs: window.__msgs.filter((m) => m.startsWith('[Progrès]')),
     }));
+    const keyText = await ev(page, async () => {
+      const A = await import('/src/game/Advancements.ts');
+      const g = window.__game;
+      const saved = new Set(g.player.advancements);
+      const kb = g.settings.keybinds.inventory;
+      g.player.advancements.clear();
+      g.player.advancements.add('wood');
+      const base = g.guideGoal;
+      g.settings.keybinds.inventory = 'KeyI';
+      const remapped = g.guideGoal;
+      g.settings.keybinds.inventory = kb;
+      g.player.advancements.clear();
+      for (const id of saved) g.player.advancements.add(id);
+      const raw = A.ADVANCEMENTS.filter((a) => /\bE\b/.test(a.goal + ' ' + a.detail)).map((a) => a.id);
+      return { base, remapped, raw, count: A.ADVANCEMENTS.length };
+    });
+    check('progrès : les textes d\'aide citent la touche d\'inventaire configurée',
+      keyText.base.includes('appuyez sur E ') && keyText.remapped.includes('appuyez sur I ') && keyText.raw.length === 0 && keyText.count === 14,
+      JSON.stringify(keyText));
     check('progression guidée : progrès débloqués (bois, planches, pierre) et notification affichée',
       advInfo.advs.includes('wood') && advInfo.advs.includes('planks') && advInfo.advs.includes('cobblestone') && advInfo.toastShown,
       JSON.stringify(advInfo));
@@ -410,6 +429,31 @@ async function useOnGround(page, x, z) {
       babyRes.calfCount === 1 && Math.abs(babyRes.calfHeight - babyRes.adultHeight * 0.5) < 0.01 && babyRes.chickCount >= 1 && Math.abs(babyRes.chickHeight - 0.35) < 0.01,
       JSON.stringify(babyRes));
     check('un petit à 2 ticks de croissance devient adulte et retrouve sa taille normale', babyRes.grownOk === true, JSON.stringify(babyRes));
+    // un petit rejoint l'adulte de son espèce ; un témoin au suivi désactivé sert de comparaison (non vérifié)
+    const followRes = await ev(page, async () => {
+      const M = await import('/src/entity/Mobs.ts');
+      const g = window.__game;
+      for (const e of g.entities) if (e.kind === 'mob' && Math.hypot(e.x + 20.5, e.z + 20.5) < 16) e.dead = true;
+      g.tick();
+      const adult = M.createMob('cow', g.rng);
+      adult.setPosition(-20.5, 4, -20.5);
+      const calf = M.createMob('cow', g.rng);
+      calf.setBaby(24000);
+      calf.setPosition(-13.5, 4, -20.5);
+      const witness = M.createMob('cow', g.rng);
+      witness.setBaby(24000);
+      witness.setPosition(-27.5, 4, -20.5);
+      witness.followParent = () => false;
+      g.spawn(adult); g.spawn(calf); g.spawn(witness);
+      const d0 = Math.hypot(calf.x - adult.x, calf.z - adult.z);
+      let closest = d0;
+      for (let i = 0; i < 160; i++) { g.tick(); closest = Math.min(closest, Math.hypot(calf.x - adult.x, calf.z - adult.z)); }
+      const res = { d0, closest, end: Math.hypot(calf.x - adult.x, calf.z - adult.z), witnessEnd: Math.hypot(witness.x - adult.x, witness.z - adult.z), calfBaby: calf.baby };
+      adult.dead = calf.dead = witness.dead = true;
+      g.tick();
+      return res;
+    });
+    check('un petit rejoint l\'adulte de son espèce (à moins de 3,5 blocs)', followRes.d0 >= 6.9 && followRes.closest < 3.5 && followRes.end < 6 && followRes.calfBaby, JSON.stringify(followRes));
     await ev(page, () => { const g = window.__game; const p = g.player; p.teleport(p.x, p.y, p.z + 4); T.aim(8.5, 4.6, 3.5); });
     await ticks(page, 10);
     await shot(page, '18-animaux');
