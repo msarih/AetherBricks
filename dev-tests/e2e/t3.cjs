@@ -40,15 +40,27 @@ const dbg = (page) => ev(page, () => { const d = window.__game.debugLines(); ret
     const qwertyFwd = await page.evaluate(() => document.querySelector('[data-mc="bind-forward"]')?.textContent?.trim());
     check('contrôles : bascule AZERTY / QWERTY (Z ↔ W)', azertyFwd === 'Z' && qwertyFwd === 'W', `${azertyFwd} → ${qwertyFwd}`);
     await click(page, 'keyboardLayout'); await sleep(150);
-    // remappage d'une touche puis réinitialisation
+    // remappage d'une touche et détection de conflit
+    await click(page, 'bind-inventory'); await sleep(100);
+    await page.keyboard.press('Digit1'); await sleep(150);
+    const conflictReserved = await page.evaluate(() => document.querySelector('[data-mc="bind-inventory"]')?.classList.contains('mc-conflict') ?? false);
+    check('contrôles : touche réservée (1) signalée en rouge', conflictReserved);
+    await click(page, 'bind-inventory'); await sleep(100);
+    await page.keyboard.press('KeyW'); await sleep(150);
+    const conflictDup = await page.evaluate(() => {
+      const a = document.querySelector('[data-mc="bind-inventory"]')?.classList.contains('mc-conflict');
+      const b = document.querySelector('[data-mc="bind-forward"]')?.classList.contains('mc-conflict');
+      return !!(a && b);
+    });
+    check('contrôles : doublon de touche signalé en rouge sur les deux boutons', conflictDup);
     await click(page, 'bind-inventory'); await sleep(100);
     await page.keyboard.press('KeyI'); await sleep(150);
-    const rebound = await page.evaluate(() => document.querySelector('[data-mc="bind-inventory"]')?.textContent?.trim());
-    check('contrôles : remappage d\'une touche (Inventaire → I)', rebound === 'I', rebound);
+    const rebound = await page.evaluate(() => {
+      const btn = document.querySelector('[data-mc="bind-inventory"]');
+      return { text: btn?.textContent?.trim(), conflict: btn?.classList.contains('mc-conflict') };
+    });
+    check('contrôles : remappage d\'une touche (Inventaire → I)', rebound.text === 'I' && !rebound.conflict, JSON.stringify(rebound));
     await shot(page, '40-controles');
-    await click(page, 'reset-keys'); await sleep(150);
-    const resetVal = await page.evaluate(() => document.querySelector('[data-mc="bind-inventory"]')?.textContent?.trim());
-    check('contrôles : réinitialisation des touches (Inventaire → E)', resetVal === 'E', resetVal);
     await click(page, 'done'); await sleep(300);
     check('contrôles → retour aux options', await page.evaluate(() => document.querySelector('#ui').innerText.includes('Champ de vision')));
     await click(page, 'done'); await sleep(400);
@@ -63,6 +75,38 @@ const dbg = (page) => ev(page, () => { const d = window.__game.debugLines(); ret
   await ticks(page, 20);
   let s = await state(page);
   console.log('état initial', JSON.stringify(s));
+
+  await section('remappage effectif en jeu et commande /', async () => {
+    await page.keyboard.press('KeyE'); await sleep(200);
+    check('en jeu : E n\'ouvre plus l\'inventaire après remappage sur I', (await page.$('[data-mc="menu-inventory"]')) === null && (await state(page)).modal === false);
+    await page.keyboard.press('KeyI'); await sleep(200);
+    check('en jeu : I ouvre l\'inventaire', (await page.$('[data-mc="menu-inventory"]')) !== null && (await state(page)).modal === true);
+    await page.keyboard.press('KeyI'); await sleep(200);
+    check('en jeu : I referme l\'inventaire', (await page.$('[data-mc="menu-inventory"]')) === null && (await state(page)).modal === false);
+    // test du caractère '/' quelle que soit la touche physique (ex. Maj + ':' sur Mac AZERTY)
+    await page.evaluate(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: '/', code: 'Period', shiftKey: true, bubbles: true, cancelable: true }));
+    });
+    await sleep(200);
+    const slashOpen = await page.evaluate(() => {
+      const inp = document.querySelector('[data-mc="chat"] input');
+      return inp ? inp.value : null;
+    });
+    check('en jeu : le caractère "/" ouvre la commande même sur une autre touche physique', slashOpen === '/', JSON.stringify(slashOpen));
+    await page.keyboard.press('Escape'); await sleep(200);
+    // remet les touches par défaut via le menu pause → options → contrôles → réinitialiser
+    await page.keyboard.press('Escape');
+    await page.waitForSelector('[data-mc="pause"]', { timeout: 5000 });
+    await click(page, 'options');
+    await page.waitForSelector('[data-mc="options"]', { timeout: 5000 });
+    await click(page, 'controls'); await sleep(200);
+    await click(page, 'reset-keys'); await sleep(150);
+    const resetVal = await page.evaluate(() => document.querySelector('[data-mc="bind-inventory"]')?.textContent?.trim());
+    check('contrôles : réinitialisation des touches (Inventaire → E)', resetVal === 'E', resetVal);
+    await click(page, 'done'); await sleep(200);
+    await click(page, 'done'); await sleep(200);
+    await click(page, 'resume'); await sleep(200);
+  });
 
   await section('apparition', async () => {
     const g = await ev(page, async () => { const B = await import('/src/world/Blocks.ts'); const p = window.__game.player; const id = T.block(Math.floor(p.x), Math.floor(p.y - 0.01), Math.floor(p.z)); return { id, name: B.BLOCKS[id].name, leaves: B.isLeaves(id), log: B.isLog(id), ground: p.onGround, y: p.y }; });
