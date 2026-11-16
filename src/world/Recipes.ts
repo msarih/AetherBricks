@@ -255,10 +255,23 @@ shaped(['GGG', 'GAG', 'GGG'], { G: I.GOLD_INGOT, A: I.APPLE }, I.GOLDEN_APPLE);
 // ---------------------------------------------------------------------------
 // Recherche d'une recette
 // ---------------------------------------------------------------------------
-function ingredientAccepts(ing: Ingredient, id: number): boolean {
+export function ingredientAccepts(ing: Ingredient, id: number): boolean {
   if (typeof ing === 'number') return ing === id;
   return id !== 0 && ing.includes(id);
 }
+
+/** Renvoie le premier identifiant d'objet représentatif d'un ingrédient (0 si vide). */
+export function ingredientSampleId(ing: Ingredient): number {
+  if (typeof ing === 'number') return ing;
+  return ing[0] ?? 0;
+}
+
+/** Indique si la recette tient dans une grille de largeur et hauteur `gridW` (2 ou 3). */
+export function recipeFitsGrid(recipe: Recipe, gridW: number): boolean {
+  if (recipe.shaped) return recipe.w <= gridW && recipe.h <= gridW;
+  return recipe.cells.length <= gridW * gridW;
+}
+
 
 /** Compare la zone utile de la grille au motif, à l'endroit ou en miroir horizontal. */
 function matchesShaped(recipe: Recipe, cells: readonly number[], mirrored: boolean): boolean {

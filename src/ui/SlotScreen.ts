@@ -7,7 +7,8 @@
 import type { CreativeMenu, FurnaceMenu, Menu, SlotGroup } from '../game/Inventory';
 import type { ItemStack, Slot } from '../world/ItemStack';
 import { CREATIVE_TABS, ITEMS, itemLabel } from '../world/Items';
-import { B } from '../world/Ids';
+import { B, I } from '../world/Ids';
+import { ingredientSampleId, type Recipe } from '../world/Recipes';
 import { ItemView, el, place, stackSig, stackTooltip, u } from './dom';
 import type { Screen, UiContext } from './Screen';
 
@@ -15,6 +16,8 @@ import type { Screen, UiContext } from './Screen';
 const DOUBLE_CLICK_MS = 250;
 const PALETTE_COLS = 9;
 const PALETTE_ROWS = 5;
+const RECIPE_COLS = 4;
+const RECIPE_ROWS = 4;
 
 interface TabDef {
   label: string;
@@ -49,8 +52,29 @@ export class SlotScreen implements Screen {
   private hover = -1;
   /** Cellule de palette survolée (créatif) ou −1. */
   private hoverPalette = -1;
+  /** Cellule du livre de recettes survolée ou −1. */
+  private hoverRecipe = -1;
   private hoverText = '';
   private hoverEl: Element | null = null;
+
+  // livre de recettes (inventaire et établi)
+  private recipeBookOpen = false;
+  private recipeOnlyCraftable = false;
+  private recipePage = 0;
+  private recipePanel: HTMLDivElement | null = null;
+  private recipeToggleBtn: HTMLDivElement | null = null;
+  private recipeFilterBtn: HTMLDivElement | null = null;
+  private recipeSearch: HTMLInputElement | null = null;
+  private recipePageLabel: HTMLDivElement | null = null;
+  private recipePrevBtn: HTMLButtonElement | null = null;
+  private recipeNextBtn: HTMLButtonElement | null = null;
+  private readonly recipeCells: HTMLDivElement[] = [];
+  private readonly recipeViews: ItemView[] = [];
+  private shownRecipes: Array<{ recipe: Recipe; craftable: boolean }> = [];
+  private recipeInvSig = '';
+  /** Recette affichée en silhouette dans la grille quand elle n'est pas faisable. */
+  private ghostRecipe: Recipe | null = null;
+  private readonly craftGhosts: HTMLDivElement[] = [];
 
   private drag: { button: number; slots: number[] } | null = null;
   private shiftDrag: { button: number; last: number } | null = null;
@@ -185,6 +209,7 @@ export class SlotScreen implements Screen {
     place(el('div', 'mc-arrow mc-arrow-small', this.win), 135, 29);
     this.slot('result', 0, 154, 28);
     this.playerSlots(8, 84, 142);
+    this.buildRecipeBook(104, 61, 4);
   }
 
   private buildCrafting(): void {
@@ -195,6 +220,222 @@ export class SlotScreen implements Screen {
     this.slot('result', 0, 124, 35, true);
     this.label('Inventaire', 8, 72);
     this.playerSlots(8, 84, 142);
+    this.buildRecipeBook(6, 35, 9);
+  }
+
+  private buildRecipeBook(btnX: number, btnY: number, craftCount: number): void {
+    const host = this.ctx.host;
+    // Silhouettes dans les cases de la grille de fabrication
+    for (let k = 0; k < craftCount; k++) {
+      const i = this.menu.indexOf('craft', k);
+      const slotEl = i >= 0 ? this.slotEls[i] : null;
+      if (!slotEl) continue;
+      const g = el('div', 'mc-slot-ghost mc-recipe-ghost', slotEl);
+      g.style.display = 'none';
+      this.craftGhosts.push(g);
+    }
+
+    // Bouton d'ouverture du livre de recettes
+    const btn = el('div', 'mc-slot mc-recipe-btn', this.win);
+    btn.dataset.mc = 'recipe-book-toggle';
+    btn.dataset.tip = 'Livre de recettes (voir comment fabriquer les objets)';
+    place(btn, btnX, btnY, 18, 18);
+    const icon = el('div', 'mc-item', btn);
+    const bookUrl = host.iconUrl(I.BOOK);
+    if (bookUrl) icon.style.backgroundImage = `url("${bookUrl}")`;
+    this.recipeToggleBtn = btn;
+
+    // Panneau latéral du livre de recettes (à gauche de la fenêtre)
+    const panel = el('div', 'mc-recipe-book', this.el);
+    panel.dataset.mc = 'recipe-book';
+    panel.style.display = 'none';
+    el('div', 'mc-panel-bg', panel);
+    this.recipePanel = panel;
+
+    const title = el('div', 'mc-label', panel, 'Recettes');
+    place(title, 8, 6);
+
+    const filterBtn = el('div', 'mc-slot mc-recipe-filter', panel);
+    filterBtn.dataset.mc = 'recipe-filter';
+    filterBtn.dataset.tip = 'Afficher : toutes les recettes';
+    place(filterBtn, 86, 4, 18, 18);
+    const filterIcon = el('div', 'mc-item', filterBtn);
+    const tableUrl = host.iconUrl(B.CRAFTING_TABLE);
+    if (tableUrl) filterIcon.style.backgroundImage = `url("${tableUrl}")`;
+    this.recipeFilterBtn = filterBtn;
+
+    const search = el('input', 'mc-input mc-search mc-recipe-search', panel);
+    search.type = 'text';
+    search.placeholder = 'Rechercher…';
+    search.spellcheck = false;
+    search.autocomplete = 'off';
+    search.maxLength = 40;
+    search.dataset.mc = 'recipe-search';
+    place(search, 8, 24, 96, 13);
+    search.addEventListener('input', () => {
+      this.recipePage = 0;
+      this.fillRecipes();
+    });
+    this.recipeSearch = search;
+
+    for (let k = 0; k < RECIPE_COLS * RECIPE_ROWS; k++) {
+      const cell = el('div', 'mc-slot mc-recipe-cell', panel);
+      cell.dataset.r = String(k);
+      place(cell, 8 + (k % RECIPE_COLS) * 24, 41 + Math.floor(k / RECIPE_COLS) * 23, 22, 22);
+      this.recipeCells.push(cell);
+      this.recipeViews.push(new ItemView(host, cell));
+    }
+
+    const prev = el('button', 'mc-btn mc-recipe-nav', panel);
+    prev.type = 'button';
+    prev.dataset.mc = 'recipe-prev';
+    el('span', 'mc-btn-label', prev, '<');
+    place(prev, 8, 138, 22, 18);
+    prev.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (prev.disabled) return;
+      host.click();
+      this.recipePage = Math.max(0, this.recipePage - 1);
+      this.fillRecipes();
+    });
+    this.recipePrevBtn = prev;
+
+    const pageLbl = el('div', 'mc-label mc-label-center mc-recipe-page', panel, '1 / 1');
+    place(pageLbl, 32, 143, 48, 10);
+    this.recipePageLabel = pageLbl;
+
+    const next = el('button', 'mc-btn mc-recipe-nav', panel);
+    next.type = 'button';
+    next.dataset.mc = 'recipe-next';
+    el('span', 'mc-btn-label', next, '>');
+    place(next, 82, 138, 22, 18);
+    next.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (next.disabled) return;
+      host.click();
+      this.recipePage++;
+      this.fillRecipes();
+    });
+    this.recipeNextBtn = next;
+  }
+
+  private toggleRecipeBook(): void {
+    this.recipeBookOpen = !this.recipeBookOpen;
+    this.recipeToggleBtn?.classList.toggle('mc-sel', this.recipeBookOpen);
+    if (this.recipePanel) {
+      this.recipePanel.style.display = this.recipeBookOpen ? '' : 'none';
+    }
+    this.el.classList.toggle('mc-with-recipes', this.recipeBookOpen);
+    if (this.recipeBookOpen) {
+      this.fillRecipes();
+    } else {
+      this.clearGhostRecipe();
+      if (this.recipeSearch && document.activeElement === this.recipeSearch) this.recipeSearch.blur();
+    }
+  }
+
+  private toggleRecipeFilter(): void {
+    this.recipeOnlyCraftable = !this.recipeOnlyCraftable;
+    if (this.recipeFilterBtn) {
+      this.recipeFilterBtn.classList.toggle('mc-sel', this.recipeOnlyCraftable);
+      this.recipeFilterBtn.dataset.tip = this.recipeOnlyCraftable
+        ? 'Afficher : recettes faisables uniquement'
+        : 'Afficher : toutes les recettes';
+    }
+    this.recipePage = 0;
+    this.fillRecipes();
+  }
+
+  private fillRecipes(): void {
+    if (!this.recipeBookOpen) return;
+    const all = this.menu.availableRecipes();
+    const q = fold(this.recipeSearch ? this.recipeSearch.value.trim() : '');
+    const list: Array<{ recipe: Recipe; craftable: boolean }> = [];
+    for (const r of all) {
+      if (q && !fold(itemLabel(r.result.id)).includes(q)) continue;
+      const craftable = this.menu.canCraft(r);
+      if (this.recipeOnlyCraftable && !craftable) continue;
+      list.push({ recipe: r, craftable });
+    }
+    // Faisables d'abord, puis dans l'ordre du catalogue
+    list.sort((a, b) => (a.craftable === b.craftable ? 0 : a.craftable ? -1 : 1));
+    this.shownRecipes = list;
+
+    const perPage = RECIPE_COLS * RECIPE_ROWS;
+    const totalPages = Math.max(1, Math.ceil(list.length / perPage));
+    this.recipePage = Math.max(0, Math.min(totalPages - 1, this.recipePage));
+    const base = this.recipePage * perPage;
+
+    for (let k = 0; k < perPage; k++) {
+      const entry = list[base + k];
+      const cell = this.recipeCells[k];
+      const view = this.recipeViews[k];
+      if (!cell || !view) continue;
+      if (entry) {
+        cell.style.visibility = 'visible';
+        cell.classList.toggle('mc-craftable', entry.craftable);
+        cell.classList.toggle('mc-uncraftable', !entry.craftable);
+        view.set({ id: entry.recipe.result.id, count: entry.recipe.result.count, damage: 0 });
+      } else {
+        cell.style.visibility = 'hidden';
+        cell.classList.remove('mc-craftable', 'mc-uncraftable');
+        view.set(null);
+      }
+    }
+
+    if (this.recipePageLabel) this.recipePageLabel.textContent = `${this.recipePage + 1} / ${totalPages}`;
+    if (this.recipePrevBtn) this.recipePrevBtn.disabled = this.recipePage <= 0;
+    if (this.recipeNextBtn) this.recipeNextBtn.disabled = this.recipePage >= totalPages - 1;
+    this.tooltipKey = '';
+  }
+
+  private showGhostRecipe(recipe: Recipe): void {
+    this.ghostRecipe = recipe;
+    const gridW = this.menu.type === 'crafting' ? 3 : 2;
+    for (let k = 0; k < this.craftGhosts.length; k++) {
+      this.craftGhosts[k].style.display = 'none';
+      this.craftGhosts[k].style.backgroundImage = '';
+    }
+    for (let idx = 0; idx < recipe.cells.length; idx++) {
+      const sample = ingredientSampleId(recipe.cells[idx]);
+      if (!sample) continue;
+      const gridIndex = recipe.shaped ? Math.floor(idx / recipe.w) * gridW + (idx % recipe.w) : idx;
+      const g = this.craftGhosts[gridIndex];
+      if (!g) continue;
+      const url = this.ctx.host.iconUrl(sample);
+      if (url) {
+        g.style.backgroundImage = `url("${url}")`;
+        g.style.display = 'block';
+      }
+    }
+  }
+
+  private clearGhostRecipe(): void {
+    if (!this.ghostRecipe) return;
+    this.ghostRecipe = null;
+    for (const g of this.craftGhosts) {
+      g.style.display = 'none';
+      g.style.backgroundImage = '';
+    }
+  }
+
+  private recipeTooltipLines(entry: { recipe: Recipe; craftable: boolean }): string[] {
+    const r = entry.recipe;
+    const title = r.result.count > 1 ? `${itemLabel(r.result.id)} ×${r.result.count}` : itemLabel(r.result.id);
+    const lines = [title];
+    // Regroupe les ingrédients nécessaires
+    const needed = new Map<string, number>();
+    for (const ing of r.cells) {
+      const id = ingredientSampleId(ing);
+      if (!id) continue;
+      const name = typeof ing === 'number' ? itemLabel(id) : `${itemLabel(id)} (ou équivalent)`;
+      needed.set(name, (needed.get(name) ?? 0) + 1);
+    }
+    for (const [name, count] of needed) {
+      lines.push(`• ${count}× ${name}`);
+    }
+    lines.push(entry.craftable ? 'Clic : placer dans la grille (Maj+clic : max)' : 'Ingrédients manquants (clic : voir le modèle)');
+    return lines;
   }
 
   private buildFurnace(): void {
@@ -390,9 +631,10 @@ export class SlotScreen implements Screen {
 
   private readonly onDown = (e: MouseEvent): void => {
     const target = e.target as Element;
-    if (target.closest('input')) return;
+    if (target.closest('input') || target.closest('button')) return;
     e.preventDefault();
     if (this.search && document.activeElement === this.search) this.search.blur();
+    if (this.recipeSearch && document.activeElement === this.recipeSearch) this.recipeSearch.blur();
     const button = e.button === 0 ? 0 : e.button === 2 ? 1 : e.button === 1 ? 2 : -1;
     if (button < 0) return;
     this.track_(e);
@@ -400,6 +642,37 @@ export class SlotScreen implements Screen {
     // un autre bouton pendant un glissé l'annule
     if (this.drag) {
       this.endDrag();
+      return;
+    }
+
+    if (target.closest('[data-mc="recipe-book-toggle"]')) {
+      if (button === 0) {
+        this.ctx.host.click();
+        this.toggleRecipeBook();
+      }
+      return;
+    }
+    if (target.closest('[data-mc="recipe-filter"]')) {
+      if (button === 0) {
+        this.ctx.host.click();
+        this.toggleRecipeFilter();
+      }
+      return;
+    }
+    const recipeCell = target.closest<HTMLElement>('[data-r]');
+    if (recipeCell) {
+      if (button === 0) {
+        const idx = this.recipePage * (RECIPE_COLS * RECIPE_ROWS) + Number(recipeCell.dataset.r);
+        const entry = this.shownRecipes[idx];
+        if (entry) {
+          this.ctx.host.click();
+          this.clearGhostRecipe();
+          if (!this.menu.applyRecipe(entry.recipe, e.shiftKey)) {
+            this.showGhostRecipe(entry.recipe);
+          }
+          this.fillRecipes();
+        }
+      }
       return;
     }
 
@@ -434,10 +707,11 @@ export class SlotScreen implements Screen {
     const slotEl = target.closest<HTMLElement>('[data-i]');
     if (!slotEl) {
       // clic hors de la fenêtre : lâcher la pile du curseur
-      if (button !== 2 && !target.closest('.mc-window')) this.menu.clickOutside(button);
+      if (button !== 2 && !target.closest('.mc-window') && !target.closest('.mc-recipe-book')) this.menu.clickOutside(button);
       return;
     }
     if (button === 2) return;
+    this.clearGhostRecipe();
     const i = Number(slotEl.dataset.i);
     const now = performance.now();
     this.doubleClick = button === 0 && !e.shiftKey && this.lastSlot === i && now - this.lastTime < DOUBLE_CLICK_MS;
@@ -518,7 +792,18 @@ export class SlotScreen implements Screen {
 
   private readonly onWheel = (e: WheelEvent): void => {
     e.preventDefault();
-    if (this.menu.type !== 'creative' || !e.deltaY) return;
+    if (!e.deltaY) return;
+    if (this.recipeBookOpen && (e.target as Element).closest('.mc-recipe-book')) {
+      const perPage = RECIPE_COLS * RECIPE_ROWS;
+      const totalPages = Math.max(1, Math.ceil(this.shownRecipes.length / perPage));
+      const next = Math.max(0, Math.min(totalPages - 1, this.recipePage + Math.sign(e.deltaY)));
+      if (next !== this.recipePage) {
+        this.recipePage = next;
+        this.fillRecipes();
+      }
+      return;
+    }
+    if (this.menu.type !== 'creative') return;
     this.scrollTo(this.scroll + Math.sign(e.deltaY));
   };
 
@@ -530,7 +815,7 @@ export class SlotScreen implements Screen {
     const s = this.ctx.scale();
     this.cursor.el.style.transform = `translate(${Math.round(this.mouseX - 8 * s)}px, ${Math.round(this.mouseY - 8 * s)}px)`;
     const target = e.target as Element;
-    this.setHover(target.closest('[data-i], [data-p], [data-tip]'));
+    this.setHover(target.closest('[data-i], [data-p], [data-r], [data-tip]'));
     this.placeTooltip();
   }
 
@@ -540,10 +825,12 @@ export class SlotScreen implements Screen {
     this.hoverEl = target;
     this.hover = -1;
     this.hoverPalette = -1;
+    this.hoverRecipe = -1;
     this.hoverText = '';
     if (target instanceof HTMLElement) {
       if (target.dataset.i !== undefined) this.hover = Number(target.dataset.i);
       else if (target.dataset.p !== undefined) this.hoverPalette = Number(target.dataset.p);
+      else if (target.dataset.r !== undefined) this.hoverRecipe = Number(target.dataset.r);
       else this.hoverText = target.dataset.tip ?? '';
       if (!this.hoverText) target.classList.add('mc-hover');
     }
@@ -565,7 +852,9 @@ export class SlotScreen implements Screen {
   // ------------------------------------------------------------------ clavier
 
   key(e: KeyboardEvent): boolean {
-    const typing = this.search !== null && document.activeElement === this.search;
+    const typing =
+      (this.search !== null && document.activeElement === this.search) ||
+      (this.recipeSearch !== null && document.activeElement === this.recipeSearch);
     if (e.code === 'Escape' || (e.code === 'KeyE' && !typing)) {
       e.preventDefault();
       if (!e.repeat) this.close();
@@ -625,22 +914,37 @@ export class SlotScreen implements Screen {
       }
     }
 
-    // infobulle : nom de la pile survolée (curseur vide), ou libellé d'un onglet
+    // rafraîchit le livre de recettes si le contenu de l'inventaire ou de la grille change
+    if (this.recipeBookOpen) {
+      const sig = slots.map((s) => stackSig(s.stack)).join(',') + '|' + stackSig(cur);
+      if (sig !== this.recipeInvSig) {
+        this.recipeInvSig = sig;
+        this.fillRecipes();
+      }
+    }
+
+    // infobulle : nom de la pile survolée (curseur vide), recette, ou libellé d'un onglet
     let stack: ItemStack | null = null;
+    let recipeEntry: { recipe: Recipe; craftable: boolean } | null = null;
     let key = '';
     if (this.hoverText) {
       key = `t:${this.hoverText}`;
     } else if (!cur) {
       if (this.hover >= 0) stack = slots[this.hover]?.stack ?? null;
       else if (this.hoverPalette >= 0) stack = this.paletteStacks[this.hoverPalette] ?? null;
+      else if (this.hoverRecipe >= 0) {
+        const idx = this.recipePage * (RECIPE_COLS * RECIPE_ROWS) + this.hoverRecipe;
+        recipeEntry = this.shownRecipes[idx] ?? null;
+      }
       if (stack) key = `s:${stackSig(stack)}`;
+      else if (recipeEntry) key = `r:${recipeEntry.recipe.result.id}:${recipeEntry.craftable ? 1 : 0}`;
     }
     if (key !== this.tooltipKey) {
       this.tooltipKey = key;
       const tip = this.tooltip;
       tip.textContent = '';
       if (key) {
-        const lines = stack ? stackTooltip(stack) : [this.hoverText];
+        const lines = stack ? stackTooltip(stack) : recipeEntry ? this.recipeTooltipLines(recipeEntry) : [this.hoverText];
         lines.forEach((line, k) => el('div', k === 0 ? 'mc-tooltip-name' : 'mc-tooltip-extra', tip, line));
         tip.style.display = 'block';
         this.placeTooltip();

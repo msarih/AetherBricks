@@ -907,7 +907,86 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: calc(var(--u) * 4);
 }
+
+.mc-recipe-book {
+  position: relative;
+  flex: none;
+  order: -1;
+  width: calc(var(--u) * 112);
+  height: calc(var(--u) * 166);
+  z-index: 0;
+  text-shadow: none;
+}
+
+.mc-recipe-book > * {
+  position: absolute;
+  z-index: 3;
+}
+
+.mc-recipe-btn,
+.mc-recipe-filter {
+  cursor: pointer;
+}
+
+.mc-recipe-btn.mc-sel,
+.mc-recipe-filter.mc-sel {
+  background: #5b8c3e;
+  box-shadow:
+    inset var(--u) var(--u) 0 #8fd168,
+    inset calc(var(--u) * -1) calc(var(--u) * -1) 0 #2e4d1c;
+}
+
+.mc-recipe-cell {
+  cursor: pointer;
+  background: #8b8b8b;
+  box-shadow:
+    inset var(--u) var(--u) 0 #fff,
+    inset calc(var(--u) * -1) calc(var(--u) * -1) 0 #373737;
+}
+
+.mc-recipe-cell > .mc-item {
+  left: calc(var(--u) * 3);
+  top: calc(var(--u) * 3);
+}
+
+.mc-recipe-cell.mc-hover::after {
+  left: var(--u);
+  top: var(--u);
+  width: calc(var(--u) * 20);
+  height: calc(var(--u) * 20);
+}
+
+.mc-recipe-cell.mc-craftable {
+  background: #6da34d;
+  box-shadow:
+    inset var(--u) var(--u) 0 #a3db80,
+    inset calc(var(--u) * -1) calc(var(--u) * -1) 0 #385925;
+}
+
+.mc-recipe-cell.mc-uncraftable {
+  background: #6b5252;
+  box-shadow:
+    inset var(--u) var(--u) 0 #947474,
+    inset calc(var(--u) * -1) calc(var(--u) * -1) 0 #3d2b2b;
+}
+
+.mc-recipe-cell.mc-uncraftable > .mc-item {
+  opacity: 0.65;
+}
+
+.mc-recipe-nav {
+  height: calc(var(--u) * 18);
+  padding: 0;
+}
+
+.mc-recipe-ghost {
+  filter: none;
+  opacity: 0.55;
+  background-color: rgba(255, 80, 80, 0.32);
+}
+
 
 .mc-window {
   position: relative;

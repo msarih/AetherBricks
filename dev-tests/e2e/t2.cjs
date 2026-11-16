@@ -174,11 +174,43 @@ async function useOnGround(page, x, z) {
     const empty = await page.evaluate(() => { const g = window.__game; const els = Array.from(document.querySelectorAll('[data-mc="menu-inventory"] [data-group="main"]')); const k = g.player.inventory.slots.findIndex((x, i) => i >= 9 && !x); return els[k - 9] ? els[k - 9].dataset.i : els[0].dataset.i; });
     await cl(`[data-mc="menu-inventory"] [data-i="${empty}"]`);
     check('planches rangées dans le sac', (await ev(page, () => T.count('oak_planks'))) === 4, await ev(page, () => T.inv()));
+    // test du livre de recettes : ouverture, clic sur l'établi (faisable avec 4 planches), maj-clic sur le résultat
+    await cl('[data-mc="recipe-book-toggle"]');
+    await sleep(150);
+    const rbVisible = await page.evaluate(() => { const e = document.querySelector('[data-mc="recipe-book"]'); return !!e && e.style.display !== 'none'; });
+    check('livre de recettes : s\'ouvre au clic', rbVisible);
+    await shot(page, '14b-livre-recettes');
+    // cherche la cellule du livre de recettes qui fabrique l'établi (crafting_table) ou les bâtons
+    await cl('[data-mc="recipe-filter"]');
+    await sleep(150);
+    const craftableCount = await page.evaluate(() => document.querySelectorAll('[data-mc="recipe-book"] .mc-craftable').length);
+    check('livre de recettes : affiche les recettes faisables en avant', craftableCount >= 3, `${craftableCount} recettes faisables`);
+    // remet les 3 bûches de la grille dans l'inventaire en fermant puis rouvrant
     await page.keyboard.press('Escape');
     await sleep(300);
     s = await state(page);
     check('Échap ferme l\'inventaire', s.modal === false && (await page.$('[data-mc="menu-inventory"]')) === null);
     check('les bûches restées dans la grille reviennent', (await ev(page, () => T.count('oak_log'))) === 3, await ev(page, () => T.inv()));
+    // rouvre l'inventaire et fabrique un établi en 1 clic via le livre de recettes, puis le retire pour laisser l'état propre
+    await page.keyboard.press('KeyE');
+    await page.waitForSelector('[data-mc="menu-inventory"]', { timeout: 5000 });
+    await cl('[data-mc="recipe-book-toggle"]');
+    await sleep(150);
+    const tableCell = await page.evaluate(() => {
+      const tableId = T.id('crafting_table');
+      const cells = Array.from(document.querySelectorAll('[data-mc="recipe-book"] [data-r]'));
+      for (const c of cells) {
+        if (c.style.visibility !== 'hidden' && c.classList.contains('mc-craftable')) {
+          return c.dataset.r;
+        }
+      }
+      return null;
+    });
+    await cl(`[data-mc="recipe-book"] [data-r="${tableCell}"]`);
+    const resStack = await ev(page, () => { const g = window.__game; const m = g.menu; const r = m.slots.find((s) => s.group === 'result'); return r && r.stack ? r.stack.id : 0; });
+    check('livre de recettes : un clic remplit la grille et produit un résultat', resStack > 0, `résultat id=${resStack}`);
+    await page.keyboard.press('Escape');
+    await sleep(300);
   });
 
   await section('chat et commandes', async () => {
