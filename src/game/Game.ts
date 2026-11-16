@@ -322,7 +322,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     this.input = new Input(canvas);
     this.input.blocked = () => this.ui.modal;
     this.input.active = () => this.ready && !this.disposed;
-    this.input.onKey = (code, repeat) => this.onKey(code, repeat);
+    this.input.onKey = (code, repeat, key) => this.onKey(code, repeat, key);
     this.input.onWheel = (direction) => {
       if (this.ui.modal || !player.alive) return;
       const inv = player.inventory;
@@ -890,7 +890,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
 
   // ------------------------------------------------------------------ clavier
 
-  private onKey(code: string, repeat: boolean): boolean {
+  private onKey(code: string, repeat: boolean, key = ''): boolean {
     if (!this.ready) return false;
     const p = this.player;
     const kb = this.settings.keybinds;
@@ -917,7 +917,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       if (!repeat) this.openChat('');
       return true;
     }
-    if (code === kb.command) {
+    if (key === '/' || code === kb.command) {
       if (!repeat) this.openChat('/');
       return true;
     }

@@ -913,7 +913,7 @@ export function formatKeyCode(code: string, layout: KeyboardLayout): string {
       case 'Semicolon': return 'M';
       case 'Comma': return ';';
       case 'Period': return ':';
-      case 'Slash': return '/ (ou !)';
+      case 'Slash': return '/';
     }
   } else {
     if (code === 'Slash') return '/';
