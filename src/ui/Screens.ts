@@ -101,6 +101,23 @@ const FIXED_CONTROLS: ReadonlyArray<readonly [string, string]> = [
   ['Pause', 'Échap'],
 ];
 
+const RESERVED_CODES = new Set<string>([
+  'Escape',
+  'F1',
+  'F3',
+  'Enter',
+  'NumpadEnter',
+  'Digit1',
+  'Digit2',
+  'Digit3',
+  'Digit4',
+  'Digit5',
+  'Digit6',
+  'Digit7',
+  'Digit8',
+  'Digit9',
+]);
+
 type BoolKey = { [K in keyof Settings]: Settings[K] extends boolean ? K : never }[keyof Settings];
 type NumKey = { [K in keyof Settings]: Settings[K] extends number ? K : never }[keyof Settings];
 
@@ -319,12 +336,19 @@ export class OptionsScreen implements Screen {
     if (this.layoutBtn) {
       setButtonLabel(this.layoutBtn, s.keyboardLayout === 'azerty' ? 'AZERTY' : 'QWERTY');
     }
+    const counts = new Map<string, number>();
+    for (const [action] of KEYBIND_ROWS) {
+      const code = s.keybinds[action];
+      counts.set(code, (counts.get(code) ?? 0) + 1);
+    }
     for (const [action, btn] of this.keyBtns) {
       const active = this.bindingAction === action;
       const code = s.keybinds[action];
+      const conflict = (counts.get(code) ?? 0) > 1 || RESERVED_CODES.has(code);
       const text = active ? `> ${formatKeyCode(code, s.keyboardLayout)} <` : formatKeyCode(code, s.keyboardLayout);
       setButtonLabel(btn, text);
       btn.classList.toggle('mc-binding', active);
+      btn.classList.toggle('mc-conflict', conflict && !active);
     }
   }
 }

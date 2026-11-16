@@ -820,6 +820,12 @@
   border-color: #ffff55;
 }
 
+.mc-key-btn.mc-conflict {
+  background-color: #8c2d2d;
+  color: #ff5555;
+  border-color: #ff5555;
+}
+
 .mc-note {
   margin-top: calc(var(--u) * 4);
   color: #808080;
