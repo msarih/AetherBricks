@@ -117,6 +117,7 @@ ARMOR_MATERIAL_INGREDIENTS.forEach((material, m) => {
 // ---------------------------------------------------------------------------
 shaped([' |S', '| S', ' |S'], { '|': I.STICK, S: I.STRING }, I.BOW);
 shaped(['F', '|', 'P'], { F: I.FLINT, '|': I.STICK, P: I.FEATHER }, I.ARROW, 4);
+shaped(['  |', ' |S', '| S'], { '|': I.STICK, S: I.STRING }, I.FISHING_ROD);
 shaped([' #', '# '], { '#': I.IRON_INGOT }, I.SHEARS);
 shapeless([I.IRON_INGOT, I.FLINT], I.FLINT_AND_STEEL);
 shaped(['# #', ' # '], { '#': I.IRON_INGOT }, I.BUCKET);
@@ -364,6 +365,7 @@ const SMELTING = new Map<number, number>([
   [I.RAW_BEEF, I.STEAK],
   [I.RAW_CHICKEN, I.COOKED_CHICKEN],
   [I.RAW_MUTTON, I.COOKED_MUTTON],
+  [I.RAW_FISH, I.COOKED_FISH],
   [I.POTATO, I.BAKED_POTATO],
   [I.CLAY_BALL, I.BRICK],
 ]);
@@ -390,7 +392,7 @@ fuel(1600, I.COAL, I.CHARCOAL);
 fuel(
   300,
   LOGS, PLANKS, WOOD_SLABS, WOOD_STAIRS,
-  B.OAK_FENCE, B.FENCE_GATE, B.TRAPDOOR, B.OAK_DOOR, B.CRAFTING_TABLE, B.CHEST, B.BOOKSHELF, B.LADDER, I.BOW,
+  B.OAK_FENCE, B.FENCE_GATE, B.TRAPDOOR, B.OAK_DOOR, B.CRAFTING_TABLE, B.CHEST, B.BOOKSHELF, B.LADDER, I.BOW, I.FISHING_ROD,
 );
 fuel(200, I.WOODEN_PICKAXE, I.WOODEN_AXE, I.WOODEN_SHOVEL, I.WOODEN_SWORD, I.WOODEN_HOE);
 fuel(100, I.STICK, SAPLINGS, WOOLS);

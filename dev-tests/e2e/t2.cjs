@@ -599,6 +599,173 @@ async function useOnGround(page, x, z) {
     check('l\'eau restante se retire', left === 0, `${left} cellules d'eau`);
   });
 
+  await section('pêche', async () => {
+    // un bassin de 11 × 7 creusé dans le sol plat, le joueur sur la berge
+    const pond = await ev(page, async () => {
+      const { B } = await import('/src/world/Ids.ts');
+      const g = window.__game, w = g.world;
+      const old = w.getBlock(64, 3, 60);
+      for (let x = 60; x <= 70; x++) for (let z = 57; z <= 63; z++) w.setBlock(x, 3, z, B.WATER, 0);
+      for (const e of g.entities) if (e.kind === 'mob' && Math.hypot(e.x - 62, e.z - 60) < 16) e.dead = true;
+      g.player.teleport(57.5, 4, 60.5);
+      return { old };
+    });
+    await ticks(page, 5);
+    await chat(page, '/give fishing_rod');
+    const bob = () => ev(page, () => { const b = window.__game.entities.find((e) => e.kind === 'bobber' && !e.dead); return b ? { x: +b.x.toFixed(2), y: +b.y.toFixed(3), z: +b.z.toFixed(2), floating: b.floating, grounded: b.grounded, wait: b.waitTicks, bite: b.biteTicks, hooked: !!b.hooked } : null; });
+    const rod = () => ev(page, () => { const g = window.__game, h = g.player.inventory.held; return { id: h ? h.id : 0, damage: h ? h.damage : -1, fishing: g.interaction.fishing }; });
+    const drops = () => ev(page, () => window.__game.entities.filter((e) => e.kind === 'item' && !e.dead && e.stack).map((e) => e.stack.id));
+    const cast = async (x, y, z) => { await ev(page, (x, y, z) => { T.select('fishing_rod'); T.aim(x, y, z); }, x, y, z); await ticks(page, 2); await rclick(page); };
+    const setBobber = (fields) => ev(page, (fields) => { const b = window.__game.entities.find((e) => e.kind === 'bobber' && !e.dead); if (b) Object.assign(b, fields); return !!b; }, fields);
+
+    // --- lancer : le flotteur vole puis flotte
+    await cast(64.5, 4.8, 60.5);
+    await ticks(page, 40);
+    const b1 = await bob();
+    const r1 = await rod();
+    check('pêche : la canne lance un flotteur qui flotte à la surface du bassin',
+      !!b1 && b1.floating && !b1.grounded && b1.x >= 60 && b1.x < 71 && b1.z >= 57 && b1.z < 64 && b1.y > 3.6 && b1.y < 3.95 && r1.fishing && r1.damage === 0,
+      `${JSON.stringify(b1)} ${JSON.stringify(r1)}`);
+    check('pêche : l\'attente avant la touche est tirée entre 5 et 30 secondes', !!b1 && b1.wait > 50 && b1.wait < 600 && b1.bite === 0, JSON.stringify(b1));
+
+    // --- tenir le bouton ne remonte pas la ligne ; un clic sans touche ne rapporte rien
+    await ev(page, () => { window.__game.input.buttons[2] = true; });
+    await ticks(page, 12);
+    await ev(page, () => { window.__game.input.buttons[2] = false; });
+    check('pêche : tenir le clic droit ne remonte pas la ligne', !!(await bob()));
+    const inv0 = await ev(page, () => T.inv());
+    const drops0 = (await drops()).length;
+    await rclick(page);
+    await ticks(page, 5);
+    const r2 = await rod();
+    check('pêche : remonter sans touche ne rapporte rien et n\'use pas la canne',
+      !(await bob()) && !r2.fishing && r2.damage === 0 && (await drops()).length === drops0 && (await ev(page, () => T.inv())) === inv0, JSON.stringify(r2));
+
+    // --- une touche : sillage, puis le flotteur s'enfonce
+    await cast(64.5, 4.8, 60.5);
+    await ticks(page, 40);
+    const rest = await bob();
+    await setBobber({ waitTicks: 20 });
+    await page.waitForFunction(() => { const b = window.__game.entities.find((e) => e.kind === 'bobber' && !e.dead); return b && b.biteTicks > 0; }, { timeout: 30000 });
+    await ticks(page, 6);
+    const dip = await bob();
+    check('pêche : quand un poisson mord, le flotteur s\'enfonce', !!rest && !!dip && dip.bite > 0 && dip.bite <= 40 && rest.y - dip.y > 0.12, `repos ${JSON.stringify(rest)} touche ${JSON.stringify(dip)}`);
+    await shot(page, '27-peche-touche');
+
+    // --- remonter pendant la touche : une prise, de l'expérience, un point d'usure
+    const before = await ev(page, async () => { const F = await import('/src/world/Fishing.ts'); const I = (await import('/src/world/Ids.ts')).I; const p = window.__game.player;
+      return { xp: p.xpLevel + p.xpProgress, allowed: [I.RAW_FISH, ...F.FISHING_JUNK, ...F.FISHING_TREASURE] }; });
+    const known = await drops();
+    await rclick(page);
+    const flying = (await drops()).filter((id) => before.allowed.includes(id));
+    const caught = flying.find((id) => !known.includes(id)) ?? flying[flying.length - 1];
+    const had = await ev(page, (id) => window.__game.player.inventory.count(id), caught ?? 0);
+    await ticks(page, 40);
+    // la prise vole vers le pêcheur ; si elle retombe un peu court, il fait les deux pas qui manquent
+    if ((await ev(page, (id) => window.__game.player.inventory.count(id), caught ?? 0)) === had) {
+      await ev(page, (id) => { const g = window.__game; const e = g.entities.find((x) => x.kind === 'item' && !x.dead && x.stack && x.stack.id === id); if (e) g.player.teleport(e.x, Math.max(4, e.y), e.z); }, caught ?? 0);
+      await ticks(page, 15);
+    }
+    const after = await ev(page, (id) => { const p = window.__game.player; return { xp: p.xpLevel + p.xpProgress, count: p.inventory.count(id) }; }, caught ?? 0);
+    await ev(page, () => { window.__game.player.teleport(57.5, 4, 60.5); T.select('fishing_rod'); });
+    await ticks(page, 2);
+    const r3 = await rod();
+    check('pêche : remonter pendant la touche rapporte une prise, de l\'expérience et use la canne d\'un point',
+      caught !== undefined && after.count === had + 1 && after.xp > before.xp && r3.damage === 1 && !(await bob()),
+      `prise ${caught}, ${had} → ${after.count}, xp ${before.xp.toFixed(2)} → ${after.xp.toFixed(2)}, canne ${JSON.stringify(r3)}`);
+
+    // --- la touche passée, il est trop tard
+    await cast(64.5, 4.8, 60.5);
+    await ticks(page, 40);
+    await setBobber({ waitTicks: 0, biteTicks: 1 });
+    await ticks(page, 4);
+    const late = await bob();
+    const inv1 = await ev(page, () => T.inv());
+    await rclick(page);
+    await ticks(page, 5);
+    check('pêche : la touche passée, l\'attente repart et remonter ne rapporte rien',
+      !!late && late.bite === 0 && late.wait > 50 && (await ev(page, () => T.inv())) === inv1 && (await rod()).damage === 1, JSON.stringify(late));
+
+    // --- flotteur posé sur le sol : deux points d'usure
+    await cast(52.5, 4.0, 60.5);
+    await ticks(page, 30);
+    const ground = await bob();
+    await rclick(page);
+    await ticks(page, 3);
+    check('pêche : un flotteur posé au sol ne pêche pas et use la canne de deux points', !!ground && ground.grounded && !ground.floating && ground.wait === 0 && (await rod()).damage === 3, `${JSON.stringify(ground)} ${JSON.stringify(await rod())}`);
+
+    // --- créature accrochée : elle est tirée vers le pêcheur
+    await ev(page, async () => {
+      const M = await import('/src/entity/Mobs.ts');
+      const g = window.__game;
+      const cow = M.createMob('cow', g.rng);
+      cow.setPosition(52.5, 4, 60.5);
+      cow.behave = () => {};
+      g.spawn(cow);
+      window.__cow = cow;
+    });
+    await ticks(page, 3);
+    await cast(52.5, 4.9, 60.5);
+    await ticks(page, 10);
+    const hook = await bob();
+    await rclick(page);
+    await ticks(page, 12);
+    const cowX = await ev(page, () => { const c = window.__cow; const x = c.x; c.dead = true; return x; });
+    check('pêche : une créature accrochée est tirée vers le pêcheur (cinq points d\'usure)', !!hook && hook.hooked && cowX > 53.2 && (await rod()).damage === 8, `${JSON.stringify(hook)} vache en x=${cowX.toFixed(2)} ${JSON.stringify(await rod())}`);
+
+    // --- ranger la canne retire la ligne ; vue de l'extérieur pour la capture
+    await cast(64.5, 4.8, 60.5);
+    await ticks(page, 30);
+    await shot(page, '27-peche-ligne');
+    // de trois quarts, pour que l'avatar ne cache pas le flotteur
+    await ev(page, () => { window.__game.viewMode = 1; T.aim(64.5, 4.8, 54.5); });
+    await ticks(page, 4);
+    await shot(page, '27-peche-ligne-exterieur');
+    await ev(page, () => { const g = window.__game; g.viewMode = 0; const inv = g.player.inventory; inv.selected = (inv.selected + 1) % 9; });
+    await ticks(page, 4);
+    const away = await ev(page, () => ({ bobber: window.__game.entities.some((e) => e.kind === 'bobber' && !e.dead), fishing: window.__game.interaction.fishing, held: window.__game.player.heldItemId }));
+    check('pêche : changer d\'objet retire la ligne', !away.bobber && !away.fishing, JSON.stringify(away));
+
+    // --- fabrication, cuisson, tirage des prises
+    const rules = await ev(page, async () => {
+      const { I } = await import('/src/world/Ids.ts');
+      const R = await import('/src/world/Recipes.ts');
+      const F = await import('/src/world/Fishing.ts');
+      const { ITEMS } = await import('/src/world/Items.ts');
+      const seq = (...v) => { let i = 0; return () => v[Math.min(i++, v.length - 1)]; };
+      const craft = R.matchRecipe([0, 0, I.STICK, 0, I.STICK, I.STRING, I.STICK, 0, I.STRING], 3);
+      const smelt = R.smeltingResult(I.RAW_FISH);
+      const fish = F.rollFishingCatch(seq(0.5));
+      const junk = F.rollFishingCatch(seq(0.9, 0));
+      const treasure = F.rollFishingCatch(seq(0.97, 0, 0.5));
+      let n = 0;
+      let s = 12345;
+      const rnd = () => { s = (Math.imul(s, 1103515245) + 12345) >>> 0; return s / 4294967296; };
+      for (let i = 0; i < 2000; i++) if (F.rollFishingCatch(rnd).id === I.RAW_FISH) n++;
+      return {
+        craft: !!craft && craft.id === I.FISHING_ROD && craft.count === 1,
+        smelt: !!smelt && smelt.id === I.COOKED_FISH,
+        food: ITEMS[I.RAW_FISH].food === 2 && ITEMS[I.COOKED_FISH].food === 5 && ITEMS[I.FISHING_ROD].durability === 64,
+        fish: fish.id === I.RAW_FISH && fish.count === 1 && fish.damage === 0,
+        junk: junk.id === I.BOWL && junk.damage === 0,
+        treasure: treasure.id === I.BOW && treasure.damage === Math.floor(384 * 0.5),
+        share: n / 2000,
+      };
+    });
+    check('pêche : recette de la canne, cuisson du poisson, valeurs nutritives', rules.craft && rules.smelt && rules.food, JSON.stringify(rules));
+    check('pêche : tirage des prises (poisson ≈ 85 %, objets sans valeur, trouvailles usées)', rules.fish && rules.junk && rules.treasure && rules.share > 0.8 && rules.share < 0.9, JSON.stringify(rules));
+
+    // --- remise en état : sol rebouché, canne et prises retirées
+    await ev(page, (old, rodId, caught) => {
+      const g = window.__game, w = g.world, inv = g.player.inventory;
+      for (let x = 60; x <= 70; x++) for (let z = 57; z <= 63; z++) w.setBlock(x, 3, z, old, 0);
+      for (let i = 0; i < inv.slots.length; i++) { const st = inv.slots[i]; if (st && st.id === rodId) inv.slots[i] = null; }
+      if (caught && caught !== rodId) inv.remove(caught, 1);
+      for (const e of g.entities) if ((e.kind === 'item' && Math.hypot(e.x - 62, e.z - 60) < 16) || e.kind === 'bobber') e.dead = true;
+    }, pond.old, await ev(page, () => T.id('fishing_rod')), caught ?? 0);
+    await ticks(page, 3);
+  });
+
   await section('lit et sommeil', async () => {
     await chat(page, '/tp 60.5 4 60.5');
     await ticks(page, 5);

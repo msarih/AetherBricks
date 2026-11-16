@@ -81,6 +81,9 @@ const SOUND_RANGE = 16;
 const MAX_BREAK_SOUNDS = 6;
 const MAX_BREAK_PARTICLES = 24;
 const DEG = Math.PI / 180;
+/** Bout de la canne à pêche tenue en main, vu par la caméra de la main (à une distance de 1 devant l'œil). */
+const ROD_TIP_X = 1.19;
+const ROD_TIP_Y = 0.12;
 
 const DIFFICULTY_LABELS = ['Paisible', 'Facile', 'Normale', 'Difficile'];
 const DIFFICULTY_NAMES = ['peaceful', 'easy', 'normal', 'hard'];
@@ -188,6 +191,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     blockLight: 0,
     useProgress: 0,
     useKind: 'none',
+    fishing: false,
     yawDelta: 0,
     pitchDelta: 0,
   };
@@ -917,6 +921,17 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     this.sky.setVisible(!submerged);
 
     // --- entités, particules, main ---
+    // bout de la canne à pêche (départ de la ligne) : en bas à droite de l'écran, ou devant la main de l'avatar
+    if (first) {
+      // la main est dessinée avec un champ de vision fixe de 70° : on ramène le bout de la canne à celui de la caméra
+      const k = Math.tan((cam.fov * DEG) / 2) / Math.tan(35 * DEG);
+      this.entityRenderer.lineAnchor.set(ROD_TIP_X * k, ROD_TIP_Y * k, -1).multiplyScalar(0.8).applyMatrix4(cam.matrixWorld);
+    }
+    else {
+      const sy = Math.sin(yaw);
+      const cy = Math.cos(yaw);
+      this.entityRenderer.lineAnchor.set(ex - sy * 0.7 + cy * 0.35, lerp(p.py, p.y, alpha) + 1.35, ez - cy * 0.7 - sy * 0.35);
+    }
     this.entityRenderer.sync(this.entities, alpha, this.clock);
     this.fx.update(dt, cam);
 
@@ -928,6 +943,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     hs.skyLight = p.skyLight;
     hs.blockLight = p.blockLight;
     hs.useKind = p.useKind;
+    hs.fishing = this.interaction.fishing;
     hs.useProgress = p.useKind === 'eat' ? Math.min(1, p.useTicks / 32) : p.useKind === 'bow' ? Math.min(1, p.useTicks / 20) : 0;
     hs.yawDelta = yaw - this.lastYaw;
     hs.pitchDelta = pitch - this.lastPitch;
