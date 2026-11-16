@@ -855,21 +855,22 @@ export class SlotScreen implements Screen {
     const typing =
       (this.search !== null && document.activeElement === this.search) ||
       (this.recipeSearch !== null && document.activeElement === this.recipeSearch);
-    if (e.code === 'Escape' || (e.code === 'KeyE' && !typing)) {
+    const kb = this.ctx.host.settings.keybinds;
+    if (e.code === 'Escape' || (e.code === kb.inventory && !typing)) {
       e.preventDefault();
       if (!e.repeat) this.close();
       return true;
     }
     // saisie dans le champ de recherche : la touche va au champ, pas au jeu
     if (typing) return true;
-    if (e.ctrlKey && e.code !== 'KeyQ') return false;
+    if (e.ctrlKey && e.code !== kb.drop) return false;
     const digit = /^Digit([1-9])$/.exec(e.code);
     if (digit) {
       e.preventDefault();
       if (this.hover >= 0 && !e.repeat) this.menu.numberKey(this.hover, Number(digit[1]) - 1);
       return true;
     }
-    if (e.code === 'KeyQ') {
+    if (e.code === kb.drop) {
       e.preventDefault();
       if (this.hover >= 0) this.menu.dropKey(this.hover, e.ctrlKey);
       return true;

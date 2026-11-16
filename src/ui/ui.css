@@ -795,13 +795,29 @@
 
 .mc-key {
   flex: none;
-  min-width: calc(var(--u) * 84);
+  min-width: calc(var(--u) * 96);
   padding: calc(var(--u) * 2) calc(var(--u) * 4);
   border: var(--u) solid #000;
   background: #2c2c2c var(--spr-btn-off) 0 0 / calc(var(--u) * 16) calc(var(--u) * 16);
   color: #ffffa0;
   text-align: center;
   white-space: nowrap;
+}
+
+.mc-key-row-head {
+  padding-bottom: calc(var(--u) * 3);
+  margin-bottom: calc(var(--u) * 2);
+  border-bottom: var(--u) solid rgba(255, 255, 255, 0.18);
+}
+
+.mc-key-btn {
+  height: calc(var(--u) * 16);
+}
+
+.mc-key-btn.mc-binding {
+  background-color: #9e8a33;
+  color: #ffff55;
+  border-color: #ffff55;
 }
 
 .mc-note {

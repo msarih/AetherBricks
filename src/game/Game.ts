@@ -613,12 +613,13 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     // --- commandes du joueur ---
     const free = !this.ui.modal && p.alive && !p.sleeping;
     const pi = p.input;
+    const kb = this.settings.keybinds;
     if (free) {
-      pi.forward = (input.isDown('KeyW') || input.isDown('ArrowUp') ? 1 : 0) - (input.isDown('KeyS') || input.isDown('ArrowDown') ? 1 : 0);
-      pi.strafe = (input.isDown('KeyD') || input.isDown('ArrowRight') ? 1 : 0) - (input.isDown('KeyA') || input.isDown('ArrowLeft') ? 1 : 0);
-      pi.jump = input.isDown('Space') || this.jumpTapped;
-      pi.sneak = input.isDown('ShiftLeft') || input.isDown('ShiftRight');
-      pi.sprint = input.isDown('ControlLeft');
+      pi.forward = (input.isDown(kb.forward) || input.isDown('ArrowUp') ? 1 : 0) - (input.isDown(kb.backward) || input.isDown('ArrowDown') ? 1 : 0);
+      pi.strafe = (input.isDown(kb.right) || input.isDown('ArrowRight') ? 1 : 0) - (input.isDown(kb.left) || input.isDown('ArrowLeft') ? 1 : 0);
+      pi.jump = input.isDown(kb.jump) || this.jumpTapped;
+      pi.sneak = input.isDown(kb.sneak) || input.isDown('ShiftRight');
+      pi.sprint = input.isDown(kb.sprint);
     } else {
       pi.forward = 0;
       pi.strafe = 0;
@@ -892,62 +893,65 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
   private onKey(code: string, repeat: boolean): boolean {
     if (!this.ready) return false;
     const p = this.player;
-    switch (code) {
-      case 'Escape':
-        if (!repeat) this.pause();
-        return true;
-      case 'F1':
-        if (!repeat) {
-          this.hudVisible = !this.hudVisible;
-          this.ui.setHudVisible(this.hudVisible);
-        }
-        return true;
-      case 'F3':
-        if (!repeat) this.ui.toggleDebug();
-        return true;
-      case 'F5':
-        if (!repeat) this.viewMode = (this.viewMode + 1) % 3;
-        return true;
-      case 'KeyT':
-      case 'Enter':
-        if (!repeat) this.openChat('');
-        return true;
-      case 'Slash':
-        if (!repeat) this.openChat('/');
-        return true;
-      default:
-        break;
+    const kb = this.settings.keybinds;
+    if (code === 'Escape') {
+      if (!repeat) this.pause();
+      return true;
+    }
+    if (code === 'F1') {
+      if (!repeat) {
+        this.hudVisible = !this.hudVisible;
+        this.ui.setHudVisible(this.hudVisible);
+      }
+      return true;
+    }
+    if (code === 'F3') {
+      if (!repeat) this.ui.toggleDebug();
+      return true;
+    }
+    if (code === kb.perspective) {
+      if (!repeat) this.viewMode = (this.viewMode + 1) % 3;
+      return true;
+    }
+    if (code === kb.chat || code === 'Enter') {
+      if (!repeat) this.openChat('');
+      return true;
+    }
+    if (code === kb.command) {
+      if (!repeat) this.openChat('/');
+      return true;
     }
     if (!p.alive) return false;
-    switch (code) {
-      case 'KeyE':
-        if (!repeat && !p.sleeping) this.openMenu(p.creative ? new CreativeMenu(p.inventory) : new InventoryMenu(p.inventory));
-        return true;
-      case 'KeyQ':
-        if (!p.sleeping) this.interaction.dropHeld(this.input.isDown('ControlLeft'));
-        return true;
-      case 'Space':
-        if (!repeat) {
-          if (p.sleeping) this.wake();
-          else {
-            this.jumpTapped = true;
-            p.tapJump();
-          }
-        }
-        return true;
-      case 'KeyW':
-        if (!repeat) p.tapForward();
-        return true;
-      default:
-        if (code.length === 6 && code.startsWith('Digit')) {
-          const n = code.charCodeAt(5) - 49;
-          if (n >= 0 && n < HOTBAR_SIZE) {
-            p.inventory.selected = n;
-            return true;
-          }
-        }
-        return false;
+    if (code === kb.inventory) {
+      if (!repeat && !p.sleeping) this.openMenu(p.creative ? new CreativeMenu(p.inventory) : new InventoryMenu(p.inventory));
+      return true;
     }
+    if (code === kb.drop) {
+      if (!p.sleeping) this.interaction.dropHeld(this.input.isDown('ControlLeft') || this.input.isDown(kb.sprint));
+      return true;
+    }
+    if (code === kb.jump) {
+      if (!repeat) {
+        if (p.sleeping) this.wake();
+        else {
+          this.jumpTapped = true;
+          p.tapJump();
+        }
+      }
+      return true;
+    }
+    if (code === kb.forward) {
+      if (!repeat) p.tapForward();
+      return true;
+    }
+    if (code.length === 6 && code.startsWith('Digit')) {
+      const n = code.charCodeAt(5) - 49;
+      if (n >= 0 && n < HOTBAR_SIZE) {
+        p.inventory.selected = n;
+        return true;
+      }
+    }
+    return false;
   }
 
   private pause(): void {

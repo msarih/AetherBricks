@@ -867,6 +867,80 @@ export class Storage {
 // Réglages du joueur
 // ---------------------------------------------------------------------------------------
 
+export type KeyboardLayout = 'azerty' | 'qwerty';
+
+export interface Keybinds {
+  forward: string;
+  left: string;
+  backward: string;
+  right: string;
+  jump: string;
+  sneak: string;
+  sprint: string;
+  inventory: string;
+  drop: string;
+  chat: string;
+  command: string;
+  perspective: string;
+}
+
+export type KeybindAction = keyof Keybinds;
+
+export const DEFAULT_KEYBINDS: Readonly<Keybinds> = Object.freeze({
+  forward: 'KeyW',
+  left: 'KeyA',
+  backward: 'KeyS',
+  right: 'KeyD',
+  jump: 'Space',
+  sneak: 'ShiftLeft',
+  sprint: 'ControlLeft',
+  inventory: 'KeyE',
+  drop: 'KeyQ',
+  chat: 'KeyT',
+  command: 'Slash',
+  perspective: 'F5',
+});
+
+/** Libellé lisible d'un code de touche physique (`event.code`) selon la disposition AZERTY ou QWERTY. */
+export function formatKeyCode(code: string, layout: KeyboardLayout): string {
+  if (layout === 'azerty') {
+    switch (code) {
+      case 'KeyQ': return 'A';
+      case 'KeyW': return 'Z';
+      case 'KeyA': return 'Q';
+      case 'KeyZ': return 'W';
+      case 'KeyM': return ',';
+      case 'Semicolon': return 'M';
+      case 'Comma': return ';';
+      case 'Period': return ':';
+      case 'Slash': return '/ (ou !)';
+    }
+  } else {
+    if (code === 'Slash') return '/';
+  }
+  if (code.length === 4 && code.startsWith('Key')) return code.slice(3);
+  if (code.length === 6 && code.startsWith('Digit')) return code.slice(5);
+  switch (code) {
+    case 'Space': return 'Espace';
+    case 'ShiftLeft':
+    case 'ShiftRight': return 'Maj';
+    case 'ControlLeft':
+    case 'ControlRight': return 'Ctrl';
+    case 'AltLeft':
+    case 'AltRight': return 'Alt';
+    case 'Tab': return 'Tab';
+    case 'Enter':
+    case 'NumpadEnter': return 'Entrée';
+    case 'Backspace': return 'Retour';
+    case 'Escape': return 'Échap';
+    case 'ArrowUp': return 'Flèche haut';
+    case 'ArrowDown': return 'Flèche bas';
+    case 'ArrowLeft': return 'Flèche gauche';
+    case 'ArrowRight': return 'Flèche droite';
+    default: return code;
+  }
+}
+
 /** Réglages du joueur (localStorage, clé `aetherbricks.settings`), fusionnés avec les valeurs par défaut. */
 export interface Settings {
   /** Distance de rendu en chunks, 2..16, défaut 8. */
@@ -893,6 +967,10 @@ export interface Settings {
   showFps: boolean;
   /** Échelle de l'interface, 1..4 ; 0 (défaut) = automatique. */
   guiScale: number;
+  /** Disposition des libellés du clavier : AZERTY (défaut) ou QWERTY. */
+  keyboardLayout: KeyboardLayout;
+  /** Raccourcis clavier (par code physique `event.code`). */
+  keybinds: Keybinds;
 }
 
 const SETTINGS_KEY = 'aetherbricks.settings';
@@ -911,6 +989,8 @@ export const DEFAULT_SETTINGS: Settings = Object.freeze({
   invertY: false,
   showFps: false,
   guiScale: 0,
+  keyboardLayout: 'azerty',
+  keybinds: { ...DEFAULT_KEYBINDS },
 });
 
 function boundedNumber(value: unknown, min: number, max: number, fallback: number): number {
@@ -922,6 +1002,17 @@ function flag(value: unknown, fallback: boolean): boolean {
   return typeof value === 'boolean' ? value : fallback;
 }
 
+function sanitizeKeybinds(raw: unknown): Keybinds {
+  const src: Record<string, unknown> =
+    raw !== null && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+  const out: Keybinds = { ...DEFAULT_KEYBINDS };
+  for (const k of Object.keys(DEFAULT_KEYBINDS) as KeybindAction[]) {
+    const v = src[k];
+    if (typeof v === 'string' && v.length > 0 && v.length <= 24) out[k] = v;
+  }
+  return out;
+}
+
 /** Fusionne une valeur quelconque avec les défauts et borne chaque réglage. */
 function sanitizeSettings(raw: unknown): Settings {
   const d = DEFAULT_SETTINGS;
@@ -929,6 +1020,7 @@ function sanitizeSettings(raw: unknown): Settings {
     raw !== null && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
   // Échelle d'interface : 0 (ou moins) = automatique, sinon un entier de 1 à 4.
   const scale = Math.round(boundedNumber(r.guiScale, 0, 4, d.guiScale));
+  const layout: KeyboardLayout = r.keyboardLayout === 'qwerty' ? 'qwerty' : 'azerty';
   return {
     renderDistance: Math.round(boundedNumber(r.renderDistance, 2, 16, d.renderDistance)),
     fov: boundedNumber(r.fov, 30, 110, d.fov),
@@ -942,6 +1034,8 @@ function sanitizeSettings(raw: unknown): Settings {
     invertY: flag(r.invertY, d.invertY),
     showFps: flag(r.showFps, d.showFps),
     guiScale: scale,
+    keyboardLayout: layout,
+    keybinds: sanitizeKeybinds(r.keybinds),
   };
 }
 

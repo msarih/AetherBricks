@@ -35,6 +35,20 @@ const dbg = (page) => ev(page, () => { const d = window.__game.debugLines(); ret
     await click(page, 'controls'); await sleep(300);
     const ctl = await page.evaluate(() => document.querySelector('#ui').innerText.includes('Sauter'));
     check('options : écran des contrôles', ctl);
+    const azertyFwd = await page.evaluate(() => document.querySelector('[data-mc="bind-forward"]')?.textContent?.trim());
+    await click(page, 'keyboardLayout'); await sleep(150);
+    const qwertyFwd = await page.evaluate(() => document.querySelector('[data-mc="bind-forward"]')?.textContent?.trim());
+    check('contrôles : bascule AZERTY / QWERTY (Z ↔ W)', azertyFwd === 'Z' && qwertyFwd === 'W', `${azertyFwd} → ${qwertyFwd}`);
+    await click(page, 'keyboardLayout'); await sleep(150);
+    // remappage d'une touche puis réinitialisation
+    await click(page, 'bind-inventory'); await sleep(100);
+    await page.keyboard.press('KeyI'); await sleep(150);
+    const rebound = await page.evaluate(() => document.querySelector('[data-mc="bind-inventory"]')?.textContent?.trim());
+    check('contrôles : remappage d\'une touche (Inventaire → I)', rebound === 'I', rebound);
+    await shot(page, '40-controles');
+    await click(page, 'reset-keys'); await sleep(150);
+    const resetVal = await page.evaluate(() => document.querySelector('[data-mc="bind-inventory"]')?.textContent?.trim());
+    check('contrôles : réinitialisation des touches (Inventaire → E)', resetVal === 'E', resetVal);
     await click(page, 'done'); await sleep(300);
     check('contrôles → retour aux options', await page.evaluate(() => document.querySelector('#ui').innerText.includes('Champ de vision')));
     await click(page, 'done'); await sleep(400);
