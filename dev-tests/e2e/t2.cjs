@@ -354,14 +354,32 @@ async function useOnGround(page, x, z) {
       g.spawn(c2);
       for (let i = 0; i < 40; i++) g.tick();
       const calves = g.entities.filter((e) => e.kind === 'mob' && e.mobKind === 'cow' && !e.dead && e.baby);
-      // Test d'éclosion d'œuf (jusqu'à obtenir le tirage 1/8)
-      for (let i = 0; i < 40; i++) M.hatchEgg(g, 10.5, 4, 3.5);
+      const calf = calves[0];
+      const calfHeightBefore = calf ? calf.height : 0;
+      // Croissance : un petit à 2 ticks de l'âge adulte redevient adulte après 2 ticks
+      let grownOk = false;
+      if (calf) {
+        calf.setBaby(2);
+        g.tick();
+        const stillBabyAfter1 = calf.baby === true;
+        g.tick();
+        grownOk = stillBabyAfter1 && calf.baby === false && Math.abs(calf.height - c1.height) < 0.01;
+        // Remet en petit pour la capture d'écran
+        calf.setBaby(24000);
+      }
+      // Test déterministe d'éclosion d'œuf (premier tirage < 0.125 = éclosion, second >= 1/32 = 1 poussin)
+      let rngCall = 0;
+      const fakeGame = Object.create(g, {
+        rng: { value: () => (rngCall++ === 0 ? 0.05 : 0.5) },
+      });
+      M.hatchEgg(fakeGame, 10.5, 4, 3.5);
       g.tick();
       const chicks = g.entities.filter((e) => e.kind === 'mob' && e.mobKind === 'chicken' && !e.dead && e.baby);
       return {
         calfCount: calves.length,
-        calfHeight: calves[0] ? calves[0].height : 0,
+        calfHeight: calfHeightBefore,
         adultHeight: c1.height,
+        grownOk,
         chickCount: chicks.length,
         chickHeight: chicks[0] ? chicks[0].height : 0,
       };
@@ -369,6 +387,7 @@ async function useOnGround(page, x, z) {
     check('reproduction et œufs donnent un petit (taille réduite de moitié)',
       babyRes.calfCount === 1 && Math.abs(babyRes.calfHeight - babyRes.adultHeight * 0.5) < 0.01 && babyRes.chickCount >= 1 && Math.abs(babyRes.chickHeight - 0.35) < 0.01,
       JSON.stringify(babyRes));
+    check('un petit à 2 ticks de croissance devient adulte et retrouve sa taille normale', babyRes.grownOk === true, JSON.stringify(babyRes));
     await ev(page, () => { const g = window.__game; const p = g.player; p.teleport(p.x, p.y, p.z + 4); T.aim(8.5, 4.6, 3.5); });
     await ticks(page, 10);
     await shot(page, '18-animaux');
@@ -572,10 +591,14 @@ async function useOnGround(page, x, z) {
     await ev(page, () => T.select('cobblestone'));
     await useOnGround(page, 70, 67);
     await chat(page, '/summon cow');
+    await ev(page, () => {
+      const cows = T.mobs('cow').filter((e) => Math.hypot(e.x - 70.5, e.z - 67.5) < 6);
+      if (cows.length > 0) cows[cows.length - 1].setBaby(12000);
+    });
     await chat(page, '/difficulty normal');
     await chat(page, '/summon spider');
     await ticks(page, 10);
-    marker = await ev(page, () => { const g = window.__game; return { block: T.block(70, 4, 67), inv: T.inv(), time: g.time, pos: [g.player.x, g.player.y, g.player.z], cows: T.mobs('cow').filter((e) => Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, near: T.mobs('cow').filter((e) => Math.hypot(e.x - 70.5, e.z - 67.5) < 6).length, spiders: T.mobs('spider').filter((e) => Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, hole: null, bed: g.player.bed, chest: T.block(40, 4, 38), health: g.player.health, mode: g.player.gameMode, advs: Array.from(g.player.advancements).sort() }; });
+    marker = await ev(page, () => { const g = window.__game; return { block: T.block(70, 4, 67), inv: T.inv(), time: g.time, pos: [g.player.x, g.player.y, g.player.z], cows: T.mobs('cow').filter((e) => Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, near: T.mobs('cow').filter((e) => Math.hypot(e.x - 70.5, e.z - 67.5) < 6).length, babies: T.mobs('cow').filter((e) => e.baby && Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, spiders: T.mobs('spider').filter((e) => Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, hole: null, bed: g.player.bed, chest: T.block(40, 4, 38), health: g.player.health, mode: g.player.gameMode, advs: Array.from(g.player.advancements).sort() }; });
     if (holeAt) marker.hole = await ev(page, (h) => T.block(h.x, h.y, h.z), holeAt);
     console.log('  repères avant sauvegarde :', JSON.stringify(marker));
     await page.keyboard.press('Escape');
@@ -593,7 +616,7 @@ async function useOnGround(page, x, z) {
     await page.waitForFunction('window.__game && window.__game.ready === true', { timeout: 120000 });
     await install(page);
     await ticks(page, 20);
-    const now = await ev(page, () => { const g = window.__game; return { block: T.block(70, 4, 67), inv: T.inv(), time: g.time, pos: [g.player.x, g.player.y, g.player.z], cows: T.mobs('cow').filter((e) => Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, near: T.mobs('cow').filter((e) => Math.hypot(e.x - 70.5, e.z - 67.5) < 6).length, spiders: T.mobs('spider').filter((e) => Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, bed: g.player.bed, chest: T.block(40, 4, 38), health: g.player.health, mode: g.player.gameMode, advs: Array.from(g.player.advancements).sort() }; });
+    const now = await ev(page, () => { const g = window.__game; return { block: T.block(70, 4, 67), inv: T.inv(), time: g.time, pos: [g.player.x, g.player.y, g.player.z], cows: T.mobs('cow').filter((e) => Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, near: T.mobs('cow').filter((e) => Math.hypot(e.x - 70.5, e.z - 67.5) < 6).length, babies: T.mobs('cow').filter((e) => e.baby && Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, spiders: T.mobs('spider').filter((e) => Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, bed: g.player.bed, chest: T.block(40, 4, 38), health: g.player.health, mode: g.player.gameMode, advs: Array.from(g.player.advancements).sort() }; });
     if (holeAt) now.hole = await ev(page, (h) => T.block(h.x, h.y, h.z), holeAt);
     console.log('  repères après rechargement :', JSON.stringify(now));
     check('bloc posé persistant', now.block === marker.block && now.block !== 0);
@@ -602,6 +625,7 @@ async function useOnGround(page, x, z) {
     check('position persistante', Math.hypot(now.pos[0] - marker.pos[0], now.pos[2] - marker.pos[2]) < 0.2 && Math.abs(now.pos[1] - marker.pos[1]) < 0.2, JSON.stringify(now.pos));
     check('heure persistante', now.time >= marker.time && now.time < marker.time + 200, `${marker.time} → ${now.time}`);
     check('animaux persistants (rayon 48 blocs)', Math.abs(now.cows - marker.cows) <= 2 && now.near >= 1 && marker.near >= 1, `${marker.cows} → ${now.cows} ; vache invoquée à proximité : ${marker.near} → ${now.near}`);
+    check('petit animal persistant après rechargement', marker.babies >= 1 && now.babies >= 1, `${marker.babies} → ${now.babies}`);
     check('monstres persistants', now.spiders >= 1 && marker.spiders >= 1, `${marker.spiders} → ${now.spiders}`);
     check('lit et blocs à entité persistants', JSON.stringify(now.bed) === JSON.stringify(marker.bed) && now.chest === marker.chest);
     check('progrès persistants (toute la chaîne jusqu\'au fer)', JSON.stringify(now.advs) === JSON.stringify(marker.advs) && now.advs.length === 10, JSON.stringify(now.advs));
