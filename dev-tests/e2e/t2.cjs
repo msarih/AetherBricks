@@ -218,9 +218,13 @@ async function useOnGround(page, x, z) {
       advs: Array.from(window.__game.player.advancements),
       toastShown: document.querySelector('[data-mc="toast"]')?.classList.contains('mc-shown') ?? false,
       goal: document.querySelector('[data-mc="guide"]')?.textContent ?? '',
+      msgs: window.__msgs.filter((m) => m.startsWith('[Progrès]')),
     }));
     check('progression guidée : progrès débloqués (bois, planches, pierre) et notification affichée',
       advInfo.advs.includes('wood') && advInfo.advs.includes('planks') && advInfo.advs.includes('cobblestone') && advInfo.toastShown,
+      JSON.stringify(advInfo));
+    check('progression guidée : une étape avancée valide aussi les étapes précédentes sans notification',
+      advInfo.advs.includes('crafting_table') && advInfo.advs.includes('wooden_pickaxe') && advInfo.goal.includes('fourneau') && !advInfo.msgs.some((m) => m.includes('Première pioche')),
       JSON.stringify(advInfo));
     await shot(page, '14c-progres-toast');
   });
@@ -520,7 +524,7 @@ async function useOnGround(page, x, z) {
     check('heure persistante', now.time >= marker.time && now.time < marker.time + 200, `${marker.time} → ${now.time}`);
     check('animaux persistants (rayon 48 blocs)', Math.abs(now.cows - marker.cows) <= 2 && now.near >= 1 && marker.near >= 1, `${marker.cows} → ${now.cows} ; vache invoquée à proximité : ${marker.near} → ${now.near}`);
     check('lit et blocs à entité persistants', JSON.stringify(now.bed) === JSON.stringify(marker.bed) && now.chest === marker.chest);
-    check('progrès persistants', JSON.stringify(now.advs) === JSON.stringify(marker.advs) && now.advs.includes('slept'), JSON.stringify(now.advs));
+    check('progrès persistants (toute la chaîne jusqu\'au fer)', JSON.stringify(now.advs) === JSON.stringify(marker.advs) && now.advs.length === 10, JSON.stringify(now.advs));
     await shot(page, '33-recharge');
   });
 

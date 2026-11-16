@@ -687,14 +687,24 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     if (p.creative) return;
     // Vérifie toutes les demi-secondes (ou pendant le sommeil)
     if (this.time % 10 !== 0 && !p.sleeping) return;
-    for (const adv of ADVANCEMENTS) {
-      if (p.advancements.has(adv.id)) continue;
+    let highestUnlocked = -1;
+    for (let i = 0; i < ADVANCEMENTS.length; i++) {
+      const adv = ADVANCEMENTS[i];
+      if (p.advancements.has(adv.id)) {
+        highestUnlocked = i;
+        continue;
+      }
       if (adv.check(p)) {
         p.advancements.add(adv.id);
+        highestUnlocked = i;
         this.sfx.play('levelup', { volume: 0.55, pitch: 1.1 });
         this.ui.showAdvancement(adv.title, adv.detail, adv.icon);
         this.ui.addMessage(`[Progrès] ${adv.title} — ${adv.detail}`);
       }
+    }
+    // Toute étape antérieure à la dernière étape atteinte est validée d'office sans notification
+    for (let i = 0; i < highestUnlocked; i++) {
+      p.advancements.add(ADVANCEMENTS[i].id);
     }
   }
 
