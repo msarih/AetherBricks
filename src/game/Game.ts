@@ -1032,7 +1032,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
 
   private add(e: Entity, touch: boolean): void {
     this.entities.push(e);
-    if (e instanceof Monster || e instanceof Thrown) return;
+    if (e instanceof Thrown) return;
     const key = chunkKey(Math.floor(e.x) >> 4, Math.floor(e.z) >> 4);
     this.homes.set(e, key);
     if (touch) this.touch(key);

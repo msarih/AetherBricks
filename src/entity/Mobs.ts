@@ -941,9 +941,13 @@ export abstract class Monster extends Mob {
     return 5;
   }
 
-  /** Les monstres ne sont pas sauvegardés. */
   save(): EntityData | null {
-    return null;
+    if (this.health <= 0 || this.dead) return null;
+    const d = this.saveBase('mob');
+    d.kind = this.mobKind;
+    d.health = this.health;
+    this.saveExtra(d);
+    return d;
   }
 }
 
