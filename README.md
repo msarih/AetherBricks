@@ -20,8 +20,9 @@ npm run build    # version de production dans dist/
 - **Blocs et objets** : casser et poser, outils et vitesses de minage, butins, eau et lave qui s'écoulent, TNT, portes, échelles, cultures, coffres, établi et fourneau.
 - **Inventaire et fabrication** : inventaire à la souris, grille 2×2, établi 3×3, cuisson au fourneau, inventaire créatif avec recherche.
 - **Créatures** : vaches, cochons, moutons, poules ; zombies, squelettes, creepers et araignées la nuit.
+- **Pêche** : canne à pêche (3 bâtons + 2 ficelles) ; un clic droit lance la ligne, un second la remonte. Quand le flotteur s'enfonce, un poisson mord : poisson cru (à cuire au fourneau), parfois un objet sans valeur ou une trouvaille.
 - **Modes** : survie et créatif (vol par double appui sur Espace, casse instantanée).
-- **Mondes** : plusieurs mondes sauvegardés dans le navigateur (IndexedDB) — créer, renommer, supprimer ; sauvegarde automatique et à la fermeture.
+- **Mondes** : plusieurs mondes sauvegardés dans le navigateur (IndexedDB) — créer, renommer, supprimer ; sauvegarde automatique et à la fermeture. Un monde s'exporte dans un fichier `.aetherworld` et s'importe depuis ce fichier (sauvegarde externe, passage d'un navigateur ou d'un appareil à l'autre).
 - **Commandes** (touche `/`) : `/help`, `/gamemode`, `/time`, `/weather`, `/give`, `/tp`, `/kill`, `/seed`, `/difficulty`, `/summon`, `/clear`, `/spawnpoint`.
 
 ## 🎮 Contrôles
@@ -57,7 +58,6 @@ Les touches sont repérées par leur position sur le clavier : sur un clavier QW
 
 ## ⚠️ Limites connues
 
-- Les monstres ne sont pas sauvegardés (les animaux, si) ; les créatures n'ont pas de recherche de chemin.
 - Pas de Nether, d'enchantements, de redstone, de villages ni de multijoueur.
 - Testé sur Chrome uniquement.
 

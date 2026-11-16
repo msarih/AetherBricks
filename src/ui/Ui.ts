@@ -147,6 +147,10 @@ export class GameUi implements UiApi {
     this.hud.actionBar(text);
   }
 
+  showAdvancement(title: string, detail: string, iconId: number): void {
+    this.hud.showAdvancement(title, detail, iconId);
+  }
+
   toggleDebug(): void {
     this.hud.toggleDebug();
   }

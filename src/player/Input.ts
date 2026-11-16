@@ -6,8 +6,8 @@
  * capte les entrées), rien n'est transmis au jeu.
  */
 export class Input {
-  /** Appui sur une touche (`event.code`). Retourner true si le jeu l'a consommée. */
-  onKey: (code: string, repeat: boolean) => boolean = () => false;
+  /** Appui sur une touche (`event.code`, `event.key`). Retourner true si le jeu l'a consommée. */
+  onKey: (code: string, repeat: boolean, key: string) => boolean = () => false;
   /** Cran de molette : +1 vers le bas, −1 vers le haut. */
   onWheel: (direction: number) => void = () => {};
   /** La capture du pointeur vient d'être perdue sans que le jeu l'ait demandé (touche Échap). */
@@ -42,8 +42,8 @@ export class Input {
       if (this.blocked() || !this.active()) return;
       if (isTyping(e.target)) return;
       if (!e.repeat) this.keys.add(e.code);
-      const used = this.onKey(e.code, e.repeat);
-      if (used || GAME_KEYS.has(e.code)) {
+      const used = this.onKey(e.code, e.repeat, e.key);
+      if (used || GAME_KEYS.has(e.code) || e.key === '/') {
         e.preventDefault();
         e.stopPropagation();
       }

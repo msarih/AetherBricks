@@ -1009,6 +1009,65 @@ def('bow_pulling_1', bow(4));
 def('bow_pulling_2', bow(6));
 
 // ---------------------------------------------------------------------------
+// Pêche : canne (avec ou sans sa ligne) et poisson
+// ---------------------------------------------------------------------------
+const FISHING_ROD_ROWS: Rows = [
+  '................',
+  '.............oo.',
+  '............oLo.',
+  '...........oLMo.',
+  '..........oLMo..',
+  '.........oLMo...',
+  '........oLMo....',
+  '.......oLMo.....',
+  '......oLMo......',
+  '.....oLMo.......',
+  '....oLMo........',
+  '...oLMo.........',
+  '..oLMo..........',
+  '.oLMo...........',
+  '.oMo............',
+  '..o.............',
+];
+
+/** Canne à pêche ; `cast` = ligne lancée (la ficelle et le flotteur ne pendent plus au bout). */
+function fishingRod(cast: boolean): Painter {
+  return (p) => {
+    p.ascii(FISHING_ROD_ROWS, HANDLE);
+    if (cast) return;
+    line(p, 14, 3, 14, 10, 0xdcdcdc);
+    p.set(14, 11, 0xd62c2c);
+    p.set(13, 11, 0x8f1818);
+    p.set(14, 12, 0xf2f2f2);
+    p.set(13, 12, 0xc4c4c4);
+  };
+}
+def('fishing_rod', fishingRod(false));
+def('fishing_rod_cast', fishingRod(true));
+
+/** Poisson vu de profil, tête à gauche (e = œil). */
+const FISH_ROWS: Rows = [
+  '................',
+  '................',
+  '................',
+  '................',
+  '......kkkk....k.',
+  '....kkhhhhkk.kbk',
+  '..kkhhhhbbbbkbbk',
+  '.khehhbbbbbbbbdk',
+  '.khhhbbbbbbbbbdk',
+  '..kkbbbbbdddkddk',
+  '....kkddddkk.kdk',
+  '......kkkk....k.',
+  '................',
+  '................',
+  '................',
+  '................',
+];
+def('raw_fish', spr(FISH_ROWS, { k: 0x2a3b46, h: 0xa6c6d4, b: 0x7198ab, d: 0x4d7083, e: 0x0e1216 }));
+def('cooked_fish', spr(FISH_ROWS, { k: 0x4a3320, h: 0xecd9b8, b: 0xcdb188, d: 0xa38862, e: 0x2a1a0e }));
+
+// ---------------------------------------------------------------------------
 // Ustensiles
 // ---------------------------------------------------------------------------
 def(

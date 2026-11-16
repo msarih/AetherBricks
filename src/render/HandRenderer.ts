@@ -25,6 +25,8 @@ export interface HandState {
   /** Progression de l'utilisation en cours, 0..1 ; 0 = aucune. */
   useProgress: number;
   useKind: 'none' | 'eat' | 'bow' | 'block';
+  /** La ligne de la canne à pêche est à l'eau : la canne s'affiche sans sa ficelle. */
+  fishing: boolean;
   /** Variation de l'orientation de la caméra, en radians par image (léger retard de la main). */
   yawDelta: number;
   pitchDelta: number;
@@ -65,6 +67,8 @@ export class HandRenderer {
   private shown: Shown | null = null;
   /** Arc : sprites des étapes de tension, créés à la demande. */
   private bowStages: Array<Shown | null> = [null, null, null];
+  /** Canne à pêche dont la ligne est lancée, créée à la demande. */
+  private rodCast: Shown | null = null;
   private current: THREE.Object3D;
 
   /** 1 = sorti, 0 = rangé (hors de l'écran, en bas). */
@@ -131,7 +135,7 @@ export class HandRenderer {
   }
 
   private disposeShown(): void {
-    const all = [this.shown, ...this.bowStages];
+    const all = [this.shown, ...this.bowStages, this.rodCast];
     for (const s of all) {
       if (!s) continue;
       this.holder.remove(s.group);
@@ -139,6 +143,13 @@ export class HandRenderer {
     }
     this.shown = null;
     this.bowStages = [null, null, null];
+    this.rodCast = null;
+  }
+
+  /** Sprite de la canne à pêche dont la ligne est lancée. */
+  private castRod(): Shown {
+    if (!this.rodCast) this.rodCast = this.makeShown(ItemModel.forTile(this.atlas, T.fishing_rod_cast));
+    return this.rodCast;
   }
 
   /** Sprite de l'arc selon la tension (0..1). */
@@ -254,6 +265,7 @@ export class HandRenderer {
         c.scale(1, 1, 1 + progress * 0.2);
         if (this.shownId === I.BOW) shown = this.bowStage(progress) ?? shown;
       } else {
+        if (this.shownId === I.FISHING_ROD && state.fishing) shown = this.castRod();
         swing *= 1 - this.blockBlend;
         const r = Math.sin(Math.sqrt(swing) * Math.PI);
         c.translate(-0.4 * r, 0.2 * Math.sin(Math.sqrt(swing) * Math.PI * 2), -0.2 * Math.sin(swing * Math.PI));

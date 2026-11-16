@@ -57,7 +57,7 @@ const BASE_TILES = [
   'flint_and_steel', 'shears', 'bucket', 'water_bucket', 'lava_bucket', 'milk_bucket',
   'sugar', 'paper', 'book', 'clay_ball', 'brick', 'snowball', 'melon_slice', 'spider_eye',
   'carrot', 'potato', 'baked_potato', 'glowstone_dust', 'quartz', 'cookie', 'pumpkin_pie',
-  'mushroom_stew', 'bowl',
+  'mushroom_stew', 'bowl', 'fishing_rod', 'fishing_rod_cast', 'raw_fish', 'cooked_fish',
   'door_item', 'iron_door_item', 'bed_item', 'sugar_cane_item',
 ] as const;
 

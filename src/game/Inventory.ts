@@ -6,7 +6,7 @@
 import { I } from '../world/Ids';
 import { getItem, maxStack } from '../world/Items';
 import { addToSlots, canMerge, loadSlots, maxDamage, saveSlots, type ItemStack, type Slot } from '../world/ItemStack';
-import { fuelTicks, matchRecipe, smeltingResult } from '../world/Recipes';
+import { RECIPES, fuelTicks, ingredientAccepts, matchRecipe, recipeFitsGrid, smeltingResult, type Ingredient, type Recipe } from '../world/Recipes';
 import { FURNACE_COOK_TICKS, type ChestEntity, type FurnaceEntity } from './BlockEntities';
 
 export const HOTBAR_SIZE = 9;
@@ -282,6 +282,125 @@ export abstract class Menu {
   /** À appeler après toute modification des cases. */
   protected changed(): void {
     this.updateResult();
+  }
+
+  // ------------------------------------------------------------------ livre de recettes
+
+  /** Liste des recettes faisables sur cette grille (2×2 ou 3×3). */
+  availableRecipes(): Recipe[] {
+    if (this.gridW <= 0) return [];
+    return RECIPES.filter((r) => recipeFitsGrid(r, this.gridW));
+  }
+
+  /** Compte tous les exemplaires disponibles (inventaire + grille de fabrication + curseur). */
+  private countAvailable(): Map<number, number> {
+    const counts = new Map<number, number>();
+    const add = (s: Slot): void => {
+      if (!s || s.count <= 0) return;
+      counts.set(s.id, (counts.get(s.id) ?? 0) + s.count);
+    };
+    for (const s of this.inv.slots) add(s);
+    if (this.grid) for (const s of this.grid) add(s);
+    add(this.inv.cursor);
+    return counts;
+  }
+
+  /** Vérifie si les ingrédients non vides de la recette peuvent être couverts par `counts` (muté en place si oui). */
+  private static matchIngredientPool(reqs: readonly Ingredient[], counts: Map<number, number>): number[] | null {
+    const nonZero: Ingredient[] = [];
+    const indices: number[] = [];
+    for (let i = 0; i < reqs.length; i++) {
+      const ing = reqs[i];
+      if (ing === 0) continue;
+      nonZero.push(ing);
+      indices.push(i);
+    }
+    const chosen = new Array<number>(reqs.length).fill(0);
+    const assign = (k: number): boolean => {
+      if (k === nonZero.length) return true;
+      const ing = nonZero[k];
+      const candidates = typeof ing === 'number' ? [ing] : ing;
+      for (const id of candidates) {
+        const have = counts.get(id) ?? 0;
+        if (have <= 0) continue;
+        counts.set(id, have - 1);
+        chosen[indices[k]] = id;
+        if (assign(k + 1)) return true;
+        counts.set(id, have);
+      }
+      return false;
+    };
+    return assign(0) ? chosen : null;
+  }
+
+  /** Indique si le joueur possède de quoi fabriquer au moins une fois la recette. */
+  canCraft(recipe: Recipe): boolean {
+    if (!recipeFitsGrid(recipe, this.gridW)) return false;
+    const counts = this.countAvailable();
+    return Menu.matchIngredientPool(recipe.cells, counts) !== null;
+  }
+
+  /**
+   * Remplit la grille de fabrication avec la recette choisie :
+   * remet d'abord la grille et le curseur dans l'inventaire, puis place 1 exemplaire par case
+   * (ou empile jusqu'au maximum si `shift` est vrai). Retourne true si la recette a pu être posée.
+   */
+  applyRecipe(recipe: Recipe, shift = false): boolean {
+    if (!this.grid || !recipeFitsGrid(recipe, this.gridW)) return false;
+    // Remet d'abord le contenu de la grille et du curseur dans l'inventaire
+    for (let i = 0; i < this.grid.length; i++) {
+      const s = this.grid[i];
+      if (!s) continue;
+      this.grid[i] = null;
+      if (this.inv.add(s) > 0) this.inv.drop(s);
+    }
+    if (this.inv.cursor) {
+      const cur = this.inv.cursor;
+      this.inv.cursor = null;
+      if (this.inv.add(cur) > 0) this.inv.drop(cur);
+    }
+
+    const maxPasses = shift ? 64 : 1;
+    let placedAny = false;
+    for (let pass = 0; pass < maxPasses; pass++) {
+      const counts = this.countAvailable();
+      // Soustrait ce qui est déjà posé dans la grille lors des passes précédentes
+      for (const s of this.grid) {
+        if (s) counts.set(s.id, (counts.get(s.id) ?? 0) - s.count);
+      }
+      // Pour les passes > 0, impose le même id que celui déjà posé dans chaque case
+      const reqs: Ingredient[] = recipe.cells.map((ing, idx) => {
+        if (ing === 0) return 0;
+        const gridIndex = recipe.shaped ? Math.floor(idx / recipe.w) * this.gridW + (idx % recipe.w) : idx;
+        const existing = this.grid![gridIndex];
+        if (existing) {
+          if (existing.count >= maxStack(existing.id)) return -1;
+          return ingredientAccepts(ing, existing.id) ? existing.id : -1;
+        }
+        return ing;
+      });
+      if (reqs.includes(-1)) break;
+      const chosen = Menu.matchIngredientPool(reqs, counts);
+      if (!chosen) break;
+
+      for (let idx = 0; idx < chosen.length; idx++) {
+        const id = chosen[idx];
+        if (!id) continue;
+        const gridIndex = recipe.shaped ? Math.floor(idx / recipe.w) * this.gridW + (idx % recipe.w) : idx;
+        // Prend 1 exemplaire dans l'inventaire
+        const slotIdx = this.inv.find(id);
+        if (slotIdx < 0) continue;
+        const src = this.inv.slots[slotIdx]!;
+        src.count--;
+        if (src.count <= 0) this.inv.slots[slotIdx] = null;
+        const dst = this.grid[gridIndex];
+        if (dst) dst.count++;
+        else this.grid[gridIndex] = { id, count: 1, damage: 0 };
+      }
+      placedAny = true;
+    }
+    this.changed();
+    return placedAny;
   }
 
   // ------------------------------------------------------------------ clics

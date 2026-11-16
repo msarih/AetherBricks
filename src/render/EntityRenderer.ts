@@ -1,6 +1,6 @@
 /**
  * Affichage des entités : créatures, joueur à la troisième personne, objets au sol,
- * blocs qui tombent, TNT amorcée et flèches.
+ * blocs qui tombent, TNT amorcée, flèches et flotteur de pêche.
  *
  * Ce fichier exporte aussi les briques partagées avec `HandRenderer` et `ItemIcons` :
  * sprite extrudé (`buildSpriteGeometry`), modèle d'objet (`ItemModel`), géométries et
@@ -260,7 +260,7 @@ export function isBlockItem(itemId: number): boolean {
 
 /** L'objet se tient comme un outil (manche dans le poing) plutôt que présenté à plat. */
 export function isHandheldItem(itemId: number): boolean {
-  return getItem(itemId).tool !== null || itemId === I.STICK || itemId === I.BONE || itemId === I.BOW;
+  return getItem(itemId).tool !== null || itemId === I.STICK || itemId === I.BONE || itemId === I.BOW || itemId === I.FISHING_ROD;
 }
 
 /**
@@ -709,6 +709,8 @@ function visualKey(e: EntityView): string {
       return `t:${e.blockId}:${e.blockMeta}`;
     case 'arrow':
       return 'a';
+    case 'bobber':
+      return 'f';
   }
 }
 
@@ -827,7 +829,10 @@ class MobVisual implements Visual {
     const age = e.age + alpha;
 
     let flash = 0;
-    this.body.scale.set(1, 1, 1);
+    const baseScale = e.baby ? 0.5 : 1;
+    this.body.scale.setScalar(baseScale);
+    const headMesh = this.parts.get('head');
+    if (headMesh) headMesh.scale.setScalar(e.baby ? 1.5 : 1);
 
     switch (this.kind) {
       case 'player':
@@ -851,7 +856,7 @@ class MobVisual implements Visual {
           const f4 = f * f * f * f;
           const sxz = (1 + f4 * 0.4) * wobble;
           const sy = (1 + f4 * 0.1) / wobble;
-          this.body.scale.set(sxz, sy, sxz);
+          this.body.scale.set(sxz * baseScale, sy * baseScale, sxz * baseScale);
           if (Math.floor(f * 10) % 2 === 1) flash = 0.3 + f * 0.35;
         }
         break;
@@ -1141,6 +1146,66 @@ class ArrowVisual implements Visual {
   }
 }
 
+/** Nombre de segments de la ligne de pêche. */
+const LINE_SEGMENTS = 12;
+const BOBBER_RED = 0xd62c2c;
+const BOBBER_WHITE = 0xf2f2f2;
+
+/**
+ * Flotteur de canne à pêche : deux petits cubes (rouge dessus, blanc dessous) et la ligne
+ * qui le relie au bout de la canne (`anchor`, en coordonnées du monde, tenu à jour par le jeu).
+ */
+class BobberVisual implements Visual {
+  readonly root = new THREE.Group();
+  stamp = 0;
+  private readonly top = new THREE.MeshBasicMaterial({ color: BOBBER_RED });
+  private readonly bottom = new THREE.MeshBasicMaterial({ color: BOBBER_WHITE });
+  private readonly lineMaterial = new THREE.LineBasicMaterial({ color: 0x101010 });
+  private readonly box = new THREE.BoxGeometry(0.14, 0.09, 0.14);
+  private readonly lineGeometry = new THREE.BufferGeometry();
+  private readonly points = new Float32Array((LINE_SEGMENTS + 1) * 3);
+
+  constructor(readonly key: string, private readonly anchor: THREE.Vector3) {
+    const top = new THREE.Mesh(this.box, this.top);
+    top.position.y = 0.17;
+    const bottom = new THREE.Mesh(this.box, this.bottom);
+    bottom.position.y = 0.08;
+    this.lineGeometry.setAttribute('position', new THREE.BufferAttribute(this.points, 3));
+    const line = new THREE.Line(this.lineGeometry, this.lineMaterial);
+    // la ligne s'étend bien au-delà du flotteur : pas d'élimination d'après sa boîte
+    line.frustumCulled = false;
+    this.root.add(top, bottom, line);
+  }
+
+  update(e: EntityView, alpha: number): void {
+    placeRoot(this.root, e, alpha);
+    lightColor(e.skyLight, e.blockLight, worldUniforms.uSkyLight.value, tmpLight);
+    this.top.color.setHex(BOBBER_RED).multiply(tmpLight);
+    this.bottom.color.setHex(BOBBER_WHITE).multiply(tmpLight);
+    // du haut du flotteur jusqu'au bout de la canne, avec un léger ventre (courbe de Minecraft)
+    const r = this.root.position;
+    const dx = this.anchor.x - r.x;
+    const dy = this.anchor.y - r.y - 0.22;
+    const dz = this.anchor.z - r.z;
+    const pts = this.points;
+    for (let i = 0; i <= LINE_SEGMENTS; i++) {
+      const t = i / LINE_SEGMENTS;
+      pts[i * 3] = dx * t;
+      pts[i * 3 + 1] = 0.22 + dy * (t * t + t) * 0.5;
+      pts[i * 3 + 2] = dz * t;
+    }
+    this.lineGeometry.attributes.position.needsUpdate = true;
+  }
+
+  dispose(): void {
+    this.top.dispose();
+    this.bottom.dispose();
+    this.lineMaterial.dispose();
+    this.box.dispose();
+    this.lineGeometry.dispose();
+  }
+}
+
 // ---------------------------------------------------------------------------------------------
 // Afficheur
 // ---------------------------------------------------------------------------------------------
@@ -1149,6 +1214,8 @@ export class EntityRenderer {
   private readonly root = new THREE.Group();
   private readonly visuals = new Map<number, Visual>();
   private frame = 0;
+  /** Bout de la canne à pêche du joueur, en coordonnées du monde : extrémité de la ligne. À tenir à jour avant `sync`. */
+  readonly lineAnchor = new THREE.Vector3();
 
   constructor(private readonly scene: THREE.Scene, private readonly atlas: Atlas) {
     this.root.name = 'entities';
@@ -1196,6 +1263,8 @@ export class EntityRenderer {
         return new BlockVisual(key, this.atlas, e);
       case 'arrow':
         return new ArrowVisual(key);
+      case 'bobber':
+        return new BobberVisual(key, this.lineAnchor);
     }
   }
 

@@ -141,6 +141,8 @@ const SIMPLE_ITEMS: Array<[id: number, name: TileName, label: string, category: 
   [I.BAKED_POTATO, 'baked_potato', 'Pomme de terre cuite', 'nourriture', food(5, 6)],
   [I.COOKIE, 'cookie', 'Cookie', 'nourriture', food(2, 0.4)],
   [I.PUMPKIN_PIE, 'pumpkin_pie', 'Tarte à la citrouille', 'nourriture', food(8, 4.8)],
+  [I.RAW_FISH, 'raw_fish', 'Poisson cru', 'nourriture', food(2, 0.4)],
+  [I.COOKED_FISH, 'cooked_fish', 'Poisson cuit', 'nourriture', food(5, 6)],
   [I.MUSHROOM_STEW, 'mushroom_stew', 'Soupe de champignons', 'nourriture', { ...food(6, 7.2), stack: 1 }],
   // Le lait se boit mais ne nourrit pas (food = 0)
   [I.MILK_BUCKET, 'milk_bucket', 'Seau de lait', 'nourriture', { stack: 1 }],
@@ -148,6 +150,7 @@ const SIMPLE_ITEMS: Array<[id: number, name: TileName, label: string, category: 
   // --- Outils divers ---
   [I.FLINT_AND_STEEL, 'flint_and_steel', 'Briquet', 'outils', { stack: 1, durability: 64 }],
   [I.SHEARS, 'shears', 'Cisailles', 'outils', { stack: 1, durability: 238, tool: 'shears', speed: 5 }],
+  [I.FISHING_ROD, 'fishing_rod', 'Canne à pêche', 'outils', { stack: 1, durability: 64 }],
   [I.BUCKET, 'bucket', 'Seau', 'outils', { stack: 16 }],
   [I.WATER_BUCKET, 'water_bucket', "Seau d'eau", 'outils', { stack: 1 }],
   [I.LAVA_BUCKET, 'lava_bucket', 'Seau de lave', 'outils', { stack: 1 }],

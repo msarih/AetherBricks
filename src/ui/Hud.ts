@@ -51,6 +51,13 @@ export class Hud {
   private readonly debugLeft: HTMLDivElement;
   private readonly debugRight: HTMLDivElement;
   private readonly fps: HTMLDivElement;
+  private readonly guide: HTMLDivElement;
+  private readonly toast: HTMLDivElement;
+  private readonly toastIcon: ItemView;
+  private readonly toastTitle: HTMLDivElement;
+  private readonly toastDetail: HTMLDivElement;
+  private readonly toastQueue: Array<{ title: string; detail: string; iconId: number }> = [];
+  private toastTimer = 0;
 
   private readonly lines: ChatLine[] = [];
   private visible = true;
@@ -115,6 +122,17 @@ export class Hud {
     this.debugLeft = el('div', 'mc-debug-col mc-debug-left', this.debug);
     this.debugRight = el('div', 'mc-debug-col mc-debug-right', this.debug);
     this.fps = el('div', 'mc-fps', this.main);
+    this.guide = el('div', 'mc-guide', this.main);
+    this.guide.dataset.mc = 'guide';
+
+    this.toast = el('div', 'mc-toast', this.main);
+    this.toast.dataset.mc = 'toast';
+    const toastSlot = el('div', 'mc-toast-slot', this.toast);
+    this.toastIcon = new ItemView(host, toastSlot);
+    const toastText = el('div', 'mc-toast-text', this.toast);
+    el('div', 'mc-toast-head', toastText, 'Progrès accompli !');
+    this.toastTitle = el('div', 'mc-toast-title', toastText);
+    this.toastDetail = el('div', 'mc-toast-detail', toastText);
 
     this.fade = el('div', 'mc-ov mc-ov-fade', this.el);
   }
@@ -133,6 +151,10 @@ export class Hud {
   actionBar(text: string): void {
     this.action.textContent = text;
     this.actionTimer = text ? 3 : 0;
+  }
+
+  showAdvancement(title: string, detail: string, iconId: number): void {
+    this.toastQueue.push({ title, detail, iconId });
   }
 
   toggleDebug(): void {
@@ -173,6 +195,7 @@ export class Hud {
     this.updateHotbar(g, dt);
     this.updateChat();
     this.updateDebug(g, dt);
+    this.updateGuideAndToast(g, dt);
 
     if (this.actionTimer > 0) {
       this.actionTimer -= dt;
@@ -342,6 +365,28 @@ export class Hud {
       const line = col.children[i] as HTMLElement;
       line.textContent = lines[i];
       line.classList.toggle('mc-empty', lines[i] === '');
+    }
+  }
+
+  private updateGuideAndToast(g: UiGame, dt: number): void {
+    const goal = !this.debugOn && g.gameMode === 'survival' ? g.guideGoal : '';
+    if (this.changed('guideGoal', goal)) {
+      this.guide.textContent = goal;
+      this.guide.style.display = goal ? 'block' : 'none';
+    }
+
+    if (this.toastTimer <= 0 && this.toastQueue.length > 0) {
+      const next = this.toastQueue.shift()!;
+      this.toastTitle.textContent = next.title;
+      this.toastDetail.textContent = next.detail;
+      this.toastIcon.set(next.iconId ? { id: next.iconId, count: 1, damage: 0 } : null);
+      this.toastTimer = 6;
+      this.toast.classList.add('mc-shown');
+    } else if (this.toastTimer > 0) {
+      this.toastTimer -= dt;
+      if (this.toastTimer <= 0) {
+        this.toast.classList.remove('mc-shown');
+      }
     }
   }
 }

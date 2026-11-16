@@ -1,11 +1,11 @@
 /**
  * Interaction du joueur avec le monde : visée, minage, pose de blocs, activation (portes, coffres…),
- * utilisation des objets (nourriture, arc, seaux, briquet, houe…) et attaque des entités.
+ * utilisation des objets (nourriture, arc, canne à pêche, seaux, briquet, houe…) et attaque des entités.
  *
  * `tick()` tourne à 20 ticks par seconde (logique) ; `frame()` à chaque image (contour du bloc visé).
  */
 import { Living, type Entity, type GameApi } from '../entity/Entity';
-import { Arrow, Thrown } from '../entity/Objects';
+import { Arrow, FishingBobber, Thrown } from '../entity/Objects';
 import type { Input } from '../player/Input';
 import { attackDamage, type Player } from '../player/Player';
 import type { HandRenderer } from '../render/HandRenderer';
@@ -108,10 +108,19 @@ export class Interaction {
   /** Objet en cours d'utilisation (repas, arc) : un changement d'objet l'interrompt. */
   private useItem = 0;
   private useSlot = 0;
+  /** Le clic droit en cours vient d'être pressé (et non répété parce que le bouton est tenu). */
+  private freshClick = false;
+  /** Flotteur de la canne à pêche, tant que la ligne est lancée. */
+  private bobber: FishingBobber | null = null;
 
   constructor(private readonly game: InteractionHost) {}
 
   // ------------------------------------------------------------------ visée
+
+  /** La ligne de la canne à pêche est-elle lancée ? */
+  get fishing(): boolean {
+    return this.bobber !== null && !this.bobber.dead;
+  }
 
   private reach(): number {
     return this.game.player.creative ? REACH_CREATIVE : REACH_SURVIVAL;
@@ -207,7 +216,9 @@ export class Interaction {
       this.breakProgress = 0;
     }
 
+    if (this.bobber && this.bobber.dead) this.bobber = null;
     if ((rightClick || (input.buttons[2] && this.useDelay === 0)) && p.useKind === 'none') {
+      this.freshClick = rightClick;
       if (this.rightClick()) this.useDelay = USE_DELAY;
     }
   }
@@ -622,6 +633,26 @@ export class Interaction {
       if (!p.creative && p.inventory.count(I.ARROW) === 0) return false;
       this.startUse('bow');
       return false; // pas de délai : l'arc se bande tant que le bouton est tenu
+    }
+
+    if (held === I.FISHING_ROD) {
+      // un clic lance la ligne, le suivant la remonte ; tenir le bouton ne répète rien
+      if (!this.freshClick) return false;
+      const b = this.bobber;
+      if (b && !b.dead) {
+        const wear = b.reel(g);
+        this.bobber = null;
+        g.sound('bow', ex, ey, ez, 0.4, 1.3 + g.rng() * 0.2);
+        if (wear > 0) p.damageHeld(g, wear);
+      } else {
+        const nb = new FishingBobber(p);
+        nb.cast(ex + l.x * 0.3, ey - 0.1, ez + l.z * 0.3, l.x, l.y, l.z, 1.1);
+        g.spawn(nb);
+        this.bobber = nb;
+        g.sound('bow', ex, ey, ez, 0.5, 0.4 + g.rng() * 0.2);
+      }
+      this.swing();
+      return true;
     }
 
     if (held === I.EGG || held === I.SNOWBALL) {

@@ -2,7 +2,7 @@
  * Écrans simples : pause, options (et page « Contrôles »), chat, mort, chargement.
  * Chacun construit son DOM, traite ses touches et prévient le jeu ou l'application.
  */
-import type { Settings } from '../world/Storage';
+import { DEFAULT_KEYBINDS, formatKeyCode, type KeybindAction, type Settings } from '../world/Storage';
 import { button, el, setButtonLabel, slider, u } from './dom';
 import { attempt, errorText, type Screen, type UiContext } from './Screen';
 
@@ -77,24 +77,46 @@ export class PauseScreen implements Screen {
 
 const DIFFICULTIES = ['Paisible', 'Facile', 'Normal', 'Difficile'];
 
-const CONTROLS: ReadonlyArray<readonly [string, string]> = [
-  ['Avancer, reculer, aller à gauche, à droite', 'Z Q S D'],
-  ['Sauter (double appui : voler en créatif)', 'Espace'],
-  ['S\'accroupir', 'Maj'],
-  ['Courir', 'Ctrl'],
+const KEYBIND_ROWS: ReadonlyArray<readonly [KeybindAction, string]> = [
+  ['forward', 'Avancer'],
+  ['left', 'Aller à gauche'],
+  ['backward', 'Reculer'],
+  ['right', 'Aller à droite'],
+  ['jump', 'Sauter (double appui : voler en créatif)'],
+  ['sneak', 'S\'accroupir'],
+  ['sprint', 'Courir'],
+  ['inventory', 'Inventaire'],
+  ['drop', 'Lâcher l\'objet'],
+  ['chat', 'Chat'],
+  ['command', 'Commande'],
+  ['perspective', 'Vue à la 3ᵉ personne'],
+];
+
+const FIXED_CONTROLS: ReadonlyArray<readonly [string, string]> = [
   ['Casser, attaquer', 'Clic gauche'],
   ['Poser, utiliser', 'Clic droit'],
   ['Choisir le bloc visé', 'Clic milieu'],
   ['Changer de case', 'Molette, 1 à 9'],
-  ['Inventaire', 'E'],
-  ['Lâcher l\'objet', 'A'],
-  ['Chat', 'T'],
-  ['Commande', '/'],
-  ['Cacher l\'interface', 'F1'],
-  ['Écran de débogage', 'F3'],
-  ['Vue à la 3ᵉ personne', 'F5'],
+  ['Cacher l\'interface / Débogage', 'F1 / F3'],
   ['Pause', 'Échap'],
 ];
+
+const RESERVED_CODES = new Set<string>([
+  'Escape',
+  'F1',
+  'F3',
+  'Enter',
+  'NumpadEnter',
+  'Digit1',
+  'Digit2',
+  'Digit3',
+  'Digit4',
+  'Digit5',
+  'Digit6',
+  'Digit7',
+  'Digit8',
+  'Digit9',
+]);
 
 type BoolKey = { [K in keyof Settings]: Settings[K] extends boolean ? K : never }[keyof Settings];
 type NumKey = { [K in keyof Settings]: Settings[K] extends number ? K : never }[keyof Settings];
@@ -104,6 +126,9 @@ export class OptionsScreen implements Screen {
   /** Les réglages occupent tout l'écran : le HUD, qui se lirait au travers, est masqué. */
   readonly opaque = true;
   private page: 'main' | 'controls' = 'main';
+  private bindingAction: KeybindAction | null = null;
+  private readonly keyBtns = new Map<KeybindAction, HTMLButtonElement>();
+  private layoutBtn: HTMLButtonElement | null = null;
 
   constructor(private readonly ctx: UiContext, private readonly back: () => void, readonly pausing: boolean) {
     const inGame = ctx.host.game !== null;
@@ -113,6 +138,18 @@ export class OptionsScreen implements Screen {
   }
 
   key(e: KeyboardEvent): boolean {
+    if (this.bindingAction !== null) {
+      e.preventDefault();
+      if (e.repeat) return true;
+      const action = this.bindingAction;
+      this.bindingAction = null;
+      if (e.code !== 'Escape') {
+        this.ctx.host.settings.keybinds[action] = e.code;
+        this.change();
+      }
+      this.refreshKeyLabels();
+      return true;
+    }
     if (e.code !== 'Escape') return false;
     e.preventDefault();
     if (e.repeat) return true;
@@ -219,19 +256,100 @@ export class OptionsScreen implements Screen {
 
   private showControls(): void {
     const { host } = this.ctx;
+    const s = host.settings;
     this.page = 'controls';
+    this.bindingAction = null;
+    this.keyBtns.clear();
     this.el.textContent = '';
     el('div', 'mc-page-head', this.el, 'Contrôles');
     const body = el('div', 'mc-page-body mc-list', this.el);
     const list = el('div', 'mc-keys', body);
-    for (const [action, key] of CONTROLS) {
+
+    const layoutRow = el('div', 'mc-key-row mc-key-row-head', list);
+    el('span', 'mc-key-action', layoutRow, 'Disposition du clavier');
+    const layoutBtn = sized(
+      button(
+        host,
+        '',
+        () => {
+          this.bindingAction = null;
+          s.keyboardLayout = s.keyboardLayout === 'azerty' ? 'qwerty' : 'azerty';
+          this.change();
+          this.refreshKeyLabels();
+        },
+        'keyboardLayout',
+        layoutRow,
+      ),
+      96,
+    );
+    this.layoutBtn = layoutBtn;
+
+    for (const [action, label] of KEYBIND_ROWS) {
+      const row = el('div', 'mc-key-row', list);
+      el('span', 'mc-key-action', row, label);
+      const b = sized(
+        button(
+          host,
+          '',
+          () => {
+            this.bindingAction = this.bindingAction === action ? null : action;
+            this.refreshKeyLabels();
+          },
+          `bind-${action}`,
+          row,
+        ),
+        96,
+      );
+      b.classList.add('mc-key-btn');
+      this.keyBtns.set(action, b);
+    }
+
+    for (const [action, key] of FIXED_CONTROLS) {
       const row = el('div', 'mc-key-row', list);
       el('span', 'mc-key-action', row, action);
       el('span', 'mc-key', row, key);
     }
-    el('div', 'mc-note', list, 'Les touches sont repérées par leur position : sur un clavier QWERTY, Z Q S D se lisent W A S D et « A » est la touche Q.');
+
+    el('div', 'mc-note', list, 'Cliquez sur une touche puis appuyez sur la nouvelle touche souhaitée (Échap pour annuler).');
     const foot = el('div', 'mc-page-foot', this.el);
-    sized(button(host, 'Terminé', () => this.showMain(), 'done', foot), 200);
+    sized(
+      button(
+        host,
+        'Réinitialiser',
+        () => {
+          this.bindingAction = null;
+          s.keybinds = { ...DEFAULT_KEYBINDS };
+          this.change();
+          this.refreshKeyLabels();
+        },
+        'reset-keys',
+        foot,
+      ),
+      130,
+    );
+    sized(button(host, 'Terminé', () => this.showMain(), 'done', foot), 130);
+    this.refreshKeyLabels();
+  }
+
+  private refreshKeyLabels(): void {
+    const s = this.ctx.host.settings;
+    if (this.layoutBtn) {
+      setButtonLabel(this.layoutBtn, s.keyboardLayout === 'azerty' ? 'AZERTY' : 'QWERTY');
+    }
+    const counts = new Map<string, number>();
+    for (const [action] of KEYBIND_ROWS) {
+      const code = s.keybinds[action];
+      counts.set(code, (counts.get(code) ?? 0) + 1);
+    }
+    for (const [action, btn] of this.keyBtns) {
+      const active = this.bindingAction === action;
+      const code = s.keybinds[action];
+      const conflict = (counts.get(code) ?? 0) > 1 || RESERVED_CODES.has(code);
+      const text = active ? `> ${formatKeyCode(code, s.keyboardLayout)} <` : formatKeyCode(code, s.keyboardLayout);
+      setButtonLabel(btn, text);
+      btn.classList.toggle('mc-binding', active);
+      btn.classList.toggle('mc-conflict', conflict && !active);
+    }
   }
 }
 

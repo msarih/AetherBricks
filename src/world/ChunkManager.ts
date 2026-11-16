@@ -47,6 +47,7 @@ const SAVE_BATCH = 16;
 export class ChunkManager {
   viewDistance: number;
   fancy = true;
+  smoothLighting = true;
   hooks: ChunkHooks = NO_HOOKS;
 
   /** Compteurs pour l'écran de débogage. */
@@ -406,7 +407,17 @@ export class ChunkManager {
       transfer.push(b.buffer, m.buffer);
     }
     const id = this.nextMeshId++;
-    const req: MeshRequest = { id, cx: c.cx, cz: c.cz, blocks, metas, tints: c.tints, top, fancy: this.fancy };
+    const req: MeshRequest = {
+      id,
+      cx: c.cx,
+      cz: c.cz,
+      blocks,
+      metas,
+      tints: c.tints,
+      top,
+      fancy: this.fancy,
+      smoothLighting: this.smoothLighting,
+    };
     c.meshPending = true;
     c.meshDirty = false;
     c.meshedVersion = c.version;

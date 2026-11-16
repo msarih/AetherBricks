@@ -39,11 +39,13 @@ import { B } from '../world/Ids';
 import { ITEMS, getItem, itemLabel } from '../world/Items';
 import { makeStack } from '../world/ItemStack';
 import { newRayHit, raycast } from '../world/Raycast';
+import { formatKeyCode } from '../world/Storage';
 import type { Settings, Storage, WorldInfo } from '../world/Storage';
 import { World, type BlockEntity, type WorldEffect, type WorldHost } from '../world/World';
 import { BIOMES } from '../world/gen/Biomes';
 import { WorldGen } from '../world/gen/WorldGen';
 import { blockEntityItems, tickBlockEntities } from './BlockEntities';
+import { ADVANCEMENTS, advancementText } from './Advancements';
 import { explode as runExplosion } from './Explosion';
 import { Interaction, particleTile, particleTint, type InteractionHost } from './Interaction';
 import { CreativeMenu, HOTBAR_SIZE, InventoryMenu, type Inventory, type Menu } from './Inventory';
@@ -79,6 +81,9 @@ const SOUND_RANGE = 16;
 const MAX_BREAK_SOUNDS = 6;
 const MAX_BREAK_PARTICLES = 24;
 const DEG = Math.PI / 180;
+/** Bout de la canne à pêche tenue en main, vu par la caméra de la main (à une distance de 1 devant l'œil). */
+const ROD_TIP_X = 1.19;
+const ROD_TIP_Y = 0.12;
 
 const DIFFICULTY_LABELS = ['Paisible', 'Facile', 'Normale', 'Difficile'];
 const DIFFICULTY_NAMES = ['peaceful', 'easy', 'normal', 'hard'];
@@ -186,6 +191,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     blockLight: 0,
     useProgress: 0,
     useKind: 'none',
+    fishing: false,
     yawDelta: 0,
     pitchDelta: 0,
   };
@@ -238,7 +244,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     this.camera = new THREE.PerspectiveCamera(o.settings.fov, (canvas.clientWidth || 16) / (canvas.clientHeight || 9), 0.05, 1200);
     this.camera.rotation.order = 'YXZ';
 
-    const world = new World(info.seed);
+    const world = new World(info.seed, info.worldType);
     this.world = world;
     this.rng = world.rng;
     world.host = this.createWorldHost();
@@ -321,7 +327,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     this.input = new Input(canvas);
     this.input.blocked = () => this.ui.modal;
     this.input.active = () => this.ready && !this.disposed;
-    this.input.onKey = (code, repeat) => this.onKey(code, repeat);
+    this.input.onKey = (code, repeat, key) => this.onKey(code, repeat, key);
     this.input.onWheel = (direction) => {
       if (this.ui.modal || !player.alive) return;
       const inv = player.inventory;
@@ -355,8 +361,9 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
   applySettings(): void {
     const s = this.settings;
     this.chunks.viewDistance = s.renderDistance;
-    if (this.chunks.fancy !== s.fancyGraphics) {
+    if (this.chunks.fancy !== s.fancyGraphics || this.chunks.smoothLighting !== s.smoothLighting) {
       this.chunks.fancy = s.fancyGraphics;
+      this.chunks.smoothLighting = s.smoothLighting;
       this.chunks.remeshAll();
     }
     this.sky.setCloudsVisible(s.clouds);
@@ -612,12 +619,13 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     // --- commandes du joueur ---
     const free = !this.ui.modal && p.alive && !p.sleeping;
     const pi = p.input;
+    const kb = this.settings.keybinds;
     if (free) {
-      pi.forward = (input.isDown('KeyW') || input.isDown('ArrowUp') ? 1 : 0) - (input.isDown('KeyS') || input.isDown('ArrowDown') ? 1 : 0);
-      pi.strafe = (input.isDown('KeyD') || input.isDown('ArrowRight') ? 1 : 0) - (input.isDown('KeyA') || input.isDown('ArrowLeft') ? 1 : 0);
-      pi.jump = input.isDown('Space') || this.jumpTapped;
-      pi.sneak = input.isDown('ShiftLeft') || input.isDown('ShiftRight');
-      pi.sprint = input.isDown('ControlLeft');
+      pi.forward = (input.isDown(kb.forward) || input.isDown('ArrowUp') ? 1 : 0) - (input.isDown(kb.backward) || input.isDown('ArrowDown') ? 1 : 0);
+      pi.strafe = (input.isDown(kb.right) || input.isDown('ArrowRight') ? 1 : 0) - (input.isDown(kb.left) || input.isDown('ArrowLeft') ? 1 : 0);
+      pi.jump = input.isDown(kb.jump) || this.jumpTapped;
+      pi.sneak = input.isDown(kb.sneak) || input.isDown('ShiftRight');
+      pi.sprint = input.isDown(kb.sprint);
     } else {
       pi.forward = 0;
       pi.strafe = 0;
@@ -676,8 +684,36 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     this.time++;
     this.tickWeather();
     this.tickSleep();
+    this.tickAdvancements();
 
     if (!p.alive && !this.deathShown) this.showDeath();
+  }
+
+  private tickAdvancements(): void {
+    const p = this.player;
+    if (p.creative) return;
+    // Vérifie toutes les demi-secondes (ou pendant le sommeil)
+    if (this.time % 10 !== 0 && !p.sleeping) return;
+    let highestUnlocked = -1;
+    for (let i = 0; i < ADVANCEMENTS.length; i++) {
+      const adv = ADVANCEMENTS[i];
+      if (p.advancements.has(adv.id)) {
+        highestUnlocked = i;
+        continue;
+      }
+      if (adv.check(p)) {
+        p.advancements.add(adv.id);
+        highestUnlocked = i;
+        this.sfx.play('levelup', { volume: 0.55, pitch: 1.1 });
+        const detail = this.advText(adv.detail);
+        this.ui.showAdvancement(adv.title, detail, adv.icon);
+        this.ui.addMessage(`[Progrès] ${adv.title} — ${detail}`);
+      }
+    }
+    // Toute étape antérieure à la dernière étape atteinte est validée d'office sans notification
+    for (let i = 0; i < highestUnlocked; i++) {
+      p.advancements.add(ADVANCEMENTS[i].id);
+    }
   }
 
   private tickWeather(): void {
@@ -724,8 +760,60 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
 
   private wake(): void {
     const p = this.player;
+    const bed = p.bed;
     p.sleeping = false;
     p.sleepTicks = 0;
+    if (bed) {
+      const spot = this.bedStandSpot(bed.x, bed.y, bed.z);
+      if (spot) {
+        p.teleport(spot.x, spot.y, spot.z);
+        p.vx = p.vy = p.vz = 0;
+        p.fallDistance = 0;
+      }
+    }
+  }
+
+  /** Case libre pour tenir debout à côté du lit (tête en hx, by, hz), ou null si toutes sont obstruées. */
+  private bedStandSpot(hx: number, by: number, hz: number): { x: number; y: number; z: number } | null {
+    const w = this.world;
+    if (!w.isLoaded(hx, hz) || w.getBlock(hx, by, hz) !== B.BED) return null;
+    const d = w.getMeta(hx, by, hz) & 3;
+    const fx = hx - FACING_DX[d];
+    const fz = hz - FACING_DZ[d];
+    const hasFoot = w.getBlock(fx, by, fz) === B.BED;
+    const candidates: Array<[number, number]> = [];
+    const seen = new Set<string>();
+    const push = (x: number, z: number): void => {
+      if ((x === hx && z === hz) || (hasFoot && x === fx && z === fz)) return;
+      const k = `${x},${z}`;
+      if (seen.has(k)) return;
+      seen.add(k);
+      candidates.push([x, z]);
+    };
+    for (const [ax, az] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) push(hx + ax, hz + az);
+    if (hasFoot) for (const [ax, az] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) push(fx + ax, fz + az);
+    for (const [ax, az] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) push(hx + ax, hz + az);
+    if (hasFoot) for (const [ax, az] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) push(fx + ax, fz + az);
+
+    const p = this.player;
+    const hw = p.width / 2;
+    for (const cy of [by, by - 1, by + 1]) {
+      if (cy < 1 || cy + 2 >= CHUNK_HEIGHT) continue;
+      for (const [cx, cz] of candidates) {
+        if (!w.isLoaded(cx, cz)) continue;
+        const below = w.getBlock(cx, cy - 1, cz);
+        if (BLOCK_SOLID[below] !== 1 || below === B.CACTUS) continue;
+        const feet = w.getBlock(cx, cy, cz);
+        const head = w.getBlock(cx, cy + 1, cz);
+        if (BLOCK_SHAPE[feet] === SHAPE.FLUID || BLOCK_SHAPE[head] === SHAPE.FLUID) continue;
+        if (feet === B.FIRE || head === B.FIRE || feet === B.CACTUS || head === B.CACTUS) continue;
+        const sx = cx + 0.5;
+        const sz = cz + 0.5;
+        if (!isBoxFree(w, sx - hw, cy, sz - hw, sx + hw, cy + p.height, sz + hw)) continue;
+        return { x: sx, y: cy, z: sz };
+      }
+    }
+    return null;
   }
 
   private showDeath(): void {
@@ -833,6 +921,17 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     this.sky.setVisible(!submerged);
 
     // --- entités, particules, main ---
+    // bout de la canne à pêche (départ de la ligne) : en bas à droite de l'écran, ou devant la main de l'avatar
+    if (first) {
+      // la main est dessinée avec un champ de vision fixe de 70° : on ramène le bout de la canne à celui de la caméra
+      const k = Math.tan((cam.fov * DEG) / 2) / Math.tan(35 * DEG);
+      this.entityRenderer.lineAnchor.set(ROD_TIP_X * k, ROD_TIP_Y * k, -1).multiplyScalar(0.8).applyMatrix4(cam.matrixWorld);
+    }
+    else {
+      const sy = Math.sin(yaw);
+      const cy = Math.cos(yaw);
+      this.entityRenderer.lineAnchor.set(ex - sy * 0.7 + cy * 0.35, lerp(p.py, p.y, alpha) + 1.35, ez - cy * 0.7 - sy * 0.35);
+    }
     this.entityRenderer.sync(this.entities, alpha, this.clock);
     this.fx.update(dt, cam);
 
@@ -844,6 +943,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     hs.skyLight = p.skyLight;
     hs.blockLight = p.blockLight;
     hs.useKind = p.useKind;
+    hs.fishing = this.interaction.fishing;
     hs.useProgress = p.useKind === 'eat' ? Math.min(1, p.useTicks / 32) : p.useKind === 'bow' ? Math.min(1, p.useTicks / 20) : 0;
     hs.yawDelta = yaw - this.lastYaw;
     hs.pitchDelta = pitch - this.lastPitch;
@@ -861,65 +961,68 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
 
   // ------------------------------------------------------------------ clavier
 
-  private onKey(code: string, repeat: boolean): boolean {
+  private onKey(code: string, repeat: boolean, key = ''): boolean {
     if (!this.ready) return false;
     const p = this.player;
-    switch (code) {
-      case 'Escape':
-        if (!repeat) this.pause();
-        return true;
-      case 'F1':
-        if (!repeat) {
-          this.hudVisible = !this.hudVisible;
-          this.ui.setHudVisible(this.hudVisible);
-        }
-        return true;
-      case 'F3':
-        if (!repeat) this.ui.toggleDebug();
-        return true;
-      case 'F5':
-        if (!repeat) this.viewMode = (this.viewMode + 1) % 3;
-        return true;
-      case 'KeyT':
-      case 'Enter':
-        if (!repeat) this.openChat('');
-        return true;
-      case 'Slash':
-        if (!repeat) this.openChat('/');
-        return true;
-      default:
-        break;
+    const kb = this.settings.keybinds;
+    if (code === 'Escape') {
+      if (!repeat) this.pause();
+      return true;
+    }
+    if (code === 'F1') {
+      if (!repeat) {
+        this.hudVisible = !this.hudVisible;
+        this.ui.setHudVisible(this.hudVisible);
+      }
+      return true;
+    }
+    if (code === 'F3') {
+      if (!repeat) this.ui.toggleDebug();
+      return true;
+    }
+    if (code === kb.perspective) {
+      if (!repeat) this.viewMode = (this.viewMode + 1) % 3;
+      return true;
+    }
+    if (code === kb.chat || code === 'Enter') {
+      if (!repeat) this.openChat('');
+      return true;
+    }
+    if (key === '/' || code === kb.command) {
+      if (!repeat) this.openChat('/');
+      return true;
     }
     if (!p.alive) return false;
-    switch (code) {
-      case 'KeyE':
-        if (!repeat && !p.sleeping) this.openMenu(p.creative ? new CreativeMenu(p.inventory) : new InventoryMenu(p.inventory));
-        return true;
-      case 'KeyQ':
-        if (!p.sleeping) this.interaction.dropHeld(this.input.isDown('ControlLeft'));
-        return true;
-      case 'Space':
-        if (!repeat) {
-          if (p.sleeping) this.wake();
-          else {
-            this.jumpTapped = true;
-            p.tapJump();
-          }
-        }
-        return true;
-      case 'KeyW':
-        if (!repeat) p.tapForward();
-        return true;
-      default:
-        if (code.length === 6 && code.startsWith('Digit')) {
-          const n = code.charCodeAt(5) - 49;
-          if (n >= 0 && n < HOTBAR_SIZE) {
-            p.inventory.selected = n;
-            return true;
-          }
-        }
-        return false;
+    if (code === kb.inventory) {
+      if (!repeat && !p.sleeping) this.openMenu(p.creative ? new CreativeMenu(p.inventory) : new InventoryMenu(p.inventory));
+      return true;
     }
+    if (code === kb.drop) {
+      if (!p.sleeping) this.interaction.dropHeld(this.input.isDown('ControlLeft') || this.input.isDown(kb.sprint));
+      return true;
+    }
+    if (code === kb.jump) {
+      if (!repeat) {
+        if (p.sleeping) this.wake();
+        else {
+          this.jumpTapped = true;
+          p.tapJump();
+        }
+      }
+      return true;
+    }
+    if (code === kb.forward) {
+      if (!repeat) p.tapForward();
+      return true;
+    }
+    if (code.length === 6 && code.startsWith('Digit')) {
+      const n = code.charCodeAt(5) - 49;
+      if (n >= 0 && n < HOTBAR_SIZE) {
+        p.inventory.selected = n;
+        return true;
+      }
+    }
+    return false;
   }
 
   private pause(): void {
@@ -1000,7 +1103,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
 
   private add(e: Entity, touch: boolean): void {
     this.entities.push(e);
-    if (e instanceof Monster || e instanceof Thrown) return;
+    if (e instanceof Thrown) return;
     const key = chunkKey(Math.floor(e.x) >> 4, Math.floor(e.z) >> 4);
     this.homes.set(e, key);
     if (touch) this.touch(key);
@@ -1231,6 +1334,19 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     return p.sleeping ? Math.min(1, p.sleepTicks / SLEEP_TICKS) : 0;
   }
 
+  get guideGoal(): string {
+    const p = this.player;
+    for (const adv of ADVANCEMENTS) {
+      if (!p.advancements.has(adv.id)) return this.advText(adv.goal);
+    }
+    return '';
+  }
+
+  /** Texte d'un progrès avec la touche d'inventaire réellement configurée. */
+  private advText(text: string): string {
+    return advancementText(text, formatKeyCode(this.settings.keybinds.inventory, this.settings.keyboardLayout));
+  }
+
   debugLines(): { left: string[]; right: string[] } {
     const p = this.player;
     const w = this.world;
@@ -1300,9 +1416,16 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     if (bed) {
       // lit dans un chunk déchargé : on lui fait confiance
       if (!this.world.isLoaded(bed.x, bed.z) || this.world.getBlock(bed.x, bed.y, bed.z) === B.BED) {
-        x = bed.x + 0.5;
-        y = bed.y + 0.5625;
-        z = bed.z + 0.5;
+        const spot = this.bedStandSpot(bed.x, bed.y, bed.z);
+        if (spot) {
+          x = spot.x;
+          y = spot.y;
+          z = spot.z;
+        } else {
+          x = bed.x + 0.5;
+          y = bed.y + 0.5625;
+          z = bed.z + 0.5;
+        }
       } else {
         p.bed = null;
         this.ui.addMessage('Votre lit a disparu ou est obstrué');

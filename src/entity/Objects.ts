@@ -1,14 +1,17 @@
 /**
- * Entités inertes : objet au sol, bloc qui tombe, TNT amorcée, flèche, projectile lancé (œuf, boule de neige).
+ * Entités inertes : objet au sol, bloc qui tombe, TNT amorcée, flèche, projectile lancé (œuf, boule de neige),
+ * flotteur de canne à pêche.
  */
 import { BLOCK_REPLACEABLE, BLOCK_SHAPE, SHAPE } from '../world/Blocks';
+import { fluidHeight } from '../world/BlockModels';
+import { FISHING_BITE_MAX, FISHING_BITE_MIN, FISHING_WAIT_MAX, FISHING_WAIT_MIN, rollFishingCatch } from '../world/Fishing';
 import { B, I } from '../world/Ids';
 import { maxStack } from '../world/Items';
 import { canMerge, type ItemStack } from '../world/ItemStack';
 import { newRayHit, rayBoxDistance, raycast } from '../world/Raycast';
-import { Entity, Living, num, type DamageCause, type EntityData, type GameApi } from './Entity';
+import { Entity, Living, num, type DamageCause, type EntityData, type GameApi, type PlayerLike } from './Entity';
 import type { EntityKind } from './EntityView';
-import { groundSlip, move, updateMedium } from './Physics';
+import { groundSlip, move, pointInFluid, updateMedium } from './Physics';
 
 const hit = newRayHit();
 
@@ -469,6 +472,197 @@ export class Thrown extends Entity {
     this.vz *= 0.99;
     this.vy -= 0.03;
     if (this.y < -64 || this.age > 600) this.dead = true;
+  }
+}
+
+// ---------------------------------------------------------------------------------------- pêche
+
+/** Longueur maximale de la ligne, en blocs : au-delà, elle casse. */
+const LINE_MAX = 32;
+/** Ticks pendant lesquels un sillage annonce la touche. */
+const TRAIL_TICKS = 30;
+
+/** Hauteur (y du monde) de la surface de l'eau à la verticale du point s'il est dans l'eau, NaN sinon. */
+function waterSurfaceAt(w: GameApi['world'], x: number, y: number, z: number): number {
+  const bx = Math.floor(x);
+  const bz = Math.floor(z);
+  let by = Math.floor(y);
+  let v = w.getBlockAndMeta(bx, by, bz);
+  if ((v & 255) !== B.WATER) return NaN;
+  for (let i = 0; i < 8; i++) {
+    const up = w.getBlockAndMeta(bx, by + 1, bz);
+    if ((up & 255) !== B.WATER) break;
+    by++;
+    v = up;
+  }
+  const surface = by + fluidHeight(v >> 8);
+  return y <= surface ? surface : NaN;
+}
+
+/**
+ * Flotteur d'une canne à pêche. Lancé par le joueur, il vole, flotte à la surface de l'eau et
+ * s'enfonce quand un poisson mord : remonter la ligne à ce moment-là rapporte une prise.
+ * Il n'est pas sauvegardé et disparaît si le pêcheur meurt, range sa canne ou s'éloigne.
+ */
+export class FishingBobber extends Entity {
+  readonly kind: EntityKind = 'bobber';
+  /** Ticks avant la prochaine touche (0 = pas encore tirés au sort). */
+  waitTicks = 0;
+  /** Ticks restants de la touche en cours (> 0 : un poisson mord). */
+  biteTicks = 0;
+  /** À la surface de l'eau. */
+  floating = false;
+  /** Posé sur le sol. */
+  grounded = false;
+  /** Créature accrochée par l'hameçon. */
+  hooked: Entity | null = null;
+  private trailAngle = 0;
+
+  constructor(readonly owner: PlayerLike) {
+    super();
+    this.width = 0.25;
+    this.height = 0.25;
+  }
+
+  /** Lance le flotteur depuis (x, y, z) dans la direction donnée, à `speed` blocs par tick. */
+  cast(x: number, y: number, z: number, dx: number, dy: number, dz: number, speed: number): void {
+    const len = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
+    this.vx = (dx / len) * speed;
+    this.vy = (dy / len) * speed;
+    this.vz = (dz / len) * speed;
+    this.setPosition(x, y, z);
+  }
+
+  tick(game: GameApi): void {
+    this.beginTick();
+    const w = game.world;
+    this.updateLight(w);
+    const p = this.owner;
+    if (!p.alive || p.heldItemId !== I.FISHING_ROD || this.distanceSqTo(p) > LINE_MAX * LINE_MAX || this.y < -64) {
+      this.dead = true;
+      return;
+    }
+
+    const h = this.hooked;
+    if (h) {
+      if (h.dead || !h.pickable) this.hooked = null;
+      else {
+        this.x = h.x;
+        this.y = h.y + h.height * 0.8;
+        this.z = h.z;
+        this.vx = this.vy = this.vz = 0;
+        return;
+      }
+    }
+
+    // une fois à l'eau, le point de mesure descend un peu : le flotteur qui danse ne « sort » pas de l'eau
+    const surface = waterSurfaceAt(w, this.x, this.y - (this.floating ? 0.2 : 0), this.z);
+    if (!Number.isNaN(surface)) {
+      if (!this.floating) {
+        this.floating = true;
+        this.grounded = false;
+        game.sound('splash', this.x, this.y, this.z, 0.3, 1.4 + game.rng() * 0.4);
+        game.particles('splash', this.x, surface + 0.05, this.z, 6, 0.15);
+      }
+      // ressort amorti vers la ligne de flottaison ; pendant une touche, le flotteur est tiré sous l'eau
+      const target = surface - 0.1 - (this.biteTicks > 0 ? 0.3 : 0);
+      this.vy = (this.vy + (target - this.y) * 0.15) * 0.7;
+      this.vx *= 0.8;
+      this.vz *= 0.8;
+      move(w, this, this.vx, this.vy, this.vz);
+      this.tickBite(game, surface);
+      return;
+    }
+    this.floating = false;
+    this.waitTicks = 0;
+    this.biteTicks = 0;
+
+    // en vol : l'hameçon peut accrocher une créature
+    if (!this.grounded) {
+      const speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy + this.vz * this.vz);
+      if (speed > 1e-6) {
+        const target = sweepEntities(game, this, p, this.x, this.y + 0.125, this.z, this.vx / speed, this.vy / speed, this.vz / speed, speed);
+        if (target && target !== p) {
+          this.hooked = target;
+          return;
+        }
+      }
+    }
+    this.vy -= 0.03;
+    move(w, this, this.vx, this.vy, this.vz);
+    this.grounded = this.onGround;
+    if (this.onGround) this.vx = this.vz = 0;
+    else {
+      this.vx *= 0.92;
+      this.vy *= 0.92;
+      this.vz *= 0.92;
+    }
+  }
+
+  /** Attente, sillage qui approche, puis touche. */
+  private tickBite(game: GameApi, surface: number): void {
+    const rng = game.rng;
+    const w = game.world;
+    if (this.biteTicks > 0) {
+      this.biteTicks--;
+      if (this.age % 3 === 0) game.particles('splash', this.x, surface + 0.05, this.z, 2, 0.15);
+      return;
+    }
+    if (this.waitTicks <= 0) {
+      this.waitTicks = FISHING_WAIT_MIN + Math.floor(rng() * (FISHING_WAIT_MAX - FISHING_WAIT_MIN));
+      return;
+    }
+    const before = this.waitTicks;
+    // sous la pluie, le poisson mord plus vite
+    this.waitTicks -= w.raining && rng() < 0.25 && w.canSeeSky(Math.floor(this.x), Math.floor(surface) + 1, Math.floor(this.z)) ? 2 : 1;
+    if (this.waitTicks <= 0) {
+      this.waitTicks = 0;
+      this.biteTicks = FISHING_BITE_MIN + Math.floor(rng() * (FISHING_BITE_MAX - FISHING_BITE_MIN));
+      this.vy -= 0.2;
+      game.sound('splash', this.x, this.y, this.z, 0.5, 0.9 + rng() * 0.3);
+      game.particles('bubble', this.x, surface - 0.25, this.z, 6, 0.2);
+      game.particles('splash', this.x, surface + 0.05, this.z, 10, 0.2);
+      return;
+    }
+    if (this.waitTicks <= TRAIL_TICKS) {
+      if (before > TRAIL_TICKS) this.trailAngle = rng() * Math.PI * 2;
+      const d = 0.2 + (this.waitTicks / TRAIL_TICKS) * 2.5;
+      const tx = this.x + Math.sin(this.trailAngle) * d;
+      const tz = this.z + Math.cos(this.trailAngle) * d;
+      if (pointInFluid(w, B.WATER, tx, surface - 0.3, tz)) game.particles('splash', tx, surface + 0.05, tz, 1, 0.04);
+    }
+  }
+
+  /**
+   * Remonte la ligne. Un poisson qui mord donne une prise, lancée vers le pêcheur, et de l'expérience ;
+   * une créature accrochée est tirée vers lui. Retourne l'usure à appliquer à la canne.
+   */
+  reel(game: GameApi): number {
+    if (this.dead) return 0;
+    this.dead = true;
+    const p = this.owner;
+    const dx = p.x - this.x;
+    const dy = p.y - this.y;
+    const dz = p.z - this.z;
+    const lift = Math.sqrt(Math.sqrt(dx * dx + dy * dy + dz * dz)) * 0.08;
+    const h = this.hooked;
+    if (h && !h.dead) {
+      h.vx += dx * 0.1;
+      h.vy += dy * 0.1 + lift;
+      h.vz += dz * 0.1;
+      return 5;
+    }
+    if (this.biteTicks > 0) {
+      const item = new ItemEntity(rollFishingCatch(game.rng));
+      item.setPosition(this.x, this.y + 0.1, this.z);
+      item.vx = dx * 0.1;
+      item.vy = dy * 0.1 + lift;
+      item.vz = dz * 0.1;
+      game.spawn(item);
+      p.addXp(1 + Math.floor(game.rng() * 6));
+      return 1;
+    }
+    return this.grounded ? 2 : 0;
   }
 }
 

@@ -117,6 +117,7 @@ ARMOR_MATERIAL_INGREDIENTS.forEach((material, m) => {
 // ---------------------------------------------------------------------------
 shaped([' |S', '| S', ' |S'], { '|': I.STICK, S: I.STRING }, I.BOW);
 shaped(['F', '|', 'P'], { F: I.FLINT, '|': I.STICK, P: I.FEATHER }, I.ARROW, 4);
+shaped(['  |', ' |S', '| S'], { '|': I.STICK, S: I.STRING }, I.FISHING_ROD);
 shaped([' #', '# '], { '#': I.IRON_INGOT }, I.SHEARS);
 shapeless([I.IRON_INGOT, I.FLINT], I.FLINT_AND_STEEL);
 shaped(['# #', ' # '], { '#': I.IRON_INGOT }, I.BUCKET);
@@ -255,10 +256,23 @@ shaped(['GGG', 'GAG', 'GGG'], { G: I.GOLD_INGOT, A: I.APPLE }, I.GOLDEN_APPLE);
 // ---------------------------------------------------------------------------
 // Recherche d'une recette
 // ---------------------------------------------------------------------------
-function ingredientAccepts(ing: Ingredient, id: number): boolean {
+export function ingredientAccepts(ing: Ingredient, id: number): boolean {
   if (typeof ing === 'number') return ing === id;
   return id !== 0 && ing.includes(id);
 }
+
+/** Renvoie le premier identifiant d'objet représentatif d'un ingrédient (0 si vide). */
+export function ingredientSampleId(ing: Ingredient): number {
+  if (typeof ing === 'number') return ing;
+  return ing[0] ?? 0;
+}
+
+/** Indique si la recette tient dans une grille de largeur et hauteur `gridW` (2 ou 3). */
+export function recipeFitsGrid(recipe: Recipe, gridW: number): boolean {
+  if (recipe.shaped) return recipe.w <= gridW && recipe.h <= gridW;
+  return recipe.cells.length <= gridW * gridW;
+}
+
 
 /** Compare la zone utile de la grille au motif, à l'endroit ou en miroir horizontal. */
 function matchesShaped(recipe: Recipe, cells: readonly number[], mirrored: boolean): boolean {
@@ -351,6 +365,7 @@ const SMELTING = new Map<number, number>([
   [I.RAW_BEEF, I.STEAK],
   [I.RAW_CHICKEN, I.COOKED_CHICKEN],
   [I.RAW_MUTTON, I.COOKED_MUTTON],
+  [I.RAW_FISH, I.COOKED_FISH],
   [I.POTATO, I.BAKED_POTATO],
   [I.CLAY_BALL, I.BRICK],
 ]);
@@ -377,7 +392,7 @@ fuel(1600, I.COAL, I.CHARCOAL);
 fuel(
   300,
   LOGS, PLANKS, WOOD_SLABS, WOOD_STAIRS,
-  B.OAK_FENCE, B.FENCE_GATE, B.TRAPDOOR, B.OAK_DOOR, B.CRAFTING_TABLE, B.CHEST, B.BOOKSHELF, B.LADDER, I.BOW,
+  B.OAK_FENCE, B.FENCE_GATE, B.TRAPDOOR, B.OAK_DOOR, B.CRAFTING_TABLE, B.CHEST, B.BOOKSHELF, B.LADDER, I.BOW, I.FISHING_ROD,
 );
 fuel(200, I.WOODEN_PICKAXE, I.WOODEN_AXE, I.WOODEN_SHOVEL, I.WOODEN_SWORD, I.WOODEN_HOE);
 fuel(100, I.STICK, SAPLINGS, WOOLS);

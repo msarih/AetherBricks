@@ -341,6 +341,82 @@
   top: calc(var(--u) * 2);
 }
 
+.mc-guide {
+  display: none;
+  position: absolute;
+  left: calc(var(--u) * 3);
+  top: calc(var(--u) * 14);
+  max-width: calc(var(--u) * 210);
+  padding: calc(var(--u) * 2) calc(var(--u) * 4);
+  border-left: calc(var(--u) * 2) solid #ffdd44;
+  background: rgba(16, 16, 20, 0.72);
+  color: #f4f4d8;
+  font-size: calc(var(--u) * 7);
+  line-height: calc(var(--u) * 9);
+}
+
+.mc-toast {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 4);
+  position: absolute;
+  right: calc(var(--u) * 3);
+  top: calc(var(--u) * 3);
+  width: calc(var(--u) * 176);
+  min-height: calc(var(--u) * 32);
+  padding: calc(var(--u) * 3) calc(var(--u) * 4);
+  border: var(--u) solid #000;
+  background: #222026;
+  box-shadow:
+    inset var(--u) var(--u) 0 #554f5e,
+    inset calc(var(--u) * -1) calc(var(--u) * -1) 0 #121015;
+  transform: translateX(calc(100% + var(--u) * 8));
+  transition: transform 0.28s ease-out;
+}
+
+.mc-toast.mc-shown {
+  transform: translateX(0);
+}
+
+.mc-toast-slot {
+  position: relative;
+  flex: none;
+  width: calc(var(--u) * 18);
+  height: calc(var(--u) * 18);
+  background: var(--spr-slot) 0 0 / 100% 100% no-repeat;
+}
+
+.mc-toast-slot > .mc-item {
+  left: var(--u);
+  top: var(--u);
+}
+
+.mc-toast-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--u);
+  min-width: 0;
+}
+
+.mc-toast-head {
+  color: #ffff55;
+  font-size: calc(var(--u) * 7);
+  line-height: calc(var(--u) * 8);
+}
+
+.mc-toast-title {
+  color: #ffffff;
+  font-size: calc(var(--u) * 8);
+  line-height: calc(var(--u) * 9);
+}
+
+.mc-toast-detail {
+  color: #c8c8c8;
+  font-size: calc(var(--u) * 6.5);
+  line-height: calc(var(--u) * 8);
+  white-space: normal;
+}
+
 /* ------------------------------------------------------------------ objets */
 
 .mc-item {
@@ -719,13 +795,35 @@
 
 .mc-key {
   flex: none;
-  min-width: calc(var(--u) * 84);
+  min-width: calc(var(--u) * 96);
   padding: calc(var(--u) * 2) calc(var(--u) * 4);
   border: var(--u) solid #000;
   background: #2c2c2c var(--spr-btn-off) 0 0 / calc(var(--u) * 16) calc(var(--u) * 16);
   color: #ffffa0;
   text-align: center;
   white-space: nowrap;
+}
+
+.mc-key-row-head {
+  padding-bottom: calc(var(--u) * 3);
+  margin-bottom: calc(var(--u) * 2);
+  border-bottom: var(--u) solid rgba(255, 255, 255, 0.18);
+}
+
+.mc-key-btn {
+  height: calc(var(--u) * 16);
+}
+
+.mc-key-btn.mc-binding {
+  background-color: #9e8a33;
+  color: #ffff55;
+  border-color: #ffff55;
+}
+
+.mc-key-btn.mc-conflict {
+  background-color: #8c2d2d;
+  color: #ff5555;
+  border-color: #ff5555;
 }
 
 .mc-note {
@@ -907,7 +1005,86 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: calc(var(--u) * 4);
 }
+
+.mc-recipe-book {
+  position: relative;
+  flex: none;
+  order: -1;
+  width: calc(var(--u) * 112);
+  height: calc(var(--u) * 166);
+  z-index: 0;
+  text-shadow: none;
+}
+
+.mc-recipe-book > * {
+  position: absolute;
+  z-index: 3;
+}
+
+.mc-recipe-btn,
+.mc-recipe-filter {
+  cursor: pointer;
+}
+
+.mc-recipe-btn.mc-sel,
+.mc-recipe-filter.mc-sel {
+  background: #5b8c3e;
+  box-shadow:
+    inset var(--u) var(--u) 0 #8fd168,
+    inset calc(var(--u) * -1) calc(var(--u) * -1) 0 #2e4d1c;
+}
+
+.mc-recipe-cell {
+  cursor: pointer;
+  background: #8b8b8b;
+  box-shadow:
+    inset var(--u) var(--u) 0 #fff,
+    inset calc(var(--u) * -1) calc(var(--u) * -1) 0 #373737;
+}
+
+.mc-recipe-cell > .mc-item {
+  left: calc(var(--u) * 3);
+  top: calc(var(--u) * 3);
+}
+
+.mc-recipe-cell.mc-hover::after {
+  left: var(--u);
+  top: var(--u);
+  width: calc(var(--u) * 20);
+  height: calc(var(--u) * 20);
+}
+
+.mc-recipe-cell.mc-craftable {
+  background: #6da34d;
+  box-shadow:
+    inset var(--u) var(--u) 0 #a3db80,
+    inset calc(var(--u) * -1) calc(var(--u) * -1) 0 #385925;
+}
+
+.mc-recipe-cell.mc-uncraftable {
+  background: #6b5252;
+  box-shadow:
+    inset var(--u) var(--u) 0 #947474,
+    inset calc(var(--u) * -1) calc(var(--u) * -1) 0 #3d2b2b;
+}
+
+.mc-recipe-cell.mc-uncraftable > .mc-item {
+  opacity: 0.65;
+}
+
+.mc-recipe-nav {
+  height: calc(var(--u) * 18);
+  padding: 0;
+}
+
+.mc-recipe-ghost {
+  filter: none;
+  opacity: 0.55;
+  background-color: rgba(255, 80, 80, 0.32);
+}
+
 
 .mc-window {
   position: relative;
