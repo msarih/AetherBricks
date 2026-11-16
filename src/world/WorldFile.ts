@@ -27,6 +27,9 @@ const BATCH = 32;
 const MAX_JSON_BYTES = 16 * 1024 * 1024;
 const MAX_CHUNKS = 200000;
 const MAX_NAME = 32;
+/** Messages montrés au joueur (sans terme technique). */
+const CUT = 'fichier incomplet (il a été coupé)';
+const DAMAGED = 'fichier abîmé';
 
 interface FileHeader {
   info: WorldInfo;
@@ -99,7 +102,7 @@ class Reader {
 
   take(length: number): Uint8Array {
     if (!Number.isInteger(length) || length < 0 || this.offset + length > this.bytes.length) {
-      throw new Error('fichier tronqué');
+      throw new Error(CUT);
     }
     const out = this.bytes.subarray(this.offset, this.offset + length);
     this.offset += length;
@@ -107,7 +110,7 @@ class Reader {
   }
 
   u32(): number {
-    if (this.offset + 4 > this.bytes.length) throw new Error('fichier tronqué');
+    if (this.offset + 4 > this.bytes.length) throw new Error(CUT);
     const n = this.view.getUint32(this.offset, true);
     this.offset += 4;
     return n;
@@ -115,12 +118,12 @@ class Reader {
 
   json(): unknown {
     const length = this.u32();
-    if (length > MAX_JSON_BYTES) throw new Error('fichier invalide');
+    if (length > MAX_JSON_BYTES) throw new Error(DAMAGED);
     try {
       return JSON.parse(decoder.decode(this.take(length)));
     } catch (error) {
-      if (error instanceof Error && error.message === 'fichier tronqué') throw error;
-      throw new Error('fichier invalide');
+      if (error instanceof Error && error.message === CUT) throw error;
+      throw new Error(DAMAGED);
     }
   }
 
@@ -134,9 +137,9 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 }
 
 function readInfo(raw: unknown, now: number): WorldInfo {
-  if (!isRecord(raw)) throw new Error('fichier invalide');
+  if (!isRecord(raw)) throw new Error(DAMAGED);
   const seed = raw.seed;
-  if (typeof seed !== 'number' || !Number.isFinite(seed)) throw new Error('fichier invalide (graine)');
+  if (typeof seed !== 'number' || !Number.isFinite(seed)) throw new Error(DAMAGED);
   const worldType: WorldType = raw.worldType === 'flat' ? 'flat' : 'default';
   const gameMode: GameMode = raw.gameMode === 'creative' ? 'creative' : 'survival';
   const name = (typeof raw.name === 'string' ? raw.name.trim() : '').slice(0, MAX_NAME) || 'Monde importé';
@@ -156,10 +159,10 @@ function readInfo(raw: unknown, now: number): WorldInfo {
 
 function readChunk(r: Reader): SavedChunk {
   const head = r.json();
-  if (!isRecord(head) || typeof head.key !== 'number' || !Number.isFinite(head.key)) throw new Error('fichier invalide (chunk)');
+  if (!isRecord(head) || typeof head.key !== 'number' || !Number.isFinite(head.key)) throw new Error(DAMAGED);
   const sizes = head.sizes;
   if (!Array.isArray(sizes) || sizes.length !== 4 || sizes.some((n) => !Number.isInteger(n) || n < 0)) {
-    throw new Error('fichier invalide (chunk)');
+    throw new Error(DAMAGED);
   }
   const lengths = [CHUNK_VOLUME, CHUNK_VOLUME, CHUNK_AREA, TINT_BYTES];
   const buffers: Uint8Array[] = [];
@@ -168,10 +171,10 @@ function readChunk(r: Reader): SavedChunk {
     try {
       data = rleDecode(r.take(sizes[i] as number), lengths[i]);
     } catch (error) {
-      if (error instanceof Error && error.message === 'fichier tronqué') throw error;
-      throw new Error('fichier invalide (données de chunk)');
+      if (error instanceof Error && error.message === CUT) throw error;
+      throw new Error(DAMAGED);
     }
-    if (data.length !== lengths[i]) throw new Error('fichier invalide (données de chunk)');
+    if (data.length !== lengths[i]) throw new Error(DAMAGED);
     buffers.push(data);
   }
   return {
@@ -202,15 +205,15 @@ export async function importWorld(storage: Storage, data: ArrayBuffer, onProgres
   const version = r.u32();
   if (version !== FORMAT_VERSION) throw new Error(`version de fichier non prise en charge (${version})`);
   const header = r.json();
-  if (!isRecord(header)) throw new Error('fichier invalide');
+  if (!isRecord(header)) throw new Error(DAMAGED);
   const count = header.chunkCount;
-  if (typeof count !== 'number' || !Number.isInteger(count) || count < 0 || count > MAX_CHUNKS) throw new Error('fichier invalide');
+  if (typeof count !== 'number' || !Number.isInteger(count) || count < 0 || count > MAX_CHUNKS) throw new Error(DAMAGED);
   const info = readInfo(header.info, Date.now());
 
   // lecture et validation complètes avant toute écriture
   const chunks: SavedChunk[] = [];
   for (let i = 0; i < count; i++) chunks.push(readChunk(r));
-  if (!r.done) throw new Error('fichier invalide (données en trop)');
+  if (!r.done) throw new Error(DAMAGED);
 
   const names = new Set((await storage.listWorlds()).map((w) => w.name));
   if (names.has(info.name)) {

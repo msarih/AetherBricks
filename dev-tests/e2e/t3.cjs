@@ -243,13 +243,24 @@ const dbg = (page) => ev(page, () => { const d = window.__game.debugLines(); ret
     // paisible : un monstre qui frappe pendant la chute rend le joueur invulnérable 10 ticks et fausse la mesure
     await chat(page, '/difficulty peaceful');
     await ticks(page, 12);
-    await ev(page, () => { const p = window.__game.player; p.health = 20; p.invulnerable = 0; p.teleport(p.x, p.y + 12, p.z); });
+    // on repart du terrain dégagé : les animaux du test précédent ont pu pousser le joueur sous un arbre,
+    // et il retomberait alors sur le feuillage, de moins haut
+    const fall = await ev(page, (s) => {
+      const p = window.__game.player;
+      const from = s ? { x: s.x + 0.5, y: s.y, z: s.z + 0.5 } : { x: p.x, y: p.y, z: p.z };
+      const drift = Math.hypot(p.x - from.x, p.z - from.z);
+      p.health = 20; p.invulnerable = 0;
+      p.teleport(from.x, from.y + 12, from.z);
+      return { drift: +drift.toFixed(2), ground: from.y };
+    }, spot);
     await ticks(page, 3);
     check('le joueur tombe', await ev(page, () => !window.__game.player.onGround));
     await page.waitForFunction(() => window.__game.player.onGround, { timeout: 10000 });
     await ticks(page, 2);
     const h = (await state(page)).health;
-    check('dégâts de chute de 12 blocs (8 à 9 points)', h >= 11 && h <= 12, `santé ${h}`);
+    const landed = await ev(page, () => +window.__game.player.y.toFixed(2));
+    check('dégâts de chute de 12 blocs (8 à 9 points)', h >= 11 && h <= 12 && Math.abs(landed - fall.ground) < 0.01,
+      `santé ${h}, atterrissage en y=${landed} (sol ${fall.ground}), le joueur avait dérivé de ${fall.drift} bloc(s)`);
     await ev(page, () => { window.__game.player.health = 20; });
     await ticks(page, 12);
   });
@@ -436,7 +447,7 @@ const dbg = (page) => ev(page, () => { const d = window.__game.debugLines(); ret
       const cut = path.join(dir, 'tronque.aetherworld');
       fs.writeFileSync(cut, bytes.subarray(0, Math.floor(bytes.length / 2)));
       const r1 = await refused(cut);
-      check('import : un fichier tronqué est refusé, sans créer de monde', /fichier tronqué/.test(r1.error) && r1.names.length === 1, JSON.stringify(r1));
+      check('import : un fichier tronqué est refusé, sans créer de monde', /fichier incomplet/.test(r1.error) && r1.names.length === 1, JSON.stringify(r1));
       const foreign = path.join(dir, 'autre.aetherworld');
       fs.writeFileSync(foreign, 'Ceci est un simple fichier texte, pas un monde.');
       const r2 = await refused(foreign);
@@ -446,7 +457,7 @@ const dbg = (page) => ev(page, () => { const d = window.__game.debugLines(); ret
       for (let i = Math.floor(copy.length / 2); i < Math.floor(copy.length / 2) + 4096 && i < copy.length; i++) copy[i] = 0xff;
       fs.writeFileSync(damaged, copy);
       const r3 = await refused(damaged);
-      check('import : un fichier abîmé est refusé, sans créer de monde', /fichier (invalide|tronqué)/.test(r3.error) && r3.names.length === 1, JSON.stringify(r3));
+      check('import : un fichier abîmé est refusé, sans créer de monde', /fichier (abîmé|incomplet)/.test(r3.error) && r3.names.length === 1, JSON.stringify(r3));
       await shot(page, '56c-import-refuse');
 
       // import du vrai fichier : un nouveau monde, l'original reste
