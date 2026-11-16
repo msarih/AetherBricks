@@ -257,7 +257,7 @@ async function useOnGround(page, x, z) {
   });
 
   await section('créatures et combat', async () => {
-    await ev(page, () => { window.__game.difficulty = 2; });
+    await ev(page, () => { window.__game.difficulty = 2; window.__game.spawner.timer = 0; });
     await chat(page, '/time set night');
     await ev(page, () => T.aim(8.5, 4, 3.5)); await ticks(page, 2);
     await chat(page, '/summon zombie');
@@ -323,6 +323,7 @@ async function useOnGround(page, x, z) {
     await ticks(page, 40);
     console.log('  entités après combat :', JSON.stringify(await ev(page, () => T.kinds())), '| inventaire :', await ev(page, () => T.inv()));
     await ev(page, () => { window.__game.difficulty = 0; });
+    const kBefore = await ev(page, () => T.kinds());
     await chat(page, '/summon cow');
     await chat(page, '/summon pig');
     await chat(page, '/summon sheep');
@@ -331,8 +332,11 @@ async function useOnGround(page, x, z) {
     await ticks(page, 40);
     const k = await ev(page, () => T.kinds());
     const passiveTotal = (k.cow || 0) + (k.pig || 0) + (k.sheep || 0) + (k.chicken || 0);
-    check('animaux apparus', k.cow >= 1 && k.pig >= 1 && k.sheep >= 1 && k.chicken >= 1, JSON.stringify(k));
-    check('population passive modérée en monde plat (< ANIMAL_CAP=60)', passiveTotal >= 10 && passiveTotal < 60, `total=${passiveTotal}`);
+    check('animaux apparus',
+      k.cow >= 2 && k.pig >= 2 && k.sheep >= 2 && k.chicken >= 2 &&
+      k.cow > (kBefore.cow || 0) && k.pig > (kBefore.pig || 0) && k.sheep > (kBefore.sheep || 0) && k.chicken > (kBefore.chicken || 0),
+      JSON.stringify(k));
+    check('population passive modérée en monde plat (<= 60)', passiveTotal >= 15 && passiveTotal <= 60, `total=${passiveTotal}`);
     // Spawner.populateChunk dépend de la graine du monde
     const seedRes = await ev(page, async () => {
       const { Spawner } = await import('/src/entity/Spawner.ts');

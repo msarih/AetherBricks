@@ -170,6 +170,28 @@ const dbg = (page) => ev(page, () => { const d = window.__game.debugLines(); ret
     await ev(page, () => { window.__game.input.buttons[2] = false; });
     const r = await ev(page, () => ({ hunger: window.__game.player.hunger, bread: T.count('bread') }));
     check('le pain rend 5 points de faim', r.hunger === 15 && r.bread === 2, JSON.stringify(r));
+    // reproduction en monde normal malgré ~56 animaux chargés dans le monde : plafond local par rayon
+    if (spot) {
+      await chat(page, '/give wheat 2');
+      const breedNormal = await ev(page, async (s) => {
+        const M = await import('/src/entity/Mobs.ts');
+        const g = window.__game;
+        T.select('wheat');
+        const totalAnimals = g.entities.filter((e) => e.kind === 'mob' && ['pig', 'cow', 'sheep', 'chicken'].includes(e.mobKind) && !e.dead).length;
+        const c1 = M.createMob('cow', g.rng);
+        const c2 = M.createMob('cow', g.rng);
+        c1.setPosition(s.x + 0.5, s.y, s.z + 0.5);
+        c2.setPosition(s.x + 1.0, s.y, s.z + 0.5);
+        g.spawn(c1);
+        g.spawn(c2);
+        const fed1 = c1.interact(g, g.player);
+        const fed2 = c2.interact(g, g.player);
+        for (let i = 0; i < 40; i++) g.tick();
+        const calves = g.entities.filter((e) => e.kind === 'mob' && e.mobKind === 'cow' && !e.dead && e.baby);
+        return { totalAnimals, fed1, fed2, calves: calves.length };
+      }, spot);
+      check('monde normal : deux vaches nourries donnent un veau malgré la population globale', breedNormal.fed1 && breedNormal.fed2 && breedNormal.calves >= 1, JSON.stringify(breedNormal));
+    }
   });
 
   await section('chute', async () => {

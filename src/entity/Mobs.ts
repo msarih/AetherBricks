@@ -24,8 +24,10 @@ import { isBoxFree } from './Physics';
 export const PASSIVE_KINDS: readonly MobKind[] = ['pig', 'cow', 'sheep', 'chicken'];
 export const HOSTILE_KINDS: readonly MobKind[] = ['zombie', 'skeleton', 'creeper', 'spider'];
 
-/** Au-delà de ce nombre d'animaux chargés, plus de naissance (reproduction, œuf cassé). */
-export const ANIMAL_CAP = 60;
+/** Rayon (en blocs) autour des parents ou de l'œuf dans lequel on compte les animaux. */
+export const ANIMAL_RADIUS = 32;
+/** Au-delà de ce nombre d'animaux dans le rayon ANIMAL_RADIUS, plus de naissance (reproduction, œuf cassé). */
+export const ANIMAL_CAP = 24;
 
 const TAU = Math.PI * 2;
 /** Ticks d'amour après avoir été nourri. */
@@ -85,9 +87,16 @@ function snapAxis(c: number, hw: number): number {
   return c;
 }
 
-function countAnimals(game: GameApi): number {
+function countAnimals(game: GameApi, x: number, z: number): number {
   let n = 0;
-  for (const e of game.entities) if (e instanceof Animal && !e.dead) n++;
+  const rSq = ANIMAL_RADIUS * ANIMAL_RADIUS;
+  for (const e of game.entities) {
+    if (e instanceof Animal && !e.dead) {
+      const dx = e.x - x;
+      const dz = e.z - z;
+      if (dx * dx + dz * dz <= rSq) n++;
+    }
+  }
   return n;
 }
 
@@ -643,7 +652,7 @@ export abstract class Animal extends Mob {
     const z = (this.z + m.z) / 2;
     const y = Math.max(this.y, m.y);
     game.particles('heart', x, y + this.height, z, 7, this.width);
-    if (countAnimals(game) >= ANIMAL_CAP) return;
+    if (countAnimals(game, x, z) >= ANIMAL_CAP) return;
     const child = createMob(this.mobKind, game.rng);
     if (!(child instanceof Animal)) return;
     child.inherit(game, this, m);
@@ -1299,7 +1308,7 @@ export function hatchEgg(game: GameApi, x: number, y: number, z: number): void {
   if (game.rng() >= 0.125) return;
   const count = game.rng() < 1 / 32 ? 4 : 1;
   for (let i = 0; i < count; i++) {
-    if (countAnimals(game) >= ANIMAL_CAP) return;
+    if (countAnimals(game, x, z) >= ANIMAL_CAP) return;
     const c = new Chicken(game.rng);
     c.setBaby(BABY_GROW_TICKS);
     const hw = c.width / 2;

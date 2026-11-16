@@ -11,18 +11,18 @@ import { hash2, mulberry32 } from '../world/gen/Noise';
 import type { GameApi } from './Entity';
 import { getMobModel } from './MobModels';
 import type { MobKind } from './MobModels';
-import { ANIMAL_CAP, HOSTILE_KINDS, PASSIVE_KINDS, createMob } from './Mobs';
+import { ANIMAL_CAP, ANIMAL_RADIUS, HOSTILE_KINDS, PASSIVE_KINDS, createMob } from './Mobs';
 import { isBoxFree } from './Physics';
 
-export { ANIMAL_CAP };
+export { ANIMAL_CAP, ANIMAL_RADIUS };
 
 /** Plafond de monstres chargés selon la difficulté (0 paisible … 3 difficile). */
 export const MONSTER_CAPS: readonly number[] = [0, 20, 40, 60];
 
 /** Un chunk neuf sur 8 tente un groupe d'animaux (un peu moins aboutissent : biome, place sur l'herbe). */
 const ANIMAL_CHUNK_CHANCE = 1 / 8;
-/** En monde plat (100 % plaine dégagée), tirage 6 fois plus rare pour rester sous ANIMAL_CAP autour du joueur. */
-const FLAT_ANIMAL_CHUNK_CHANCE = 1 / 48;
+/** En monde plat (100 % plaine dégagée), tirage 4 fois plus rare pour éviter la surpopulation autour du joueur. */
+const FLAT_ANIMAL_CHUNK_CHANCE = 1 / 32;
 /** Ticks entre deux cycles d'apparition des monstres. */
 const SPAWN_INTERVAL = 20;
 /** Groupes tentés par cycle. */
@@ -88,7 +88,7 @@ export class Spawner {
    * Déterministe : le tirage dépend de la graine du monde et des coordonnées du chunk.
    */
   populateChunk(game: GameApi, chunk: Chunk): void {
-    const seed = (game.world.seed ^ 0x4d0b5a11) >>> 0;
+    const seed = (Math.imul(game.world.seed, 0x9e3779b1) ^ 0x4d0b5a11) >>> 0;
     const rng = mulberry32(hash2(chunk.cx, chunk.cz, seed));
     const chance = game.world.worldType === 'flat' ? FLAT_ANIMAL_CHUNK_CHANCE : ANIMAL_CHUNK_CHANCE;
     if (rng() >= chance) return;
