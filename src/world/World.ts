@@ -6,7 +6,7 @@ import { B } from './Ids';
 import { BLOCK_OPAQUE, BLOCK_RANDOM_TICKS, BLOCK_SHAPE, BLOCK_SOLID, SHAPE } from './Blocks';
 import { collisionBoxes, selectionBoxes, type NeighborFn } from './BlockModels';
 import { blockDrops } from './Drops';
-import { CHUNK_HEIGHT, chunkKey } from './Constants';
+import { CHUNK_HEIGHT, chunkKey, type WorldType } from './Constants';
 import { mulberry32 } from './gen/Noise';
 import type { Chunk } from './Chunk';
 import { neighborChanged, randomTick, scheduledTick } from './Behavior';
@@ -82,6 +82,8 @@ export class World {
   readonly dirty = new Set<Chunk>();
   readonly blockEntities = new Map<number, BlockEntity>();
   host: WorldHost = NO_HOST;
+  readonly seed: number;
+  readonly worldType: WorldType;
   readonly rng: () => number;
 
   /** Âge du monde en ticks. */
@@ -104,8 +106,10 @@ export class World {
   private readonly nb: NeighborFn = (dx, dy, dz) => this.getBlockAndMeta(this.nbX + dx, this.nbY + dy, this.nbZ + dz);
   private readonly tmp: number[] = [];
 
-  constructor(seed = (Math.random() * 0xffffffff) >>> 0) {
-    this.rng = mulberry32(seed);
+  constructor(seed = (Math.random() * 0xffffffff) >>> 0, worldType: WorldType = 'default') {
+    this.seed = seed >>> 0;
+    this.worldType = worldType;
+    this.rng = mulberry32(this.seed);
   }
 
   // ------------------------------------------------------------------ chunks

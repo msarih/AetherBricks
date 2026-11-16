@@ -330,20 +330,38 @@ async function useOnGround(page, x, z) {
     await chat(page, '/time set day');
     await ticks(page, 40);
     const k = await ev(page, () => T.kinds());
+    const passiveTotal = (k.cow || 0) + (k.pig || 0) + (k.sheep || 0) + (k.chicken || 0);
     check('animaux apparus', k.cow >= 1 && k.pig >= 1 && k.sheep >= 1 && k.chicken >= 1, JSON.stringify(k));
+    check('population passive modérée en monde plat (< ANIMAL_CAP=60)', passiveTotal >= 10 && passiveTotal < 60, `total=${passiveTotal}`);
+    // Spawner.populateChunk dépend de la graine du monde
+    const seedRes = await ev(page, async () => {
+      const { Spawner } = await import('/src/entity/Spawner.ts');
+      const g = window.__game;
+      const chunks = Array.from(g.world.chunks.values()).slice(0, 64);
+      const runWithSeed = (seed) => {
+        const spawned = [];
+        const fakeWorld = Object.create(g.world, {
+          seed: { value: seed },
+          worldType: { value: 'default' },
+        });
+        const fakeGame = Object.create(g, {
+          world: { value: fakeWorld },
+          spawn: { value: (mob) => spawned.push(`${mob.mobKind}:${mob.x.toFixed(1)},${mob.z.toFixed(1)}`) },
+        });
+        const spawner = new Spawner();
+        for (const ch of chunks) spawner.populateChunk(fakeGame, ch);
+        return spawned.join('|');
+      };
+      const s1a = runWithSeed(1111);
+      const s1b = runWithSeed(1111);
+      const s2 = runWithSeed(2222);
+      return { sameSeed: s1a === s1b && s1a.length > 0, diffSeed: s1a !== s2 && s2.length > 0, len1: s1a.length, len2: s2.length };
+    });
+    check('populateChunk déterministe et dépendant de la graine du monde', seedRes.sameSeed && seedRes.diffSeed, JSON.stringify(seedRes));
     // reproduction et éclosion d'œuf donnent un petit (baby === true, taille moitié)
     const babyRes = await ev(page, async () => {
       const M = await import('/src/entity/Mobs.ts');
       const g = window.__game;
-      // Libère de la place sous ANIMAL_CAP=60 dans le monde plat
-      let removed = 0;
-      for (const e of g.entities) {
-        if (e.kind === 'mob' && ['pig', 'cow', 'sheep', 'chicken'].includes(e.mobKind) && removed < 120) {
-          e.dead = true;
-          removed++;
-        }
-      }
-      g.tick();
       const c1 = M.createMob('cow', g.rng);
       const c2 = M.createMob('cow', g.rng);
       c1.setPosition(8.5, 4, 3.5);

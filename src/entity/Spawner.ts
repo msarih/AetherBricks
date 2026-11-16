@@ -21,6 +21,8 @@ export const MONSTER_CAPS: readonly number[] = [0, 20, 40, 60];
 
 /** Un chunk neuf sur 8 tente un groupe d'animaux (un peu moins aboutissent : biome, place sur l'herbe). */
 const ANIMAL_CHUNK_CHANCE = 1 / 8;
+/** En monde plat (100 % plaine dégagée), tirage 6 fois plus rare pour rester sous ANIMAL_CAP autour du joueur. */
+const FLAT_ANIMAL_CHUNK_CHANCE = 1 / 48;
 /** Ticks entre deux cycles d'apparition des monstres. */
 const SPAWN_INTERVAL = 20;
 /** Groupes tentés par cycle. */
@@ -83,11 +85,13 @@ export class Spawner {
 
   /**
    * Animaux d'un chunk qui vient d'être généré pour la première fois (jamais rechargé).
-   * Déterministe : le tirage ne dépend que des coordonnées du chunk.
+   * Déterministe : le tirage dépend de la graine du monde et des coordonnées du chunk.
    */
   populateChunk(game: GameApi, chunk: Chunk): void {
-    const rng = mulberry32(hash2(chunk.cx, chunk.cz, 0x4d0b5a11));
-    if (rng() >= ANIMAL_CHUNK_CHANCE) return;
+    const seed = (game.world.seed ^ 0x4d0b5a11) >>> 0;
+    const rng = mulberry32(hash2(chunk.cx, chunk.cz, seed));
+    const chance = game.world.worldType === 'flat' ? FLAT_ANIMAL_CHUNK_CHANCE : ANIMAL_CHUNK_CHANCE;
+    if (rng() >= chance) return;
 
     // centre du groupe, à l'écart des bords : tout le groupe reste dans le chunk
     const cx = 3 + Math.floor(rng() * 10);

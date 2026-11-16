@@ -239,7 +239,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     this.camera = new THREE.PerspectiveCamera(o.settings.fov, (canvas.clientWidth || 16) / (canvas.clientHeight || 9), 0.05, 1200);
     this.camera.rotation.order = 'YXZ';
 
-    const world = new World(info.seed);
+    const world = new World(info.seed, info.worldType);
     this.world = world;
     this.rng = world.rng;
     world.host = this.createWorldHost();
