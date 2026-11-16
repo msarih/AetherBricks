@@ -87,6 +87,10 @@ export interface UiHost {
   playWorld(id: string): Promise<void>;
   deleteWorld(id: string): Promise<void>;
   renameWorld(id: string, name: string): Promise<void>;
+  /** Télécharge le monde enregistré dans un fichier `.aetherworld` (sauvegarde externe). */
+  exportWorld(id: string): Promise<void>;
+  /** Ajoute comme nouveau monde celui que contient le fichier ; rend son identifiant. */
+  importWorld(file: File): Promise<string>;
   /** Sauvegarde la partie en cours et revient au menu principal. */
   quitToTitle(): Promise<void>;
   /** À appeler après toute modification de `settings` : applique et enregistre. */

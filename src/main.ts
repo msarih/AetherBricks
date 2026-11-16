@@ -10,6 +10,7 @@ import { ItemIcons } from './render/ItemIcons';
 import { GameUi } from './ui/Ui';
 import type { NewWorldOptions, UiGame, UiHost } from './ui/UiApi';
 import { Storage, createWorldId, loadSettings, saveSettings, type WorldInfo } from './world/Storage';
+import { exportWorld, importWorld, worldFileName } from './world/WorldFile';
 import { TILE_SIZE } from './world/Tiles';
 import { hashString } from './world/gen/Noise';
 
@@ -120,6 +121,23 @@ async function main(): Promise<void> {
       if (!info) throw new Error('Monde introuvable');
       info.name = name.trim() || info.name;
       await storage.putWorld(info);
+    },
+    async exportWorld(id: string): Promise<void> {
+      const info = await storage.getWorld(id);
+      if (!info) throw new Error('Monde introuvable');
+      const blob = await exportWorld(storage, id);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = worldFileName(info.name);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+    },
+    async importWorld(file: File): Promise<string> {
+      const info = await importWorld(storage, await file.arrayBuffer());
+      return info.id;
     },
     async quitToTitle(): Promise<void> {
       if (game) await game.save();

@@ -4,6 +4,7 @@
  */
 import type { GameMode, WorldType } from '../world/Constants';
 import type { WorldInfo } from '../world/Storage';
+import { WORLD_FILE_EXTENSION } from '../world/WorldFile';
 import { button, el, setButtonLabel, u } from './dom';
 import { attempt, errorText, type Screen, type TitlePage, type UiContext } from './Screen';
 import { sized } from './Screens';
@@ -48,6 +49,7 @@ export class TitleMenu implements Screen {
   private worldButtons: HTMLButtonElement[] = [];
   private pageButtons: HTMLButtonElement[] = [];
   private nameInput: HTMLInputElement | null = null;
+  private fileInput: HTMLInputElement | null = null;
   private seedInput: HTMLInputElement | null = null;
   private focusFirst: HTMLElement | null = null;
   private newMode: GameMode = 'survival';
@@ -201,9 +203,26 @@ export class TitleMenu implements Screen {
     const create = sized(button(host, 'Créer un monde', () => this.show('create'), 'world-create', row1), 150);
     const rename = sized(button(host, 'Renommer', () => this.current() && this.show('rename'), 'world-rename', row2), 73);
     const remove = sized(button(host, 'Supprimer', () => this.current() && this.show('delete'), 'world-delete', row2), 73);
-    const back = sized(button(host, 'Retour', () => this.show('main'), 'back', row2), 150);
-    this.worldButtons = [play, rename, remove];
-    this.pageButtons = [create, back];
+    const exportBtn = sized(button(host, 'Exporter', () => this.exportWorld(), 'world-export', row2), 73);
+    const importBtn = sized(button(host, 'Importer', () => this.fileInput?.click(), 'world-import', row2), 73);
+    const row3 = el('div', 'mc-row', foot);
+    const back = sized(button(host, 'Retour', () => this.show('main'), 'back', row3), 150);
+    exportBtn.title = 'Enregistrer ce monde dans un fichier, pour le conserver ou le copier ailleurs';
+    importBtn.title = 'Ajouter un monde depuis un fichier .aetherworld';
+    // sélecteur de fichier caché, ouvert par « Importer »
+    const input = el('input', '', foot);
+    input.type = 'file';
+    input.accept = WORLD_FILE_EXTENSION;
+    input.hidden = true;
+    input.dataset.mc = 'world-file';
+    input.addEventListener('change', () => {
+      const file = input.files?.[0];
+      input.value = '';
+      if (file) this.importWorld(file);
+    });
+    this.fileInput = input;
+    this.worldButtons = [play, rename, remove, exportBtn];
+    this.pageButtons = [create, back, importBtn];
     this.updateWorldButtons();
     this.fillList();
     this.loadWorlds();
@@ -459,6 +478,28 @@ export class TitleMenu implements Screen {
       return;
     }
     this.run('Renommage impossible', () => this.ctx.host.renameWorld(world.id, name), () => this.show('worlds'));
+  }
+
+  private exportWorld(): void {
+    const world = this.current();
+    if (!world || this.busy) return;
+    this.run('Export impossible', () => this.ctx.host.exportWorld(world.id), () => undefined);
+  }
+
+  private importWorld(file: File): void {
+    if (this.busy) return;
+    let id = '';
+    this.run(
+      'Import impossible',
+      async () => {
+        id = await this.ctx.host.importWorld(file);
+      },
+      () => {
+        this.selected = id;
+        this.worlds = null;
+        this.show('worlds');
+      },
+    );
   }
 
   private remove(): void {

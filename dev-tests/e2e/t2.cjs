@@ -429,7 +429,8 @@ async function useOnGround(page, x, z) {
       babyRes.calfCount === 1 && Math.abs(babyRes.calfHeight - babyRes.adultHeight * 0.5) < 0.01 && babyRes.chickCount >= 1 && Math.abs(babyRes.chickHeight - 0.35) < 0.01,
       JSON.stringify(babyRes));
     check('un petit à 2 ticks de croissance devient adulte et retrouve sa taille normale', babyRes.grownOk === true, JSON.stringify(babyRes));
-    // un petit rejoint l'adulte de son espèce ; un témoin au suivi désactivé sert de comparaison (non vérifié)
+    // un petit rejoint l'adulte de son espèce et reste près de lui ; l'adulte est figé pour que le rapprochement
+    // ne puisse venir que du petit ; un témoin au suivi désactivé est relevé à titre de comparaison (non vérifié)
     const followRes = await ev(page, async () => {
       const M = await import('/src/entity/Mobs.ts');
       const g = window.__game;
@@ -437,6 +438,7 @@ async function useOnGround(page, x, z) {
       g.tick();
       const adult = M.createMob('cow', g.rng);
       adult.setPosition(-20.5, 4, -20.5);
+      adult.behave = () => {};
       const calf = M.createMob('cow', g.rng);
       calf.setBaby(24000);
       calf.setPosition(-13.5, 4, -20.5);
@@ -453,7 +455,7 @@ async function useOnGround(page, x, z) {
       g.tick();
       return res;
     });
-    check('un petit rejoint l\'adulte de son espèce (à moins de 3,5 blocs)', followRes.d0 >= 6.9 && followRes.closest < 3.5 && followRes.end < 6 && followRes.calfBaby, JSON.stringify(followRes));
+    check('un petit rejoint l\'adulte de son espèce et reste près de lui (adulte immobile)', followRes.d0 >= 6.9 && followRes.closest < 3.5 && followRes.end < 4 && followRes.calfBaby, JSON.stringify(followRes));
     await ev(page, () => { const g = window.__game; const p = g.player; p.teleport(p.x, p.y, p.z + 4); T.aim(8.5, 4.6, 3.5); });
     await ticks(page, 10);
     await shot(page, '18-animaux');

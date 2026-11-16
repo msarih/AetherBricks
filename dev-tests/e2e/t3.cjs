@@ -1,6 +1,9 @@
 // Batterie sur un monde normal (graine 1337, survie) puis un monde créatif, gestion des mondes, page legacy (LEGACY=1).
 const { sleep, launch, openPage, click, createWorld, shot, ticks, state, URL, S } = require('./lib.cjs');
 const { results, check, install, ev, chat, rclick, lclick, pos, section } = require('./h.cjs');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 
 // cherche près du joueur un carré 3×3 plat, à ciel ouvert, et s'y téléporte
 const openSpot = (page) => ev(page, async () => {
@@ -366,7 +369,16 @@ const dbg = (page) => ev(page, () => { const d = window.__game.debugLines(); ret
     await chat(page, '/weather clear');
   });
 
+  // repère pour la section « export et import » : un bloc posé à la main et l'état du joueur avant de quitter
+  let marker = null;
   await section('quitter vers le titre, renommer', async () => {
+    marker = await ev(page, async () => {
+      const { B } = await import('/src/world/Ids.ts');
+      const g = window.__game, p = g.player;
+      const m = { x: Math.floor(p.x) + 2, y: Math.min(120, Math.floor(p.y) + 3), z: Math.floor(p.z) };
+      g.world.setBlock(m.x, m.y, m.z, B.DIAMOND_BLOCK);
+      return { ...m, id: B.DIAMOND_BLOCK, px: p.x, py: p.y, pz: p.z, inv: T.inv() };
+    });
     await page.keyboard.press('Escape');
     await page.waitForSelector('[data-mc="pause"]', { timeout: 5000 });
     await sleep(200);
@@ -385,6 +397,124 @@ const dbg = (page) => ev(page, () => { const d = window.__game.debugLines(); ret
     check('renommer un monde', names.includes('Monde renommé'), JSON.stringify(names));
     await shot(page, '56-liste');
     await click(page, 'back'); await sleep(300);
+  });
+
+  await section('export et import d\'un monde', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aetherworld-'));
+    const names = () => page.evaluate(() => Array.from(document.querySelectorAll('.mc-world-name')).map((e) => e.textContent));
+    const selected = () => page.evaluate(() => document.querySelector('.mc-world.mc-sel .mc-world-name')?.textContent || '');
+    const error = () => page.evaluate(() => document.querySelector('#ui .mc-error')?.textContent || '');
+    const upload = async (file) => { const input = await page.$('[data-mc="world-file"]'); await input.uploadFile(file); };
+    const refused = async (file) => {
+      await upload(file);
+      await page.waitForFunction(() => (document.querySelector('#ui .mc-error')?.textContent || '') !== '', { timeout: 10000 });
+      await sleep(300);
+      return { error: await error(), names: await names() };
+    };
+    try {
+      // vrai téléchargement : le navigateur écrit le fichier dans un dossier temporaire
+      const client = await browser.target().createCDPSession();
+      await client.send('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: dir });
+      await click(page, 'play');
+      await page.waitForSelector('[data-mc="world-export"]:not([disabled])', { timeout: 10000 });
+      await sleep(300);
+      await click(page, 'world-export');
+      const file = path.join(dir, 'Monde-renomme.aetherworld');
+      let size = -1;
+      for (let i = 0; i < 100; i++) {
+        await sleep(200);
+        const now = fs.existsSync(file) ? fs.statSync(file).size : -1;
+        if (now > 0 && now === size) break;
+        size = now;
+      }
+      const bytes = fs.existsSync(file) ? fs.readFileSync(file) : Buffer.alloc(0);
+      check('export : le navigateur télécharge un fichier .aetherworld', bytes.length > 1000 && bytes.subarray(0, 8).toString('latin1') === 'AEBWORLD',
+        `${JSON.stringify(fs.readdirSync(dir))} ${bytes.length} octets, erreur « ${await error()} »`);
+      await shot(page, '56b-export');
+
+      // fichiers refusés : rien ne doit être créé
+      const cut = path.join(dir, 'tronque.aetherworld');
+      fs.writeFileSync(cut, bytes.subarray(0, Math.floor(bytes.length / 2)));
+      const r1 = await refused(cut);
+      check('import : un fichier tronqué est refusé, sans créer de monde', /fichier tronqué/.test(r1.error) && r1.names.length === 1, JSON.stringify(r1));
+      const foreign = path.join(dir, 'autre.aetherworld');
+      fs.writeFileSync(foreign, 'Ceci est un simple fichier texte, pas un monde.');
+      const r2 = await refused(foreign);
+      check('import : un fichier étranger est refusé, sans créer de monde', /pas un monde AetherBricks/.test(r2.error) && r2.names.length === 1, JSON.stringify(r2));
+      const damaged = path.join(dir, 'abime.aetherworld');
+      const copy = Buffer.from(bytes);
+      for (let i = Math.floor(copy.length / 2); i < Math.floor(copy.length / 2) + 4096 && i < copy.length; i++) copy[i] = 0xff;
+      fs.writeFileSync(damaged, copy);
+      const r3 = await refused(damaged);
+      check('import : un fichier abîmé est refusé, sans créer de monde', /fichier (invalide|tronqué)/.test(r3.error) && r3.names.length === 1, JSON.stringify(r3));
+      await shot(page, '56c-import-refuse');
+
+      // import du vrai fichier : un nouveau monde, l'original reste
+      await upload(file);
+      await page.waitForFunction(() => document.querySelectorAll('.mc-world-name').length === 2, { timeout: 30000 });
+      await sleep(300);
+      const after = await names();
+      check('import : le monde arrive comme nouveau monde, sélectionné, sans toucher à l\'original',
+        after.slice().sort().join('|') === 'Monde renommé|Monde renommé (2)' && (await selected()) === 'Monde renommé (2)' && (await error()) === '',
+        `${JSON.stringify(after)}, sélection « ${await selected()} », erreur « ${await error()} »`);
+      await shot(page, '56d-import');
+
+      // comparaison octet pour octet de ce qui est enregistré
+      const cmp = await page.evaluate(async () => {
+        const { Storage } = await import('/src/world/Storage.ts');
+        const s = await Storage.open();
+        const worlds = await s.listWorlds();
+        const a = worlds.find((w) => w.name === 'Monde renommé'), b = worlds.find((w) => w.name === 'Monde renommé (2)');
+        if (!a || !b) return { ok: false, why: 'mondes introuvables' };
+        const ka = Array.from(await s.chunkKeys(a.id)).sort((x, y) => x - y), kb = Array.from(await s.chunkKeys(b.id)).sort((x, y) => x - y);
+        if (ka.join() !== kb.join()) return { ok: false, why: `clés ${ka.length} / ${kb.length}` };
+        const same = (x, y) => x.length === y.length && x.every((v, i) => v === y[i]);
+        let diff = 0;
+        for (const k of ka) {
+          const ca = await s.loadChunk(a.id, k), cb = await s.loadChunk(b.id, k);
+          if (!ca || !cb || !same(ca.blocks, cb.blocks) || !same(ca.meta, cb.meta) || !same(ca.biomes, cb.biomes) || !same(ca.tints, cb.tints)
+            || JSON.stringify(ca.blockEntities) !== JSON.stringify(cb.blockEntities) || JSON.stringify(ca.entities) !== JSON.stringify(cb.entities)) diff++;
+        }
+        const info = a.id !== b.id && a.seed === b.seed && a.worldType === b.worldType && a.gameMode === b.gameMode
+          && a.createdAt === b.createdAt && JSON.stringify(a.state) === JSON.stringify(b.state) && a.thumbnail === b.thumbnail;
+        return { ok: diff === 0 && info && ka.length > 0, chunks: ka.length, diff, info, persistent: s.persistent };
+      });
+      check('import : chunks, entités et état identiques à l\'original, octet pour octet', cmp.ok && cmp.persistent, JSON.stringify(cmp));
+
+      // le monde importé se joue : on y retrouve ce qu'on avait laissé
+      await click(page, 'world-play');
+      await page.waitForFunction('window.__game && window.__game.ready === true', { timeout: 120000 });
+      await install(page);
+      await ticks(page, 5);
+      const got = await ev(page, (m) => { const p = window.__game.player; return { id: T.block(m.x, m.y, m.z), d: Math.hypot(p.x - m.px, p.y - m.py, p.z - m.pz), inv: T.inv(), seed: window.__game.world.seed }; }, marker);
+      check('import : le monde importé se joue (bloc posé, position et inventaire retrouvés)',
+        got.id === marker.id && got.d < 1.5 && got.inv === marker.inv && got.seed === 1337, `${JSON.stringify(got)} attendu ${JSON.stringify(marker)}`);
+      await shot(page, '56e-monde-importe');
+
+      // on retire le monde importé : l'original doit rester seul
+      await page.keyboard.press('Escape');
+      await page.waitForSelector('[data-mc="pause"]', { timeout: 5000 });
+      await sleep(200);
+      await click(page, 'quit');
+      await page.waitForSelector('[data-mc="title"]', { timeout: 30000 });
+      await sleep(300);
+      await click(page, 'play');
+      await page.waitForSelector('[data-mc="world-delete"]:not([disabled])', { timeout: 10000 });
+      await sleep(400);
+      const sel = await selected();
+      if (sel === 'Monde renommé (2)') {
+        await click(page, 'world-delete');
+        await page.waitForSelector('[data-mc="confirm"]', { timeout: 5000 });
+        await sleep(200);
+        await click(page, 'confirm');
+        await sleep(800);
+      }
+      const left = await names();
+      check('import : supprimer le monde importé laisse l\'original', sel === 'Monde renommé (2)' && left.join('|') === 'Monde renommé', `sélection « ${sel} », reste ${JSON.stringify(left)}`);
+      await click(page, 'back'); await sleep(300);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   await createWorld(page, { name: 'Créatif', seed: 'aether', creative: true });
