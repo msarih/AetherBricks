@@ -926,7 +926,7 @@ export abstract class Monster extends Mob {
     if (t) {
       if (phase % 5 === 0) this.seesTarget = this.canSee(game.world, t);
       if (this.seesTarget && t === p) this.unseenTicks = 0;
-    } else if (phase === 0 && p.targetable && this.distanceSqTo(p) <= FOLLOW_RANGE * FOLLOW_RANGE && this.aggressive(game) && (this.canSee(game.world, p) || this.mobKind === 'zombie')) {
+    } else if (phase === 0 && p.targetable && this.distanceSqTo(p) <= FOLLOW_RANGE * FOLLOW_RANGE && this.aggressive(game) && this.canSee(game.world, p)) {
       this.setTarget(p);
       this.unseenTicks = 0;
     }

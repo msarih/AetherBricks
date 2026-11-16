@@ -281,33 +281,42 @@ async function useOnGround(page, x, z) {
     }
     z = await ev(page, () => { const m = window.__z; return !m || m.dead || m.health <= 0; });
     check('le zombie meurt sous les coups d\'épée', z === true && hits < 30, `${hits} coups`);
-    // test de recherche de chemin : un zombie séparé du joueur par un mur de 5 blocs de large et 2 de haut le contourne
+    // test de recherche de chemin : zombie en vue du joueur, puis enfermé dans un enclos en U (ouvert seulement à l'arrière)
     await ev(page, async () => {
       const M = await import('/src/entity/Mobs.ts');
       const g = window.__game;
-      const w = g.world;
       const p = g.player;
-      p.teleport(8.5, 4, 8.5);
+      p.teleport(8.5, 4, 10.5);
       p.health = 20;
-      const cobble = T.id('cobblestone');
-      for (let x = 6; x <= 10; x++) {
-        w.setBlock(x, 4, 5, cobble, 0);
-        w.setBlock(x, 5, 5, cobble, 0);
-      }
       const zom = M.createMob('zombie', g.rng);
       zom.setPosition(8.5, 4, 3.5);
       window.__zWall = zom;
       g.spawn(zom);
     });
-    const hBeforeWall = (await state(page)).health;
-    await page.waitForFunction((h0) => window.__game.player.health < h0, { timeout: 30000 }, hBeforeWall);
-    s = await state(page);
-    check('recherche de chemin : un zombie séparé par un mur le contourne et rejoint le joueur', s.health < hBeforeWall, `santé ${hBeforeWall} → ${s.health}`);
+    // 12 ticks à découvert : le zombie voit le joueur et le prend pour cible normalement
+    await ticks(page, 12);
+    const hasTarget = await ev(page, () => window.__zWall && window.__zWall.target === window.__game.player);
+    check('le zombie acquiert le joueur en ligne de vue', hasTarget === true);
+    // pose de l'enclos en U (mur frontal z=6 et murs latéraux x=6 et x=10 de z=1 à z=6, 2 blocs de haut)
     await ev(page, () => {
       const w = window.__game.world;
-      for (let x = 6; x <= 10; x++) {
-        w.setBlock(x, 4, 5, 0, 0);
-        w.setBlock(x, 5, 5, 0, 0);
+      const cobble = T.id('cobblestone');
+      for (let x = 6; x <= 10; x++) { w.setBlock(x, 4, 6, cobble, 0); w.setBlock(x, 5, 6, cobble, 0); }
+      for (let z = 1; z <= 6; z++) {
+        w.setBlock(6, 4, z, cobble, 0); w.setBlock(6, 5, z, cobble, 0);
+        w.setBlock(10, 4, z, cobble, 0); w.setBlock(10, 5, z, cobble, 0);
+      }
+    });
+    const hBeforeWall = (await state(page)).health;
+    await page.waitForFunction((h0) => window.__game.player.health < h0, { timeout: 20000 }, hBeforeWall);
+    s = await state(page);
+    check('recherche de chemin : un zombie dans un enclos en U recule, contourne et rejoint le joueur', s.health < hBeforeWall, `santé ${hBeforeWall} → ${s.health}`);
+    await ev(page, () => {
+      const w = window.__game.world;
+      for (let x = 6; x <= 10; x++) { w.setBlock(x, 4, 6, 0, 0); w.setBlock(x, 5, 6, 0, 0); }
+      for (let z = 1; z <= 6; z++) {
+        w.setBlock(6, 4, z, 0, 0); w.setBlock(6, 5, z, 0, 0);
+        w.setBlock(10, 4, z, 0, 0); w.setBlock(10, 5, z, 0, 0);
       }
       if (window.__zWall) window.__zWall.dead = true;
     });
