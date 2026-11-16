@@ -64,6 +64,8 @@ export interface EntityView {
   /** Mouton : couleur de la laine (0xRRGGBB) et tonte. */
   woolColor: number;
   sheared: boolean;
+  /** Petit animal (taille réduite, tête plus grande). */
+  baby: boolean;
   /** Accroupi (joueur) : le corps s'incline. */
   sneaking: boolean;
   /** Le maillage ne doit pas être dessiné (joueur en vue à la première personne). */

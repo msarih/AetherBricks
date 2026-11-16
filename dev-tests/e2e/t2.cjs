@@ -331,6 +331,44 @@ async function useOnGround(page, x, z) {
     await ticks(page, 40);
     const k = await ev(page, () => T.kinds());
     check('animaux apparus', k.cow >= 1 && k.pig >= 1 && k.sheep >= 1 && k.chicken >= 1, JSON.stringify(k));
+    // reproduction et éclosion d'œuf donnent un petit (baby === true, taille moitié)
+    const babyRes = await ev(page, async () => {
+      const M = await import('/src/entity/Mobs.ts');
+      const g = window.__game;
+      // Libère de la place sous ANIMAL_CAP=60 dans le monde plat
+      let removed = 0;
+      for (const e of g.entities) {
+        if (e.kind === 'mob' && ['pig', 'cow', 'sheep', 'chicken'].includes(e.mobKind) && removed < 120) {
+          e.dead = true;
+          removed++;
+        }
+      }
+      g.tick();
+      const c1 = M.createMob('cow', g.rng);
+      const c2 = M.createMob('cow', g.rng);
+      c1.setPosition(8.5, 4, 3.5);
+      c2.setPosition(9.0, 4, 3.5);
+      c1.loveTicks = 600;
+      c2.loveTicks = 600;
+      g.spawn(c1);
+      g.spawn(c2);
+      for (let i = 0; i < 40; i++) g.tick();
+      const calves = g.entities.filter((e) => e.kind === 'mob' && e.mobKind === 'cow' && !e.dead && e.baby);
+      // Test d'éclosion d'œuf (jusqu'à obtenir le tirage 1/8)
+      for (let i = 0; i < 40; i++) M.hatchEgg(g, 10.5, 4, 3.5);
+      g.tick();
+      const chicks = g.entities.filter((e) => e.kind === 'mob' && e.mobKind === 'chicken' && !e.dead && e.baby);
+      return {
+        calfCount: calves.length,
+        calfHeight: calves[0] ? calves[0].height : 0,
+        adultHeight: c1.height,
+        chickCount: chicks.length,
+        chickHeight: chicks[0] ? chicks[0].height : 0,
+      };
+    });
+    check('reproduction et œufs donnent un petit (taille réduite de moitié)',
+      babyRes.calfCount === 1 && Math.abs(babyRes.calfHeight - babyRes.adultHeight * 0.5) < 0.01 && babyRes.chickCount >= 1 && Math.abs(babyRes.chickHeight - 0.35) < 0.01,
+      JSON.stringify(babyRes));
     await ev(page, () => { const g = window.__game; const p = g.player; p.teleport(p.x, p.y, p.z + 4); T.aim(8.5, 4.6, 3.5); });
     await ticks(page, 10);
     await shot(page, '18-animaux');

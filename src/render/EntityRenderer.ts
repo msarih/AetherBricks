@@ -827,7 +827,10 @@ class MobVisual implements Visual {
     const age = e.age + alpha;
 
     let flash = 0;
-    this.body.scale.set(1, 1, 1);
+    const baseScale = e.baby ? 0.5 : 1;
+    this.body.scale.setScalar(baseScale);
+    const headMesh = this.parts.get('head');
+    if (headMesh) headMesh.scale.setScalar(e.baby ? 1.5 : 1);
 
     switch (this.kind) {
       case 'player':
@@ -851,7 +854,7 @@ class MobVisual implements Visual {
           const f4 = f * f * f * f;
           const sxz = (1 + f4 * 0.4) * wobble;
           const sy = (1 + f4 * 0.1) / wobble;
-          this.body.scale.set(sxz, sy, sxz);
+          this.body.scale.set(sxz * baseScale, sy * baseScale, sxz * baseScale);
           if (Math.floor(f * 10) % 2 === 1) flash = 0.3 + f * 0.35;
         }
         break;

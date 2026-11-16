@@ -32,6 +32,8 @@ const TAU = Math.PI * 2;
 const LOVE_TICKS = 600;
 /** Délai entre deux reproductions (5 minutes). */
 const BREED_COOLDOWN = 6000;
+/** Durée de croissance d'un petit jusqu'à l'âge adulte (20 minutes). */
+export const BABY_GROW_TICKS = 24000;
 /** Durée de la panique après un coup (3 secondes). */
 const PANIC_TICKS = 60;
 /** Distance de repérage du joueur par les monstres. */
@@ -175,7 +177,7 @@ export abstract class Mob extends Living {
     if (--this.ambientDelay <= 0) {
       this.ambientDelay = 160 + Math.floor(game.rng() * 400);
       const s = this.ambientSound(game);
-      if (s) game.sound(s, this.x, this.y + this.eyeHeight, this.z, 0.8, 0.9 + game.rng() * 0.2);
+      if (s) game.sound(s, this.x, this.y + this.eyeHeight, this.z, 0.8, (this.baby ? 1.4 : 0.9) + game.rng() * 0.2);
     }
     this.updateHead();
   }
@@ -474,6 +476,7 @@ export abstract class Mob extends Living {
   }
 
   protected onDeath(game: GameApi, cause: DamageCause, attacker: Entity | null): void {
+    if (this.baby) return;
     const killer = attacker ?? this.attacker;
     const byPlayer = killer === game.player;
     this.dropLoot(game, this.fireTicks > 0 || cause === 'fire' || cause === 'lava', byPlayer);
@@ -508,7 +511,12 @@ export abstract class Animal extends Mob {
   loveTicks = 0;
   /** Ticks avant de pouvoir se reproduire à nouveau. */
   breedCooldown = 0;
+  /** Ticks restants avant l'âge adulte (0 = adulte). */
+  growTicks = 0;
 
+  private readonly adultWidth: number;
+  private readonly adultHeight: number;
+  private readonly adultEyeHeight: number;
   private fleeX = 0;
   private fleeZ = 0;
   private fleeTicks = 0;
@@ -519,23 +527,40 @@ export abstract class Animal extends Mob {
   constructor(kind: MobKind, health: number, walkSpeed: number, food: number) {
     super(kind, health, walkSpeed);
     this.food = food;
+    this.adultWidth = this.width;
+    this.adultHeight = this.height;
+    this.adultEyeHeight = this.eyeHeight;
+  }
+
+  /** Transforme l'animal en petit (ou le remet à la taille adulte si `ticks <= 0`). */
+  setBaby(ticks = BABY_GROW_TICKS): void {
+    this.growTicks = Math.max(0, Math.floor(ticks));
+    const isBaby = this.growTicks > 0;
+    this.baby = isBaby;
+    const scale = isBaby ? 0.5 : 1;
+    this.width = this.adultWidth * scale;
+    this.height = this.adultHeight * scale;
+    this.eyeHeight = this.adultEyeHeight * scale;
   }
 
   protected behave(game: GameApi): void {
+    if (this.growTicks > 0) {
+      if (--this.growTicks <= 0) this.setBaby(0);
+    }
     if (this.breedCooldown > 0) this.breedCooldown--;
     if (this.panicTicks > 0) {
       this.panicTicks--;
       this.panic(game);
       return;
     }
-    if (this.loveTicks > 0) {
+    if (!this.baby && this.loveTicks > 0) {
       this.loveTicks--;
       if ((this.age & 15) === 0) game.particles('heart', this.x, this.y + this.height + 0.2, this.z, 1, this.width * 0.5);
       if (this.seekMate(game)) return;
     }
     if (this.tempted(game)) return;
     if (this.special(game)) return;
-    this.wander(game);
+    this.wander(game, this.baby ? 1.3 : 1);
   }
 
   /** Comportement propre à l'espèce, prioritaire sur l'errance. Retourne true s'il occupe le tick. */
@@ -622,12 +647,12 @@ export abstract class Animal extends Mob {
     const child = createMob(this.mobKind, game.rng);
     if (!(child instanceof Animal)) return;
     child.inherit(game, this, m);
-    child.breedCooldown = BREED_COOLDOWN;
+    child.setBaby(BABY_GROW_TICKS);
     child.setPosition(x, y, z);
     child.setRotation(game.rng() * TAU);
     game.spawn(child);
     if (game.player.alive) {
-      game.player.addXp(randInt(game.rng, 1, 3));
+      game.player.addXp(randInt(game.rng, 1, 7));
       game.sound('orb', x, y, z, 0.6);
     }
   }
@@ -635,9 +660,17 @@ export abstract class Animal extends Mob {
   /** Ce que le nouveau-né hérite de ses parents. */
   protected inherit(_game: GameApi, _a: Animal, _b: Animal): void {}
 
-  /** Clic droit : le joueur nourrit l'animal avec sa nourriture préférée. */
+  /** Clic droit : le joueur nourrit l'animal avec sa nourriture préférée (accélère la croissance d'un petit de 10 %). */
   interact(game: GameApi, player: PlayerLike): boolean {
     if (!this.alive || player.heldItemId !== this.food) return false;
+    if (this.baby) {
+      player.consumeHeld(1);
+      const reduce = Math.max(1, Math.floor(this.growTicks * 0.1));
+      this.setBaby(this.growTicks - reduce);
+      game.sound('eat', this.x, this.y + this.eyeHeight, this.z, 0.6, 1.3);
+      game.particles('bonemeal', this.x, this.y + this.height * 0.5, this.z, 5, this.width * 0.5);
+      return true;
+    }
     if (this.breedCooldown > 0 || this.loveTicks > 0) return false;
     player.consumeHeld(1);
     this.loveTicks = LOVE_TICKS;
@@ -657,12 +690,15 @@ export abstract class Animal extends Mob {
     d.kind = this.mobKind;
     d.health = this.health;
     d.breed = this.breedCooldown;
+    if (this.growTicks > 0) d.grow = this.growTicks;
     this.saveExtra(d);
     return d;
   }
 
   loadExtra(d: EntityData): void {
     this.breedCooldown = Math.max(0, Math.floor(num(d.breed, 0)));
+    const grow = Math.max(0, Math.floor(num(d.grow, 0)));
+    if (grow > 0) this.setBaby(grow);
   }
 }
 
@@ -683,9 +719,9 @@ export class Cow extends Animal {
     this.voice = 'cow';
   }
 
-  /** Seau vide → seau de lait. */
+  /** Seau vide → seau de lait (adulte uniquement). */
   interact(game: GameApi, player: PlayerLike): boolean {
-    if (this.alive && player.heldItemId === I.BUCKET) {
+    if (this.alive && !this.baby && player.heldItemId === I.BUCKET) {
       player.replaceHeld(I.MILK_BUCKET);
       game.sound('bucket_fill', this.x, this.y + this.height * 0.5, this.z, 0.8);
       return true;
@@ -780,9 +816,9 @@ export class Sheep extends Animal {
     super.onHurt(game, cause, attacker);
   }
 
-  /** Cisailles : 1 à 3 laines de sa couleur. */
+  /** Cisailles : 1 à 3 laines de sa couleur (adulte uniquement). */
   interact(game: GameApi, player: PlayerLike): boolean {
-    if (this.alive && player.heldItemId === I.SHEARS) {
+    if (this.alive && !this.baby && player.heldItemId === I.SHEARS) {
       if (this.sheared) return false;
       this.sheared = true;
       const n = randInt(game.rng, 1, 3);
@@ -829,7 +865,7 @@ export class Chicken extends Animal {
   protected behave(game: GameApi): void {
     // chute lente, en battant des ailes
     if (!this.onGround && this.vy < 0) this.vy *= 0.6;
-    if (--this.eggTimer <= 0) {
+    if (!this.baby && --this.eggTimer <= 0) {
       this.eggTimer = 6000 + Math.floor(game.rng() * 6000);
       game.dropItem(this.x, this.y + 0.2, this.z, I.EGG, 1);
       game.sound('egg', this.x, this.y, this.z, 1, 0.9 + game.rng() * 0.2);
@@ -1256,21 +1292,25 @@ export function loadMob(d: EntityData): Mob | null {
 }
 
 /**
- * Œuf brisé en (x, y, z) : une fois sur huit, une poule en sort (pas de poussins).
+ * Œuf brisé en (x, y, z) : une fois sur huit, un poussin en sort (une fois sur 32 parmi celles-là : 4 poussins).
  * À brancher par le jeu : `Thrown.onEggBreak = hatchEgg`.
  */
 export function hatchEgg(game: GameApi, x: number, y: number, z: number): void {
   if (game.rng() >= 0.125) return;
-  if (countAnimals(game) >= ANIMAL_CAP) return;
-  const c = new Chicken(game.rng);
-  const hw = c.width / 2;
-  // l'impact est souvent au ras d'un bloc : chercher la place libre la plus proche au-dessus
-  const tries = [y, Math.floor(y) + 1, Math.floor(y) + 2];
-  for (const ty of tries) {
-    if (!isBoxFree(game.world, x - hw, ty, z - hw, x + hw, ty + c.height, z + hw)) continue;
-    c.setPosition(x, ty, z);
-    c.setRotation(game.rng() * TAU);
-    game.spawn(c);
-    return;
+  const count = game.rng() < 1 / 32 ? 4 : 1;
+  for (let i = 0; i < count; i++) {
+    if (countAnimals(game) >= ANIMAL_CAP) return;
+    const c = new Chicken(game.rng);
+    c.setBaby(BABY_GROW_TICKS);
+    const hw = c.width / 2;
+    // l'impact est souvent au ras d'un bloc : chercher la place libre la plus proche au-dessus
+    const tries = [y, Math.floor(y) + 1, Math.floor(y) + 2];
+    for (const ty of tries) {
+      if (!isBoxFree(game.world, x - hw, ty, z - hw, x + hw, ty + c.height, z + hw)) continue;
+      c.setPosition(x, ty, z);
+      c.setRotation(game.rng() * TAU);
+      game.spawn(c);
+      break;
+    }
   }
 }
