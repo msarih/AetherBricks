@@ -281,6 +281,36 @@ async function useOnGround(page, x, z) {
     }
     z = await ev(page, () => { const m = window.__z; return !m || m.dead || m.health <= 0; });
     check('le zombie meurt sous les coups d\'épée', z === true && hits < 30, `${hits} coups`);
+    // test de recherche de chemin : un zombie séparé du joueur par un mur de 5 blocs de large et 2 de haut le contourne
+    await ev(page, async () => {
+      const M = await import('/src/entity/Mobs.ts');
+      const g = window.__game;
+      const w = g.world;
+      const p = g.player;
+      p.teleport(8.5, 4, 8.5);
+      p.health = 20;
+      const cobble = T.id('cobblestone');
+      for (let x = 6; x <= 10; x++) {
+        w.setBlock(x, 4, 5, cobble, 0);
+        w.setBlock(x, 5, 5, cobble, 0);
+      }
+      const zom = M.createMob('zombie', g.rng);
+      zom.setPosition(8.5, 4, 3.5);
+      window.__zWall = zom;
+      g.spawn(zom);
+    });
+    const hBeforeWall = (await state(page)).health;
+    await page.waitForFunction((h0) => window.__game.player.health < h0, { timeout: 30000 }, hBeforeWall);
+    s = await state(page);
+    check('recherche de chemin : un zombie séparé par un mur le contourne et rejoint le joueur', s.health < hBeforeWall, `santé ${hBeforeWall} → ${s.health}`);
+    await ev(page, () => {
+      const w = window.__game.world;
+      for (let x = 6; x <= 10; x++) {
+        w.setBlock(x, 4, 5, 0, 0);
+        w.setBlock(x, 5, 5, 0, 0);
+      }
+      if (window.__zWall) window.__zWall.dead = true;
+    });
     await ticks(page, 40);
     console.log('  entités après combat :', JSON.stringify(await ev(page, () => T.kinds())), '| inventaire :', await ev(page, () => T.inv()));
     await ev(page, () => { window.__game.difficulty = 0; });

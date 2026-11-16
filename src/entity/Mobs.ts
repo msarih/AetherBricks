@@ -18,6 +18,7 @@ import type { EntityKind } from './EntityView';
 import { getMobModel } from './MobModels';
 import type { MobKind } from './MobModels';
 import { Arrow } from './Objects';
+import { findPath, type PathPoint } from './Pathfinder';
 import { isBoxFree } from './Physics';
 
 export const PASSIVE_KINDS: readonly MobKind[] = ['pig', 'cow', 'sheep', 'chicken'];
@@ -126,6 +127,12 @@ export abstract class Mob extends Living {
   private detourStreak = 0;
   /** Grimpe aux murs : buter contre un obstacle n'est pas être bloquée. */
   protected climbs = false;
+  /** Chemin calculé par A* vers la cible (uniquement hors errance). */
+  private path: PathPoint[] | null = null;
+  private pathIndex = 0;
+  private pathGoalX = 0;
+  private pathGoalZ = 0;
+  private lastPathTick = -100;
 
   private ambientDelay: number;
 
@@ -185,6 +192,45 @@ export abstract class Mob extends Living {
     const dx = tx - this.x;
     const dz = tz - this.z;
     if (dx * dx + dz * dz > 1e-6) this.turn(Math.atan2(-dx, -dz), max);
+  }
+
+  /**
+   * Suit un chemin A* vers `(tx, ty, tz)` : réservé aux créatures ayant une cible (poursuite,
+   * nourriture, partenaire). Le calcul est plafonné et étalé entre les créatures (toutes les 15 ticks).
+   */
+  protected pathTo(game: GameApi, tx: number, ty: number, tz: number, factor: number, careful: boolean): void {
+    const gx = Math.floor(tx);
+    const gz = Math.floor(tz);
+    const elapsed = this.age - this.lastPathTick;
+    const goalMoved = Math.abs(gx - this.pathGoalX) + Math.abs(gz - this.pathGoalZ) >= 2;
+    const staggeredTurn = ((this.age + this.id * 3) % 15) === 0;
+    if (!this.climbs && (staggeredTurn || (this.path === null && elapsed >= 12) || (goalMoved && elapsed >= 10))) {
+      this.lastPathTick = this.age;
+      this.pathGoalX = gx;
+      this.pathGoalZ = gz;
+      this.path = findPath(game.world, this.x, this.y, this.z, tx, ty, tz, this.height, careful);
+      this.pathIndex = 0;
+    }
+    if (this.path && this.pathIndex < this.path.length) {
+      let wp = this.path[this.pathIndex];
+      const dx = wp.x - this.x;
+      const dz = wp.z - this.z;
+      if (dx * dx + dz * dz < 0.36 && Math.abs(wp.y - this.y) < 1.2) {
+        this.pathIndex++;
+        if (this.pathIndex < this.path.length) wp = this.path[this.pathIndex];
+      }
+      if (this.pathIndex < this.path.length) {
+        this.walkTo(game, wp.x, wp.z, factor, careful);
+        if (wp.y > this.y + 0.2 && this.onGround) this.jumping = true;
+        return;
+      }
+    }
+    this.walkTo(game, tx, tz, factor, careful);
+  }
+
+  protected clearPath(): void {
+    this.path = null;
+    this.pathIndex = 0;
   }
 
   /**
@@ -534,7 +580,7 @@ export abstract class Animal extends Mob {
     const dSq = this.distanceSqTo(p);
     if (dSq > 100) return false;
     this.lookAt(p, 10);
-    if (dSq > 6.25) this.walkTo(game, p.x, p.z, 1.25, true);
+    if (dSq > 6.25) this.pathTo(game, p.x, p.y, p.z, 1.25, true);
     else this.face(p.x, p.z, 0.3);
     return true;
   }
@@ -558,7 +604,7 @@ export abstract class Animal extends Mob {
     if (!m) return false;
     this.lookAt(m, 5);
     const dSq = this.distanceSqTo(m);
-    if (dSq > 1.2) this.walkTo(game, m.x, m.z, 1, true);
+    if (dSq > 1.2) this.pathTo(game, m.x, m.y, m.z, 1, true);
     // un seul des deux parents fait naître le petit
     if (dSq < 3.2 && this.id < m.id) this.breed(game, m);
     return true;
@@ -880,7 +926,7 @@ export abstract class Monster extends Mob {
     if (t) {
       if (phase % 5 === 0) this.seesTarget = this.canSee(game.world, t);
       if (this.seesTarget && t === p) this.unseenTicks = 0;
-    } else if (phase === 0 && p.targetable && this.distanceSqTo(p) <= FOLLOW_RANGE * FOLLOW_RANGE && this.aggressive(game) && this.canSee(game.world, p)) {
+    } else if (phase === 0 && p.targetable && this.distanceSqTo(p) <= FOLLOW_RANGE * FOLLOW_RANGE && this.aggressive(game) && (this.canSee(game.world, p) || this.mobKind === 'zombie')) {
       this.setTarget(p);
       this.unseenTicks = 0;
     }
@@ -894,6 +940,7 @@ export abstract class Monster extends Mob {
   protected dropTarget(): void {
     this.target = null;
     this.seesTarget = false;
+    this.clearPath();
   }
 
   /** Riposte : celui qui la blesse devient sa cible. */
@@ -933,7 +980,7 @@ export abstract class Monster extends Mob {
     const dx = t.x - this.x;
     const dz = t.z - this.z;
     const contact = (this.width + t.width) / 2 + 0.1;
-    if (dx * dx + dz * dz > contact * contact) this.walkTo(game, t.x, t.z, factor, false);
+    if (dx * dx + dz * dz > contact * contact) this.pathTo(game, t.x, t.y, t.z, factor, false);
     else this.face(t.x, t.z);
   }
 
