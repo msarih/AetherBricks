@@ -1450,6 +1450,20 @@ async function useOnGround(page, x, z) {
       }, nSpot);
       check('Nether : l\'eau s\'évapore et le lit explose', netherRules.waterEvap && netherRules.bedExploded, JSON.stringify(netherRules));
 
+      // 1 minute de jeu (1200 ticks) en difficulté normale dans le Nether : 0 créature de la surface
+      const surfaceInNether = await ev(page, () => {
+        const g = window.__game;
+        const surfaceKinds = new Set(['zombie', 'skeleton', 'creeper', 'spider', 'pig', 'cow', 'sheep', 'chicken', 'wolf']);
+        const before = g.entities.filter((e) => e.kind === 'mob' && surfaceKinds.has(e.mobKind)).map((e) => e.mobKind);
+        const prevDiff = g.difficulty;
+        g.difficulty = 2;
+        for (let i = 0; i < 1200; i++) g.tick();
+        const after = g.entities.filter((e) => e.kind === 'mob' && surfaceKinds.has(e.mobKind));
+        g.difficulty = prevDiff;
+        return { beforeCount: before.length, count: after.length, found: after.slice(0, 5).map((e) => e.mobKind) };
+      });
+      check('Nether : aucune créature de la surface n\'apparaît en 1 minute de jeu', surfaceInNether.count === 0, JSON.stringify(surfaceInNether));
+
       // Retour à la surface en passant par le portail (immédiat en créatif)
       await ev(page, async () => {
         const g = window.__game, p = g.player;
@@ -1477,13 +1491,30 @@ async function useOnGround(page, x, z) {
       check('Nether : le retour ramène au portail de départ en surface',
         back.dim === 'overworld' && Math.hypot(back.x - 81.5, back.z - 80.5) < 16,
         JSON.stringify(back));
+
+      // Retour sur une zone vierge en monde plat : le nouveau portail est posé au vrai sol (y = 4, pas perché à 63)
+      await ev(page, async () => {
+        const g = window.__game;
+        g.dimension = 'nether';
+        await g.switchDimension('overworld', 120, 120);
+      });
+      const flatReturn = await ev(page, () => ({ dim: window.__game.dimension, x: window.__game.player.x, y: window.__game.player.y, z: window.__game.player.z }));
+      check('Nether : nouveau portail de retour en monde plat posé au sol (y = 4)',
+        flatReturn.dim === 'overworld' && Math.abs(flatReturn.y - 4) <= 0.5,
+        JSON.stringify(flatReturn));
     } finally {
       await ev(page, async () => {
         const g = window.__game;
         g.player.gameMode = 'survival';
         g.portalCooldown = 0;
         g.portalTicks = 0;
-        if (g.dimension !== 'overworld') await g.switchDimension('overworld', g.player.x, g.player.z);
+        if (g.dimension !== 'overworld') await g.switchDimension('overworld', 10, 10);
+        g.player.teleport(81.5, 4, 82.5);
+        for (let i = 0; i < 120; i++) {
+          g.chunks.update(64, 60);
+          if (g.chunks.isReady(64, 60, 2)) break;
+          await new Promise((r) => setTimeout(r, 25));
+        }
       }).catch(() => undefined);
     }
   });

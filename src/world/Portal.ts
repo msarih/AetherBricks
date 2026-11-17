@@ -155,7 +155,7 @@ export function findOrCreatePortal(
   }
   if (best) return best;
 
-  let py = dimension === 'nether' ? 64 : Math.max(63, w.heightAt(ix, iz));
+  let py = dimension === 'nether' ? 64 : Math.max(4, w.heightAt(ix, iz));
   if (dimension === 'nether') {
     // Cherche un espace ouvert au-dessus de la mer de lave
     for (let y = 40; y <= 96; y++) {
