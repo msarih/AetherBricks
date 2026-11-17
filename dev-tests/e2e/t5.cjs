@@ -324,8 +324,16 @@ async function reload(page) {
       }
       if (!best) return { found: false };
       const count = (c) => { const kinds = new Set(); let n = 0, sand = 0; for (const id of c.blocks) { if (id >= B.TERRACOTTA && id <= B.TERRACOTTA_BLACK) { n++; kinds.add(id); } else if (id === B.RED_SAND) sand++; } return { n, kinds: kinds.size, sand }; };
+      // référence : l'ancien générateur, au même endroit
+      const ref = await import('/dev-tests/ref/WorldGenV1.ts');
+      const before = new ref.WorldGen(Number(seed), 'default');
+      const same = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
+      let changed = 0;
       let total = { n: 0, kinds: 0, sand: 0 }, oldTotal = 0, biomeCols = 0;
       for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+        const was = before.generateChunk((best.x >> 4) + dx, (best.z >> 4) + dz);
+        const now = old.generateChunk((best.x >> 4) + dx, (best.z >> 4) + dz);
+        if (!same(was.blocks, now.blocks) || !same(was.biomes, now.biomes) || !same(was.heightmap, now.heightmap)) changed++;
         const c = gen.generateChunk((best.x >> 4) + dx, (best.z >> 4) + dz);
         const k = count(c);
         total = { n: total.n + k.n, kinds: Math.max(total.kinds, k.kinds), sand: total.sand + k.sand };
@@ -336,7 +344,7 @@ async function reload(page) {
       const m = (grid, id) => { const x = R.matchRecipe(grid, 3); return x && x.id === id ? x.count : 0; };
       const T8 = B.TERRACOTTA;
       return {
-        found: true, at: best, ...total, biomeCols, oldTotal,
+        found: true, at: best, ...total, biomeCols, oldTotal, changed,
         stained: m([T8, T8, T8, T8, I.DYE_RED, T8, T8, T8, T8], B.TERRACOTTA_RED),
         smelt: R.smeltingResult(B.CLAY),
       };
@@ -344,7 +352,7 @@ async function reload(page) {
     check('un biome de badlands existe dans ce monde', r.found === true, r.found ? `x ${r.at.x}, z ${r.at.z}` : '');
     if (!r.found) return;
     check('badlands : strates de terre cuite (au moins 4 couleurs) et sable rouge', r.n > 2000 && r.kinds >= 4 && r.sand > 0 && r.biomeCols > 100, JSON.stringify({ terreCuite: r.n, couleurs: r.kinds, sableRouge: r.sand, colonnes: r.biomeCols }));
-    check('anciens mondes : ni terre cuite ni sable rouge au même endroit', r.oldTotal === 0, String(r.oldTotal));
+    check('anciens mondes : au même endroit, ni terre cuite ni sable rouge, terrain identique à l’octet près', r.oldTotal === 0 && r.changed === 0, JSON.stringify({ terreCuite: r.oldTotal, chunksChanges: r.changed }));
     check('recettes : argile cuite → terre cuite ; 8 terres cuites + teinture → 8 colorées', r.stained === 8 && r.smelt && r.smelt.id === 167, JSON.stringify({ stained: r.stained, smelt: r.smelt }));
   });
 
