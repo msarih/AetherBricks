@@ -1218,7 +1218,7 @@ async function useOnGround(page, x, z) {
       await ticks(page, 2);
       await shot(page, '26b-redstone');
 
-      // 4) Mesure de performance sur grand circuit + borne de propagation
+      // 4) Grand circuit 16×16 : extinction complète + mesure de performance
       const bench = await ev(page, async () => {
         const { B } = await import('/src/world/Ids.ts');
         const { MAX_REDSTONE_UPDATES } = await import('/src/world/Redstone.ts');
@@ -1231,18 +1231,40 @@ async function useOnGround(page, x, z) {
         const baseMs = measure(() => g.tick());
         for (let z = 70; z < 86; z++) {
           for (let x = 70; x < 86; x++) {
-            w.setBlock(x, 4, z, (x + z) % 7 === 0 ? B.REDSTONE_LAMP : B.REDSTONE_WIRE, 0, false);
+            w.setBlock(x, 4, z, (x % 5 === 4 && z % 5 === 4) ? B.REDSTONE_LAMP : B.REDSTONE_WIRE, 0, false);
           }
         }
-        w.setBlock(69, 4, 70, B.LEVER, 0);
+        w.setBlock(69, 4, 71, B.LEVER, 0);
+        const countActive = () => {
+          let wires = 0, lamps = 0;
+          for (let z = 70; z < 86; z++) {
+            for (let x = 70; x < 86; x++) {
+              const v = w.getBlockAndMeta(x, 4, z);
+              if ((v & 255) === B.REDSTONE_WIRE && (v >> 8) > 0) wires++;
+              else if ((v & 255) === B.REDSTONE_LAMP_LIT) lamps++;
+            }
+          }
+          return { wires, lamps };
+        };
+        w.setMeta(69, 4, 71, 8, true);
+        const on1 = countActive();
+        w.setMeta(69, 4, 71, 0, true);
+        for (let i = 0; i < 10; i++) g.tick();
+        const off1 = countActive();
         const circuitMs = measure((i) => {
-          if (i % 4 === 0) w.setMeta(69, 4, 70, (i & 4) ? 8 : 0, true);
+          if (i % 4 === 0) w.setMeta(69, 4, 71, (i & 4) ? 8 : 0, true);
           g.tick();
         });
+        w.setMeta(69, 4, 71, 0, true);
+        for (let i = 0; i < 10; i++) g.tick();
+        const off2 = countActive();
         for (let z = 70; z < 86; z++) for (let x = 69; x < 86; x++) w.setBlock(x, 4, z, B.AIR, 0, false);
-        return { baseMs, circuitMs, cap: MAX_REDSTONE_UPDATES };
+        return { baseMs, circuitMs, cap: MAX_REDSTONE_UPDATES, on1, off1, off2 };
       });
       console.log(`  perf redstone : base=${bench.baseMs.toFixed(3)} ms/tick, grand circuit=${bench.circuitMs.toFixed(3)} ms/tick (borne=${bench.cap})`);
+      check('redstone : grand circuit 16×16 s\'allume et s\'éteint complètement',
+        bench.on1.wires > 100 && bench.on1.lamps > 0 && bench.off1.wires === 0 && bench.off1.lamps === 0 && bench.off2.wires === 0 && bench.off2.lamps === 0,
+        JSON.stringify(bench));
       check('redstone : propagation bornée et coût par tick maîtrisé', bench.cap === 512 && bench.circuitMs < 50, JSON.stringify(bench));
     } finally {
       await ev(page, async () => {

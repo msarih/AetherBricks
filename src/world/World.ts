@@ -10,7 +10,7 @@ import { CHUNK_HEIGHT, chunkKey, type WorldType } from './Constants';
 import { mulberry32 } from './gen/Noise';
 import type { Chunk } from './Chunk';
 import { neighborChanged, randomTick, scheduledTick } from './Behavior';
-import { hasRedstoneNearby, isRedstoneBlock, updateRedstoneAround } from './Redstone';
+import { hasRedstoneNearby, isRedstoneBlock, tickRedstone, updateRedstoneAround } from './Redstone';
 
 /** Donnée attachée à un bloc (coffre, fourneau, générateur de monstres). */
 export interface BlockEntity {
@@ -470,6 +470,7 @@ export class World {
   /** Avance le monde d'un tick : ticks planifiés puis ticks aléatoires autour de (px, pz). */
   tick(px: number, pz: number): void {
     this.age++;
+    tickRedstone(this);
 
     // --- ticks planifiés ---
     let due = this.overflow;

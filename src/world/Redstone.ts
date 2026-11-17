@@ -344,32 +344,54 @@ function updateConsumer(w: World, x: number, y: number, z: number): void {
 const wireQueue: number[] = [];
 const wireQueued = new Set<number>();
 const touchedPositions = new Set<number>();
+const oldPower = new Map<number, number>();
+const pendingByWorld = new WeakMap<World, number[]>();
 
-function enqueueWireAndNeighbors(w: World, x: number, y: number, z: number): void {
-  const k = posKey(x, y, z);
-  touchedPositions.add(k);
-  if (w.getBlock(x, y, z) === B.REDSTONE_WIRE && !wireQueued.has(k) && wireQueued.size < MAX_REDSTONE_UPDATES) {
-    wireQueued.add(k);
-    wireQueue.push(k);
+function getPending(w: World): number[] {
+  let list = pendingByWorld.get(w);
+  if (!list) pendingByWorld.set(w, (list = []));
+  return list;
+}
+
+function wireNeighbors(w: World, x: number, y: number, z: number, visit: (nx: number, ny: number, nz: number) => void): void {
+  const openAboveSelf = BLOCK_OPAQUE[w.getBlock(x, y + 1, z)] === 0;
+  for (let i = 0; i < 4; i++) {
+    const [dx, dz] = H_DIRS[i];
+    const nx = x + dx;
+    const nz = z + dz;
+    if (w.getBlock(nx, y, nz) === B.REDSTONE_WIRE) visit(nx, y, nz);
+    else if (BLOCK_OPAQUE[w.getBlock(nx, y, nz)] === 0 && w.getBlock(nx, y - 1, nz) === B.REDSTONE_WIRE) {
+      visit(nx, y - 1, nz);
+    }
+    if (openAboveSelf && BLOCK_OPAQUE[w.getBlock(nx, y + 1, nz)] === 0 && w.getBlock(nx, y + 1, nz) === B.REDSTONE_WIRE) {
+      visit(nx, y + 1, nz);
+    }
   }
 }
 
-function enqueueAround(w: World, x: number, y: number, z: number): void {
-  enqueueWireAndNeighbors(w, x, y, z);
+function touchAround(x: number, y: number, z: number): void {
+  touchedPositions.add(posKey(x, y, z));
   for (let i = 0; i < 6; i++) {
     const [dx, dy, dz] = DIRS_6[i];
-    enqueueWireAndNeighbors(w, x + dx, y + dy, z + dz);
+    touchedPositions.add(posKey(x + dx, y + dy, z + dz));
   }
-  for (let i = 0; i < 4; i++) {
-    const [dx, dz] = H_DIRS[i];
-    enqueueWireAndNeighbors(w, x + dx, y + 1, z + dz);
-    enqueueWireAndNeighbors(w, x + dx, y - 1, z + dz);
+}
+
+function seedWireIfPresent(w: World, x: number, y: number, z: number, collectQueue: number[]): void {
+  if (w.getBlock(x, y, z) !== B.REDSTONE_WIRE) return;
+  const k = posKey(x, y, z);
+  if (oldPower.has(k)) return;
+  if (oldPower.size >= MAX_REDSTONE_UPDATES) {
+    getPending(w).push(k);
+    return;
   }
+  oldPower.set(k, w.getMeta(x, y, z));
+  collectQueue.push(k);
 }
 
 /**
  * Met à jour la propagation du signal redstone autour de (x, y, z),
- * bornée à MAX_REDSTONE_UPDATES nœuds.
+ * bornée à MAX_REDSTONE_UPDATES nœuds par vague (le surplus est reporté au tick suivant).
  */
 export function updateRedstoneAround(w: World, x: number, y: number, z: number): void {
   if (propagating) return;
@@ -378,42 +400,114 @@ export function updateRedstoneAround(w: World, x: number, y: number, z: number):
     wireQueue.length = 0;
     wireQueued.clear();
     touchedPositions.clear();
+    oldPower.clear();
 
-    enqueueAround(w, x, y, z);
-    // Si un bloc solide vient de changer d'état (levier/bouton/plaque dessus), inclure ses voisins
+    const collectQueue: number[] = [];
+    touchAround(x, y, z);
+    seedWireIfPresent(w, x, y, z, collectQueue);
     for (let i = 0; i < 6; i++) {
       const [dx, dy, dz] = DIRS_6[i];
-      if (BLOCK_OPAQUE[w.getBlock(x + dx, y + dy, z + dz)] === 1) {
-        enqueueAround(w, x + dx, y + dy, z + dz);
+      const nx = x + dx;
+      const ny = y + dy;
+      const nz = z + dz;
+      seedWireIfPresent(w, nx, ny, nz, collectQueue);
+      if (BLOCK_OPAQUE[w.getBlock(nx, ny, nz)] === 1) {
+        touchAround(nx, ny, nz);
+        for (let j = 0; j < 6; j++) {
+          const [sx, sy, sz] = DIRS_6[j];
+          seedWireIfPresent(w, nx + sx, ny + sy, nz + sz, collectQueue);
+        }
+      }
+    }
+    for (let i = 0; i < 4; i++) {
+      const [dx, dz] = H_DIRS[i];
+      seedWireIfPresent(w, x + dx, y + 1, z + dz, collectQueue);
+      seedWireIfPresent(w, x + dx, y - 1, z + dz, collectQueue);
+    }
+
+    // Phase 1 : collecte du sous-réseau connecté et remise à zéro silencieuse (évite le ping-pong)
+    for (let head = 0; head < collectQueue.length; head++) {
+      const k = collectQueue[head];
+      const wx = posKeyX(k);
+      const wy = posKeyY(k);
+      const wz = posKeyZ(k);
+      w.setMetaSilent(wx, wy, wz, 0);
+      touchAround(wx, wy, wz);
+      wireNeighbors(w, wx, wy, wz, (nx, ny, nz) => seedWireIfPresent(w, nx, ny, nz, collectQueue));
+    }
+
+    // Phase 2 : repropagation depuis les sources actives restantes
+    for (const k of oldPower.keys()) {
+      const wx = posKeyX(k);
+      const wy = posKeyY(k);
+      const wz = posKeyZ(k);
+      const p = computeWirePower(w, wx, wy, wz);
+      if (p > 0) {
+        w.setMetaSilent(wx, wy, wz, p);
+        wireQueued.add(k);
+        wireQueue.push(k);
       }
     }
 
     let steps = 0;
-    for (let head = 0; head < wireQueue.length && steps < MAX_REDSTONE_UPDATES; head++) {
+    for (let head = 0; head < wireQueue.length; head++) {
       const k = wireQueue[head];
       wireQueued.delete(k);
+      if (steps >= MAX_REDSTONE_UPDATES) {
+        getPending(w).push(k);
+        continue;
+      }
+      steps++;
       const wx = posKeyX(k);
       const wy = posKeyY(k);
       const wz = posKeyZ(k);
-      if (w.getBlock(wx, wy, wz) !== B.REDSTONE_WIRE) continue;
-      steps++;
       const cur = w.getMeta(wx, wy, wz);
-      const next = computeWirePower(w, wx, wy, wz);
-      if (cur !== next) {
-        w.setMeta(wx, wy, wz, next, false);
-        enqueueAround(w, wx, wy, wz);
+      wireNeighbors(w, wx, wy, wz, (nx, ny, nz) => {
+        const nk = posKey(nx, ny, nz);
+        const np = computeWirePower(w, nx, ny, nz);
+        if (np > w.getMeta(nx, ny, nz)) {
+          w.setMetaSilent(nx, ny, nz, np);
+          if (!wireQueued.has(nk)) {
+            wireQueued.add(nk);
+            wireQueue.push(nk);
+          }
+          if (!oldPower.has(nk)) oldPower.set(nk, cur); // sera remaillé si modifié
+        }
+      });
+    }
+
+    // Validation visuelle des poudres dont la puissance a réellement changé
+    for (const [k, prev] of oldPower) {
+      const wx = posKeyX(k);
+      const wy = posKeyY(k);
+      const wz = posKeyZ(k);
+      const finalP = w.getMeta(wx, wy, wz);
+      if (finalP !== prev) {
+        w.setMetaSilent(wx, wy, wz, prev);
+        w.setMeta(wx, wy, wz, finalP, false);
+        touchAround(wx, wy, wz);
       }
     }
 
-    // Met à jour tous les récepteurs touchés (lampes, torches, portes, pistons, TNT)
+    // Mise à jour des récepteurs (lampes, torches, portes, pistons, TNT)
     const consumers = Array.from(touchedPositions);
     for (const k of consumers) {
-      const cx = posKeyX(k);
-      const cy = posKeyY(k);
-      const cz = posKeyZ(k);
-      updateConsumer(w, cx, cy, cz);
+      updateConsumer(w, posKeyX(k), posKeyY(k), posKeyZ(k));
     }
   } finally {
     propagating = false;
+  }
+}
+
+/** Traite le reliquat de propagation redstone reporté au tick suivant. */
+export function tickRedstone(w: World): void {
+  const list = pendingByWorld.get(w);
+  if (!list || list.length === 0) return;
+  const batch = list.splice(0, MAX_REDSTONE_UPDATES);
+  const seen = new Set<number>();
+  for (const k of batch) {
+    if (seen.has(k)) continue;
+    seen.add(k);
+    updateRedstoneAround(w, posKeyX(k), posKeyY(k), posKeyZ(k));
   }
 }
