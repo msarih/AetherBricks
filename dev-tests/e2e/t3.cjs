@@ -278,7 +278,8 @@ const dbg = (page) => ev(page, () => { const d = window.__game.debugLines(); ret
 
   await section('torche et porte', async () => {
     if (!spot) return;
-    await ev(page, (s) => { window.__game.difficulty = 0; window.__game.player.teleport(s.x + 0.5, s.y, s.z + 0.5); }, spot);
+    try {
+      await ev(page, (s) => { window.__game.difficulty = 0; window.__game.player.teleport(s.x + 0.5, s.y, s.z + 0.5); }, spot);
     await chat(page, '/time set midnight');
     await chat(page, '/give torch 8'); await chat(page, '/give oak_door 2');
     await ticks(page, 20);
@@ -331,10 +332,17 @@ const dbg = (page) => ev(page, () => { const d = window.__game.debugLines(); ret
     await shot(page, '49-porte-ouverte');
     await page.keyboard.down('KeyD'); await ticks(page, 16); await page.keyboard.up('KeyD');
     const px = (await pos(page)).x;
-    console.log('  x après avoir marché vers la porte ouverte :', px.toFixed(2), '(porte en x =', spot.x + 1, ')');
+      console.log('  x après avoir marché vers la porte ouverte :', px.toFixed(2), '(porte en x =', spot.x + 1, ')');
+    } finally {
+      await ev(page, () => {
+        const g = window.__game;
+        if (!g.settings.smoothLighting) { g.settings.smoothLighting = true; g.applySettings(); }
+      }).catch(() => undefined);
+    }
   });
 
   await section('noyade et vue sous l\'eau', async () => {
+    try {
     const find = () => ev(page, () => { const g = window.__game, w = g.world, p = g.player; for (let r = 0; r < 150; r += 3) for (let a = 0; a < 40; a++) { const x = Math.floor(p.x + Math.cos(a / 40 * 6.283) * r), z = Math.floor(p.z + Math.sin(a / 40 * 6.283) * r); if (!w.isLoaded(x, z)) continue; let y = 70; while (y > 40 && w.getBlock(x, y, z) === 0) y--; if (w.getBlock(x, y, z) !== 18) continue; let d = 0; while (w.getBlock(x, y - d, z) === 18) d++; if (d >= 4) return { x, y, z, d }; } return null; });
     let w = await find();
     for (const [dx, dz] of [[220, 0], [0, 220], [-220, 0], [0, -220], [440, 440]]) {
@@ -357,10 +365,15 @@ const dbg = (page) => ev(page, () => { const d = window.__game.debugLines(); ret
     const b = await ev(page, () => ({ air: window.__game.player.air, head: window.__game.headInWater, y: window.__game.player.y }));
     await shot(page, '51-surface');
     await page.keyboard.up('Space');
-    check('Espace fait remonter à la surface, l\'air revient', b.head === false && b.y > a.y && b.air > a.air, JSON.stringify(b));
+      check('Espace fait remonter à la surface, l\'air revient', b.head === false && b.y > a.y && b.air > a.air, JSON.stringify(b));
+    } finally {
+      await page.keyboard.up('Space').catch(() => undefined);
+      await ev(page, () => { window.__game.player.health = 20; }).catch(() => undefined);
+    }
   });
 
   await section('pluie, nuit, orage (captures)', async () => {
+    try {
     await chat(page, '/gamemode creative');
     const sp = await ev(page, () => window.__game.spawnPoint);
     await chat(page, `/tp ${sp.x} 96 ${sp.z}`);
@@ -376,8 +389,11 @@ const dbg = (page) => ev(page, () => { const d = window.__game.debugLines(); ret
     await shot(page, '54-nuit');
     await chat(page, '/time set day'); await chat(page, '/weather thunder'); await ticks(page, 100);
     await shot(page, '55-orage');
-    check('orage actif', await ev(page, () => window.__game.raining && window.__game.thundering));
-    await chat(page, '/weather clear');
+      check('orage actif', await ev(page, () => window.__game.raining && window.__game.thundering));
+    } finally {
+      await chat(page, '/weather clear').catch(() => undefined);
+      await ev(page, () => { window.__game.player.flying = false; }).catch(() => undefined);
+    }
   });
 
   // repère pour la section « export et import » : un bloc posé à la main et l'état du joueur avant de quitter

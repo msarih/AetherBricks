@@ -69,7 +69,8 @@ async function useOnGround(page, x, z) {
   await shot(page, '10-plat');
 
   await section('déplacement', async () => {
-    await ev(page, () => T.look(0, 0));
+    try {
+      await ev(page, () => T.look(0, 0));
     let a = await pos(page);
     await page.keyboard.down('KeyW'); await ticks(page, 20); await page.keyboard.up('KeyW');
     let b = await pos(page);
@@ -99,12 +100,16 @@ async function useOnGround(page, x, z) {
     check('saut (Espace)', maxY > 5.0 && maxY < 5.4, `y max ${maxY.toFixed(2)}`);
     await ticks(page, 20);
     b = await pos(page);
-    check('retombe au sol', b.g && Math.abs(b.y - 4) < 0.01, `y=${b.y.toFixed(2)}`);
+      check('retombe au sol', b.g && Math.abs(b.y - 4) < 0.01, `y=${b.y.toFixed(2)}`);
+    } finally {
+      for (const k of ['KeyW', 'ControlLeft', 'ShiftLeft', 'KeyD', 'Space']) await page.keyboard.up(k).catch(() => undefined);
+    }
   });
 
   let holeAt = null;
   await section('casser un bloc', async () => {
-    await ev(page, () => { const p = window.__game.player; p.teleport(Math.floor(p.x) + 0.5, p.y, Math.floor(p.z) + 0.5); T.look(0, -Math.PI / 2); });
+    try {
+      await ev(page, () => { const p = window.__game.player; p.teleport(Math.floor(p.x) + 0.5, p.y, Math.floor(p.z) + 0.5); T.look(0, -Math.PI / 2); });
     await ticks(page, 2);
     const h = await ev(page, () => T.hit());
     check('bloc visé sous les pieds', h && h.y === 3, JSON.stringify(h));
@@ -120,7 +125,10 @@ async function useOnGround(page, x, z) {
     check('butin ramassé', after !== before && after.length > 0, `inventaire : ${after}`);
     const p = await pos(page);
     check('le joueur tombe dans le trou', Math.abs(p.y - 3) < 0.01, `y=${p.y.toFixed(2)}`);
-    await shot(page, '11-trou');
+      await shot(page, '11-trou');
+    } finally {
+      await ev(page, () => { window.__game.input.buttons[0] = false; }).catch(() => undefined);
+    }
   });
 
   await section('poser un bloc', async () => {
@@ -144,7 +152,8 @@ async function useOnGround(page, x, z) {
   });
 
   await section('inventaire et fabrication (souris réelle)', async () => {
-    await chat(page, '/give oak_log 4');
+    try {
+      await chat(page, '/give oak_log 4');
     await page.keyboard.press('KeyE');
     await page.waitForSelector('[data-mc="menu-inventory"]', { timeout: 5000 });
     check('E ouvre l\'inventaire', (await state(page)).modal === true);
@@ -246,10 +255,17 @@ async function useOnGround(page, x, z) {
       advInfo.advs.includes('crafting_table') && advInfo.advs.includes('wooden_pickaxe') && advInfo.goal.includes('fourneau') && !advInfo.msgs.some((m) => m.includes('Première pioche')),
       JSON.stringify(advInfo));
     await shot(page, '14c-progres-toast');
+    } finally {
+      if (await ev(page, () => window.__game.ui.modal).catch(() => false)) {
+        await page.keyboard.press('Escape').catch(() => undefined);
+        await sleep(200);
+      }
+    }
   });
 
   await section('chat et commandes', async () => {
-    await page.keyboard.press('KeyT');
+    try {
+      await page.keyboard.press('KeyT');
     await page.waitForSelector('[data-mc="chat"]', { timeout: 5000 });
     await sleep(200);
     await page.keyboard.type('/time set night');
@@ -271,12 +287,21 @@ async function useOnGround(page, x, z) {
     await chat(page, '/tp 8.5 4 8.5');
     const p = await pos(page);
     check('/tp', Math.abs(p.x - 8.5) < 0.01 && Math.abs(p.z - 8.5) < 0.01, JSON.stringify(p));
-    await chat(page, '/nimporte');
-    console.log('  messages :', JSON.stringify(await ev(page, () => window.__msgs.slice(-6))));
+      await chat(page, '/nimporte');
+      console.log('  messages :', JSON.stringify(await ev(page, () => window.__msgs.slice(-6))));
+    } finally {
+      if (await ev(page, () => window.__game.ui.modal).catch(() => false)) {
+        await page.keyboard.press('Escape').catch(() => undefined);
+        await sleep(150);
+      }
+      await chat(page, '/weather clear').catch(() => undefined);
+      await chat(page, '/gamemode survival').catch(() => undefined);
+    }
   });
 
   await section('créatures et combat', async () => {
-    await ev(page, () => { window.__game.difficulty = 2; window.__game.spawner.timer = 0; });
+    try {
+      await ev(page, () => { window.__game.difficulty = 2; window.__game.spawner.timer = 0; });
     await chat(page, '/time set night');
     await ev(page, () => T.aim(8.5, 4, 3.5)); await ticks(page, 2);
     await chat(page, '/summon zombie');
@@ -456,9 +481,24 @@ async function useOnGround(page, x, z) {
       return res;
     });
     check('un petit rejoint l\'adulte de son espèce et reste près de lui (adulte immobile)', followRes.d0 >= 6.9 && followRes.closest < 3.5 && followRes.end < 4 && followRes.calfBaby, JSON.stringify(followRes));
-    await ev(page, () => { const g = window.__game; const p = g.player; p.teleport(p.x, p.y, p.z + 4); T.aim(8.5, 4.6, 3.5); });
-    await ticks(page, 10);
-    await shot(page, '18-animaux');
+      await ev(page, () => { const g = window.__game; const p = g.player; p.teleport(p.x, p.y, p.z + 4); T.aim(8.5, 4.6, 3.5); });
+      await ticks(page, 10);
+      await shot(page, '18-animaux');
+    } finally {
+      await ev(page, () => {
+        const g = window.__game, w = g.world;
+        for (let x = 6; x <= 10; x++) { w.setBlock(x, 4, 6, 0, 0); w.setBlock(x, 5, 6, 0, 0); }
+        for (let z = 1; z <= 6; z++) {
+          w.setBlock(6, 4, z, 0, 0); w.setBlock(6, 5, z, 0, 0);
+          w.setBlock(10, 4, z, 0, 0); w.setBlock(10, 5, z, 0, 0);
+        }
+        if (window.__z) window.__z.dead = true;
+        if (window.__zWall) window.__zWall.dead = true;
+        g.difficulty = 0;
+        g.player.health = 20;
+      }).catch(() => undefined);
+      await chat(page, '/time set day').catch(() => undefined);
+    }
   });
 
   await section('mort et réapparition', async () => {
@@ -524,7 +564,8 @@ async function useOnGround(page, x, z) {
   });
 
   await section('établi, coffre, fourneau', async () => {
-    await chat(page, '/tp 40.5 4 40.5');
+    try {
+      await chat(page, '/tp 40.5 4 40.5');
     await ticks(page, 5);
     for (const n of ['crafting_table', 'chest', 'furnace']) await chat(page, `/give ${n}`);
     const spots = [['crafting_table', 39, 'menu-crafting'], ['chest', 40, 'menu-chest'], ['furnace', 41, 'menu-furnace']];
@@ -573,8 +614,13 @@ async function useOnGround(page, x, z) {
     c = await dom('output'); await page.mouse.click(c[0], c[1]); await sleep(150);
     const cur = await ev(page, () => { const c = window.__game.player.inventory.cursor; return c ? c.id : 0; });
     const ingot = await ev(page, () => T.id('iron_ingot'));
-    check('le fourneau cuit le minerai en lingot (menu fermé)', cur === ingot, `curseur ${cur}, attendu ${ingot}`);
-    await page.keyboard.press('Escape'); await sleep(250);
+      check('le fourneau cuit le minerai en lingot (menu fermé)', cur === ingot, `curseur ${cur}, attendu ${ingot}`);
+    } finally {
+      if (await ev(page, () => window.__game.ui.modal).catch(() => false)) {
+        await page.keyboard.press('Escape').catch(() => undefined);
+        await sleep(250);
+      }
+    }
   });
 
   await section('seau d\'eau', async () => {
@@ -600,16 +646,22 @@ async function useOnGround(page, x, z) {
   });
 
   await section('pêche', async () => {
-    // un bassin de 11 × 7 creusé dans le sol plat, le joueur sur la berge
-    const pond = await ev(page, async () => {
-      const { B } = await import('/src/world/Ids.ts');
-      const g = window.__game, w = g.world;
-      const old = w.getBlock(64, 3, 60);
-      for (let x = 60; x <= 70; x++) for (let z = 57; z <= 63; z++) w.setBlock(x, 3, z, B.WATER, 0);
-      for (const e of g.entities) if (e.kind === 'mob' && Math.hypot(e.x - 62, e.z - 60) < 16) e.dead = true;
-      g.player.teleport(57.5, 4, 60.5);
-      return { old };
-    });
+    let pondOld = 0;
+    let rodId = 0;
+    let caught = 0;
+    try {
+      // un bassin de 11 × 7 creusé dans le sol plat, le joueur sur la berge
+      const pond = await ev(page, async () => {
+        const { B, I } = await import('/src/world/Ids.ts');
+        const g = window.__game, w = g.world;
+        const old = w.getBlock(64, 3, 60);
+        for (let x = 60; x <= 70; x++) for (let z = 57; z <= 63; z++) w.setBlock(x, 3, z, B.WATER, 0);
+        for (const e of g.entities) if (e.kind === 'mob' && Math.hypot(e.x - 62, e.z - 60) < 16) e.dead = true;
+        g.player.teleport(57.5, 4, 60.5);
+        return { old, rodId: I.FISHING_ROD };
+      });
+      pondOld = pond.old;
+      rodId = pond.rodId;
     await ticks(page, 5);
     await chat(page, '/give fishing_rod');
     const bob = () => ev(page, () => { const b = window.__game.entities.find((e) => e.kind === 'bobber' && !e.dead); return b ? { x: +b.x.toFixed(2), y: +b.y.toFixed(3), z: +b.z.toFixed(2), floating: b.floating, grounded: b.grounded, wait: b.waitTicks, bite: b.biteTicks, hooked: !!b.hooked } : null; });
@@ -687,7 +739,7 @@ async function useOnGround(page, x, z) {
     const known = await drops();
     await rclick(page);
     const flying = (await drops()).filter((id) => before.allowed.includes(id));
-    const caught = flying.find((id) => !known.includes(id)) ?? flying[flying.length - 1];
+    caught = flying.find((id) => !known.includes(id)) ?? flying[flying.length - 1] ?? 0;
     const had = await ev(page, (id) => window.__game.player.inventory.count(id), caught ?? 0);
     await ticks(page, 40);
     // la prise vole vers le pêcheur ; si elle retombe un peu court, il fait les deux pas qui manquent
@@ -784,19 +836,24 @@ async function useOnGround(page, x, z) {
     check('pêche : recette de la canne, cuisson du poisson, valeurs nutritives', rules.craft && rules.smelt && rules.food, JSON.stringify(rules));
     check('pêche : tirage des prises (poisson ≈ 85 %, objets sans valeur, trouvailles usées)', rules.fish && rules.junk && rules.treasure && rules.share > 0.8 && rules.share < 0.9, JSON.stringify(rules));
 
-    // --- remise en état : sol rebouché, canne et prises retirées
-    await ev(page, (old, rodId, caught) => {
-      const g = window.__game, w = g.world, inv = g.player.inventory;
-      for (let x = 60; x <= 70; x++) for (let z = 57; z <= 63; z++) w.setBlock(x, 3, z, old, 0);
-      for (let i = 0; i < inv.slots.length; i++) { const st = inv.slots[i]; if (st && st.id === rodId) inv.slots[i] = null; }
-      if (caught && caught !== rodId) inv.remove(caught, 1);
-      for (const e of g.entities) if ((e.kind === 'item' && Math.hypot(e.x - 62, e.z - 60) < 16) || e.kind === 'bobber') e.dead = true;
-    }, pond.old, await ev(page, () => T.id('fishing_rod')), caught ?? 0);
-    await ticks(page, 3);
+    } finally {
+      // --- remise en état : vue, entrées, sol rebouché, canne et prises retirées
+      await ev(page, (old, rodId, caught) => {
+        const g = window.__game, w = g.world, inv = g.player.inventory;
+        g.viewMode = 0;
+        g.input.buttons[2] = false;
+        if (old) for (let x = 60; x <= 70; x++) for (let z = 57; z <= 63; z++) w.setBlock(x, 3, z, old, 0);
+        if (rodId) for (let i = 0; i < inv.slots.length; i++) { const st = inv.slots[i]; if (st && st.id === rodId) inv.slots[i] = null; }
+        if (caught && caught !== rodId) inv.remove(caught, 1);
+        for (const e of g.entities) if ((e.kind === 'item' && Math.hypot(e.x - 62, e.z - 60) < 16) || e.kind === 'bobber') e.dead = true;
+      }, pondOld, rodId, caught).catch(() => undefined);
+      await ticks(page, 3).catch(() => undefined);
+    }
   });
 
   await section('lit et sommeil', async () => {
-    await chat(page, '/tp 60.5 4 60.5');
+    try {
+      await chat(page, '/tp 60.5 4 60.5');
     await ticks(page, 5);
     await chat(page, '/give bed');
     await ev(page, () => T.select('bed'));
@@ -828,24 +885,41 @@ async function useOnGround(page, x, z) {
     });
     check('réveil au matin suivant', Math.floor(s.time / 24000) === day0 + 1 && s.time % 24000 < 1000, `time ${s.time}`);
     check('au réveil, le joueur est debout à côté du lit (pas dessus)', wakeInfo.onGround && wakeInfo.blockAtFeet === 0 && wakeInfo.dist >= 0.8 && wakeInfo.dist <= 2.5 && Math.abs(wakeInfo.y - 4) < 0.01, JSON.stringify(wakeInfo));
-    check('le lit devient le point de réapparition', await ev(page, () => !!window.__game.player.bed));
+      check('le lit devient le point de réapparition', await ev(page, () => !!window.__game.player.bed));
+    } finally {
+      await ev(page, () => {
+        const g = window.__game;
+        if (g.player.sleeping) { g.player.sleeping = false; g.player.sleepTicks = 0; }
+      }).catch(() => undefined);
+      await chat(page, '/time set day').catch(() => undefined);
+    }
   });
 
   await section('vues F5, F1, F3', async () => {
-    await ev(page, () => T.look(0.6, -0.2));
-    await page.keyboard.press('F5'); await sleep(300);
-    check('F5 : vue de dos', await ev(page, () => window.__game.viewMode === 1));
-    await shot(page, '28-f5-dos');
-    await page.keyboard.press('F5'); await sleep(300);
-    await shot(page, '29-f5-face');
-    await page.keyboard.press('F5'); await sleep(200);
-    check('F5 : retour à la première personne', await ev(page, () => window.__game.viewMode === 0));
-    await page.keyboard.press('F3'); await sleep(700);
-    await shot(page, '30-f3');
-    await page.keyboard.press('F3');
-    await page.keyboard.press('F1'); await sleep(300);
-    await shot(page, '31-f1');
-    await page.keyboard.press('F1');
+    try {
+      await ev(page, () => T.look(0.6, -0.2));
+      await page.keyboard.press('F5'); await sleep(300);
+      check('F5 : vue de dos', await ev(page, () => window.__game.viewMode === 1));
+      await shot(page, '28-f5-dos');
+      await page.keyboard.press('F5'); await sleep(300);
+      await shot(page, '29-f5-face');
+      await page.keyboard.press('F5'); await sleep(200);
+      check('F5 : retour à la première personne', await ev(page, () => window.__game.viewMode === 0));
+      await page.keyboard.press('F3'); await sleep(700);
+      await shot(page, '30-f3');
+      await page.keyboard.press('F3');
+      await page.keyboard.press('F1'); await sleep(300);
+      await shot(page, '31-f1');
+      await page.keyboard.press('F1');
+    } finally {
+      await ev(page, () => {
+        const g = window.__game;
+        g.viewMode = 0;
+        g.hudVisible = true;
+        g.ui.setHudVisible(true);
+        g.ui.setDebug(null);
+      }).catch(() => undefined);
+    }
   });
 
   await section('molette et touches 1-9', async () => {
