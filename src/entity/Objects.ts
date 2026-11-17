@@ -108,6 +108,7 @@ export class ItemEntity extends Entity {
     d.id = this.stack.id;
     d.count = this.stack.count;
     d.damage = this.stack.damage;
+    if (this.stack.enchants && Object.keys(this.stack.enchants).length > 0) d.enchants = { ...this.stack.enchants };
     return d;
   }
 
@@ -115,7 +116,11 @@ export class ItemEntity extends Entity {
     const id = num(d.id, 0);
     const count = num(d.count, 0);
     if (id <= 0 || count <= 0) return null;
-    const e = new ItemEntity({ id, count, damage: num(d.damage, 0) });
+    const stack: ItemStack = { id, count, damage: num(d.damage, 0) };
+    if (d.enchants && typeof d.enchants === 'object' && !Array.isArray(d.enchants)) {
+      stack.enchants = d.enchants as ItemStack['enchants'];
+    }
+    const e = new ItemEntity(stack);
     e.loadBase(d);
     return e;
   }
@@ -255,6 +260,8 @@ export class Arrow extends Entity {
   owner: Entity | null = null;
   /** Dégâts par unité de vitesse (2 par défaut : 6 à pleine puissance). */
   damage = 2;
+  /** Niveau de l'enchantement Puissance sur l'arc (0 = aucun). */
+  powerLevel = 0;
   critical = false;
   /** Tirée par le joueur : il peut la ramasser. */
   fromPlayer = false;
@@ -329,6 +336,7 @@ export class Arrow extends Entity {
       const target = sweepEntities(game, this, this.owner, this.x, oy, this.z, dx, dy, dz, max);
       if (target) {
         let amount = Math.ceil(speed * this.damage);
+        if (this.powerLevel > 0) amount = Math.ceil(amount * (1 + 0.25 * (this.powerLevel + 1)));
         if (this.critical) amount += Math.floor(game.rng() * (amount / 2 + 2));
         if (target.hurt(game, amount, 'arrow', this.owner)) {
           if (this.fireTicks > 0) target.fireTicks = Math.max(target.fireTicks, 100);

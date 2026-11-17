@@ -136,6 +136,8 @@ shaped(['|#|', '|#|'], { '#': PLANKS, '|': I.STICK }, B.FENCE_GATE);
 shaped(['###', '###'], { '#': B.GLASS }, B.GLASS_PANE, 16);
 shaped(['###', '###'], { '#': I.IRON_INGOT }, B.IRON_BARS, 16);
 shaped(['###', 'BBB', '###'], { '#': PLANKS, B: I.BOOK }, B.BOOKSHELF);
+shaped([' B ', 'DOD', 'OOO'], { B: I.BOOK, D: I.DIAMOND, O: B.OBSIDIAN }, B.ENCHANTING_TABLE);
+shaped(['BBB', ' I ', 'III'], { B: B.IRON_BLOCK, I: I.IRON_INGOT }, B.ANVIL);
 
 // ---------------------------------------------------------------------------
 // Dalles (6 pour 3 blocs) et escaliers (4 pour 6 blocs)

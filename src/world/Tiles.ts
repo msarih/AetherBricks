@@ -29,6 +29,8 @@ const BASE_TILES = [
   'crafting_table_top', 'crafting_table_side', 'crafting_table_front',
   'furnace_top', 'furnace_side', 'furnace_front', 'furnace_front_on',
   'chest_top', 'chest_side', 'chest_front',
+  'enchanting_table_top', 'enchanting_table_side', 'enchanting_table_bottom',
+  'anvil_top', 'anvil_side',
   'bed_head_top', 'bed_foot_top', 'bed_head_side', 'bed_foot_side', 'bed_head_end', 'bed_foot_end',
   'oak_door_top', 'oak_door_bottom', 'iron_door_top', 'iron_door_bottom', 'trapdoor', 'ladder', 'torch',
   'glass_pane_top', 'iron_bars', 'spawner',

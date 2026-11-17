@@ -151,6 +151,8 @@ export const B = {
   SPONGE: 145,
   NETHERRACK: 146,
   IRON_DOOR: 147,
+  ENCHANTING_TABLE: 148,
+  ANVIL: 149,
 } as const;
 
 /** Nombre maximal d'identifiants de blocs (les objets commencent à 256). */

@@ -301,6 +301,14 @@ reg(B.CHEST, 'chest', 'Coffre', {
   tiles: { top: 'chest_top', bottom: 'chest_top', side: 'chest_side', front: 'chest_front' },
   shape: SHAPE.CHEST, rot: ROT.FACING, opaque: false, hardness: 2.5, ...wood, category: 'utilitaire',
 });
+reg(B.ENCHANTING_TABLE, 'enchanting_table', 'Table d\'enchantement', {
+  tiles: { top: 'enchanting_table_top', bottom: 'enchanting_table_bottom', side: 'enchanting_table_side' },
+  hardness: 5, ...rock, harvestTier: 1, category: 'utilitaire',
+});
+reg(B.ANVIL, 'anvil', 'Enclume', {
+  tiles: { top: 'anvil_top', bottom: 'anvil_side', side: 'anvil_side' },
+  hardness: 5, ...rock, harvestTier: 1, category: 'utilitaire',
+});
 reg(B.BED, 'bed', 'Lit', {
   tiles: { top: 'bed_head_top', bottom: 'oak_planks', side: 'bed_head_side' }, shape: SHAPE.BED, opaque: false,
   hardness: 0.2, sound: 'wood', itemTile: 'bed_item', stack: 1, category: 'utilitaire',

@@ -4,6 +4,7 @@
  */
 import type { ItemStack, Slot } from '../world/ItemStack';
 import { maxDamage } from '../world/ItemStack';
+import { enchantLines, hasEnchants } from '../world/Enchants';
 import { itemLabel } from '../world/Items';
 import type { UiHost } from './UiApi';
 
@@ -123,14 +124,16 @@ export function slider(host: UiHost, opts: SliderOptions, parent?: Element | nul
   return root;
 }
 
-/** Signature numérique d'une pile (−1 = vide) : sert à ne toucher au DOM que si la case a changé. */
-export function stackSig(s: Slot): number {
-  return s ? (s.damage * 1024 + s.count) * 512 + s.id : -1;
+/** Signature d'une pile ('' = vide) : sert à ne toucher au DOM que si la case a changé. */
+export function stackSig(s: Slot): string {
+  if (!s) return '';
+  if (!s.enchants) return `${s.id}:${s.count}:${s.damage}`;
+  return `${s.id}:${s.count}:${s.damage}:${JSON.stringify(s.enchants)}`;
 }
 
-/** Lignes de l'infobulle d'une pile : nom, puis durabilité si l'objet est usé. */
+/** Lignes de l'infobulle d'une pile : nom, enchantements, puis durabilité si l'objet est usé. */
 export function stackTooltip(s: ItemStack): string[] {
-  const lines = [itemLabel(s.id)];
+  const lines = [itemLabel(s.id), ...enchantLines(s.enchants)];
   const max = maxDamage(s.id);
   if (max > 0 && s.damage > 0) lines.push(`Durabilité : ${Math.max(0, max - s.damage)} / ${max}`);
   return lines;
@@ -142,7 +145,7 @@ export class ItemView {
   private readonly count: HTMLSpanElement;
   private readonly bar: HTMLDivElement;
   private readonly barFill: HTMLDivElement;
-  private sig = -1;
+  private sig = '\0';
   private iconId = 0;
 
   constructor(private readonly host: UiHost, parent?: Element | null, cls = '') {
@@ -164,6 +167,7 @@ export class ItemView {
       this.el.style.backgroundImage = url ? `url("${url}")` : '';
     }
     this.count.textContent = stack && stack.count !== 1 ? String(stack.count) : '';
+    this.el.classList.toggle('mc-enchanted', hasEnchants(stack));
     const max = stack ? maxDamage(stack.id) : 0;
     if (stack && max > 0 && stack.damage > 0) {
       const f = Math.max(0, Math.min(1, 1 - stack.damage / max));

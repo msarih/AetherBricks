@@ -11,6 +11,7 @@ import type { MobKind } from '../entity/MobModels';
 import { JUMP_VELOCITY, travel, updateMedium } from '../entity/Physics';
 import { Inventory } from '../game/Inventory';
 import type { GameMode } from '../world/Constants';
+import { armorProtectionFactor } from '../world/Enchants';
 import { getItem } from '../world/Items';
 import { makeStack, type ItemStack } from '../world/ItemStack';
 
@@ -133,7 +134,7 @@ export class Player extends Living implements PlayerLike {
     if (this.creative) return;
     const id = this.inventory.heldId;
     if (id === 0) return;
-    if (this.inventory.damageHeld(amount)) {
+    if (this.inventory.damageHeld(amount, game.rng)) {
       game.sound('tool_break', this.x, this.y + this.eyeHeight, this.z, 0.9);
       game.itemParticles(this.x, this.y + this.eyeHeight - 0.3, this.z, id, 8);
     }
@@ -370,11 +371,13 @@ export class Player extends Living implements PlayerLike {
     if (ARMOR_CAUSES.has(cause)) {
       const points = this.inventory.armorPoints();
       if (points > 0) {
-        if (this.inventory.damageArmor(Math.max(1, Math.floor(amount / 4)))) {
+        if (this.inventory.damageArmor(Math.max(1, Math.floor(amount / 4)), game.rng)) {
           game.sound('tool_break', this.x, this.y + 1, this.z, 0.9);
         }
         amount = (amount * (25 - points)) / 25;
       }
+      const epf = armorProtectionFactor(this.inventory.armor);
+      if (epf > 0) amount *= 1 - epf * 0.04;
     }
     this.exhaustion += 0.1;
     return amount;

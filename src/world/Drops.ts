@@ -38,30 +38,65 @@ export function canHarvest(blockId: number, tool: number): boolean {
 }
 
 /** Multiplicateur de vitesse de minage de l'outil tenu sur ce bloc (1 = main ou mauvais outil). */
-export function miningSpeed(blockId: number, tool: number): number {
+export function miningSpeed(blockId: number, tool: number, efficiency = 0): number {
   const def = BLOCKS[blockId];
   if (!def) return 1;
   const held = getItem(tool);
   const kind = held.tool;
   if (kind === null) return 1;
+  let speed = 1;
   if (kind === 'shears') {
-    if (isWool(blockId)) return 5;
-    if (isLeaves(blockId) || blockId === B.COBWEB) return 15;
+    if (isWool(blockId)) speed = 5;
+    else if (isLeaves(blockId) || blockId === B.COBWEB) speed = 15;
   } else if (kind === 'sword') {
-    if (blockId === B.COBWEB) return 15;
-    if (isLeaves(blockId) || isPlant(blockId)) return 1.5;
-    return 1;
+    if (blockId === B.COBWEB) speed = 15;
+    else if (isLeaves(blockId) || isPlant(blockId)) speed = 1.5;
+  } else if (kind === def.tool) {
+    speed = held.speed;
   }
-  return kind === def.tool ? held.speed : 1;
+  if (speed > 1 && efficiency > 0) speed += efficiency * efficiency + 1;
+  return speed;
 }
 
 /** Objets lâchés quand un joueur casse le bloc avec l'outil donné. rng() ∈ [0, 1). */
-export function blockDrops(id: number, meta: number, tool: number, rng: () => number): Drop[] {
+export function blockDrops(id: number, meta: number, tool: number, rng: () => number, fortune = 0, silkTouch = false): Drop[] {
   const def = BLOCKS[id];
   if (!def || id === B.AIR) return [];
   if (!canHarvest(id, tool)) return [];
   const shears = getItem(tool).tool === 'shears';
   const one = (dropId: number, count = 1): Drop[] => [{ id: dropId, count }];
+
+  if (silkTouch) {
+    if (isLeaves(id)) return one(id);
+    switch (id) {
+      case B.STONE:
+      case B.GRASS:
+      case B.FARMLAND:
+      case B.GRAVEL:
+      case B.CLAY:
+      case B.SNOW_BLOCK:
+      case B.COAL_ORE:
+      case B.IRON_ORE:
+      case B.GOLD_ORE:
+      case B.DIAMOND_ORE:
+      case B.EMERALD_ORE:
+      case B.REDSTONE_ORE:
+      case B.LAPIS_ORE:
+      case B.GLASS:
+      case B.GLASS_PANE:
+      case B.ICE:
+      case B.MELON:
+      case B.GLOWSTONE:
+      case B.BOOKSHELF:
+        return one(id);
+    }
+  }
+
+  const fortuneBonus = (): number => {
+    if (fortune <= 0) return 1;
+    const r = Math.floor(rng() * (fortune + 2)) - 1;
+    return r > 0 ? 1 + r : 1;
+  };
 
   // --- Feuillages : pousse du même bois, pomme pour le chêne ; le bloc lui-même aux cisailles ---
   if (isLeaves(id)) {
@@ -86,8 +121,10 @@ export function blockDrops(id: number, meta: number, tool: number, rng: () => nu
     case B.GRASS:
     case B.FARMLAND:
       return one(B.DIRT);
-    case B.GRAVEL:
-      return one(rng() < 0.1 ? I.FLINT : B.GRAVEL);
+    case B.GRAVEL: {
+      const flintChance = fortune <= 0 ? 0.1 : fortune === 1 ? 0.14 : fortune === 2 ? 0.25 : 1;
+      return one(rng() < flintChance ? I.FLINT : B.GRAVEL);
+    }
     case B.CLAY:
       return one(I.CLAY_BALL, 4);
     case B.SNOW_LAYER:
@@ -97,15 +134,15 @@ export function blockDrops(id: number, meta: number, tool: number, rng: () => nu
 
     // --- Minerais ---
     case B.COAL_ORE:
-      return one(I.COAL);
+      return one(I.COAL, fortuneBonus());
     case B.DIAMOND_ORE:
-      return one(I.DIAMOND);
+      return one(I.DIAMOND, fortuneBonus());
     case B.EMERALD_ORE:
-      return one(I.EMERALD);
+      return one(I.EMERALD, fortuneBonus());
     case B.REDSTONE_ORE:
-      return one(I.REDSTONE, randInt(rng, 4, 5));
+      return one(I.REDSTONE, randInt(rng, 4, 5) + (fortune > 0 ? randInt(rng, 0, fortune) : 0));
     case B.LAPIS_ORE:
-      return one(I.LAPIS, randInt(rng, 4, 8));
+      return one(I.LAPIS, randInt(rng, 4, 8) * fortuneBonus());
 
     // --- Rien du tout ---
     case B.GLASS:
@@ -133,24 +170,24 @@ export function blockDrops(id: number, meta: number, tool: number, rng: () => nu
     case B.COBWEB:
       return one(I.STRING);
     case B.MELON:
-      return one(I.MELON_SLICE, randInt(rng, 3, 7));
+      return one(I.MELON_SLICE, Math.min(9, randInt(rng, 3, 7) + (fortune > 0 ? randInt(rng, 0, fortune) : 0)));
 
     // --- Cultures : meta & 7 = stade de croissance, 7 = mûr ---
     case B.WHEAT: {
       if ((meta & 7) < 7) return one(I.WHEAT_SEEDS);
       const drops = one(I.WHEAT);
-      const seeds = randInt(rng, 0, 3);
+      const seeds = randInt(rng, 0, 3 + fortune);
       if (seeds > 0) drops.push({ id: I.WHEAT_SEEDS, count: seeds });
       return drops;
     }
     case B.CARROTS:
-      return one(I.CARROT, (meta & 7) < 7 ? 1 : randInt(rng, 1, 4));
+      return one(I.CARROT, (meta & 7) < 7 ? 1 : randInt(rng, 1, 4 + fortune));
     case B.POTATOES:
-      return one(I.POTATO, (meta & 7) < 7 ? 1 : randInt(rng, 1, 4));
+      return one(I.POTATO, (meta & 7) < 7 ? 1 : randInt(rng, 1, 4 + fortune));
 
     // --- Blocs fabriqués ---
     case B.GLOWSTONE:
-      return one(I.GLOWSTONE_DUST, randInt(rng, 2, 4));
+      return one(I.GLOWSTONE_DUST, Math.min(4, randInt(rng, 2, 4) + (fortune > 0 ? randInt(rng, 0, fortune) : 0)));
     case B.BOOKSHELF:
       return one(I.BOOK, 3);
     case B.FURNACE_LIT:

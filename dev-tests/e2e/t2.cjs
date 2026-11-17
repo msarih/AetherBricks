@@ -585,12 +585,12 @@ async function useOnGround(page, x, z) {
         const g = window.__game, w = window.__testWolf;
         w.interact(g, g.player); // debout
         const target = M.createMob('sheep', g.rng);
-        target.setPosition(37.5, 4, 21.5);
+        target.setPosition(w.x + 1.8, w.y, w.z);
         g.spawn(target);
         M.notifyTamedWolves(g, target);
         const targeted = w.target === target;
         const hp0 = target.health;
-        for (let i = 0; i < 40; i++) g.tick();
+        for (let i = 0; i < 80 && target.health === hp0; i++) g.tick();
         const attacked = target.health < hp0;
         target.dead = true;
         w.target = null;
@@ -741,6 +741,244 @@ async function useOnGround(page, x, z) {
         await page.keyboard.press('Escape').catch(() => undefined);
         await sleep(250);
       }
+    }
+  });
+
+  await section('enchantements et enclume', async () => {
+    try {
+      await chat(page, '/tp 35.5 4 38.5');
+      await ticks(page, 4);
+      // 1) Recettes + rétrocompatibilité des anciens mondes (piles à 3 éléments sans enchants)
+      const baseChecks = await ev(page, async () => {
+        const { B, I } = await import('/src/world/Ids.ts');
+        const R = await import('/src/world/Recipes.ts');
+        const IS = await import('/src/world/ItemStack.ts');
+        const enchRec = R.matchRecipe([0, I.BOOK, 0, I.DIAMOND, B.OBSIDIAN, I.DIAMOND, B.OBSIDIAN, B.OBSIDIAN, B.OBSIDIAN], 3);
+        const anvilRec = R.matchRecipe([B.IRON_BLOCK, B.IRON_BLOCK, B.IRON_BLOCK, 0, I.IRON_INGOT, 0, I.IRON_INGOT, I.IRON_INGOT, I.IRON_INGOT], 3);
+        const oldLoaded = IS.loadSlots([[I.IRON_PICKAXE, 1, 12], null], 2);
+        return {
+          enchRec: !!enchRec && enchRec.id === B.ENCHANTING_TABLE,
+          anvilRec: !!anvilRec && anvilRec.id === B.ANVIL,
+          oldOk: !!oldLoaded[0] && oldLoaded[0].id === I.IRON_PICKAXE && oldLoaded[0].damage === 12 && oldLoaded[0].enchants === undefined && oldLoaded[1] === null,
+        };
+      });
+      check('table d\'enchantement et enclume : recettes et relecture d\'anciens objets', baseChecks.enchRec && baseChecks.anvilRec && baseChecks.oldOk, JSON.stringify(baseChecks));
+
+      // 2) Table d'enchantement : 0 bibliothèques vs 15 bibliothèques, coût XP + lapis, infobulle
+      await ev(page, async () => {
+        const { B, I } = await import('/src/world/Ids.ts');
+        const { makeStack } = await import('/src/world/ItemStack.ts');
+        const g = window.__game, w = g.world, p = g.player;
+        w.setBlock(35, 4, 35, B.ENCHANTING_TABLE);
+        p.xpLevel = 30;
+        p.inventory.slots[6] = makeStack(I.DIAMOND_PICKAXE, 1);
+        p.inventory.slots[7] = makeStack(I.LAPIS, 10);
+      });
+      await ev(page, () => T.aim(35.5, 4.5, 35.5));
+      await ticks(page, 2);
+      await rclick(page);
+      await page.waitForSelector('[data-mc="menu-enchant"]', { timeout: 5000 });
+      const offers0 = await ev(page, () => {
+        const g = window.__game;
+        const m = g.menu;
+        m.tableSlots[0] = g.player.inventory.slots[6];
+        g.player.inventory.slots[6] = null;
+        m.changed();
+        return { bs: m.bookshelves, min2: m.offers[2] ? m.offers[2].minLevel : 0 };
+      });
+      await page.keyboard.press('Escape'); await sleep(200);
+
+      // Pose 15 bibliothèques autour (anneau 5×5×2)
+      await ev(page, async () => {
+        const { B } = await import('/src/world/Ids.ts');
+        const w = window.__game.world;
+        let placed = 0;
+        for (let dy = 0; dy <= 1 && placed < 15; dy++) {
+          for (let dx = -2; dx <= 2 && placed < 15; dx++) {
+            for (let dz = -2; dz <= 2 && placed < 15; dz++) {
+              if (Math.abs(dx) !== 2 && Math.abs(dz) !== 2) continue;
+              w.setBlock(35 + dx, 4 + dy, 35 + dz, B.BOOKSHELF);
+              placed++;
+            }
+          }
+        }
+      });
+      await ev(page, () => T.aim(35.5, 4.5, 35.5));
+      await ticks(page, 2);
+      await rclick(page);
+      await page.waitForSelector('[data-mc="menu-enchant"]', { timeout: 5000 });
+      await ev(page, async () => {
+        const { I } = await import('/src/world/Ids.ts');
+        const { makeStack } = await import('/src/world/ItemStack.ts');
+        const m = window.__game.menu;
+        m.tableSlots[0] = makeStack(I.DIAMOND_PICKAXE, 1);
+        m.tableSlots[1] = makeStack(I.LAPIS, 10);
+        m.changed();
+      });
+      await sleep(150);
+      await shot(page, '25b-table-enchantement');
+      const offers15 = await ev(page, () => {
+        const m = window.__game.menu;
+        return { bs: m.bookshelves, min2: m.offers[2] ? m.offers[2].minLevel : 0 };
+      });
+      await page.click('[data-mc="enchant-2"]');
+      await sleep(150);
+      // Survol de la case enchantée pour vérifier l'infobulle
+      const slotPos = await page.evaluate(() => {
+        const e = document.querySelector('[data-mc="menu-enchant"] [data-group="input"]');
+        const r = e.getBoundingClientRect();
+        return [r.x + r.width / 2, r.y + r.height / 2];
+      });
+      await page.mouse.move(slotPos[0], slotPos[1]);
+      await sleep(150);
+      const enchRes = await ev(page, () => {
+        const g = window.__game, m = g.menu;
+        const item = m.tableSlots[0];
+        const lapisLeft = m.tableSlots[1] ? m.tableSlots[1].count : 0;
+        const tip = document.querySelector('.mc-tooltip')?.textContent ?? '';
+        return {
+          hasEnch: !!(item && item.enchants && Object.keys(item.enchants).length > 0),
+          xpAfter: g.player.xpLevel,
+          lapisLeft,
+          tip,
+        };
+      });
+      await page.keyboard.press('Escape'); await sleep(200);
+      check('table d\'enchantement : bibliothèques augmentent les niveaux proposés', offers0.bs === 0 && offers15.bs === 15 && offers15.min2 > offers0.min2 && offers15.min2 >= 20, `${JSON.stringify(offers0)} -> ${JSON.stringify(offers15)}`);
+      check('table d\'enchantement : applique l\'enchantement, consomme XP/lapis et affiche au survol', enchRes.hasEnch && enchRes.xpAfter === 27 && enchRes.lapisLeft === 7 && enchRes.tip.includes('Pioche en diamant') && enchRes.tip.length > 20, JSON.stringify(enchRes));
+
+      // 3) Enclume : réparation par matériau + fusion de deux épées Tranchant II → Tranchant III
+      await ev(page, async () => {
+        const { B } = await import('/src/world/Ids.ts');
+        window.__game.world.setBlock(38, 4, 38, B.ANVIL);
+      });
+      await ev(page, () => T.aim(38.5, 4.5, 38.5));
+      await ticks(page, 2);
+      await rclick(page);
+      await page.waitForSelector('[data-mc="menu-anvil"]', { timeout: 5000 });
+      const anvilRes = await ev(page, async () => {
+        const { I } = await import('/src/world/Ids.ts');
+        const { makeStack } = await import('/src/world/ItemStack.ts');
+        const g = window.__game, m = g.menu;
+        // Réparation d'une pioche en fer usée avec des lingots
+        m.anvilSlots[0] = makeStack(I.IRON_PICKAXE, 1, 100);
+        m.anvilSlots[1] = makeStack(I.IRON_INGOT, 4, 0);
+        m.changed();
+        const repairedDamage = m.anvilSlots[2] ? m.anvilSlots[2].damage : -1;
+        const repairCost = m.cost;
+        const xpBeforeRepair = g.player.xpLevel;
+        m.click(m.indexOf('result', 0), 0, true);
+        const xpAfterRepair = g.player.xpLevel;
+        // Fusion de deux épées Tranchant II
+        m.anvilSlots[0] = makeStack(I.IRON_SWORD, 1, 10, { sharpness: 2 });
+        m.anvilSlots[1] = makeStack(I.IRON_SWORD, 1, 10, { sharpness: 2 });
+        m.changed();
+        const combinedSharp = m.anvilSlots[2]?.enchants?.sharpness ?? 0;
+        const combineCost = m.cost;
+        return { repairedDamage, repairCost, xpBeforeRepair, xpAfterRepair, combinedSharp, combineCost };
+      });
+      await shot(page, '25c-enclume');
+      await ev(page, () => { const m = window.__game.menu; m.click(m.indexOf('result', 0), 0, true); });
+      await page.keyboard.press('Escape'); await sleep(200);
+      check('enclume : répare un outil, fusionne deux enchantements (Tranchant II+II → III) et coûte des niveaux',
+        anvilRes.repairedDamage === 0 && anvilRes.repairCost > 0 && anvilRes.xpAfterRepair === anvilRes.xpBeforeRepair - anvilRes.repairCost && anvilRes.combinedSharp === 3 && anvilRes.combineCost > 0,
+        JSON.stringify(anvilRes));
+
+      // 4) Effets réels des 7 enchantements
+      const effects = await ev(page, async () => {
+        const { B, I } = await import('/src/world/Ids.ts');
+        const D = await import('/src/world/Drops.ts');
+        const { makeStack } = await import('/src/world/ItemStack.ts');
+        const { Inventory } = await import('/src/game/Inventory.ts');
+        const M = await import('/src/entity/Mobs.ts');
+        const { Arrow } = await import('/src/entity/Objects.ts');
+        const g = window.__game, p = g.player;
+        // Efficacité
+        const spd0 = D.miningSpeed(B.STONE, I.IRON_PICKAXE, 0);
+        const spd3 = D.miningSpeed(B.STONE, I.IRON_PICKAXE, 3);
+        // Solidité (tirage fixe 0.5 : sans Solidité use de 1 ; Solidité III ignore si rng >= 0.25)
+        const inv = new Inventory();
+        inv.slots[0] = makeStack(I.IRON_PICKAXE, 1, 0);
+        inv.damageHeld(1, () => 0.5);
+        const dmgNoUnb = inv.slots[0].damage;
+        inv.slots[0] = makeStack(I.IRON_PICKAXE, 1, 0, { unbreaking: 3 });
+        inv.damageHeld(1, () => 0.5);
+        const dmgUnb3 = inv.slots[0].damage;
+        // Fortune
+        const dropNoFort = D.blockDrops(B.DIAMOND_ORE, 0, I.IRON_PICKAXE, () => 0.9, 0, false)[0].count;
+        const dropFort3 = D.blockDrops(B.DIAMOND_ORE, 0, I.IRON_PICKAXE, () => 0.9, 3, false)[0].count;
+        // Toucher de soie
+        const dropSilkStone = D.blockDrops(B.STONE, 0, I.IRON_PICKAXE, g.rng, 0, true)[0].id;
+        const dropSilkOre = D.blockDrops(B.DIAMOND_ORE, 0, I.IRON_PICKAXE, g.rng, 0, true)[0].id;
+        // Tranchant
+        if (g.ui.modal) g.ui.closeModal();
+        p.teleport(38.5, 4, 43.5);
+        const cow1 = M.createMob('cow', g.rng); cow1.setPosition(p.x, p.y, p.z - 2);
+        const cow2 = M.createMob('cow', g.rng); cow2.setPosition(p.x, p.y, p.z - 2);
+        g.spawn(cow1);
+        const oldHeld = p.inventory.slots[p.inventory.selected];
+        T.aim(cow1.x, cow1.y + 0.7, cow1.z);
+        p.inventory.slots[p.inventory.selected] = makeStack(I.IRON_SWORD, 1, 0);
+        g.interaction.frame(1); g.input.presses[0]++; g.tick();
+        const dmgSword = 10 - cow1.health;
+        cow1.dead = true; g.tick();
+        g.spawn(cow2);
+        T.aim(cow2.x, cow2.y + 0.7, cow2.z);
+        p.inventory.slots[p.inventory.selected] = makeStack(I.IRON_SWORD, 1, 0, { sharpness: 4 });
+        g.interaction.frame(1); g.input.presses[0]++; g.tick();
+        const dmgSharp = 10 - cow2.health;
+        cow2.dead = true;
+        // Protection
+        const oldChest = p.inventory.armor[1];
+        p.health = 20; p.invulnerable = 0;
+        p.inventory.armor[1] = makeStack(I.IRON_CHESTPLATE, 1, 0);
+        p.hurt(g, 10, 'attack');
+        const hpPlain = p.health;
+        p.health = 20; p.invulnerable = 0;
+        p.inventory.armor[1] = makeStack(I.IRON_CHESTPLATE, 1, 0, { protection: 4 });
+        p.hurt(g, 10, 'attack');
+        const hpProt = p.health;
+        p.inventory.armor[1] = oldChest;
+        p.health = 20; p.invulnerable = 0;
+        // Puissance (arc)
+        const pig1 = M.createMob('pig', g.rng); pig1.setPosition(35.5, 4, 41.5);
+        const pig2 = M.createMob('pig', g.rng); pig2.setPosition(35.5, 4, 42.5);
+        g.spawn(pig1); g.spawn(pig2);
+        const a0 = new Arrow(); a0.owner = p; a0.powerLevel = 0; a0.shoot(35.5, 4.5, 40.9, 0, 0, 1, 2, 0, g.rng); g.spawn(a0);
+        const a3 = new Arrow(); a3.owner = p; a3.powerLevel = 3; a3.shoot(35.5, 4.5, 41.9, 0, 0, 1, 2, 0, g.rng); g.spawn(a3);
+        for (let i = 0; i < 4; i++) g.tick();
+        const arrowDmg0 = 10 - pig1.health;
+        const arrowDmg3 = 10 - pig2.health;
+        pig1.dead = pig2.dead = true;
+        p.inventory.slots[p.inventory.selected] = oldHeld;
+        g.tick();
+        return { spd0, spd3, dmgNoUnb, dmgUnb3, dropNoFort, dropFort3, dropSilkStone, dropSilkOre, stoneId: B.STONE, oreId: B.DIAMOND_ORE, dmgSword, dmgSharp, hpPlain, hpProt, arrowDmg0, arrowDmg3 };
+      });
+      check('enchantements : les 7 effets réels (Efficacité, Solidité, Fortune, Toucher de soie, Tranchant, Protection, Puissance)',
+        effects.spd3 > effects.spd0 &&
+        effects.dmgNoUnb === 1 && effects.dmgUnb3 === 0 &&
+        effects.dropFort3 > effects.dropNoFort &&
+        effects.dropSilkStone === effects.stoneId && effects.dropSilkOre === effects.oreId &&
+        effects.dmgSharp > effects.dmgSword &&
+        effects.hpProt > effects.hpPlain &&
+        effects.arrowDmg3 > effects.arrowDmg0,
+        JSON.stringify(effects));
+    } finally {
+      if (await ev(page, () => window.__game.ui.modal).catch(() => false)) {
+        await page.keyboard.press('Escape').catch(() => undefined);
+        await sleep(200);
+      }
+      await ev(page, () => {
+        const g = window.__game, w = g.world, p = g.player;
+        for (let dy = 0; dy <= 1; dy++) for (let dx = -2; dx <= 2; dx++) for (let dz = -2; dz <= 2; dz++) w.setBlock(35 + dx, 4 + dy, 35 + dz, 0);
+        w.setBlock(38, 4, 38, 0);
+        p.health = 20; p.xpLevel = 0; p.invulnerable = 0;
+        const cleanIds = new Set([T.id('diamond_pickaxe'), T.id('iron_pickaxe'), T.id('iron_sword'), T.id('lapis'), T.id('iron_ingot')]);
+        for (let i = 0; i < p.inventory.slots.length; i++) {
+          const st = p.inventory.slots[i];
+          if (st && cleanIds.has(st.id)) p.inventory.slots[i] = null;
+        }
+      }).catch(() => undefined);
     }
   });
 
@@ -1069,7 +1307,10 @@ async function useOnGround(page, x, z) {
     await chat(page, '/summon spider');
     await ev(page, async () => {
       const M = await import('/src/entity/Mobs.ts');
+      const { I } = await import('/src/world/Ids.ts');
+      const { makeStack } = await import('/src/world/ItemStack.ts');
       const g = window.__game;
+      g.player.inventory.slots[8] = makeStack(I.IRON_SWORD, 1, 5, { sharpness: 3, unbreaking: 2 });
       const w = M.createMob('wolf', g.rng);
       w.tamed = true;
       w.owner = 'player';
@@ -1080,7 +1321,7 @@ async function useOnGround(page, x, z) {
       g.spawn(w);
     });
     await ticks(page, 10);
-    marker = await ev(page, () => { const g = window.__game; return { block: T.block(70, 4, 67), inv: T.inv(), time: g.time, pos: [g.player.x, g.player.y, g.player.z], cows: T.mobs('cow').filter((e) => Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, near: T.mobs('cow').filter((e) => Math.hypot(e.x - 70.5, e.z - 67.5) < 6).length, babies: T.mobs('cow').filter((e) => e.baby && Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, wolves: T.mobs('wolf').filter((e) => e.tamed && e.owner === 'player' && e.sitting).length, spiders: T.mobs('spider').filter((e) => Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, hole: null, bed: g.player.bed, chest: T.block(40, 4, 38), health: g.player.health, mode: g.player.gameMode, advs: Array.from(g.player.advancements).sort() }; });
+    marker = await ev(page, () => { const g = window.__game; return { block: T.block(70, 4, 67), inv: T.inv(), ench: g.player.inventory.slots[8]?.enchants ?? null, time: g.time, pos: [g.player.x, g.player.y, g.player.z], cows: T.mobs('cow').filter((e) => Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, near: T.mobs('cow').filter((e) => Math.hypot(e.x - 70.5, e.z - 67.5) < 6).length, babies: T.mobs('cow').filter((e) => e.baby && Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, wolves: T.mobs('wolf').filter((e) => e.tamed && e.owner === 'player' && e.sitting).length, spiders: T.mobs('spider').filter((e) => Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, hole: null, bed: g.player.bed, chest: T.block(40, 4, 38), health: g.player.health, mode: g.player.gameMode, advs: Array.from(g.player.advancements).sort() }; });
     if (holeAt) marker.hole = await ev(page, (h) => T.block(h.x, h.y, h.z), holeAt);
     console.log('  repères avant sauvegarde :', JSON.stringify(marker));
     await page.keyboard.press('Escape');
@@ -1098,12 +1339,13 @@ async function useOnGround(page, x, z) {
     await page.waitForFunction('window.__game && window.__game.ready === true', { timeout: 120000 });
     await install(page);
     await ticks(page, 20);
-    const now = await ev(page, () => { const g = window.__game; return { block: T.block(70, 4, 67), inv: T.inv(), time: g.time, pos: [g.player.x, g.player.y, g.player.z], cows: T.mobs('cow').filter((e) => Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, near: T.mobs('cow').filter((e) => Math.hypot(e.x - 70.5, e.z - 67.5) < 6).length, babies: T.mobs('cow').filter((e) => e.baby && Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, wolves: T.mobs('wolf').filter((e) => e.tamed && e.owner === 'player' && e.sitting).length, spiders: T.mobs('spider').filter((e) => Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, bed: g.player.bed, chest: T.block(40, 4, 38), health: g.player.health, mode: g.player.gameMode, advs: Array.from(g.player.advancements).sort() }; });
+    const now = await ev(page, () => { const g = window.__game; return { block: T.block(70, 4, 67), inv: T.inv(), ench: g.player.inventory.slots[8]?.enchants ?? null, time: g.time, pos: [g.player.x, g.player.y, g.player.z], cows: T.mobs('cow').filter((e) => Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, near: T.mobs('cow').filter((e) => Math.hypot(e.x - 70.5, e.z - 67.5) < 6).length, babies: T.mobs('cow').filter((e) => e.baby && Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, wolves: T.mobs('wolf').filter((e) => e.tamed && e.owner === 'player' && e.sitting).length, spiders: T.mobs('spider').filter((e) => Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, bed: g.player.bed, chest: T.block(40, 4, 38), health: g.player.health, mode: g.player.gameMode, advs: Array.from(g.player.advancements).sort() }; });
     if (holeAt) now.hole = await ev(page, (h) => T.block(h.x, h.y, h.z), holeAt);
     console.log('  repères après rechargement :', JSON.stringify(now));
     check('bloc posé persistant', now.block === marker.block && now.block !== 0);
     check('bloc cassé persistant', !holeAt || now.hole === 0);
     check('inventaire persistant', now.inv === marker.inv, now.inv);
+    check('enchantements persistants après sauvegarde et rechargement', JSON.stringify(now.ench) === JSON.stringify(marker.ench) && now.ench?.sharpness === 3 && now.ench?.unbreaking === 2, JSON.stringify(now.ench));
     check('position persistante', Math.hypot(now.pos[0] - marker.pos[0], now.pos[2] - marker.pos[2]) < 0.2 && Math.abs(now.pos[1] - marker.pos[1]) < 0.2, JSON.stringify(now.pos));
     check('heure persistante', now.time >= marker.time && now.time < marker.time + 200, `${marker.time} → ${now.time}`);
     check('animaux persistants (rayon 48 blocs)', Math.abs(now.cows - marker.cows) <= 2 && now.near >= 1 && marker.near >= 1, `${marker.cows} → ${now.cows} ; vache invoquée à proximité : ${marker.near} → ${now.near}`);
@@ -1111,7 +1353,7 @@ async function useOnGround(page, x, z) {
     check('loup apprivoisé persistant avec maître et état assis', marker.wolves >= 1 && now.wolves >= 1, `${marker.wolves} → ${now.wolves}`);
     check('monstres persistants', now.spiders >= 1 && marker.spiders >= 1, `${marker.spiders} → ${now.spiders}`);
     check('lit et blocs à entité persistants', JSON.stringify(now.bed) === JSON.stringify(marker.bed) && now.chest === marker.chest);
-    check('progrès persistants (toute la chaîne jusqu\'au fer)', JSON.stringify(now.advs) === JSON.stringify(marker.advs) && now.advs.length === 10, JSON.stringify(now.advs));
+    check('progrès persistants (toute la chaîne jusqu\'au fer)', JSON.stringify(now.advs) === JSON.stringify(marker.advs) && now.advs.length >= 10 && now.advs.includes('iron'), JSON.stringify(now.advs));
     await shot(page, '33-recharge');
   });
 

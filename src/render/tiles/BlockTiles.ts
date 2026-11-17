@@ -1488,6 +1488,40 @@ def('hay_top', (p) => {
   });
 });
 
+def('enchanting_table_bottom', (p) => {
+  p.each(() => shade(0x1b122b, 0.85 + p.rnd() * 0.3));
+});
+def('enchanting_table_top', (p) => {
+  p.each((x, y) => {
+    const border = x === 0 || x === 15 || y === 0 || y === 15;
+    if (border) return (x <= 2 || x >= 13) && (y <= 2 || y >= 13) ? 0x5be3e8 : shade(0x1b122b, 0.9 + p.rnd() * 0.25);
+    if (x >= 2 && x <= 13 && y >= 2 && y <= 13) return shade(0x9e1b24, 0.9 + p.rnd() * 0.2);
+    return shade(0x1b122b, 0.9 + p.rnd() * 0.25);
+  });
+});
+def('enchanting_table_side', (p) => {
+  p.each((x, y) => {
+    if (y <= 3) return shade(0x9e1b24, 0.85 + p.rnd() * 0.2);
+    if (y === 4) return 0x5be3e8;
+    return shade(0x1b122b, 0.85 + p.rnd() * 0.3);
+  });
+});
+
+def('anvil_top', (p) => {
+  p.each((x, y) => {
+    if (x >= 2 && x <= 13 && y >= 4 && y <= 11) return shade(0x4b4e54, 0.92 + p.rnd() * 0.16);
+    return shade(0x303236, 0.9 + p.rnd() * 0.15);
+  });
+});
+def('anvil_side', (p) => {
+  p.each((x, y) => {
+    if (y <= 4) return shade(0x4b4e54, 0.92 + p.rnd() * 0.16);
+    if (y >= 11) return shade(0x3a3c42, 0.9 + p.rnd() * 0.15);
+    if (x >= 4 && x <= 11) return shade(0x2d2f34, 0.9 + p.rnd() * 0.15);
+    return shade(0x404248, 0.9 + p.rnd() * 0.15);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Fluides et feu (images animées)
 // ---------------------------------------------------------------------------
