@@ -56,6 +56,10 @@ export interface InteractionHost extends GameApi {
   openMenu(menu: Menu): void;
   /** Le joueur clique sur un lit. */
   trySleep(x: number, y: number, z: number, meta: number): void;
+  /** Clic droit avec une carte vierge en main. */
+  createMap(): void;
+  /** Un panneau vient d'être posé en (x, y, z) : ouvrir la saisie de son texte. */
+  openSignEditor(x: number, y: number, z: number): void;
 }
 
 /** Portée de la main, en blocs. */
@@ -307,6 +311,7 @@ export class Interaction {
     const creative = p.creative;
 
     w.host.effect('break', x, y, z, id, meta);
+    p.addStat(`mined:${id}`);
     let drops: Drop[] = [];
 
     const heldStack = p.inventory.held;
@@ -367,6 +372,7 @@ export class Interaction {
     const crit = p.fallDistance > 0 && !p.onGround && !p.inWater && !p.onLadder && !p.flying;
     if (crit) damage *= 1.5;
     const ok = e.hurt(g, damage, 'attack', p);
+    if (ok) p.addStat('damage_dealt', damage);
     const ey = e.y + e.height * 0.6;
     if (ok) {
       if (e instanceof Living) notifyTamedWolves(g, e);
@@ -631,6 +637,7 @@ export class Interaction {
       return true;
     }
 
+    if (held === I.SIGN) return this.placeSign();
     if (item.places >= 0) return this.place(item.places);
     return false;
   }
@@ -717,6 +724,13 @@ export class Interaction {
         this.bobber = nb;
         g.sound('bow', ex, ey, ez, 0.5, 0.4 + g.rng() * 0.2);
       }
+      this.swing();
+      return true;
+    }
+
+    if (held === I.MAP) {
+      if (!this.freshClick) return false;
+      g.createMap();
       this.swing();
       return true;
     }
@@ -888,6 +902,43 @@ export class Interaction {
     // le bloc a pu être aussitôt refusé par le monde (support manquant…)
     if (w.getBlock(x, y, z) !== id && !def.gravity) return false;
     return this.placed(x, y, z, id);
+  }
+
+  /**
+   * Panneau : posé sur le dessus d'un bloc, il se dresse sur un poteau, face au joueur (16 orientations) ;
+   * posé contre une face latérale, il se plaque au mur. Puis la saisie du texte s'ouvre.
+   */
+  private placeSign(): boolean {
+    const g = this.game;
+    const w = g.world;
+    const h = this.hit;
+    const face = h.face;
+    if (face === FACE_DOWN) return false;
+    let x = h.x;
+    let y = h.y;
+    let z = h.z;
+    const onto = BLOCK_REPLACEABLE[h.id] !== 1;
+    if (onto) {
+      x += FACE_DX[face];
+      y += FACE_DY[face];
+      z += FACE_DZ[face];
+    }
+    if (!this.replaceable(x, y, z)) return false;
+    const side = faceFacing(face);
+    let id: number = B.SIGN;
+    let meta: number;
+    if (onto && side >= 0) {
+      id = B.WALL_SIGN;
+      meta = side;
+    } else {
+      // la face écrite regarde le joueur : direction (sin r·π/8, cos r·π/8) = opposé du regard
+      meta = Math.round(g.player.yaw / (Math.PI / 8)) & 15;
+    }
+    if (!canStay(w, x, y, z, id, meta)) return false;
+    if (!w.setBlock(x, y, z, id, meta) || w.getBlock(x, y, z) !== id) return false;
+    this.placed(x, y, z, id);
+    g.openSignEditor(x, y, z);
+    return true;
   }
 
   private placeDoor(x: number, y: number, z: number, id: number, pf: number): boolean {

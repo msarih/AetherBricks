@@ -15,6 +15,7 @@ const VIEW_HALF = 0.82;
 
 export class ItemIcons {
   private readonly cache = new Map<number, string>();
+  private readonly tileCache = new Map<number, string>();
   private readonly target: THREE.WebGLRenderTarget;
   private readonly scene = new THREE.Scene();
   private readonly camera: THREE.OrthographicCamera;
@@ -60,6 +61,16 @@ export class ItemIcons {
       const def = getItem(itemId);
       url = def.tile >= 0 ? this.flatIcon(def.tile, itemTint(itemId)) : this.blockIcon(itemId);
       this.cache.set(itemId, url);
+    }
+    return url;
+  }
+
+  /** Data URL (PNG) d'une tuile 16×16 de l'atlas, mise en cache (images de la boussole, de l'horloge). */
+  tile(tile: number): string {
+    let url = this.tileCache.get(tile);
+    if (url === undefined) {
+      url = this.flatIcon(tile, 0xffffff);
+      this.tileCache.set(tile, url);
     }
     return url;
   }

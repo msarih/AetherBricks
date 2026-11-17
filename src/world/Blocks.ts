@@ -36,6 +36,8 @@ export const SHAPE = {
   PRESSURE_PLATE: 25,
   PISTON_HEAD: 26,
   PORTAL: 27,
+  /** Panneau : rien dans le maillage des chunks, dessiné à part avec son texte (render/SignRenderer). */
+  SIGN: 28,
 } as const;
 
 export const TINT = { NONE: 0, GRASS: 1, FOLIAGE: 2, FIXED: 3 } as const;
@@ -500,6 +502,15 @@ reg(B.NETHER_PORTAL, 'nether_portal', 'Portail du Nether', {
 });
 reg(B.NETHER_QUARTZ_ORE, 'nether_quartz_ore', 'Minerai de quartz du Nether', {
   tiles: 'nether_quartz_ore', hardness: 3, tool: 'pickaxe', harvestTier: 1, sound: 'stone', category: 'nature',
+});
+// Panneaux : posés par l'objet « Panneau » (sur un bloc : sur poteau ; contre un mur : mural)
+reg(B.SIGN, 'standing_sign', 'Panneau', {
+  tiles: 'oak_planks', shape: SHAPE.SIGN, solid: false, opaque: false, hardness: 1, tool: 'axe',
+  sound: 'wood', needsSupport: true, hasItem: false, category: 'aucune',
+});
+reg(B.WALL_SIGN, 'wall_sign', 'Panneau mural', {
+  tiles: 'oak_planks', shape: SHAPE.SIGN, solid: false, opaque: false, hardness: 1, tool: 'axe',
+  sound: 'wood', needsSupport: true, hasItem: false, category: 'aucune',
 });
 
 // Identifiants non attribués : on les fait pointer vers un bloc de secours pour éviter tout crash

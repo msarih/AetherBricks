@@ -12,6 +12,108 @@ export function sized<E extends HTMLElement>(e: E, w: number): E {
   return e;
 }
 
+// ------------------------------------------------------------------------------------- panneau
+
+/** Lignes d'un panneau (voir game/BlockEntities : SIGN_LINES, SIGN_LINE_MAX). */
+const SIGN_LINES = 4;
+const SIGN_LINE_MAX = 15;
+
+/**
+ * Saisie du texte d'un panneau qui vient d'être posé (Minecraft 1.12) : 4 lignes de 15 caractères,
+ * Entrée ou flèche bas pour la ligne suivante, flèche haut pour la précédente, Échap ou « Terminé » pour finir.
+ * Le jeu continue pendant la saisie.
+ */
+export class SignScreen implements Screen {
+  readonly el: HTMLDivElement;
+  readonly pausing = false;
+  private readonly inputs: HTMLInputElement[] = [];
+  private done = false;
+
+  constructor(
+    private readonly ctx: UiContext,
+    private readonly x: number,
+    private readonly y: number,
+    private readonly z: number,
+    lines: readonly string[],
+  ) {
+    const host = ctx.host;
+    this.el = el('div', 'mc-screen mc-screen-dim mc-menu');
+    this.el.dataset.mc = 'sign';
+    el('div', 'mc-title', this.el, 'Modifier le texte du panneau');
+    el('div', 'mc-gap', this.el);
+    const board = el('div', 'mc-sign-board', this.el);
+    for (let i = 0; i < SIGN_LINES; i++) {
+      const input = el('input', 'mc-sign-line', board);
+      input.type = 'text';
+      input.maxLength = SIGN_LINE_MAX;
+      input.spellcheck = false;
+      input.autocomplete = 'off';
+      input.value = lines[i] ?? '';
+      input.dataset.mc = `sign-line-${i}`;
+      this.inputs.push(input);
+    }
+    el('div', 'mc-sign-post', this.el);
+    el('div', 'mc-gap', this.el);
+    sized(button(host, 'Terminé', () => this.finish(), 'sign-done', this.el), 200);
+    // un clic à côté ne doit pas faire perdre la ligne en cours
+    this.el.addEventListener('mousedown', (e) => {
+      if (!(e.target instanceof HTMLInputElement) && !(e.target instanceof HTMLButtonElement)) e.preventDefault();
+    });
+  }
+
+  opened(): void {
+    this.inputs[0].focus();
+  }
+
+  key(e: KeyboardEvent): boolean {
+    const at = this.inputs.indexOf(document.activeElement as HTMLInputElement);
+    switch (e.code) {
+      case 'Escape':
+        e.preventDefault();
+        if (!e.repeat) this.finish();
+        return true;
+      case 'Enter':
+      case 'NumpadEnter':
+      case 'ArrowDown':
+        if (e.isComposing) return false;
+        e.preventDefault();
+        this.focusLine(at < 0 ? 0 : (at + 1) % SIGN_LINES);
+        return true;
+      case 'ArrowUp':
+        e.preventDefault();
+        this.focusLine(at <= 0 ? SIGN_LINES - 1 : at - 1);
+        return true;
+      default:
+        if (at < 0) this.inputs[0].focus();
+        return false;
+    }
+  }
+
+  private focusLine(i: number): void {
+    const input = this.inputs[i];
+    input.focus();
+    const end = input.value.length;
+    input.setSelectionRange(end, end);
+  }
+
+  /** Le texte est enregistré même si l'écran est fermé autrement (mort, retour au menu). */
+  private save(): void {
+    if (this.done) return;
+    this.done = true;
+    this.ctx.host.game?.setSignText(this.x, this.y, this.z, this.inputs.map((i) => i.value));
+  }
+
+  private finish(): void {
+    this.save();
+    this.ctx.closeScreen();
+    this.ctx.host.game?.resume();
+  }
+
+  dispose(): void {
+    this.save();
+  }
+}
+
 // ---------------------------------------------------------------------------------------- pause
 
 export class PauseScreen implements Screen {
@@ -30,6 +132,7 @@ export class PauseScreen implements Screen {
     this.buttons.push(
       sized(button(host, 'Retour au jeu', () => this.resume(), 'resume', this.el), 204),
       sized(button(host, 'Options…', () => ctx.openOptions(() => ctx.openPause(), true), 'options', this.el), 204),
+      sized(button(host, 'Statistiques', () => ctx.openStats(() => ctx.openPause()), 'stats', this.el), 204),
       sized(button(host, 'Sauvegarder et quitter', () => this.quit(), 'quit', this.el), 204),
     );
     this.error = el('div', 'mc-error', this.el);
@@ -52,7 +155,7 @@ export class PauseScreen implements Screen {
     this.busy = true;
     this.error.textContent = '';
     for (const b of this.buttons) b.disabled = true;
-    setButtonLabel(this.buttons[2], 'Sauvegarde du monde…');
+    setButtonLabel(this.buttons[3], 'Sauvegarde du monde…');
     attempt(() => ctx.host.quitToTitle()).then(
       () => {
         // l'application affiche en principe le menu principal elle-même ; sinon on s'en charge
@@ -66,7 +169,7 @@ export class PauseScreen implements Screen {
         }
         this.busy = false;
         for (const b of this.buttons) b.disabled = false;
-        setButtonLabel(this.buttons[2], 'Sauvegarder et quitter');
+        setButtonLabel(this.buttons[3], 'Sauvegarder et quitter');
         this.error.textContent = message;
       },
     );

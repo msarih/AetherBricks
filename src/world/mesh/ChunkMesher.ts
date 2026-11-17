@@ -1098,6 +1098,9 @@ function meshCell(id: number, meta: number): void {
       }
       return;
     }
+    case SHAPE.SIGN:
+      // dessiné avec son texte par render/SignRenderer
+      return;
     case SHAPE.PORTAL: {
       tmpBoxes.length = 0;
       selectionBoxes(id, meta, nb, tmpBoxes);

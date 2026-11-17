@@ -166,6 +166,9 @@ export const B = {
   REDSTONE_TORCH_OFF: 160,
   NETHER_PORTAL: 161,
   NETHER_QUARTZ_ORE: 162,
+  /** Panneau sur poteau (méta : orientation 0..15, par seizièmes de tour) et panneau mural (méta : direction de sa face 0..3). */
+  SIGN: 163,
+  WALL_SIGN: 164,
 } as const;
 
 /** Nombre maximal d'identifiants de blocs (les objets commencent à 256). */
@@ -233,6 +236,10 @@ export const I = {
   COOKED_FISH: 314,
   GOLD_NUGGET: 315,
   MAGMA_CREAM: 316,
+  COMPASS: 317,
+  CLOCK: 318,
+  /** Carte vierge ; la carte remplie garde son numéro dans le champ « usure » de la pile. */
+  MAP: 319,
 
   WOODEN_PICKAXE: 320,
   WOODEN_AXE: 321,
@@ -294,6 +301,9 @@ export const I = {
   DYE_GREEN: 383,
   DYE_RED: 384,
   DYE_BLACK: 385,
+
+  FILLED_MAP: 386,
+  SIGN: 387,
 } as const;
 
 export const ITEM_ID_LIMIT = 400;

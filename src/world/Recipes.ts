@@ -118,6 +118,10 @@ ARMOR_MATERIAL_INGREDIENTS.forEach((material, m) => {
 shaped([' |S', '| S', ' |S'], { '|': I.STICK, S: I.STRING }, I.BOW);
 shaped(['F', '|', 'P'], { F: I.FLINT, '|': I.STICK, P: I.FEATHER }, I.ARROW, 4);
 shaped(['  |', ' |S', '| S'], { '|': I.STICK, S: I.STRING }, I.FISHING_ROD);
+shaped([' # ', '#R#', ' # '], { '#': I.IRON_INGOT, R: I.REDSTONE }, I.COMPASS);
+shaped([' # ', '#R#', ' # '], { '#': I.GOLD_INGOT, R: I.REDSTONE }, I.CLOCK);
+shaped(['PPP', 'PCP', 'PPP'], { P: I.PAPER, C: I.COMPASS }, I.MAP);
+shaped(['###', '###', ' | '], { '#': PLANKS, '|': I.STICK }, I.SIGN, 3);
 shaped([' #', '# '], { '#': I.IRON_INGOT }, I.SHEARS);
 shapeless([I.IRON_INGOT, I.FLINT], I.FLINT_AND_STEEL);
 shaped(['# #', ' # '], { '#': I.IRON_INGOT }, I.BUCKET);

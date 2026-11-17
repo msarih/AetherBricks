@@ -76,7 +76,7 @@ const MAX_SCHEDULED_PER_TICK = 3000;
 const RANDOM_TICK_RADIUS = 5;
 
 function hasBlockEntity(id: number): boolean {
-  return id === B.CHEST || id === B.FURNACE || id === B.FURNACE_LIT || id === B.SPAWNER;
+  return id === B.CHEST || id === B.FURNACE || id === B.FURNACE_LIT || id === B.SPAWNER || id === B.SIGN || id === B.WALL_SIGN;
 }
 
 export class World {

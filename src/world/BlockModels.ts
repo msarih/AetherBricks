@@ -266,6 +266,7 @@ export function collisionBoxes(id: number, meta: number, nb: NeighborFn, out: nu
     case SHAPE.TORCH:
     case SHAPE.VINE:
     case SHAPE.FIRE:
+    case SHAPE.SIGN:
       return;
     case SHAPE.CUBE:
       out.push(0, 0, 0, 16, 16, 16);
@@ -454,6 +455,11 @@ export function selectionBoxes(id: number, meta: number, nb: NeighborFn, out: nu
     case SHAPE.PORTAL:
       if (meta & 1) out.push(6, 0, 0, 10, 16, 16);
       else out.push(0, 0, 6, 16, 16, 10);
+      return;
+    case SHAPE.SIGN:
+      // panneau mural : planche de 2/16 contre le mur, entre 4,5 et 12,5 de haut ; sur poteau : boîte centrale
+      if (id === B.WALL_SIGN) edgeBox(meta & 3, 2, 4.5, 12.5, out);
+      else out.push(4, 0, 4, 12, 16, 12);
       return;
     case SHAPE.CUBE:
       out.push(0, 0, 0, 16, 16, 16);

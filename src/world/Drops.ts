@@ -151,6 +151,9 @@ export function blockDrops(id: number, meta: number, tool: number, rng: () => nu
     // --- Rien du tout ---
     case B.REDSTONE_WIRE:
       return one(I.REDSTONE);
+    case B.SIGN:
+    case B.WALL_SIGN:
+      return one(I.SIGN);
     case B.REDSTONE_TORCH_OFF:
       return one(B.REDSTONE_TORCH);
     case B.REDSTONE_LAMP_LIT:

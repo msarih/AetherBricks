@@ -25,6 +25,8 @@ export class Inventory {
   cursor: Slot = null;
   /** Lâche une pile dans le monde (branché par le joueur). */
   drop: (stack: ItemStack) => void = () => {};
+  /** Le joueur vient de prendre le résultat d'une fabrication (statistiques). */
+  crafted: (itemId: number, count: number) => void = () => {};
 
   get held(): Slot {
     return this.slots[this.selected];
@@ -288,6 +290,8 @@ export abstract class Menu {
   /** Consomme un exemplaire de chaque ingrédient. */
   protected consumeIngredients(): void {
     if (!this.grid) return;
+    const made = matchRecipe(this.grid.map((s) => (s ? s.id : 0)), this.gridW);
+    if (made) this.inv.crafted(made.id, made.count);
     for (let i = 0; i < this.grid.length; i++) {
       const s = this.grid[i];
       if (!s) continue;

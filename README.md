@@ -21,6 +21,7 @@ npm run build    # version de production dans dist/
 - **Inventaire et fabrication** : inventaire à la souris, grille 2×2, établi 3×3, cuisson au fourneau, inventaire créatif avec recherche.
 - **Créatures** : vaches, cochons, moutons, poules ; zombies, squelettes, creepers et araignées la nuit.
 - **Pêche** : canne à pêche (3 bâtons + 2 ficelles) ; un clic droit lance la ligne, un second la remonte. Quand le flotteur s'enfonce, un poisson mord : poisson cru (à cuire au fourneau), parfois un objet sans valeur ou une trouvaille.
+- **S'y retrouver** : la boussole (4 lingots de fer + 1 redstone) pointe vers le point d'apparition du monde ; l'horloge (4 lingots d'or + 1 redstone) montre le soleil ou la lune ; la carte vierge (8 papiers + 1 boussole) devient, d'un clic droit, la carte de la zone de 128 × 128 blocs où l'on se tient, et se dessine tant qu'on la tient en main ; les panneaux (6 planches + 1 bâton) portent 4 lignes de texte. Le menu de pause donne les statistiques du joueur (distances, blocs minés, objets fabriqués, créatures vaincues).
 - **Modes** : survie et créatif (vol par double appui sur Espace, casse instantanée).
 - **Mondes** : plusieurs mondes sauvegardés dans le navigateur (IndexedDB) — créer, renommer, supprimer ; sauvegarde automatique et à la fermeture. Un monde s'exporte dans un fichier `.aetherworld` et s'importe depuis ce fichier (sauvegarde externe, passage d'un navigateur ou d'un appareil à l'autre).
 - **Commandes** (touche `/`) : `/help`, `/gamemode`, `/time`, `/weather`, `/give`, `/tp`, `/kill`, `/seed`, `/difficulty`, `/summon`, `/clear`, `/spawnpoint`.
@@ -58,7 +59,8 @@ Les touches sont repérées par leur position sur le clavier : sur un clavier QW
 
 ## ⚠️ Limites connues
 
-- Pas de Nether, d'enchantements, de redstone, de villages ni de multijoueur.
+- Pas de villages, d'End ni de multijoueur.
+- La boussole indique le point d'apparition du monde, pas le lit ; les cartes ne s'agrandissent pas et restent vierges dans le Nether.
 - Testé sur Chrome uniquement.
 
 ---

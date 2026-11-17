@@ -486,9 +486,13 @@ export abstract class Mob extends Living {
   }
 
   protected onDeath(game: GameApi, cause: DamageCause, attacker: Entity | null): void {
-    if (this.baby) return;
     const killer = attacker ?? this.attacker;
     const byPlayer = killer === game.player;
+    if (byPlayer) {
+      game.player.addStat('mob_kills');
+      game.player.addStat(`killed:${this.mobKind}`);
+    }
+    if (this.baby) return;
     this.dropLoot(game, this.fireTicks > 0 || cause === 'fire' || cause === 'lava', byPlayer);
     if (byPlayer) {
       const xp = this.xpValue(game);
@@ -690,6 +694,7 @@ export abstract class Animal extends Mob {
     child.setRotation(game.rng() * TAU);
     game.spawn(child);
     if (game.player.alive) {
+      game.player.addStat('animals_bred');
       game.player.addXp(randInt(game.rng, 1, 7));
       game.sound('orb', x, y, z, 0.6);
     }

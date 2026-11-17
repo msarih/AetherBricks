@@ -127,7 +127,13 @@ export function canStay(w: World, x: number, y: number, z: number, id: number, m
     }
     case B.REDSTONE_WIRE:
     case B.STONE_PRESSURE_PLATE:
+    case B.SIGN:
       return topSolid(w, x, y - 1, z);
+    case B.WALL_SIGN: {
+      // méta = direction vers laquelle le panneau est tourné ; il tient au bloc derrière lui
+      const f = meta & 3;
+      return sideSolid(w, x - FACING_DX[f], y, z - FACING_DZ[f]);
+    }
     case B.LEVER:
     case B.STONE_BUTTON: {
       const side = meta & 7;

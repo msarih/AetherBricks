@@ -17,7 +17,8 @@ import type { Menu } from '../game/Inventory';
 import { T } from '../world/Tiles';
 import { Hud } from './Hud';
 import type { Screen, TitlePage, UiContext } from './Screen';
-import { ChatScreen, DeathScreen, LoadingScreen, OptionsScreen, PauseScreen } from './Screens';
+import { ChatScreen, DeathScreen, LoadingScreen, OptionsScreen, PauseScreen, SignScreen } from './Screens';
+import { StatsScreen } from './StatsScreen';
 import { SlotScreen } from './SlotScreen';
 import { installSprites } from './Sprites';
 import { TitleMenu } from './TitleMenu';
@@ -60,6 +61,7 @@ export class GameUi implements UiApi {
       closeScreen: () => this.closeScreen(),
       openPause: () => this.openPause(),
       openOptions: (back, pausing) => this.setScreen(new OptionsScreen(this.ctx, back, pausing)),
+      openStats: (back) => this.setScreen(new StatsScreen(this.ctx, back)),
       openTitle: (page, error) => this.openTitle(page, error),
       fail: (message) => this.fail(message),
     };
@@ -127,6 +129,10 @@ export class GameUi implements UiApi {
 
   openChat(initial = ''): void {
     this.setScreen(new ChatScreen(this.ctx, initial));
+  }
+
+  openSignEditor(x: number, y: number, z: number, lines: readonly string[]): void {
+    this.setScreen(new SignScreen(this.ctx, x, y, z, lines));
   }
 
   showDeath(message: string): void {

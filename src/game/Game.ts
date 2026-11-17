@@ -26,18 +26,20 @@ import type { Atlas } from '../render/Atlas';
 import { worldUniforms } from '../render/ChunkMaterials';
 import { ChunkRenderer } from '../render/ChunkRenderer';
 import { EntityRenderer } from '../render/EntityRenderer';
-import { HandRenderer, type HandState } from '../render/HandRenderer';
+import { HandRenderer, type HandState, type HeldMap } from '../render/HandRenderer';
 import { Particles, type ParticleKind, type ParticleWorld } from '../render/Particles';
 import { Selection } from '../render/Selection';
+import { SignRenderer } from '../render/SignRenderer';
 import { Sky, type SkyEnvironment } from '../render/Sky';
 import type { UiApi, UiGame } from '../ui/UiApi';
 import { BLOCKS, BLOCK_SHAPE, BLOCK_SOLID, FACING_DX, FACING_DZ, SHAPE, isLeaves, isLog } from '../world/Blocks';
 import type { Chunk } from '../world/Chunk';
 import { ChunkManager, type ChunkHooks } from '../world/ChunkManager';
 import { CHUNK_HEIGHT, DAY_TICKS, TICKS_PER_SECOND, chunkKey, type Dimension, type GameMode } from '../world/Constants';
-import { B } from '../world/Ids';
+import { B, I } from '../world/Ids';
 import { ITEMS, getItem, itemLabel } from '../world/Items';
 import { makeStack } from '../world/ItemStack';
+import { dialTile } from '../world/Tiles';
 import { findOrCreatePortal } from '../world/Portal';
 import { newRayHit, raycast } from '../world/Raycast';
 import { formatKeyCode, netherStorageId } from '../world/Storage';
@@ -45,9 +47,12 @@ import type { Settings, Storage, WorldInfo } from '../world/Storage';
 import { World, posKey, posKeyX, posKeyY, posKeyZ, type BlockEntity, type WorldEffect, type WorldHost } from '../world/World';
 import { BIOMES } from '../world/gen/Biomes';
 import { WorldGen } from '../world/gen/WorldGen';
-import { blockEntityItems, tickBlockEntities } from './BlockEntities';
+import { blockEntityItems, cleanSignLines, getSign, tickBlockEntities } from './BlockEntities';
 import { ADVANCEMENTS, advancementText } from './Advancements';
+import { Dial, bearing, clockTarget, dialNoise } from './Dials';
 import { explode as runExplosion } from './Explosion';
+import { MapStore, type MapData } from './Maps';
+import { STAT, type Stats } from './Stats';
 import { Interaction, particleTile, particleTint, type InteractionHost } from './Interaction';
 import { CreativeMenu, HOTBAR_SIZE, InventoryMenu, type Inventory, type Menu } from './Inventory';
 
@@ -153,6 +158,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
   readonly fx: Particles;
   readonly sky: Sky;
   readonly entityRenderer: EntityRenderer;
+  private readonly signRenderer: SignRenderer;
   readonly hand: HandRenderer;
   readonly player: Player;
   readonly entities: Entity[] = [];
@@ -169,6 +175,13 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
   private portalTicks = 0;
   private portalCooldown = 0;
   private dimensionSwitching = false;
+  /** Cartes du monde (numéro → pixels), sauvegardées avec l'état. */
+  readonly maps = new MapStore();
+  private readonly compassDial = new Dial();
+  private readonly clockDial = new Dial();
+  /** Hasard purement visuel (cadrans affolés dans le Nether), distinct de celui du jeu. */
+  private readonly dialRng = dialNoise(0x5eed);
+  private readonly heldMapState: HeldMap = { id: 0, colors: new Uint8Array(0), version: 0, markerX: 0, markerZ: 0, dirX: 0, dirZ: -1 };
   /** Âge du monde en ticks (l'heure du jour en découle). */
   time = 1000;
   raining = false;
@@ -203,6 +216,9 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     fishing: false,
     yawDelta: 0,
     pitchDelta: 0,
+    iconTile: -1,
+    map: null,
+    pitch: 0,
   };
 
   private menu: Menu | null = null;
@@ -287,6 +303,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     this.fx = new Particles(this.scene, o.atlas, particleWorld);
     this.sky = new Sky(this.scene, skyEnv);
     this.entityRenderer = new EntityRenderer(this.scene, o.atlas);
+    this.signRenderer = new SignRenderer(this.scene, o.atlas);
     this.hand = new HandRenderer(o.atlas);
 
     // --- joueur ---
@@ -324,6 +341,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       this.thunderLevel = this.thundering ? 1 : 0;
       this.weatherTimer = Math.max(0, Math.floor(num(st.weatherTimer, 0)));
       this.level = Math.max(0, Math.min(3, Math.floor(num(st.difficulty, 2))));
+      this.maps.load(st.maps);
       if (Array.isArray(st.pressedPlates)) {
         for (const pk of st.pressedPlates) {
           if (typeof pk === 'number' && Number.isFinite(pk)) this.pressedPlates.set(pk, this.world.age + 10);
@@ -412,6 +430,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       spawn: [this.spawnPoint.x, this.spawnPoint.y, this.spawnPoint.z],
       dimension: this.dimension,
       pressedPlates: Array.from(this.pressedPlates.keys()),
+      maps: this.maps.save(),
     };
     info.gameMode = this.player.gameMode;
     info.lastPlayed = Date.now();
@@ -456,6 +475,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     this.fx.dispose();
     this.sky.dispose();
     this.entityRenderer.dispose();
+    this.signRenderer.dispose();
     this.hand.dispose();
     this.sfx.stopMusic();
     this.sfx.setRain(0);
@@ -728,10 +748,13 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     this.spawner.tick(this);
     this.atlas.tick();
     this.time++;
+    p.addStat(STAT.PLAY_TIME);
     this.tickWeather();
     this.tickPortal();
     this.tickSleep();
     this.tickAdvancements();
+    this.tickDials();
+    this.tickHeldMap();
 
     if (!p.alive && !this.deathShown) this.showDeath();
   }
@@ -794,6 +817,47 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     const light = this.sky.dayFactor * (1 - (this.rainLevel * 5) / 16) * (1 - (this.thunderLevel * 5) / 16);
     w.skyDarken = Math.round((1 - light) * 11);
     w.raining = this.rainLevel > 0.2;
+  }
+
+  /** Boussole (vers le point d'apparition du monde) et horloge ; toutes deux s'affolent dans le Nether. */
+  private tickDials(): void {
+    const p = this.player;
+    const nether = this.dimension === 'nether';
+    const sp = this.spawnPoint;
+    this.compassDial.update(nether ? this.dialRng() : bearing(p.x, p.z, p.yaw, sp.x + 0.5, sp.z + 0.5));
+    this.clockDial.update(nether ? this.dialRng() : clockTarget(this.dayTime));
+  }
+
+  /** La carte tenue en main se dessine autour du joueur. */
+  private tickHeldMap(): void {
+    const map = this.heldMap();
+    if (map) this.maps.update(this.world, map, this.player.x, this.player.z, this.dimension);
+  }
+
+  /** Carte remplie tenue en main (son numéro est dans le champ « usure » de la pile), ou null. */
+  heldMap(): MapData | null {
+    const s = this.player.inventory.held;
+    return s && s.id === I.FILLED_MAP ? (this.maps.get(s.damage) ?? null) : null;
+  }
+
+  /** Tuile animée de l'objet (aiguille de la boussole, cadran de l'horloge), ou -1. */
+  dynamicTile(itemId: number): number {
+    if (itemId === I.COMPASS) return dialTile('compass', this.compassDial.frame);
+    if (itemId === I.CLOCK) return dialTile('clock', this.clockDial.frame);
+    return -1;
+  }
+
+  /** Clic droit avec une carte vierge : elle devient la carte de la zone où se tient le joueur. */
+  createMap(): void {
+    const p = this.player;
+    const map = this.maps.create(p.x, p.z, this.dimension);
+    const stack = makeStack(I.FILLED_MAP, 1, map.id);
+    const inv = p.inventory;
+    p.consumeHeld();
+    if (!inv.held) inv.slots[inv.selected] = stack;
+    else if (inv.add(stack) > 0) inv.drop(stack);
+    // premier tracé immédiat de la zone visible
+    for (let i = 0; i < 16; i++) this.maps.update(this.world, map, p.x, p.z, this.dimension);
   }
 
   private tickPortal(): void {
@@ -868,6 +932,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     if (++p.sleepTicks >= SLEEP_TICKS) {
       // le matin
       this.time += (DAY_TICKS - this.dayTime) % DAY_TICKS;
+      p.addStat(STAT.SLEEP);
       this.raining = false;
       this.thundering = false;
       this.weatherTimer = 12000 + Math.floor(this.rng() * 168000);
@@ -1050,6 +1115,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       this.entityRenderer.lineAnchor.set(ex - sy * 0.7 + cy * 0.35, lerp(p.py, p.y, alpha) + 1.35, ez - cy * 0.7 - sy * 0.35);
     }
     this.entityRenderer.sync(this.entities, alpha, this.clock);
+    this.signRenderer.sync(this.world);
     this.fx.update(dt, cam);
 
     const hand = this.hand;
@@ -1064,6 +1130,20 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     hs.useProgress = p.useKind === 'eat' ? Math.min(1, p.useTicks / 32) : p.useKind === 'bow' ? Math.min(1, p.useTicks / 20) : 0;
     hs.yawDelta = yaw - this.lastYaw;
     hs.pitchDelta = pitch - this.lastPitch;
+    hs.pitch = pitch;
+    hs.iconTile = this.dynamicTile(p.heldItemId);
+    const heldMap = this.heldMap();
+    if (heldMap) {
+      const hm = this.heldMapState;
+      hm.id = heldMap.id;
+      hm.colors = heldMap.colors;
+      hm.version = heldMap.version;
+      hm.markerX = lerp(p.px, p.x, alpha) - heldMap.x0;
+      hm.markerZ = lerp(p.pz, p.z, alpha) - heldMap.z0;
+      hm.dirX = -Math.sin(yaw);
+      hm.dirZ = -Math.cos(yaw);
+      hs.map = hm;
+    } else hs.map = null;
     this.lastYaw = yaw;
     this.lastPitch = pitch;
     hand.update(dt, hs);
@@ -1154,6 +1234,23 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     this.interaction.reset();
     this.ui.openChat(initial);
     this.input.unlock();
+  }
+
+  /** Un panneau vient d'être posé : saisie de son texte (le jeu continue pendant ce temps, comme dans Minecraft). */
+  openSignEditor(x: number, y: number, z: number): void {
+    const sign = getSign(this.world, x, y, z);
+    this.interaction.reset();
+    this.ui.openSignEditor(x, y, z, sign.lines);
+    this.input.unlock();
+  }
+
+  setSignText(x: number, y: number, z: number, lines: string[]): void {
+    const w = this.world;
+    const id = w.getBlock(x, y, z);
+    if (id !== B.SIGN && id !== B.WALL_SIGN) return;
+    const sign = getSign(w, x, y, z);
+    sign.lines = cleanSignLines(lines);
+    w.markBlockEntityDirty(sign);
   }
 
   // ------------------------------------------------------------------ InteractionHost
@@ -1461,6 +1558,10 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
   get fade(): number {
     const p = this.player;
     return p.sleeping ? Math.min(1, p.sleepTicks / SLEEP_TICKS) : 0;
+  }
+
+  get stats(): Stats {
+    return this.player.stats;
   }
 
   get guideGoal(): string {

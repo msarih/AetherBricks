@@ -65,6 +65,14 @@ const BASE_TILES = [
   'carrot', 'potato', 'baked_potato', 'glowstone_dust', 'quartz', 'cookie', 'pumpkin_pie',
   'mushroom_stew', 'bowl', 'fishing_rod', 'fishing_rod_cast', 'raw_fish', 'cooked_fish',
   'door_item', 'iron_door_item', 'bed_item', 'sugar_cane_item',
+  'map', 'filled_map', 'sign',
+] as const;
+
+/** Images animées de la boussole et de l'horloge (aiguille, cadran), 32 chacune. */
+export const DIAL_FRAMES = 32;
+const FRAME_IDS = [
+  '00', '01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12', '13', '14', '15',
+  '16', '17', '18', '19', '20', '21', '22', '23', '24', '25', '26', '27', '28', '29', '30', '31',
 ] as const;
 
 type BaseTile = (typeof BASE_TILES)[number];
@@ -72,8 +80,9 @@ type WoolTile = `wool_${(typeof COLOR_NAMES)[number]}`;
 type DyeTile = `dye_${(typeof COLOR_NAMES)[number]}`;
 type ToolTile = `${(typeof TOOL_MATERIALS)[number]}_${(typeof TOOL_KINDS)[number]}`;
 type ArmorTile = `${(typeof ARMOR_MATERIALS)[number]}_${(typeof ARMOR_KINDS)[number]}`;
+type DialTile = `${'compass' | 'clock'}_${(typeof FRAME_IDS)[number]}`;
 
-export type TileName = BaseTile | WoolTile | DyeTile | ToolTile | ArmorTile;
+export type TileName = BaseTile | WoolTile | DyeTile | ToolTile | ArmorTile | DialTile;
 
 function buildTileNames(): TileName[] {
   const names: TileName[] = [...BASE_TILES];
@@ -81,6 +90,8 @@ function buildTileNames(): TileName[] {
   for (const c of COLOR_NAMES) names.push(`dye_${c}`);
   for (const m of TOOL_MATERIALS) for (const k of TOOL_KINDS) names.push(`${m}_${k}`);
   for (const m of ARMOR_MATERIALS) for (const k of ARMOR_KINDS) names.push(`${m}_${k}`);
+  for (const f of FRAME_IDS) names.push(`compass_${f}`);
+  for (const f of FRAME_IDS) names.push(`clock_${f}`);
   return names;
 }
 
@@ -97,4 +108,10 @@ export const T = (() => {
 })();
 
 export const TILE_SIZE = 16;
+
+/** Tuile de l'image `frame` (0..31) de la boussole ou de l'horloge. */
+export function dialTile(kind: 'compass' | 'clock', frame: number): number {
+  const f = ((Math.floor(frame) % DIAL_FRAMES) + DIAL_FRAMES) % DIAL_FRAMES;
+  return T[`${kind}_${FRAME_IDS[f]}`];
+}
 export { TOOL_MATERIALS, TOOL_KINDS, ARMOR_MATERIALS, ARMOR_KINDS };

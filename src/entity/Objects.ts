@@ -658,7 +658,9 @@ export class FishingBobber extends Entity {
       return 5;
     }
     if (this.biteTicks > 0) {
-      const item = new ItemEntity(rollFishingCatch(game.rng));
+      const caught = rollFishingCatch(game.rng);
+      if (caught.id === I.RAW_FISH) p.addStat('fish_caught');
+      const item = new ItemEntity(caught);
       item.setPosition(this.x, this.y + 0.1, this.z);
       item.vx = dx * 0.1;
       item.vy = dy * 0.1 + lift;

@@ -11,6 +11,7 @@ import { GameUi } from './ui/Ui';
 import type { NewWorldOptions, UiGame, UiHost } from './ui/UiApi';
 import { Storage, createWorldId, loadSettings, saveSettings, type WorldInfo } from './world/Storage';
 import { exportWorld, importWorld, worldFileName } from './world/WorldFile';
+import { DYNAMIC_ICON_ITEMS } from './world/Items';
 import { TILE_SIZE } from './world/Tiles';
 import { hashString } from './world/gen/Noise';
 
@@ -85,7 +86,11 @@ async function main(): Promise<void> {
     settings,
     game: null as UiGame | null,
     persistent: storage.persistent,
-    iconUrl: (itemId: number): string => icons.get(itemId),
+    iconUrl: (itemId: number): string => {
+      // boussole et horloge : l'image suit la direction ou l'heure de la partie en cours
+      const tile = host.game && DYNAMIC_ICON_ITEMS.has(itemId) ? host.game.dynamicTile(itemId) : -1;
+      return tile >= 0 ? icons.tile(tile) : icons.get(itemId);
+    },
     tileUrl,
     click(): void {
       sfx.resume();

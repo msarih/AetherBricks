@@ -545,4 +545,6 @@ export interface PlayerLike extends Living {
   /** Use l'objet tenu de `amount` points (sans effet en créatif). */
   damageHeld(game: GameApi, amount?: number): void;
   addXp(amount: number): void;
+  /** Ajoute `n` à une statistique du joueur (voir game/Stats). */
+  addStat(key: string, n?: number): void;
 }

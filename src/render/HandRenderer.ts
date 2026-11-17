@@ -12,6 +12,7 @@ import { lightColor, worldUniforms } from './ChunkMaterials';
 import { ItemModel, MatrixChain, createMobMaterial, getMobAssets } from './EntityRenderer';
 import { getMobModel } from '../entity/MobModels';
 import { I } from '../world/Ids';
+import { MAP_PAPER, mapPixelRgb } from '../world/MapColors';
 import { T } from '../world/Tiles';
 
 export interface HandState {
@@ -30,6 +31,137 @@ export interface HandState {
   /** Variation de l'orientation de la caméra, en radians par image (léger retard de la main). */
   yawDelta: number;
   pitchDelta: number;
+  /** Tuile animée de l'objet tenu (aiguille de la boussole, cadran de l'horloge), -1 sinon. */
+  iconTile: number;
+  /** Carte tenue en main, ou null. */
+  map: HeldMap | null;
+  /** Tangage du regard en radians (positif = vers le haut) : la carte se relève quand on baisse les yeux. */
+  pitch: number;
+}
+
+/** Carte tenue : ses pixels (voir world/MapColors) et le repère du joueur. */
+export interface HeldMap {
+  id: number;
+  colors: Uint8Array;
+  version: number;
+  /** Position du joueur en pixels de carte (0..128 ; hors de cet intervalle : le joueur est hors de la carte). */
+  markerX: number;
+  markerZ: number;
+  /** Direction du regard sur la carte (nord en haut) : composantes x et z du regard horizontal. */
+  dirX: number;
+  dirZ: number;
+}
+
+const MAP_TEX = 128;
+
+/**
+ * Carte dépliée devant le joueur : planche de papier et texture de 128 × 128 pixels,
+ * recopiée quand la carte change ou quand le joueur bouge (repère).
+ */
+class MapDisplay {
+  readonly group = new THREE.Group();
+  private readonly base = new Uint8Array(MAP_TEX * MAP_TEX * 4);
+  private readonly data = new Uint8Array(MAP_TEX * MAP_TEX * 4);
+  private readonly texture: THREE.DataTexture;
+  private readonly mapMaterial: THREE.MeshBasicMaterial;
+  private readonly paperMaterial = new THREE.MeshBasicMaterial({ color: 0xd9c793 });
+  private readonly borderMaterial = new THREE.MeshBasicMaterial({ color: 0x7a5c33 });
+  private shownId = -1;
+  private shownVersion = -1;
+  private markerKey = '';
+
+  constructor() {
+    this.texture = new THREE.DataTexture(this.data, MAP_TEX, MAP_TEX, THREE.RGBAFormat);
+    this.texture.magFilter = THREE.NearestFilter;
+    this.texture.minFilter = THREE.NearestFilter;
+    this.texture.generateMipmaps = false;
+    this.mapMaterial = new THREE.MeshBasicMaterial({ map: this.texture });
+    const border = new THREE.Mesh(new THREE.PlaneGeometry(1.11, 1.11), this.borderMaterial);
+    const paper = new THREE.Mesh(new THREE.PlaneGeometry(1.07, 1.07), this.paperMaterial);
+    const map = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), this.mapMaterial);
+    paper.position.z = 0.002;
+    map.position.z = 0.004;
+    for (const m of [border, paper, map]) {
+      m.frustumCulled = false;
+      this.group.add(m);
+    }
+    this.group.visible = false;
+  }
+
+  /** Recopie les pixels si besoin et pose le repère du joueur. */
+  update(m: HeldMap, light: THREE.Color): void {
+    if (m.id !== this.shownId || m.version !== this.shownVersion) {
+      this.shownId = m.id;
+      this.shownVersion = m.version;
+      const out = this.base;
+      for (let z = 0; z < MAP_TEX; z++) {
+        // ligne z = 0 (nord) en haut : la texture se lit de bas en haut
+        let o = (MAP_TEX - 1 - z) * MAP_TEX * 4;
+        for (let x = 0; x < MAP_TEX; x++, o += 4) {
+          const px = m.colors[z * MAP_TEX + x];
+          const c = px === 0 ? MAP_PAPER : mapPixelRgb(px);
+          out[o] = (c >> 16) & 255;
+          out[o + 1] = (c >> 8) & 255;
+          out[o + 2] = c & 255;
+          out[o + 3] = 255;
+        }
+      }
+      this.markerKey = '';
+    }
+    const key = `${this.shownId}:${this.shownVersion}:${m.markerX.toFixed(1)}:${m.markerZ.toFixed(1)}:${m.dirX.toFixed(2)}:${m.dirZ.toFixed(2)}`;
+    if (key !== this.markerKey) {
+      this.markerKey = key;
+      this.data.set(this.base);
+      this.drawMarker(m);
+      this.texture.needsUpdate = true;
+    }
+    this.mapMaterial.color.copy(light);
+    this.paperMaterial.color.setHex(0xd9c793).multiply(light);
+    this.borderMaterial.color.setHex(0x7a5c33).multiply(light);
+  }
+
+  /** Flèche blanche bordée de noir, pointe dans la direction du regard ; un point au bord si le joueur est hors de la carte. */
+  private drawMarker(m: HeldMap): void {
+    const inside = m.markerX >= 0 && m.markerX < MAP_TEX && m.markerZ >= 0 && m.markerZ < MAP_TEX;
+    const cx = Math.max(0.5, Math.min(MAP_TEX - 0.5, m.markerX));
+    const cz = Math.max(0.5, Math.min(MAP_TEX - 0.5, m.markerZ));
+    const len = Math.hypot(m.dirX, m.dirZ) || 1;
+    const fx = m.dirX / len;
+    const fz = m.dirZ / len;
+    for (let z = Math.floor(cz) - 6; z <= Math.floor(cz) + 6; z++) {
+      for (let x = Math.floor(cx) - 6; x <= Math.floor(cx) + 6; x++) {
+        if (x < 0 || z < 0 || x >= MAP_TEX || z >= MAP_TEX) continue;
+        const rx = x + 0.5 - cx;
+        const rz = z + 0.5 - cz;
+        let color = -1;
+        if (inside) {
+          const along = rx * fx + rz * fz;
+          const side = Math.abs(rx * -fz + rz * fx);
+          if (along >= -3.2 && along <= 4.6 && side <= (4.6 - along) * 0.5) color = 0x1a1a1a;
+          if (along >= -2.4 && along <= 3.6 && side <= (3.6 - along) * 0.42) color = 0xffffff;
+        } else {
+          const r = Math.hypot(rx, rz);
+          if (r <= 2.2) color = 0x1a1a1a;
+          if (r <= 1.3) color = 0xffffff;
+        }
+        if (color < 0) continue;
+        const o = ((MAP_TEX - 1 - z) * MAP_TEX + x) * 4;
+        this.data[o] = (color >> 16) & 255;
+        this.data[o + 1] = (color >> 8) & 255;
+        this.data[o + 2] = color & 255;
+      }
+    }
+  }
+
+  dispose(): void {
+    this.texture.dispose();
+    this.mapMaterial.dispose();
+    this.paperMaterial.dispose();
+    this.borderMaterial.dispose();
+    this.group.traverse((o) => {
+      if (o instanceof THREE.Mesh) o.geometry.dispose();
+    });
+  }
 }
 
 /** Durée d'un coup, en secondes (6 ticks). */
@@ -69,6 +201,10 @@ export class HandRenderer {
   private bowStages: Array<Shown | null> = [null, null, null];
   /** Canne à pêche dont la ligne est lancée, créée à la demande. */
   private rodCast: Shown | null = null;
+  /** Images de la boussole et de l'horloge déjà construites, par tuile. */
+  private readonly dialShown = new Map<number, Shown>();
+  /** Carte dépliée (carte remplie tenue en main). */
+  private readonly mapDisplay = new MapDisplay();
   private current: THREE.Object3D;
 
   /** 1 = sorti, 0 = rangé (hors de l'écran, en bas). */
@@ -93,6 +229,7 @@ export class HandRenderer {
 
     this.holder.matrixAutoUpdate = false;
     this.holder.add(this.arm);
+    this.holder.add(this.mapDisplay.group);
     this.scene.add(this.holder);
     this.camera.position.set(0, 0, 0);
   }
@@ -141,9 +278,24 @@ export class HandRenderer {
       this.holder.remove(s.group);
       s.model.dispose();
     }
+    for (const s of this.dialShown.values()) {
+      this.holder.remove(s.group);
+      s.model.dispose();
+    }
+    this.dialShown.clear();
     this.shown = null;
     this.bowStages = [null, null, null];
     this.rodCast = null;
+  }
+
+  /** Sprite d'une image de la boussole ou de l'horloge. */
+  private dial(tile: number): Shown {
+    let s = this.dialShown.get(tile);
+    if (!s) {
+      s = this.makeShown(ItemModel.forTile(this.atlas, tile));
+      this.dialShown.set(tile, s);
+    }
+    return s;
   }
 
   /** Sprite de la canne à pêche dont la ligne est lancée. */
@@ -218,7 +370,22 @@ export class HandRenderer {
     c.rotateY(-this.lagYaw * 0.1 * RAD_TO_DEG);
 
     let display: THREE.Object3D;
-    if (this.shownId === 0 || !this.shown) {
+    if (this.shownId === I.FILLED_MAP && state.map && this.shown && state.useProgress <= 0) {
+      // Carte tenue à deux mains (Minecraft 1.12) : à plat en bas de l'écran quand on regarde devant,
+      // elle se relève face au joueur quand il baisse les yeux.
+      const pitchDeg = -state.pitch * RAD_TO_DEG;
+      const f = clamp(1 - pitchDeg / 45 + 0.1, 0, 1);
+      const lift = -Math.cos(f * Math.PI) * 0.5 + 0.5;
+      const s = Math.sin(Math.sqrt(swing) * Math.PI);
+      c.translate(0, 0.1 * s, -0.4 * Math.sin(Math.sqrt(swing) * Math.PI));
+      c.translate(0, 0.04 + down * -1.2 + lift * -0.5, -0.72);
+      c.rotateX(lift * -85);
+      c.rotateX(s * 20);
+      c.scale(0.76);
+      lightColor(state.skyLight, state.blockLight, worldUniforms.uSkyLight.value, this.light);
+      this.mapDisplay.update(state.map, this.light);
+      display = this.mapDisplay.group;
+    } else if (this.shownId === 0 || !this.shown) {
       // Main nue : bras droit du joueur
       display = this.arm;
       const r = Math.sin(Math.sqrt(swing) * Math.PI);
@@ -266,6 +433,7 @@ export class HandRenderer {
         if (this.shownId === I.BOW) shown = this.bowStage(progress) ?? shown;
       } else {
         if (this.shownId === I.FISHING_ROD && state.fishing) shown = this.castRod();
+        if (state.iconTile >= 0 && (this.shownId === I.COMPASS || this.shownId === I.CLOCK)) shown = this.dial(state.iconTile);
         swing *= 1 - this.blockBlend;
         const r = Math.sin(Math.sqrt(swing) * Math.PI);
         c.translate(-0.4 * r, 0.2 * Math.sin(Math.sqrt(swing) * Math.PI * 2), -0.2 * Math.sin(swing * Math.PI));
@@ -306,6 +474,7 @@ export class HandRenderer {
 
   dispose(): void {
     this.disposeShown();
+    this.mapDisplay.dispose();
     this.armMaterial.dispose();
     this.holder.clear();
   }
