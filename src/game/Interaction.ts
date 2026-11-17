@@ -572,7 +572,9 @@ export class Interaction {
     return {
       get xpLevel() { return p.xpLevel; },
       get creative() { return p.creative; },
+      get enchantSeed() { return p.enchantSeed; },
       spendLevels: (n: number) => { p.xpLevel = Math.max(0, p.xpLevel - n); },
+      rotateEnchantSeed: () => { p.enchantSeed = (Math.floor(g.rng() * 0xfffffffe) >>> 0) + 1; },
       rng: g.rng,
     };
   }

@@ -55,6 +55,8 @@ export class Player extends Living implements PlayerLike {
   xpLevel = 0;
   /** Avancement vers le niveau suivant (0..1). */
   xpProgress = 0;
+  /** Graine d'enchantement du joueur (fixe les propositions jusqu'au prochain enchantement). */
+  enchantSeed = 1337;
 
   sprinting = false;
   /** Utilisation d'un objet en cours (manger, bander l'arc) et sa durée en ticks. */
@@ -462,6 +464,7 @@ export class Player extends Living implements PlayerLike {
       fall: round3(this.fallDistance),
       xpLevel: this.xpLevel,
       xpProgress: round3(this.xpProgress),
+      enchantSeed: this.enchantSeed,
       flying: this.flying,
       bed: this.bed ? [this.bed.x, this.bed.y, this.bed.z] : null,
       advancements: [...this.advancements],
@@ -484,6 +487,7 @@ export class Player extends Living implements PlayerLike {
     this.fallDistance = Math.max(0, num(d.fall, 0));
     this.xpLevel = Math.max(0, Math.floor(num(d.xpLevel, 0)));
     this.xpProgress = Math.max(0, Math.min(0.999, num(d.xpProgress, 0)));
+    this.enchantSeed = Math.max(1, Math.floor(num(d.enchantSeed, 1337)) >>> 0);
     this.flying = d.flying === true && this.creative;
     const bed = d.bed;
     this.bed =

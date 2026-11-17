@@ -7,6 +7,7 @@ import { I } from '../world/Ids';
 import { getItem, maxStack } from '../world/Items';
 import { addToSlots, canMerge, cloneStack, cloneStackWithCount, loadSlots, maxDamage, saveSlots, type ItemStack, type Slot } from '../world/ItemStack';
 import { canEnchantItem, computeAnvilResult, enchantLevel, hasEnchants, rollEnchantOffers, type EnchantOffer } from '../world/Enchants';
+import { mulberry32 } from '../world/gen/Noise';
 import { RECIPES, fuelTicks, ingredientAccepts, matchRecipe, recipeFitsGrid, smeltingResult, type Ingredient, type Recipe } from '../world/Recipes';
 import { FURNACE_COOK_TICKS, type ChestEntity, type FurnaceEntity } from './BlockEntities';
 
@@ -59,7 +60,7 @@ export class Inventory {
   }
 
   /** Use l'objet tenu (en tenant compte de Solidité). Retourne true s'il vient de se briser. */
-  damageHeld(amount = 1, rng: () => number = Math.random): boolean {
+  damageHeld(amount: number, rng: () => number): boolean {
     const s = this.slots[this.selected];
     if (!s) return false;
     const max = maxDamage(s.id);
@@ -115,7 +116,7 @@ export class Inventory {
   }
 
   /** Use chaque pièce d'armure portée (en tenant compte de Solidité). Retourne true si une pièce s'est brisée. */
-  damageArmor(amount: number, rng: () => number = Math.random): boolean {
+  damageArmor(amount: number, rng: () => number): boolean {
     let broke = false;
     for (let i = 0; i < 4; i++) {
       const s = this.armor[i];
@@ -792,7 +793,9 @@ export class FurnaceMenu extends Menu {
 export interface XpHost {
   readonly xpLevel: number;
   readonly creative: boolean;
+  readonly enchantSeed: number;
   spendLevels(n: number): void;
+  rotateEnchantSeed(): void;
   rng(): number;
 }
 
@@ -833,6 +836,7 @@ export class EnchantMenu extends Menu {
       this.xp.spendLevels(offer.lapisCost);
     }
     item.enchants = { ...offer.enchants };
+    this.xp.rotateEnchantSeed();
     this.offers = [];
     this.lastItemId = item.id;
     return true;
@@ -847,7 +851,8 @@ export class EnchantMenu extends Menu {
     }
     if (item.id !== this.lastItemId || this.offers.length === 0) {
       this.lastItemId = item.id;
-      this.offers = rollEnchantOffers(item.id, this.bookshelves, this.xp.rng);
+      const seed = (this.xp.enchantSeed ^ Math.imul(item.id, 2654435761) ^ Math.imul(this.bookshelves + 1, 40503)) >>> 0;
+      this.offers = rollEnchantOffers(item.id, this.bookshelves, mulberry32(seed));
     }
   }
 
