@@ -10,12 +10,13 @@ import type { Dimension, WorldType } from '../Constants';
 
 export type GenRequest =
   | { type: 'init'; seed: number; worldType: WorldType; dimension?: Dimension }
-  | { type: 'gen'; cx: number; cz: number };
+  | { type: 'gen'; cx: number; cz: number; epoch?: number };
 
 export interface GenResponse {
   type: 'chunk';
   cx: number;
   cz: number;
+  epoch?: number;
   blocks: Uint8Array;
   meta: Uint8Array;
   biomes: Uint8Array;
@@ -42,6 +43,7 @@ ctx.onmessage = (e: MessageEvent) => {
     type: 'chunk',
     cx: m.cx,
     cz: m.cz,
+    epoch: m.epoch,
     blocks: c.blocks,
     meta: c.meta,
     biomes: c.biomes,

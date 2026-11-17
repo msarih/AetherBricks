@@ -77,6 +77,7 @@ export class ChunkManager {
   private centerZ = Number.NaN;
   private loadScanDone = false;
   private frame = 0;
+  private epoch = 0;
 
   /** Chunks en attente d'écriture, puis en cours d'écriture : relus d'ici s'ils reviennent avant la fin. */
   private readonly saveQueue = new Map<number, SavedChunk>();
@@ -109,8 +110,10 @@ export class ChunkManager {
       const worker = new Worker(new URL('./gen/gen.worker.ts', import.meta.url), { type: 'module' });
       const slot: WorkerSlot = { worker, busy: 0 };
       worker.onmessage = (e: MessageEvent) => {
-        slot.busy--;
-        this.onGenerated(e.data as GenResponse);
+        const res = e.data as GenResponse;
+        if (res.epoch !== undefined && res.epoch !== this.epoch) return;
+        slot.busy = Math.max(0, slot.busy - 1);
+        this.onGenerated(res);
       };
       const init: GenRequest = { type: 'init', seed: options.seed, worldType: options.worldType, dimension: dim };
       worker.postMessage(init);
@@ -187,9 +190,12 @@ export class ChunkManager {
 
   /** Bascule le gestionnaire vers une autre dimension en réinitialisant les workers et les chunks en mémoire. */
   setDimension(dim: Dimension, savedKeys: Set<number>): void {
+    this.epoch++;
     this.worldId = dim === 'nether' ? netherStorageId(this.baseWorldId) : this.baseWorldId;
     this.savedKeys = savedKeys;
     this.loading.clear();
+    this.storageLoads = 0;
+    for (const slot of this.genWorkers) slot.busy = 0;
     this.saveQueue.clear();
     this.saveWriting.clear();
     for (const k of this.world.chunks.keys()) {
@@ -277,11 +283,12 @@ export class ChunkManager {
   private generate(slot: WorkerSlot, cx: number, cz: number, key: number): void {
     this.loading.add(key);
     slot.busy++;
-    const req: GenRequest = { type: 'gen', cx, cz };
+    const req: GenRequest = { type: 'gen', cx, cz, epoch: this.epoch };
     slot.worker.postMessage(req);
   }
 
   private loadFromStorage(cx: number, cz: number, key: number): void {
+    const ep = this.epoch;
     this.loading.add(key);
     this.storageLoads++;
     this.storage!
@@ -291,7 +298,8 @@ export class ChunkManager {
         return undefined;
       })
       .then((saved) => {
-        this.storageLoads--;
+        if (ep !== this.epoch) return;
+        this.storageLoads = Math.max(0, this.storageLoads - 1);
         this.loadScanDone = false;
         if (this.disposed || !this.loading.has(key)) return;
         if (saved) {

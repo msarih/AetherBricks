@@ -474,6 +474,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
 
   /** Une image : chargement des chunks, ticks en retard, rendu. */
   frame(dt: number): void {
+    if (this.dimensionSwitching) return;
     const p = this.player;
     this.chunks.update(p.x, p.z);
 
@@ -819,6 +820,9 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     this.dimensionSwitching = true;
     try {
       await this.chunks.saveAll();
+      const keys = this.storage
+        ? await this.storage.chunkKeys(target === 'nether' ? netherStorageId(this.info.id) : this.info.id)
+        : new Set<number>();
       const p = this.player;
       this.entities.length = 0;
       this.entities.push(p);
@@ -826,9 +830,6 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       this.pressedPlates.clear();
 
       this.dimension = target;
-      const keys = this.storage
-        ? await this.storage.chunkKeys(target === 'nether' ? netherStorageId(this.info.id) : this.info.id)
-        : new Set<number>();
       this.chunks.setDimension(target, keys);
 
       const tx = target === 'nether' ? Math.floor(portalX / 8) : Math.floor(portalX * 8);
