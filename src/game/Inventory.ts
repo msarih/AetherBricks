@@ -279,8 +279,13 @@ export abstract class Menu {
     this.result[0] = r ? { id: r.id, count: r.count, damage: 0 } : null;
   }
 
+  /** Indique si le joueur peut prendre le contenu de la case résultat. */
+  protected canTakeResult(): boolean {
+    return true;
+  }
+
   /** Consomme un exemplaire de chaque ingrédient. */
-  private consumeIngredients(): void {
+  protected consumeIngredients(): void {
     if (!this.grid) return;
     for (let i = 0; i < this.grid.length; i++) {
       const s = this.grid[i];
@@ -436,7 +441,7 @@ export abstract class Menu {
     const s = slot.stack;
 
     if (slot.takeOnly) {
-      if (!s) return;
+      if (!s || (slot.group === 'result' && !this.canTakeResult())) return;
       if (!cur) {
         if (slot.group !== 'result' && button === 1 && s.count > 1) {
           const n = Math.ceil(s.count / 2);
@@ -532,7 +537,7 @@ export abstract class Menu {
     const h = inv.slots[hotbar];
     const s = slot.stack;
     if (slot.takeOnly) {
-      if (!s || h) return;
+      if (!s || h || (slot.group === 'result' && !this.canTakeResult())) return;
       inv.slots[hotbar] = cloneStack(s);
       slot.stack = null;
       if (slot.group === 'result') this.consumeIngredients();
@@ -551,6 +556,7 @@ export abstract class Menu {
     const s = slot?.stack;
     if (!slot || !s) return;
     if (slot.group === 'result') {
+      if (!this.canTakeResult()) return;
       this.inv.drop(cloneStack(s)!);
       slot.stack = null;
       this.consumeIngredients();
@@ -640,7 +646,7 @@ export abstract class Menu {
     if (!first) return;
     for (let guard = 0; guard < 64; guard++) {
       const s = slot.stack;
-      if (!s || s.id !== first.id) break;
+      if (!s || s.id !== first.id || !this.canTakeResult()) break;
       if (this.capacity(s, targets) < s.count) break;
       this.pour(cloneStack(s)!, targets);
       slot.stack = null;
@@ -894,6 +900,14 @@ export class AnvilMenu extends Menu {
 
   get canAfford(): boolean {
     return this.anvilSlots[2] !== null && (this.xp.creative || this.xp.xpLevel >= this.cost);
+  }
+
+  protected canTakeResult(): boolean {
+    return this.canAfford;
+  }
+
+  protected consumeIngredients(): void {
+    this.consumeInputs();
   }
 
   click(i: number, button: number, shift: boolean): void {

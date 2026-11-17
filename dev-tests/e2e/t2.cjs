@@ -941,6 +941,53 @@ async function useOnGround(page, x, z) {
         anvilRes.repairedDamage === 0 && anvilRes.repairCost > 0 && anvilRes.xpAfterRepair === anvilRes.xpBeforeRepair - anvilRes.repairCost && anvilRes.combinedSharp === 3 && anvilRes.combineCost > 0,
         JSON.stringify(anvilRes));
 
+      // Raccourcis sur l'enclume (numberKey, dropKey) : pas de résultat gratuit ni dupliqué
+      await ev(page, () => T.aim(38.5, 4.5, 38.5));
+      await ticks(page, 2);
+      await rclick(page);
+      await page.waitForSelector('[data-mc="menu-anvil"]', { timeout: 5000 });
+      const anvilShortcut = await ev(page, async () => {
+        const { I } = await import('/src/world/Ids.ts');
+        const { makeStack } = await import('/src/world/ItemStack.ts');
+        const g = window.__game, m = g.menu, inv = g.player.inventory;
+        inv.slots[0] = null; inv.slots[1] = null;
+        inv.slots[6] = makeStack(I.IRON_PICKAXE, 1, 200);
+        inv.slots[7] = makeStack(I.IRON_INGOT, 5);
+        m.click(m.indexOf('hotbar', 6), 0, true);
+        m.click(m.indexOf('hotbar', 7), 0, true);
+        const res = m.indexOf('result', 0);
+        const cost = m.cost;
+        // Sans assez de niveaux : numberKey et dropKey ne donnent rien
+        g.player.xpLevel = 0;
+        m.numberKey(res, 0);
+        m.dropKey(res, false);
+        const blocked = inv.slots[0] === null && m.anvilSlots[0] !== null && m.anvilSlots[2] !== null;
+        // Avec niveaux : numberKey paie et consomme ; les gestes suivants ne dupliquent pas
+        g.player.xpLevel = 30;
+        m.numberKey(res, 0);
+        m.numberKey(res, 1);
+        m.dropKey(res, false);
+        const paid = inv.slots[0]?.id === I.IRON_PICKAXE && inv.slots[0]?.damage === 0
+          && inv.slots[1] === null && g.player.xpLevel === 30 - cost
+          && m.anvilSlots[0] === null && m.anvilSlots[2] === null;
+        // dropKey paie et consomme aussi quand les niveaux suffisent
+        inv.slots[6] = makeStack(I.IRON_PICKAXE, 1, 200);
+        inv.slots[7] = makeStack(I.IRON_INGOT, 5);
+        m.click(m.indexOf('hotbar', 6), 0, true);
+        m.click(m.indexOf('hotbar', 7), 0, true);
+        const xpBeforeDrop = g.player.xpLevel;
+        const dropCost = m.cost;
+        const dropsBefore = g.entities.filter((e) => e.kind === 'item').length;
+        m.dropKey(res, false);
+        const dropsAfter = g.entities.filter((e) => e.kind === 'item').length;
+        const droppedOk = dropsAfter === dropsBefore + 1 && g.player.xpLevel === xpBeforeDrop - dropCost && m.anvilSlots[0] === null;
+        return { blocked, paid, droppedOk };
+      });
+      await page.keyboard.press('Escape'); await sleep(200);
+      check('enclume : raccourcis (touches 1-9, lâcher) paient les niveaux et ne dupliquent pas le résultat',
+        anvilShortcut.blocked && anvilShortcut.paid && anvilShortcut.droppedOk,
+        JSON.stringify(anvilShortcut));
+
       // 4) Effets réels des 7 enchantements
       const effects = await ev(page, async () => {
         const { B, I } = await import('/src/world/Ids.ts');
