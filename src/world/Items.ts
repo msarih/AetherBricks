@@ -97,6 +97,8 @@ const SIMPLE_ITEMS: Array<[id: number, name: TileName, label: string, category: 
   [I.CHARCOAL, 'charcoal', 'Charbon de bois', 'materiaux'],
   [I.IRON_INGOT, 'iron_ingot', 'Lingot de fer', 'materiaux'],
   [I.GOLD_INGOT, 'gold_ingot', "Lingot d'or", 'materiaux'],
+  [I.GOLD_NUGGET, 'gold_nugget', "Pépite d'or", 'materiaux'],
+  [I.MAGMA_CREAM, 'magma_cream', 'Crème de magma', 'materiaux'],
   [I.DIAMOND, 'diamond', 'Diamant', 'materiaux'],
   [I.EMERALD, 'emerald', 'Émeraude', 'materiaux'],
   [I.LAPIS, 'lapis', 'Lapis-lazuli', 'materiaux'],

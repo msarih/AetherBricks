@@ -218,6 +218,8 @@ for (const [item, block] of MINERAL_BLOCKS) {
   shaped(['###', '###', '###'], { '#': item }, block);
   shaped(['#'], { '#': block }, item, 9);
 }
+shaped(['###', '###', '###'], { '#': I.GOLD_NUGGET }, I.GOLD_INGOT);
+shaped(['#'], { '#': I.GOLD_INGOT }, I.GOLD_NUGGET, 9);
 
 // ---------------------------------------------------------------------------
 // Teintures

@@ -55,7 +55,7 @@ const BASE_TILES = [
   'particle_smoke', 'particle_flame', 'particle_bubble', 'particle_heart', 'particle_splash',
   'particle_crit', 'particle_lava', 'particle_snow', 'particle_rain', 'particle_explosion',
   // --- Objets ---
-  'stick', 'coal', 'charcoal', 'iron_ingot', 'gold_ingot', 'diamond', 'emerald', 'lapis', 'redstone', 'flint',
+  'stick', 'coal', 'charcoal', 'iron_ingot', 'gold_ingot', 'gold_nugget', 'magma_cream', 'diamond', 'emerald', 'lapis', 'redstone', 'flint',
   'wheat_seeds', 'wheat', 'bread', 'apple', 'golden_apple', 'raw_porkchop', 'cooked_porkchop',
   'raw_beef', 'steak', 'raw_chicken', 'cooked_chicken', 'raw_mutton', 'cooked_mutton', 'rotten_flesh',
   'bone', 'bone_meal', 'string', 'feather', 'gunpowder', 'leather', 'egg', 'arrow', 'bow',

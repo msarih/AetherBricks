@@ -135,6 +135,54 @@ const INGOT_ROWS: Rows = [
 ];
 def('iron_ingot', spr(INGOT_ROWS, IRON_INGOT));
 def('gold_ingot', spr(INGOT_ROWS, GOLD_INGOT));
+def(
+  'gold_nugget',
+  spr(
+    [
+      '................',
+      '................',
+      '................',
+      '.......kkkk.....',
+      '.....kkwwhhk....',
+      '....kwwhhhhbk...',
+      '...kwhhhbbbbdk..',
+      '...khhbbbbdddk..',
+      '...kbbbbbddddk..',
+      '....kbbbddddk...',
+      '.....kssddsk....',
+      '......kkkkk.....',
+      '................',
+      '................',
+      '................',
+      '................',
+    ],
+    GOLD_INGOT,
+  ),
+);
+def(
+  'magma_cream',
+  spr(
+    [
+      '................',
+      '................',
+      '.....kkkkkk.....',
+      '...kkoorrrrk....',
+      '..koorrrrryyk...',
+      '..korrrryyyyrk..',
+      '.korrryywwyyrdk.',
+      '.korryywywyrrdk.',
+      '.kddrrryyrrrddk.',
+      '.kddrrrrrrrrddk.',
+      '..kddddrrrrddk..',
+      '..kddddddrdddk..',
+      '...kkddddddkk...',
+      '.....kkkkkk.....',
+      '................',
+      '................',
+    ],
+    { k: 0x2e0804, d: 0x6b1808, r: 0xb8340c, o: 0xe66214, y: 0xf7b824, w: 0xfff08a },
+  ),
+);
 def('brick', spr(INGOT_ROWS, { k: 0x40190f, s: 0x6e2f1f, d: 0x8c3f2b, b: 0xb0563a, h: 0xcb7250, w: 0xe09474 }));
 
 def(
