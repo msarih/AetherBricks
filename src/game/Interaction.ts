@@ -5,6 +5,7 @@
  * `tick()` tourne à 20 ticks par seconde (logique) ; `frame()` à chaque image (contour du bloc visé).
  */
 import { Living, type Entity, type GameApi } from '../entity/Entity';
+import { notifyTamedWolves } from '../entity/Mobs';
 import { Arrow, FishingBobber, Thrown } from '../entity/Objects';
 import type { Input } from '../player/Input';
 import { attackDamage, type Player } from '../player/Player';
@@ -359,6 +360,7 @@ export class Interaction {
     const ok = e.hurt(g, damage, 'attack', p);
     const ey = e.y + e.height * 0.6;
     if (ok) {
+      if (e instanceof Living) notifyTamedWolves(g, e);
       g.sound(crit ? 'attack_crit' : 'attack', e.x, ey, e.z, 0.7, 0.9 + g.rng() * 0.2);
       if (crit) g.particles('crit', e.x, ey, e.z, 8, 0.4);
       if (isTool(held)) p.damageHeld(g);

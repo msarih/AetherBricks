@@ -5,6 +5,7 @@
  */
 import type { SfxName } from '../audio/Sfx';
 import { Living, num, round3, type DamageCause, type Entity, type GameApi, type PlayerLike } from '../entity/Entity';
+import { notifyTamedWolves } from '../entity/Mobs';
 import type { EntityKind } from '../entity/EntityView';
 import type { MobKind } from '../entity/MobModels';
 import { JUMP_VELOCITY, travel, updateMedium } from '../entity/Physics';
@@ -360,6 +361,7 @@ export class Player extends Living implements PlayerLike {
     if (ok) {
       this.sleeping = false;
       this.stopUsing();
+      if (attacker instanceof Living) notifyTamedWolves(game, attacker);
     }
     return ok;
   }

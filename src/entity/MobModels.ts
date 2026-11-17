@@ -24,7 +24,7 @@
  */
 import { mulberry32 } from '../world/gen/Noise';
 
-export type MobKind = 'pig' | 'cow' | 'sheep' | 'chicken' | 'zombie' | 'skeleton' | 'creeper' | 'spider' | 'player';
+export type MobKind = 'pig' | 'cow' | 'sheep' | 'chicken' | 'wolf' | 'zombie' | 'skeleton' | 'creeper' | 'spider' | 'player';
 
 export interface ModelBox {
   /** Partie animée à laquelle appartient la boîte (toutes les boîtes d'une partie tournent autour du même pivot). */
@@ -772,6 +772,98 @@ const DEFAULT_WOOL = 0xffffff;
 
 const modelCache = new Map<MobKind, MobModel>();
 const sheepCache = new Map<string, MobModel>();
+const wolfCache = new Map<string, MobModel>();
+
+// ---------------------------------------------------------------------------------------------
+// Loup (64×64) : sauvage, en colère ou apprivoisé (collier coloré)
+// ---------------------------------------------------------------------------------------------
+
+function buildWolf(tamed: boolean, angry: boolean, collarColor: number): MobModel {
+  const headPivot: Vec3 = [0, 10, 7];
+  const bodyPivot: Vec3 = [0, 10, 0];
+  const head = box('head', headPivot, [-3, 7, 5], [6, 6, 4], [0, 0]);
+  const snout = box('head', headPivot, [-1.5, 7, 9], [3, 3, 4], [20, 0]);
+  const earR = box('head', headPivot, [-3, 13, 6], [2, 2, 1], [34, 0]);
+  const earL = box('head', headPivot, [1, 13, 6], [2, 2, 1], [34, 0]);
+  const mane = box('body', bodyPivot, [-4, 6.5, 0], [8, 7, 6], [0, 10]);
+  const body = box('body', bodyPivot, [-3, 7, -7], [6, 6, 9], [0, 23]);
+  const tail = box('tail', [0, 11, -7], [-1, 5, -9], [2, 8, 2], [30, 23]);
+  const leg0 = box('leg0', [-1.5, 8, 4], [-2.5, 0, 3], [2, 8, 2], [0, 38]);
+  const leg1 = box('leg1', [1.5, 8, 4], [0.5, 0, 3], [2, 8, 2], [0, 38]);
+  const leg2 = box('leg2', [-1.5, 8, -5], [-2.5, 0, -6], [2, 8, 2], [0, 38]);
+  const leg3 = box('leg3', [1.5, 8, -5], [0.5, 0, -6], [2, 8, 2], [0, 38]);
+
+  const s = new Skin(64, 64, 0x701f);
+  const fur = angry ? 0xa3a3a3 : tamed ? 0xd2d2d2 : 0xc0c0c0;
+  const dark = angry ? 0x6c6c6c : 0x868686;
+  const light = 0xeaeaea;
+  const pal: Palette = {
+    F: fur,
+    d: dark,
+    L: light,
+    W: WHITE,
+    K: BLACK,
+    R: 0xb81d1d,
+    n: 0x222222,
+  };
+  s.box(head, fur);
+  s.fill(faceRect(head, 'top'), dark);
+  s.stamp(faceRect(head, 'front'), angry ? [
+    'ddFFdd',
+    'dFFFFd',
+    'FWKKWF',
+    'FRKKRF',
+    'FFFFFF',
+    'FLLLLF',
+  ] : tamed ? [
+    'FFFFFF',
+    'FFFFFF',
+    'FWKKWF',
+    'FFFFFF',
+    'FFFFFF',
+    'FLLLLF',
+  ] : [
+    'ddFFdd',
+    'FFFFFF',
+    'FWKKWF',
+    'FFFFFF',
+    'FFFFFF',
+    'FLLLLF',
+  ], pal);
+
+  s.box(snout, light);
+  s.fill(faceRect(snout, 'top'), fur);
+  s.stamp(faceRect(snout, 'front'), ['nnn', 'LnL', 'LLL'], pal);
+  s.box(earR, fur);
+  s.fill(faceRect(earR, 'front'), dark);
+  s.box(mane, fur);
+  s.fill(faceRect(mane, 'top'), dark);
+  if (tamed) {
+    // Collier coloré sur le haut du cou (devant de la crinière)
+    s.band(mane, 0, 2, collarColor & 0xffffff);
+  }
+  s.box(body, fur);
+  s.fill(faceRect(body, 'top'), dark);
+  s.fill(faceRect(body, 'bottom'), light);
+  s.box(tail, fur);
+  s.band(tail, 6, 2, light);
+  s.box(leg0, fur);
+  s.band(leg0, 6, 2, light);
+  s.fill(faceRect(leg0, 'bottom'), dark);
+
+  return finish('wolf', s, [head, snout, earR, earL, mane, body, tail, leg0, leg1, leg2, leg3], 0.6, 0.85, 0.68);
+}
+
+/** Variante du loup (apprivoisé, en colère, couleur du collier). */
+export function getWolfModel(tamed: boolean, angry: boolean, collarColor = 0xd8342a): MobModel {
+  const key = `${tamed ? 1 : 0}:${angry ? 1 : 0}:${collarColor & 0xffffff}`;
+  let model = wolfCache.get(key);
+  if (!model) {
+    model = buildWolf(tamed, angry, collarColor);
+    wolfCache.set(key, model);
+  }
+  return model;
+}
 
 /** Modèle d'une créature, construit au premier appel puis mis en cache (ne pas modifier l'objet renvoyé). */
 export function getMobModel(kind: MobKind): MobModel {
@@ -789,6 +881,9 @@ export function getMobModel(kind: MobKind): MobModel {
         break;
       case 'chicken':
         model = buildChicken();
+        break;
+      case 'wolf':
+        model = getWolfModel(false, false);
         break;
       case 'zombie':
         model = buildZombie();

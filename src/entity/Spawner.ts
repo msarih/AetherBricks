@@ -39,7 +39,8 @@ const TAU = Math.PI * 2;
 const MONSTER_TABLE: readonly MobKind[] = ['zombie', 'zombie', 'zombie', 'skeleton', 'skeleton', 'skeleton', 'creeper', 'creeper', 'spider', 'spider'];
 
 const FARM: readonly MobKind[] = ['cow', 'sheep', 'pig', 'chicken'];
-const COLD: readonly MobKind[] = ['sheep', 'sheep', 'cow', 'pig', 'chicken'];
+const FOREST: readonly MobKind[] = ['cow', 'sheep', 'pig', 'chicken', 'wolf'];
+const COLD: readonly MobKind[] = ['sheep', 'sheep', 'cow', 'pig', 'chicken', 'wolf'];
 const JUNGLE: readonly MobKind[] = ['chicken', 'chicken', 'pig', 'cow'];
 const SWAMP: readonly MobKind[] = ['pig', 'pig', 'cow', 'chicken'];
 const HILLS: readonly MobKind[] = ['sheep', 'sheep', 'cow'];
@@ -53,9 +54,13 @@ function animalsOf(biome: number): readonly MobKind[] | null {
     case BIOME.SNOWY_BEACH:
     case BIOME.STONY_SHORE:
       return null;
+    case BIOME.FOREST:
+    case BIOME.BIRCH_FOREST:
+    case BIOME.DARK_FOREST:
+      return FOREST;
     case BIOME.TAIGA:
-    case BIOME.SNOWY_PLAINS:
     case BIOME.SNOWY_TAIGA:
+    case BIOME.SNOWY_PLAINS:
       return COLD;
     case BIOME.JUNGLE:
       return JUNGLE;

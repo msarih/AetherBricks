@@ -64,6 +64,11 @@ export interface EntityView {
   /** Mouton : couleur de la laine (0xRRGGBB) et tonte. */
   woolColor: number;
   sheared: boolean;
+  /** Loup : apprivoisé, en colère, assis, couleur du collier. */
+  tamed: boolean;
+  angry: boolean;
+  sitting: boolean;
+  collarColor: number;
   /** Petit animal (taille réduite, tête plus grande). */
   baby: boolean;
   /** Accroupi (joueur) : le corps s'incline. */

@@ -401,9 +401,18 @@ const dbg = (page) => ev(page, () => { const d = window.__game.debugLines(); ret
   await section('quitter vers le titre, renommer', async () => {
     marker = await ev(page, async () => {
       const { B } = await import('/src/world/Ids.ts');
+      const M = await import('/src/entity/Mobs.ts');
       const g = window.__game, p = g.player;
       const m = { x: Math.floor(p.x) + 2, y: Math.min(120, Math.floor(p.y) + 3), z: Math.floor(p.z) };
       g.world.setBlock(m.x, m.y, m.z, B.DIAMOND_BLOCK);
+      const wolf = M.createMob('wolf', g.rng);
+      wolf.tamed = true;
+      wolf.owner = 'player';
+      wolf.sitting = true;
+      wolf.maxHealth = 20;
+      wolf.health = 20;
+      wolf.setPosition(p.x + 1, p.y, p.z);
+      g.spawn(wolf);
       return { ...m, id: B.DIAMOND_BLOCK, px: p.x, py: p.y, pz: p.z, inv: T.inv() };
     });
     await page.keyboard.press('Escape');
@@ -513,9 +522,9 @@ const dbg = (page) => ev(page, () => { const d = window.__game.debugLines(); ret
       await page.waitForFunction('window.__game && window.__game.ready === true', { timeout: 120000 });
       await install(page);
       await ticks(page, 5);
-      const got = await ev(page, (m) => { const p = window.__game.player; return { id: T.block(m.x, m.y, m.z), d: Math.hypot(p.x - m.px, p.y - m.py, p.z - m.pz), inv: T.inv(), seed: window.__game.world.seed }; }, marker);
-      check('import : le monde importé se joue (bloc posé, position et inventaire retrouvés)',
-        got.id === marker.id && got.d < 1.5 && got.inv === marker.inv && got.seed === 1337, `${JSON.stringify(got)} attendu ${JSON.stringify(marker)}`);
+      const got = await ev(page, (m) => { const p = window.__game.player; return { id: T.block(m.x, m.y, m.z), d: Math.hypot(p.x - m.px, p.y - m.py, p.z - m.pz), inv: T.inv(), seed: window.__game.world.seed, wolfOk: T.mobs('wolf').some((w) => w.tamed && w.owner === 'player' && w.sitting && w.health === 20) }; }, marker);
+      check('import : le monde importé se joue (bloc posé, position, inventaire et loup apprivoisé retrouvés)',
+        got.id === marker.id && got.d < 1.5 && got.inv === marker.inv && got.seed === 1337 && got.wolfOk, `${JSON.stringify(got)} attendu ${JSON.stringify(marker)}`);
       await shot(page, '56e-monde-importe');
 
       // on retire le monde importé : l'original doit rester seul

@@ -10,6 +10,7 @@
 import type { SfxName } from '../audio/Sfx';
 import { BLOCK_SOLID } from '../world/Blocks';
 import { B, COLOR_HEX, I } from '../world/Ids';
+import { getItem } from '../world/Items';
 import { newRayHit, raycast } from '../world/Raycast';
 import type { World } from '../world/World';
 import { Living, num } from './Entity';
@@ -21,7 +22,7 @@ import { Arrow } from './Objects';
 import { findPath, type PathPoint } from './Pathfinder';
 import { isBoxFree } from './Physics';
 
-export const PASSIVE_KINDS: readonly MobKind[] = ['pig', 'cow', 'sheep', 'chicken'];
+export const PASSIVE_KINDS: readonly MobKind[] = ['pig', 'cow', 'sheep', 'chicken', 'wolf'];
 export const HOSTILE_KINDS: readonly MobKind[] = ['zombie', 'skeleton', 'creeper', 'spider'];
 
 /** Rayon (en blocs) autour des parents ou de l'œuf dans lequel on compte les animaux. */
@@ -928,6 +929,203 @@ export class Chicken extends Animal {
   }
 }
 
+const WOLF_MEATS = new Set<number>([
+  I.RAW_BEEF,
+  I.STEAK,
+  I.RAW_PORKCHOP,
+  I.COOKED_PORKCHOP,
+  I.RAW_CHICKEN,
+  I.COOKED_CHICKEN,
+  I.RAW_MUTTON,
+  I.COOKED_MUTTON,
+]);
+
+export class Wolf extends Animal {
+  owner: string | null = null;
+  target: Living | null = null;
+  private attackCooldown = 0;
+
+  constructor() {
+    super('wolf', 8, 0.07, 0);
+    this.voice = null;
+  }
+
+  protected behave(game: GameApi): void {
+    if (this.growTicks > 0) {
+      if (--this.growTicks <= 0) this.setBaby(0);
+    }
+    if (this.breedCooldown > 0) this.breedCooldown--;
+    if (this.attackCooldown > 0) this.attackCooldown--;
+
+    // Validation de la cible de combat
+    if (this.target) {
+      if (!this.target.alive || this.target.dead || this.distanceSqTo(this.target) > 576) {
+        this.target = null;
+        if (!this.tamed) this.angry = false;
+      }
+    }
+
+    if (this.sitting) {
+      this.vx = 0;
+      this.vz = 0;
+      const p = game.player;
+      if (p.alive && this.distanceSqTo(p) < 64) this.lookAt(p, 10);
+      return;
+    }
+
+    if (this.target) {
+      this.lookAt(this.target, 30);
+      this.pathTo(game, this.target.x, this.target.y, this.target.z, 1.3, true);
+      const reach = (this.width + this.target.width) * 0.6 + 0.8;
+      if (this.distanceSqTo(this.target) <= reach * reach && this.attackCooldown <= 0) {
+        this.attackCooldown = 20;
+        const dmg = this.tamed ? 4 : 3;
+        if (this.target.hurt(game, dmg, 'attack', this)) {
+          game.sound('attack', this.x, this.y + this.eyeHeight, this.z, 0.6, 1.1);
+        }
+      }
+      return;
+    }
+
+    if (this.tamed && this.owner) {
+      const p = game.player;
+      if (p.alive) {
+        const dSq = this.distanceSqTo(p);
+        if (dSq > 144 && p.onGround) {
+          this.teleportNearOwner(game, p);
+          return;
+        }
+        if (dSq > 9) {
+          this.lookAt(p, 10);
+          this.pathTo(game, p.x, p.y, p.z, 1.25, true);
+          return;
+        }
+      }
+    }
+
+    this.wander(game, this.baby ? 1.3 : 1);
+  }
+
+  private teleportNearOwner(game: GameApi, owner: PlayerLike): void {
+    const w = game.world;
+    const ox = Math.floor(owner.x);
+    const oy = Math.floor(owner.y);
+    const oz = Math.floor(owner.z);
+    const hw = this.width / 2;
+    for (let dy = 0; dy <= 1; dy++) {
+      for (const s of [dy, -dy]) {
+        const y = oy + s;
+        if (y < 1 || y >= 126) continue;
+        for (let dx = -2; dx <= 2; dx++) {
+          for (let dz = -2; dz <= 2; dz++) {
+            if (Math.abs(dx) <= 1 && Math.abs(dz) <= 1) continue;
+            const x = ox + dx;
+            const z = oz + dz;
+            if (!w.isLoaded(x, z)) continue;
+            if (BLOCK_SOLID[w.getBlock(x, y - 1, z)] !== 1) continue;
+            if (!isBoxFree(w, x + 0.5 - hw, y, z + 0.5 - hw, x + 0.5 + hw, y + this.height, z + 0.5 + hw)) continue;
+            this.setPosition(x + 0.5, y, z + 0.5);
+            this.vx = this.vy = this.vz = 0;
+            this.clearPath();
+            return;
+          }
+        }
+      }
+    }
+  }
+
+  protected onHurt(game: GameApi, _cause: DamageCause, attacker: Entity | null): void {
+    this.sitting = false;
+    if (!(attacker instanceof Living) || attacker === this) return;
+    if (this.tamed && attacker === (game.player as unknown as Entity)) return;
+    if (!this.tamed) this.angry = true;
+    this.target = attacker;
+  }
+
+  interact(game: GameApi, player: PlayerLike): boolean {
+    if (!this.alive) return false;
+    const held = player.heldItemId;
+    if (!this.tamed) {
+      if (this.angry || held !== I.BONE) return false;
+      player.consumeHeld(1);
+      if (game.rng() < 1 / 3) {
+        this.tamed = true;
+        this.owner = 'player';
+        this.sitting = true;
+        this.angry = false;
+        this.target = null;
+        this.maxHealth = 20;
+        this.health = 20;
+        this.clearPath();
+        game.particles('heart', this.x, this.y + this.height + 0.2, this.z, 7, this.width);
+        game.sound('orb', this.x, this.y, this.z, 0.7, 1.2);
+      } else {
+        game.particles('smoke', this.x, this.y + this.height + 0.2, this.z, 5, this.width);
+      }
+      return true;
+    }
+    if (this.owner !== 'player') return false;
+    if (WOLF_MEATS.has(held) && this.health < this.maxHealth) {
+      player.consumeHeld(1);
+      const heal = Math.max(2, getItem(held).food || 4);
+      this.health = Math.min(this.maxHealth, this.health + heal);
+      game.sound('eat', this.x, this.y + this.eyeHeight, this.z, 0.6, 1.1);
+      game.particles('heart', this.x, this.y + this.height + 0.2, this.z, 5, this.width * 0.6);
+      return true;
+    }
+    this.sitting = !this.sitting;
+    if (this.sitting) {
+      this.target = null;
+      this.vx = this.vz = 0;
+      this.clearPath();
+    }
+    return true;
+  }
+
+  protected dropLoot(): void {}
+
+  protected xpValue(game: GameApi): number {
+    return this.tamed ? 0 : randInt(game.rng, 1, 3);
+  }
+
+  protected saveExtra(d: EntityData): void {
+    if (this.tamed && this.owner) {
+      d.owner = this.owner;
+      d.sit = this.sitting ? 1 : 0;
+      d.collar = this.collarColor;
+    } else if (this.angry) {
+      d.angry = 1;
+    }
+  }
+
+  loadExtra(d: EntityData): void {
+    super.loadExtra(d);
+    if (typeof d.owner === 'string' && d.owner.length > 0) {
+      this.tamed = true;
+      this.owner = d.owner;
+      this.sitting = d.sit === 1;
+      this.angry = false;
+      this.collarColor = num(d.collar, 0xd8342a);
+      this.maxHealth = 20;
+      this.health = clamp(num(d.health, 20), 1, 20);
+    } else {
+      this.angry = d.angry === 1;
+    }
+  }
+}
+
+/** Alerte les loups apprivoisés debout du joueur quand celui-ci attaque ou est attaqué. */
+export function notifyTamedWolves(game: GameApi, target: Living): void {
+  if (!target.alive || target.dead) return;
+  if (target === (game.player as unknown as Entity)) return;
+  if (target instanceof Wolf && target.tamed && target.owner === 'player') return;
+  for (const e of game.entities) {
+    if (e instanceof Wolf && !e.dead && e.tamed && e.owner === 'player' && !e.sitting) {
+      e.target = target;
+    }
+  }
+}
+
 // =============================================================================================
 // Monstres
 // =============================================================================================
@@ -1222,9 +1420,6 @@ export class Creeper extends Monster {
 }
 
 export class Spider extends Monster {
-  /** Attaquée : hostile même en plein jour, jusqu'à ce qu'elle perde sa cible. */
-  private angry = false;
-
   constructor() {
     super('spider', 16, 0.07);
     this.voice = 'spider';
@@ -1302,6 +1497,8 @@ export function createMob(kind: MobKind, rng: () => number = Math.random): Mob |
       return new Sheep(rng);
     case 'chicken':
       return new Chicken(rng);
+    case 'wolf':
+      return new Wolf();
     case 'zombie':
       return new Zombie();
     case 'skeleton':

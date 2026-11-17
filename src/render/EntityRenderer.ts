@@ -13,7 +13,7 @@ import * as THREE from 'three';
 import type { Atlas } from './Atlas';
 import { createModelMaterial, lightColor, passGeometry, worldUniforms } from './ChunkMaterials';
 import type { EntityView } from '../entity/EntityView';
-import { getMobModel, getSheepModel, type MobKind, type MobModel } from '../entity/MobModels';
+import { getMobModel, getSheepModel, getWolfModel, type MobKind, type MobModel } from '../entity/MobModels';
 import { BLOCKS, TINT } from '../world/Blocks';
 import { B, BLOCK_ID_LIMIT, I } from '../world/Ids';
 import { getItem } from '../world/Items';
@@ -700,7 +700,9 @@ function visualKey(e: EntityView): string {
   switch (e.kind) {
     case 'mob':
     case 'player':
-      return e.mobKind === 'sheep' ? `m:sheep:${e.woolColor}:${e.sheared ? 1 : 0}` : `m:${e.mobKind}`;
+      if (e.mobKind === 'sheep') return `m:sheep:${e.woolColor}:${e.sheared ? 1 : 0}`;
+      if (e.mobKind === 'wolf') return `m:wolf:${e.tamed ? 1 : 0}:${e.angry ? 1 : 0}:${e.collarColor & 0xffffff}`;
+      return `m:${e.mobKind}`;
     case 'item':
       return `i:${e.itemId}:${itemCopies(e.itemCount)}`;
     case 'falling_block':
@@ -728,6 +730,7 @@ const SHADOW_DIAMETER: Record<MobKind, number> = {
   cow: 1.3,
   sheep: 1.3,
   chicken: 0.6,
+  wolf: 0.9,
   zombie: 0.95,
   skeleton: 0.95,
   creeper: 0.95,
@@ -759,7 +762,11 @@ class MobVisual implements Visual {
 
   constructor(readonly key: string, private readonly atlas: Atlas, e: EntityView) {
     this.kind = e.mobKind;
-    this.model = e.mobKind === 'sheep' ? getSheepModel(e.woolColor, e.sheared) : getMobModel(e.mobKind);
+    this.model = e.mobKind === 'sheep'
+      ? getSheepModel(e.woolColor, e.sheared)
+      : e.mobKind === 'wolf'
+        ? getWolfModel(e.tamed, e.angry, e.collarColor)
+        : getMobModel(e.mobKind);
     const assets = getMobAssets(this.model);
     this.material = createMobMaterial(assets.texture);
     this.body.rotation.order = 'YXZ';
@@ -871,6 +878,33 @@ class MobVisual implements Visual {
         this.rot('wingL', 0, 0, -angle);
         break;
       }
+      case 'wolf':
+        if (e.sitting) {
+          this.offset('body', 0, -3, 0);
+          this.rot('body', 0.45, 0, 0);
+          this.offset('head', 0, -2, 0);
+          this.rot('leg0', -0.2, 0, 0);
+          this.rot('leg1', -0.2, 0, 0);
+          this.rot('leg2', -1.25, 0, 0);
+          this.rot('leg3', -1.25, 0, 0);
+          this.offset('leg2', 0, -2, 2);
+          this.offset('leg3', 0, -2, 2);
+          this.offset('tail', 0, -4, 0);
+          this.rot('tail', 0.4, 0, 0);
+        } else {
+          this.offset('body', 0, 0, 0);
+          this.rot('body', 0, 0, 0);
+          this.offset('head', 0, 0, 0);
+          this.rot('leg0', -walk, 0, 0);
+          this.rot('leg1', walk, 0, 0);
+          this.rot('leg2', walk, 0, 0);
+          this.rot('leg3', -walk, 0, 0);
+          this.offset('leg2', 0, 0, 0);
+          this.offset('leg3', 0, 0, 0);
+          this.offset('tail', 0, 0, 0);
+          this.rot('tail', e.tamed ? 1.1 : e.angry ? 0.9 : 0.45, 0, 0);
+        }
+        break;
       case 'spider':
         for (let pair = 0; pair < 4; pair++) {
           const fy = -Math.cos(swing * 0.6662 * 2 + SPIDER_PHASE[pair]) * 0.4 * amount;

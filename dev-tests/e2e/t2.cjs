@@ -501,6 +501,127 @@ async function useOnGround(page, x, z) {
     }
   });
 
+  await section('loup apprivoisable', async () => {
+    try {
+      await chat(page, '/tp 15.5 4 15.5');
+      await ticks(page, 4);
+      await ev(page, () => { const p = window.__game.player; p.health = 20; T.aim(15.5, 4.4, 12.5); });
+      await ticks(page, 2);
+      await chat(page, '/summon wolf');
+      await ticks(page, 2);
+      const wild = await ev(page, () => {
+        const l = T.mobs('wolf');
+        const w = l[l.length - 1];
+        window.__testWolf = w;
+        return w ? { tamed: w.tamed, angry: w.angry, health: w.health } : null;
+      });
+      check('loup : /summon wolf fait apparaître un loup sauvage', !!wild && !wild.tamed && !wild.angry && wild.health === 8, JSON.stringify(wild));
+
+      // sauvage : devient hostile si on le frappe
+      const angryRes = await ev(page, () => {
+        const g = window.__game, w = window.__testWolf;
+        w.hurt(g, 2, 'attack', g.player);
+        for (let i = 0; i < 5; i++) g.tick();
+        return { angry: w.angry, targetIsPlayer: w.target === g.player };
+      });
+      check('loup sauvage : devient hostile si on le frappe', angryRes.angry && angryRes.targetIsPlayer, JSON.stringify(angryRes));
+      await ev(page, () => { if (window.__testWolf) window.__testWolf.dead = true; });
+      await ticks(page, 2);
+
+      // apprivoisement aux os (1/3 de chance, déterministe : 0.8 échoue, 0.1 réussit)
+      await chat(page, '/give bone 3');
+      await chat(page, '/give cooked_porkchop 2');
+      const tameRes = await ev(page, async () => {
+        const M = await import('/src/entity/Mobs.ts');
+        const g = window.__game;
+        T.select('bone');
+        const w = M.createMob('wolf', g.rng);
+        w.setPosition(15.5, 4, 13.5);
+        g.spawn(w);
+        window.__testWolf = w;
+        const origRng = g.rng;
+        let step = 0;
+        Object.defineProperty(g, 'rng', { configurable: true, value: () => (step++ === 0 ? 0.8 : 0.1) });
+        const try1 = w.interact(g, g.player);
+        const afterFail = { tamed: w.tamed, bones: T.count('bone') };
+        const try2 = w.interact(g, g.player);
+        Object.defineProperty(g, 'rng', { configurable: true, value: origRng });
+        return { try1, afterFail, try2, tamed: w.tamed, sitting: w.sitting, owner: w.owner, health: w.health, maxHealth: w.maxHealth, bones: T.count('bone') };
+      });
+      check('loup : apprivoisement aux os (1/3) donne un loup assis avec collier et 20 PV',
+        tameRes.try1 && !tameRes.afterFail.tamed && tameRes.try2 && tameRes.tamed && tameRes.sitting && tameRes.owner === 'player' && tameRes.health === 20 && tameRes.maxHealth === 20 && tameRes.bones === 1,
+        JSON.stringify(tameRes));
+      await ev(page, () => { window.__testWolf.setRotation(Math.PI); T.aim(15.5, 4.45, 13.5); });
+      await ticks(page, 2);
+      await shot(page, '18b-loup-apprivoise');
+
+      // clic droit : assis ↔ debout ; debout il suit et se téléporte si trop loin
+      const followWolf = await ev(page, () => {
+        const g = window.__game, w = window.__testWolf;
+        // main vide pour basculer assis/debout
+        g.player.inventory.selected = 8;
+        w.interact(g, g.player); // se lève
+        const stood = !w.sitting;
+        g.player.teleport(15.5, 4, 21.5);
+        for (let i = 0; i < 30; i++) g.tick();
+        const distAfterWalk = Math.hypot(w.x - g.player.x, w.z - g.player.z);
+        // téléportation si > 12 blocs
+        g.player.teleport(35.5, 4, 21.5);
+        g.tick();
+        g.tick();
+        const distAfterTp = Math.hypot(w.x - g.player.x, w.z - g.player.z);
+        // rasseoir
+        w.interact(g, g.player);
+        const satAgain = w.sitting;
+        return { stood, distAfterWalk: +distAfterWalk.toFixed(2), distAfterTp: +distAfterTp.toFixed(2), satAgain };
+      });
+      check('loup apprivoisé : assis/debout, suit le maître et se téléporte si trop loin',
+        followWolf.stood && followWolf.distAfterWalk < 5 && followWolf.distAfterTp < 5 && followWolf.satAgain,
+        JSON.stringify(followWolf));
+
+      // attaque ce que le maître frappe, et la viande le soigne
+      const combatHeal = await ev(page, async () => {
+        const M = await import('/src/entity/Mobs.ts');
+        const g = window.__game, w = window.__testWolf;
+        w.interact(g, g.player); // debout
+        const target = M.createMob('sheep', g.rng);
+        target.setPosition(37.5, 4, 21.5);
+        g.spawn(target);
+        M.notifyTamedWolves(g, target);
+        const targeted = w.target === target;
+        const hp0 = target.health;
+        for (let i = 0; i < 40; i++) g.tick();
+        const attacked = target.health < hp0;
+        target.dead = true;
+        w.target = null;
+        // soin par la viande
+        w.hurt(g, 6, 'fall');
+        const hurtHp = w.health;
+        T.select('cooked_porkchop');
+        const healed = w.interact(g, g.player);
+        const finalHp = w.health;
+        w.dead = true;
+        g.tick();
+        return { targeted, attacked, hurtHp, healed, finalHp };
+      });
+      check('loup apprivoisé : attaque les cibles du maître et la viande le soigne',
+        combatHeal.targeted && combatHeal.attacked && combatHeal.hurtHp === 14 && combatHeal.healed && combatHeal.finalHp === 20,
+        JSON.stringify(combatHeal));
+    } finally {
+      await ev(page, () => {
+        const g = window.__game;
+        if (window.__testWolf) window.__testWolf.dead = true;
+        g.player.health = 20;
+        const boneId = T.id('bone');
+        const porkId = T.id('cooked_porkchop');
+        for (let i = 0; i < g.player.inventory.slots.length; i++) {
+          const st = g.player.inventory.slots[i];
+          if (st && (st.id === boneId || st.id === porkId)) g.player.inventory.slots[i] = null;
+        }
+      }).catch(() => undefined);
+    }
+  });
+
   await section('mort et réapparition', async () => {
     await chat(page, '/tp 20.5 4 20.5');
     const before = await ev(page, () => T.inv());
@@ -946,8 +1067,20 @@ async function useOnGround(page, x, z) {
     });
     await chat(page, '/difficulty normal');
     await chat(page, '/summon spider');
+    await ev(page, async () => {
+      const M = await import('/src/entity/Mobs.ts');
+      const g = window.__game;
+      const w = M.createMob('wolf', g.rng);
+      w.tamed = true;
+      w.owner = 'player';
+      w.sitting = true;
+      w.maxHealth = 20;
+      w.health = 20;
+      w.setPosition(71.5, 4, 68.5);
+      g.spawn(w);
+    });
     await ticks(page, 10);
-    marker = await ev(page, () => { const g = window.__game; return { block: T.block(70, 4, 67), inv: T.inv(), time: g.time, pos: [g.player.x, g.player.y, g.player.z], cows: T.mobs('cow').filter((e) => Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, near: T.mobs('cow').filter((e) => Math.hypot(e.x - 70.5, e.z - 67.5) < 6).length, babies: T.mobs('cow').filter((e) => e.baby && Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, spiders: T.mobs('spider').filter((e) => Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, hole: null, bed: g.player.bed, chest: T.block(40, 4, 38), health: g.player.health, mode: g.player.gameMode, advs: Array.from(g.player.advancements).sort() }; });
+    marker = await ev(page, () => { const g = window.__game; return { block: T.block(70, 4, 67), inv: T.inv(), time: g.time, pos: [g.player.x, g.player.y, g.player.z], cows: T.mobs('cow').filter((e) => Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, near: T.mobs('cow').filter((e) => Math.hypot(e.x - 70.5, e.z - 67.5) < 6).length, babies: T.mobs('cow').filter((e) => e.baby && Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, wolves: T.mobs('wolf').filter((e) => e.tamed && e.owner === 'player' && e.sitting).length, spiders: T.mobs('spider').filter((e) => Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, hole: null, bed: g.player.bed, chest: T.block(40, 4, 38), health: g.player.health, mode: g.player.gameMode, advs: Array.from(g.player.advancements).sort() }; });
     if (holeAt) marker.hole = await ev(page, (h) => T.block(h.x, h.y, h.z), holeAt);
     console.log('  repères avant sauvegarde :', JSON.stringify(marker));
     await page.keyboard.press('Escape');
@@ -965,7 +1098,7 @@ async function useOnGround(page, x, z) {
     await page.waitForFunction('window.__game && window.__game.ready === true', { timeout: 120000 });
     await install(page);
     await ticks(page, 20);
-    const now = await ev(page, () => { const g = window.__game; return { block: T.block(70, 4, 67), inv: T.inv(), time: g.time, pos: [g.player.x, g.player.y, g.player.z], cows: T.mobs('cow').filter((e) => Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, near: T.mobs('cow').filter((e) => Math.hypot(e.x - 70.5, e.z - 67.5) < 6).length, babies: T.mobs('cow').filter((e) => e.baby && Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, spiders: T.mobs('spider').filter((e) => Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, bed: g.player.bed, chest: T.block(40, 4, 38), health: g.player.health, mode: g.player.gameMode, advs: Array.from(g.player.advancements).sort() }; });
+    const now = await ev(page, () => { const g = window.__game; return { block: T.block(70, 4, 67), inv: T.inv(), time: g.time, pos: [g.player.x, g.player.y, g.player.z], cows: T.mobs('cow').filter((e) => Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, near: T.mobs('cow').filter((e) => Math.hypot(e.x - 70.5, e.z - 67.5) < 6).length, babies: T.mobs('cow').filter((e) => e.baby && Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, wolves: T.mobs('wolf').filter((e) => e.tamed && e.owner === 'player' && e.sitting).length, spiders: T.mobs('spider').filter((e) => Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, bed: g.player.bed, chest: T.block(40, 4, 38), health: g.player.health, mode: g.player.gameMode, advs: Array.from(g.player.advancements).sort() }; });
     if (holeAt) now.hole = await ev(page, (h) => T.block(h.x, h.y, h.z), holeAt);
     console.log('  repères après rechargement :', JSON.stringify(now));
     check('bloc posé persistant', now.block === marker.block && now.block !== 0);
@@ -975,6 +1108,7 @@ async function useOnGround(page, x, z) {
     check('heure persistante', now.time >= marker.time && now.time < marker.time + 200, `${marker.time} → ${now.time}`);
     check('animaux persistants (rayon 48 blocs)', Math.abs(now.cows - marker.cows) <= 2 && now.near >= 1 && marker.near >= 1, `${marker.cows} → ${now.cows} ; vache invoquée à proximité : ${marker.near} → ${now.near}`);
     check('petit animal persistant après rechargement', marker.babies >= 1 && now.babies >= 1, `${marker.babies} → ${now.babies}`);
+    check('loup apprivoisé persistant avec maître et état assis', marker.wolves >= 1 && now.wolves >= 1, `${marker.wolves} → ${now.wolves}`);
     check('monstres persistants', now.spiders >= 1 && marker.spiders >= 1, `${marker.spiders} → ${now.spiders}`);
     check('lit et blocs à entité persistants', JSON.stringify(now.bed) === JSON.stringify(marker.bed) && now.chest === marker.chest);
     check('progrès persistants (toute la chaîne jusqu\'au fer)', JSON.stringify(now.advs) === JSON.stringify(marker.advs) && now.advs.length === 10, JSON.stringify(now.advs));
