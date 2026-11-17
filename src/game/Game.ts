@@ -926,8 +926,8 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       // la main est dessinée avec un champ de vision fixe de 70° : on ramène le bout de la canne à celui de la caméra
       const k = Math.tan((cam.fov * DEG) / 2) / Math.tan(35 * DEG);
       this.entityRenderer.lineAnchor.set(ROD_TIP_X * k, ROD_TIP_Y * k, -1).multiplyScalar(0.8).applyMatrix4(cam.matrixWorld);
-    }
-    else {
+    } else {
+      // Repli si l'avatar n'a pas encore de modèle d'objet tenu ; sinon sync() met à jour lineAnchor sur le bout réel de la canne
       const sy = Math.sin(yaw);
       const cy = Math.cos(yaw);
       this.entityRenderer.lineAnchor.set(ex - sy * 0.7 + cy * 0.35, lerp(p.py, p.y, alpha) + 1.35, ez - cy * 0.7 - sy * 0.35);

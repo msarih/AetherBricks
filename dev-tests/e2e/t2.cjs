@@ -628,6 +628,35 @@ async function useOnGround(page, x, z) {
       `${JSON.stringify(b1)} ${JSON.stringify(r1)}`);
     check('pêche : l\'attente avant la touche est tirée entre 5 et 30 secondes', !!b1 && b1.wait > 50 && b1.wait < 600 && b1.bite === 0, JSON.stringify(b1));
 
+    // --- ligne en vue extérieure (F5) : part du bout réel de la canne, pas de l'épaule
+    await page.keyboard.press('F5');
+    await page.keyboard.press('F5');
+    await ev(page, () => { T.look(-Math.PI / 2 - 0.55, 0.15); });
+    await ticks(page, 2);
+    await sleep(100);
+    const f5Line = await ev(page, () => {
+      const g = window.__game;
+      const p = g.player;
+      const er = g.entityRenderer;
+      const a = er.lineAnchor;
+      const pv = er.visuals.get(p.id);
+      const oldShoulder = { x: p.x - Math.sin(p.yaw) * 0.7 + Math.cos(p.yaw) * 0.35, y: p.y + 1.35, z: p.z - Math.cos(p.yaw) * 0.7 - Math.sin(p.yaw) * 0.35 };
+      const diffOld = Math.hypot(a.x - oldShoulder.x, a.y - oldShoulder.y, a.z - oldShoulder.z);
+      const bobVis = Array.from(er.visuals.values()).find((v) => v.key === 'f');
+      const pts = bobVis ? bobVis.points : null;
+      const endX = pts ? bobVis.root.position.x + pts[pts.length - 3] : 0;
+      const endY = pts ? bobVis.root.position.y + pts[pts.length - 2] : 0;
+      const endZ = pts ? bobVis.root.position.z + pts[pts.length - 1] : 0;
+      const lineToAnchor = Math.hypot(endX - a.x, endY - a.y, endZ - a.z);
+      const handleW = pv && pv.heldGroup ? a.clone().set(-0.4, -0.4, 0).applyMatrix4(pv.heldGroup.matrixWorld) : null;
+      return { view: g.viewMode, hasHeld: !!(pv && pv.heldGroup), diffOld: +diffOld.toFixed(3), lineToAnchor: +lineToAnchor.toFixed(4), tipY: +a.y.toFixed(3), handleY: handleW ? +handleW.y.toFixed(3) : 0 };
+    });
+    await shot(page, '27b-peche-f5');
+    await page.keyboard.press('F5');
+    await ev(page, () => T.aim(64.5, 4.8, 60.5));
+    await ticks(page, 2);
+    check('pêche (F5) : la ligne part du bout de la canne (plus de l\'épaule)', f5Line.view === 2 && f5Line.hasHeld && f5Line.diffOld > 0.3 && f5Line.lineToAnchor < 0.01, JSON.stringify(f5Line));
+
     // --- tenir le bouton ne remonte pas la ligne ; un clic sans touche ne rapporte rien
     await ev(page, () => { window.__game.input.buttons[2] = true; });
     await ticks(page, 12);

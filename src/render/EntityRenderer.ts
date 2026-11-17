@@ -998,6 +998,15 @@ class MobVisual implements Visual {
     this.heldGroup = group;
   }
 
+  /** Calcule la position monde du bout de la canne à pêche tenue en main droite. Retourne false sinon. */
+  getHeldTip(out: THREE.Vector3): boolean {
+    if (!this.heldGroup || this.heldId !== I.FISHING_ROD) return false;
+    this.root.updateMatrixWorld(true);
+    // Bout de la canne dans le sprite 16×16 (pixel (14, 1) → centre (14.5, 1.5))
+    out.set(14.5 / 16 - 0.5, 0.5 - 1.5 / 16, 0).applyMatrix4(this.heldGroup.matrixWorld);
+    return true;
+  }
+
   dispose(): void {
     this.material.dispose();
     this.shadow.dispose();
@@ -1244,7 +1253,10 @@ export class EntityRenderer {
       }
       v.stamp = frame;
       v.root.visible = !e.hidden;
-      if (!e.hidden) v.update(e, alpha, time);
+      if (!e.hidden) {
+        v.update(e, alpha, time);
+        if (e.kind === 'player' && v instanceof MobVisual) v.getHeldTip(this.lineAnchor);
+      }
     }
     for (const [id, v] of this.visuals) {
       if (v.stamp !== frame) this.remove(id, v);
