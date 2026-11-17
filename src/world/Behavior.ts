@@ -117,7 +117,8 @@ export function canStay(w: World, x: number, y: number, z: number, id: number, m
     case B.POTATOES:
       return below === B.FARMLAND;
     case B.TORCH:
-    case B.REDSTONE_TORCH: {
+    case B.REDSTONE_TORCH:
+    case B.REDSTONE_TORCH_OFF: {
       const side = meta & 7;
       if (side === 0) return topSolid(w, x, y - 1, z);
       const f = (side - 1) & 3;
@@ -405,11 +406,11 @@ export function scheduledTick(w: World, x: number, y: number, z: number, id: num
     fireTick(w, x, y, z, meta);
     return;
   }
-  if (id === B.REDSTONE_TORCH) {
+  if (id === B.REDSTONE_TORCH || id === B.REDSTONE_TORCH_OFF) {
     const shouldBeOff = isTorchSupportPowered(w, x, y, z, meta);
-    const isOff = (meta & 8) !== 0;
+    const isOff = id === B.REDSTONE_TORCH_OFF;
     if (shouldBeOff !== isOff) {
-      w.setMeta(x, y, z, shouldBeOff ? meta | 8 : meta & ~8, false);
+      w.setBlock(x, y, z, shouldBeOff ? B.REDSTONE_TORCH_OFF : B.REDSTONE_TORCH, meta & 7, false);
       updateRedstoneAround(w, x, y, z);
     }
     return;

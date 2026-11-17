@@ -41,6 +41,8 @@ export interface WorldHost {
   effect(kind: WorldEffect, x: number, y: number, z: number, a?: number, b?: number): void;
   /** Une entité de bloc vient d'être retirée (son bloc a disparu) : lâcher son contenu. */
   blockEntityRemoved(be: BlockEntity): void;
+  /** Pousse les entités dans la boîte donnée (piston). */
+  pushEntities?(x0: number, y0: number, z0: number, x1: number, y1: number, z1: number, dx: number, dy: number, dz: number): void;
 }
 
 const NO_HOST: WorldHost = {

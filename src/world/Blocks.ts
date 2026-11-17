@@ -459,6 +459,10 @@ reg(B.REDSTONE_TORCH, 'redstone_torch', 'Torche de redstone', {
   tiles: 'redstone_torch_on', shape: SHAPE.TORCH, solid: false, opaque: false, hardness: 0, emit: 7,
   sound: 'wood', needsSupport: true, itemTile: 'redstone_torch_on', category: 'utilitaire',
 });
+reg(B.REDSTONE_TORCH_OFF, 'redstone_torch_off', 'Torche de redstone éteinte', {
+  tiles: 'redstone_torch_off', shape: SHAPE.TORCH, solid: false, opaque: false, hardness: 0, emit: 0,
+  sound: 'wood', needsSupport: true, hasItem: false, category: 'aucune',
+});
 reg(B.LEVER, 'lever', 'Levier', {
   tiles: 'cobblestone', shape: SHAPE.LEVER, solid: false, opaque: false, hardness: 0.5,
   sound: 'wood', needsSupport: true, category: 'utilitaire',

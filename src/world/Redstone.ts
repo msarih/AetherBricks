@@ -7,6 +7,7 @@
  */
 import { B } from './Ids';
 import {
+  BLOCKS,
   BLOCK_OPAQUE,
   BLOCK_REPLACEABLE,
   FACING_DX,
@@ -46,6 +47,7 @@ export function isRedstoneBlock(id: number): boolean {
   return (
     id === B.REDSTONE_WIRE ||
     id === B.REDSTONE_TORCH ||
+    id === B.REDSTONE_TORCH_OFF ||
     id === B.LEVER ||
     id === B.STONE_BUTTON ||
     id === B.STONE_PRESSURE_PLATE ||
@@ -73,9 +75,9 @@ export function hasRedstoneNearby(w: World, x: number, y: number, z: number): bo
 /** Indique si le bloc solide (x, y, z) est fortement alimenté par un composant attaché. */
 function isStronglyPoweredBlock(w: World, x: number, y: number, z: number): boolean {
   if (BLOCK_OPAQUE[w.getBlock(x, y, z)] !== 1) return false;
-  // Torche au sol juste dessous (y - 1, meta = 0 = allumée au sol)
+  // Torche au sol juste dessous (y - 1, side = 0 = allumée au sol)
   const below = w.getBlockAndMeta(x, y - 1, z);
-  if ((below & 255) === B.REDSTONE_TORCH && ((below >> 8) & 15) === 0) return true;
+  if ((below & 255) === B.REDSTONE_TORCH && ((below >> 8) & 7) === 0) return true;
   // Plaque de pression juste dessus
   const above = w.getBlockAndMeta(x, y + 1, z);
   if ((above & 255) === B.STONE_PRESSURE_PLATE && ((above >> 8) & 1) !== 0) return true;
@@ -105,7 +107,6 @@ function directSourcePower(w: World, nx: number, ny: number, nz: number, tx: num
     case B.REDSTONE_BLOCK:
       return 15;
     case B.REDSTONE_TORCH: {
-      if (meta & 8) return 0; // éteinte
       // Une torche n'alimente pas le bloc sur lequel elle est accrochée
       const side = meta & 7;
       const sx = side === 0 ? nx : nx - FACING_DX[(side - 1) & 3];
@@ -204,6 +205,7 @@ export function isTorchSupportPowered(w: World, x: number, y: number, z: number,
 
 function isMovableBlock(id: number, meta: number): boolean {
   if (id === B.AIR || BLOCK_REPLACEABLE[id] === 1) return true;
+  if (BLOCKS[id].needsSupport) return false;
   if (
     id === B.BEDROCK ||
     id === B.OBSIDIAN ||
@@ -233,6 +235,7 @@ function tryPistonMove(w: World, x: number, y: number, z: number, id: number, me
   if (powered && !extended) {
     // Cherche la chaîne de blocs à pousser (max MAX_PISTON_PUSH)
     let len = 0;
+    let breakTail = false;
     while (len <= MAX_PISTON_PUSH) {
       const bx = x + dx * (len + 1);
       const by = y + dy * (len + 1);
@@ -241,9 +244,24 @@ function tryPistonMove(w: World, x: number, y: number, z: number, id: number, me
       const bv = w.getBlockAndMeta(bx, by, bz);
       const bid = bv & 255;
       if (bid === B.AIR || BLOCK_REPLACEABLE[bid] === 1) break;
+      if (BLOCKS[bid].needsSupport) {
+        breakTail = true;
+        break;
+      }
       if (len === MAX_PISTON_PUSH || !isMovableBlock(bid, bv >> 8)) return;
       len++;
     }
+    if (breakTail) {
+      w.breakBlock(x + dx * (len + 1), y + dy * (len + 1), z + dz * (len + 1), true);
+    }
+    // Pousse les entités dans la zone balayée par la tête et les blocs poussés
+    const ex0 = Math.min(x + dx, x + dx * (len + 1));
+    const ey0 = Math.min(y + dy, y + dy * (len + 1));
+    const ez0 = Math.min(z + dz, z + dz * (len + 1));
+    const ex1 = Math.max(x + dx, x + dx * (len + 1)) + 1;
+    const ey1 = Math.max(y + dy, y + dy * (len + 1)) + 1;
+    const ez1 = Math.max(z + dz, z + dz * (len + 1)) + 1;
+    w.host.pushEntities?.(ex0, ey0, ez0, ex1, ey1, ez1, dx, dy, dz);
     // Décale les blocs de la fin vers le piston
     for (let i = len; i >= 1; i--) {
       const sx = x + dx * i;
@@ -287,9 +305,9 @@ function updateConsumer(w: World, x: number, y: number, z: number): void {
   const id = v & 255;
   const meta = v >> 8;
 
-  if (id === B.REDSTONE_TORCH) {
+  if (id === B.REDSTONE_TORCH || id === B.REDSTONE_TORCH_OFF) {
     const shouldBeOff = isTorchSupportPowered(w, x, y, z, meta);
-    const isOff = (meta & 8) !== 0;
+    const isOff = id === B.REDSTONE_TORCH_OFF;
     if (shouldBeOff !== isOff) w.scheduleTick(x, y, z, 2);
     return;
   }
@@ -331,9 +349,10 @@ function updateConsumer(w: World, x: number, y: number, z: number): void {
       const ty = y + dy;
       const tz = z + dz;
       const tv = w.getBlockAndMeta(tx, ty, tz);
-      if ((tv & 255) === B.REDSTONE_TORCH) {
+      if ((tv & 255) === B.REDSTONE_TORCH || (tv & 255) === B.REDSTONE_TORCH_OFF) {
         const tm = tv >> 8;
-        if (isTorchSupportPowered(w, tx, ty, tz, tm) !== ((tm & 8) !== 0)) {
+        const isOff = (tv & 255) === B.REDSTONE_TORCH_OFF;
+        if (isTorchSupportPowered(w, tx, ty, tz, tm) !== isOff) {
           w.scheduleTick(tx, ty, tz, 2);
         }
       }

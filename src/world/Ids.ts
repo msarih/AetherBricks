@@ -163,6 +163,7 @@ export const B = {
   PISTON_HEAD: 157,
   REDSTONE_LAMP: 158,
   REDSTONE_LAMP_LIT: 159,
+  REDSTONE_TORCH_OFF: 160,
 } as const;
 
 /** Nombre maximal d'identifiants de blocs (les objets commencent à 256). */

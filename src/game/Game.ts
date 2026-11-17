@@ -311,6 +311,11 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       this.thunderLevel = this.thundering ? 1 : 0;
       this.weatherTimer = Math.max(0, Math.floor(num(st.weatherTimer, 0)));
       this.level = Math.max(0, Math.min(3, Math.floor(num(st.difficulty, 2))));
+      if (Array.isArray(st.pressedPlates)) {
+        for (const pk of st.pressedPlates) {
+          if (typeof pk === 'number' && Number.isFinite(pk)) this.pressedPlates.set(pk, this.world.age + 10);
+        }
+      }
     }
     if (this.weatherTimer <= 0) this.weatherTimer = 12000 + Math.floor(Math.random() * 168000);
     const savedPlayer = st?.player;
@@ -392,6 +397,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       weatherTimer: this.weatherTimer,
       difficulty: this.difficulty,
       spawn: [this.spawnPoint.x, this.spawnPoint.y, this.spawnPoint.z],
+      pressedPlates: Array.from(this.pressedPlates.keys()),
     };
     info.gameMode = this.player.gameMode;
     info.lastPlayed = Date.now();
@@ -1244,6 +1250,13 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       effect: (kind, x, y, z, a, b) => this.worldEffect(kind, x, y, z, a ?? 0, b ?? 0),
       blockEntityRemoved: (be: BlockEntity) => {
         for (const s of blockEntityItems(be)) this.dropItem(be.x + 0.5, be.y + 0.3, be.z + 0.5, s.id, s.count, s.damage);
+      },
+      pushEntities: (x0, y0, z0, x1, y1, z1, dx, dy, dz) => {
+        for (const e of this.entitiesInBox(x0, y0, z0, x1, y1, z1, null)) {
+          if (e instanceof Living && e.alive) {
+            e.setPosition(e.x + dx, e.y + dy, e.z + dz);
+          }
+        }
       },
     };
   }

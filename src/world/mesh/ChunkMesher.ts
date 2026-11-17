@@ -827,7 +827,7 @@ function meshCrop(id: number, meta: number): void {
 }
 
 function meshTorch(id: number, meta: number): void {
-  const tile = id === B.REDSTONE_TORCH ? (meta & 8 ? T.redstone_torch_off : T.redstone_torch_on) : T.torch;
+  const tile = id === B.REDSTONE_TORCH ? T.redstone_torch_on : id === B.REDSTONE_TORCH_OFF ? T.redstone_torch_off : T.torch;
   noTint();
   flatLight(1);
   let bx = 0.5;

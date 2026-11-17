@@ -867,6 +867,7 @@ async function useOnGround(page, x, z) {
       await page.waitForSelector('[data-mc="menu-enchant"]', { timeout: 5000 });
       const moveEnch = await ev(page, async () => {
         const { I } = await import('/src/world/Ids.ts');
+        const { makeStack } = await import('/src/world/ItemStack.ts');
         const g = window.__game, m = g.menu, inv = g.player.inventory;
         m.click(m.indexOf('hotbar', 6), 0, true);
         m.click(m.indexOf('hotbar', 7), 0, true);
@@ -879,7 +880,24 @@ async function useOnGround(page, x, z) {
         m.click(m.indexOf('input', 0), 0, false);
         m.click(m.indexOf('input', 0), 0, true);
         const afterShift = inv.slots.some((s) => s && s.id === I.DIAMOND_PICKAXE && s.enchants && Object.keys(s.enchants).length > 0);
-        return { onCursor, inMain, afterShift };
+        // Propositions fixes tant qu'on n'enchante pas, puis renouvelées après enchantement
+        inv.slots[6] = makeStack(I.IRON_PICKAXE, 1);
+        const inp = m.indexOf('input', 0);
+        m.click(m.indexOf('hotbar', 6), 0, true);
+        const offerSig1 = JSON.stringify(m.offers.map((o) => [o.minLevel, o.enchants]));
+        m.click(inp, 0, false); // retire sur le curseur
+        m.click(inp, 0, false); // remet dans la table
+        const offerSig2 = JSON.stringify(m.offers.map((o) => [o.minLevel, o.enchants]));
+        inv.slots[7] = makeStack(I.LAPIS, 10);
+        m.click(m.indexOf('hotbar', 7), 0, true);
+        g.player.xpLevel = 30;
+        m.enchant(0);
+        m.click(inp, 0, true);
+        inv.slots[6] = makeStack(I.IRON_PICKAXE, 1);
+        m.click(m.indexOf('hotbar', 6), 0, true);
+        const offerSigAfter = JSON.stringify(m.offers.map((o) => [o.minLevel, o.enchants]));
+        m.click(inp, 0, true);
+        return { onCursor, inMain, afterShift, fixedOk: offerSig1 === offerSig2 && m.offers.length === 0, rotatedOk: offerSig1 !== offerSigAfter };
       });
       await page.keyboard.press('Escape'); await sleep(200);
       await ev(page, async () => {
@@ -903,6 +921,7 @@ async function useOnGround(page, x, z) {
         return window.__game.player.inventory.slots.some((s) => s && s.id === I.DIAMOND_PICKAXE && s.enchants && Object.keys(s.enchants).length > 0);
       });
       check('enchantements : conservés après clic, maj-clic et lâcher/ramasser', moveEnch.onCursor && moveEnch.inMain && moveEnch.afterShift && afterPickup, JSON.stringify({ moveEnch, afterPickup }));
+      check('table d\'enchantement : propositions fixes jusqu\'à un enchantement', moveEnch.fixedOk && moveEnch.rotatedOk, JSON.stringify(moveEnch));
 
       // 3) Enclume : réparation par matériau + fusion de deux épées Tranchant II → Tranchant III
       await ev(page, async () => {
@@ -1113,6 +1132,11 @@ async function useOnGround(page, x, z) {
       const r2 = await ev(page, async () => {
         const { B } = await import('/src/world/Ids.ts');
         const g = window.__game, w = g.world;
+        // Torche isolée (loin de la lampe) : 7 lumière allumée, 0 éteinte
+        const { BLOCK_EMIT } = await import('/src/world/Blocks.ts');
+        w.setBlock(46, 4, 66, B.LEVER, 0);
+        w.setBlock(47, 4, 66, B.STONE, 0);
+        w.setBlock(48, 4, 66, B.REDSTONE_TORCH, 4);
         return {
           p0: w.getMeta(47, 4, 48),
           p5: w.getMeta(52, 4, 48),
@@ -1120,14 +1144,28 @@ async function useOnGround(page, x, z) {
           p15: w.getMeta(62, 4, 48),
           lampAfter: w.getBlock(48, 4, 47) === B.REDSTONE_LAMP_LIT,
           doorAfter: (w.getMeta(50, 4, 47) & 4) !== 0,
-          torchOff: (w.getMeta(49, 4, 50) & 8) !== 0,
+          torchOff: w.getBlock(49, 4, 50) === B.REDSTONE_TORCH_OFF,
+          emitOn: BLOCK_EMIT[B.REDSTONE_TORCH],
+          emitOff: BLOCK_EMIT[B.REDSTONE_TORCH_OFF],
         };
       });
-      check('redstone : poussière (15 → 1 par bloc), levier, lampe, porte en fer et torche inverseuse',
+      await ticks(page, 6);
+      const torchLightOn = await ev(page, () => window.__game.world.getBlockLight(48, 4, 66));
+      await ev(page, () => window.__game.world.setMeta(46, 4, 66, 8, true));
+      await ticks(page, 6);
+      const torchLightOff = await ev(page, () => window.__game.world.getBlockLight(48, 4, 66));
+      await ev(page, () => {
+        const w = window.__game.world;
+        w.setBlock(46, 4, 66, 0, 0, false);
+        w.setBlock(47, 4, 66, 0, 0, false);
+        w.setBlock(48, 4, 66, 0, 0, false);
+      });
+      check('redstone : poussière (15 → 1 par bloc), levier, lampe, porte en fer et torche inverseuse (0 lumière éteinte)',
         !r1.lampBefore && !r1.doorBefore &&
         r2.p0 === 15 && r2.p5 === 10 && r2.p14 === 1 && r2.p15 === 0 &&
-        r2.lampAfter && r2.doorAfter && r2.torchOff,
-        JSON.stringify({ r1, r2 }));
+        r2.lampAfter && r2.doorAfter && r2.torchOff &&
+        r2.emitOn === 7 && r2.emitOff === 0 && torchLightOn === 7 && torchLightOff === 0,
+        JSON.stringify({ r1, r2, torchLightOn, torchLightOff }));
 
       // Vérifie que la porte en fer ne s'ouvre pas à la main
       const ironHand = await ev(page, async () => {
@@ -1208,10 +1246,23 @@ async function useOnGround(page, x, z) {
         w.setBlock(58, 4, 53, B.REDSTONE_BLOCK, 0);
         const tntPrimed = w.getBlock(58, 4, 52) === B.AIR && g.entities.some((e) => e.kind === 'tnt');
         for (const e of g.entities) if (e.kind === 'tnt') e.dead = true;
-        return { pushed, normalLeft, stickyPushed, stickyPulled, tntPrimed };
+
+        // Piston casse la poudre fragile et pousse une créature devant lui
+        const M = await import('/src/entity/Mobs.ts');
+        w.setBlock(60, 4, 50, B.PISTON, 5);
+        w.setBlock(61, 4, 50, B.REDSTONE_WIRE, 0);
+        const pig = M.createMob('pig', g.rng);
+        pig.setPosition(61.5, 4, 50.5);
+        g.spawn(pig);
+        w.setBlock(60, 4, 51, B.LEVER, 0);
+        w.setMeta(60, 4, 51, 8, true);
+        const wireBroken = w.getBlock(61, 4, 50) === B.PISTON_HEAD && w.getBlock(62, 4, 50) === B.AIR;
+        const entityPushed = pig.x >= 62;
+        pig.dead = true;
+        return { pushed, normalLeft, stickyPushed, stickyPulled, tntPrimed, wireBroken, entityPushed };
       });
-      check('redstone : piston pousse, piston collant pousse et ramène, TNT s\'allume',
-        pistonRes.pushed && pistonRes.normalLeft && pistonRes.stickyPushed && pistonRes.stickyPulled && pistonRes.tntPrimed,
+      check('redstone : piston pousse, piston collant pousse et ramène, casse la poudre, pousse les entités, TNT s\'allume',
+        pistonRes.pushed && pistonRes.normalLeft && pistonRes.stickyPushed && pistonRes.stickyPulled && pistonRes.tntPrimed && pistonRes.wireBroken && pistonRes.entityPushed,
         JSON.stringify(pistonRes));
 
       await ev(page, () => { const p = window.__game.player; p.teleport(45.5, 4, 51.5); T.aim(50.5, 4.3, 48); });
@@ -1270,7 +1321,7 @@ async function useOnGround(page, x, z) {
       await ev(page, async () => {
         const g = window.__game, w = g.world;
         for (let x = 45; x <= 64; x++) {
-          for (let z = 46; z <= 55; z++) {
+          for (let z = 46; z <= 59; z++) {
             w.setBlock(x, 4, z, 0, 0, false);
             w.setBlock(x, 5, z, 0, 0, false);
           }
@@ -1613,6 +1664,11 @@ async function useOnGround(page, x, z) {
       const chest = getChest(g.world, 40, 4, 38);
       chest.items[5] = makeStack(I.DIAMOND_PICKAXE, 1, 0, { efficiency: 4 });
       g.world.markBlockEntityDirty(chest);
+      const { B } = await import('/src/world/Ids.ts');
+      g.world.setBlock(72, 4, 70, B.STONE_PRESSURE_PLATE, 0);
+      g.player.teleport(72.5, 4, 70.5);
+      g.tick();
+      g.player.teleport(70.5, 4, 70.5);
       const w = M.createMob('wolf', g.rng);
       w.tamed = true;
       w.owner = 'player';
@@ -1660,6 +1716,7 @@ async function useOnGround(page, x, z) {
     check('loup apprivoisé persistant avec maître et état assis', marker.wolves >= 1 && now.wolves >= 1, `${marker.wolves} → ${now.wolves}`);
     check('monstres persistants', now.spiders >= 1 && marker.spiders >= 1, `${marker.spiders} → ${now.spiders}`);
     check('lit et blocs à entité persistants', JSON.stringify(now.bed) === JSON.stringify(marker.bed) && now.chest === marker.chest);
+    check('plaque de pression enfoncée avant sauvegarde se relâche après rechargement', (await ev(page, () => window.__game.world.getMeta(72, 4, 70))) === 0);
     check('progrès persistants (toute la chaîne jusqu\'au fer)', JSON.stringify(now.advs) === JSON.stringify(marker.advs) && now.advs.length >= 10 && now.advs.includes('iron'), JSON.stringify(now.advs));
     await shot(page, '33-recharge');
   });
