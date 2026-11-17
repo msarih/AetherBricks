@@ -5,7 +5,7 @@
  */
 import { I } from '../world/Ids';
 import { getItem, maxStack } from '../world/Items';
-import { addToSlots, canMerge, cloneStack, loadSlots, maxDamage, saveSlots, type ItemStack, type Slot } from '../world/ItemStack';
+import { addToSlots, canMerge, cloneStack, cloneStackWithCount, loadSlots, maxDamage, saveSlots, type ItemStack, type Slot } from '../world/ItemStack';
 import { canEnchantItem, computeAnvilResult, enchantLevel, hasEnchants, rollEnchantOffers, type EnchantOffer } from '../world/Enchants';
 import { RECIPES, fuelTicks, ingredientAccepts, matchRecipe, recipeFitsGrid, smeltingResult, type Ingredient, type Recipe } from '../world/Recipes';
 import { FURNACE_COOK_TICKS, type ChestEntity, type FurnaceEntity } from './BlockEntities';
@@ -440,10 +440,10 @@ export abstract class Menu {
       if (!cur) {
         if (slot.group !== 'result' && button === 1 && s.count > 1) {
           const n = Math.ceil(s.count / 2);
-          inv.cursor = { id: s.id, count: n, damage: s.damage };
+          inv.cursor = cloneStackWithCount(s, n);
           s.count -= n;
         } else {
-          inv.cursor = { id: s.id, count: s.count, damage: s.damage };
+          inv.cursor = cloneStack(s);
           slot.stack = null;
           if (slot.group === 'result') this.consumeIngredients();
         }
@@ -460,7 +460,7 @@ export abstract class Menu {
       if (!s) return;
       if (button === 1 && s.count > 1) {
         const n = Math.ceil(s.count / 2);
-        inv.cursor = { id: s.id, count: n, damage: s.damage };
+        inv.cursor = cloneStackWithCount(s, n);
         s.count -= n;
       } else {
         inv.cursor = s;
@@ -470,7 +470,7 @@ export abstract class Menu {
       if (!slot.accepts(cur)) return;
       const n = Math.min(button === 1 ? 1 : cur.count, slot.room(cur));
       if (n <= 0) return;
-      slot.stack = { id: cur.id, count: n, damage: cur.damage };
+      slot.stack = cloneStackWithCount(cur, n);
       cur.count -= n;
       if (cur.count <= 0) inv.cursor = null;
     } else if (canMerge(s, cur)) {
@@ -494,7 +494,7 @@ export abstract class Menu {
     if (!cur) return;
     if (button === 1 && cur.count > 1) {
       cur.count--;
-      this.inv.drop({ id: cur.id, count: 1, damage: cur.damage });
+      this.inv.drop(cloneStackWithCount(cur, 1));
     } else {
       this.inv.cursor = null;
       this.inv.drop(cur);
@@ -533,7 +533,7 @@ export abstract class Menu {
     const s = slot.stack;
     if (slot.takeOnly) {
       if (!s || h) return;
-      inv.slots[hotbar] = { id: s.id, count: s.count, damage: s.damage };
+      inv.slots[hotbar] = cloneStack(s);
       slot.stack = null;
       if (slot.group === 'result') this.consumeIngredients();
     } else {
@@ -551,7 +551,7 @@ export abstract class Menu {
     const s = slot?.stack;
     if (!slot || !s) return;
     if (slot.group === 'result') {
-      this.inv.drop({ id: s.id, count: s.count, damage: s.damage });
+      this.inv.drop(cloneStack(s)!);
       slot.stack = null;
       this.consumeIngredients();
     } else if (all || s.count <= 1) {
@@ -559,7 +559,7 @@ export abstract class Menu {
       this.inv.drop(s);
     } else {
       s.count--;
-      this.inv.drop({ id: s.id, count: 1, damage: s.damage });
+      this.inv.drop(cloneStackWithCount(s, 1));
     }
     this.changed();
   }
@@ -584,7 +584,7 @@ export abstract class Menu {
       if (n <= 0) continue;
       const s = slot.stack;
       if (s) s.count += n;
-      else slot.stack = { id: cur.id, count: n, damage: cur.damage };
+      else slot.stack = cloneStackWithCount(cur, n);
       cur.count -= n;
     }
     if (cur.count <= 0) this.inv.cursor = null;
@@ -622,7 +622,7 @@ export abstract class Menu {
       if (t.stack) continue;
       const n = Math.min(t.room(s), s.count);
       if (n <= 0) continue;
-      t.stack = { id: s.id, count: n, damage: s.damage };
+      t.stack = cloneStackWithCount(s, n);
       s.count -= n;
     }
   }
@@ -642,7 +642,7 @@ export abstract class Menu {
       const s = slot.stack;
       if (!s || s.id !== first.id) break;
       if (this.capacity(s, targets) < s.count) break;
-      this.pour({ id: s.id, count: s.count, damage: s.damage }, targets);
+      this.pour(cloneStack(s)!, targets);
       slot.stack = null;
       this.consumeIngredients();
     }

@@ -7,7 +7,7 @@ import { fluidHeight } from '../world/BlockModels';
 import { FISHING_BITE_MAX, FISHING_BITE_MIN, FISHING_WAIT_MAX, FISHING_WAIT_MIN, rollFishingCatch } from '../world/Fishing';
 import { B, I } from '../world/Ids';
 import { maxStack } from '../world/Items';
-import { canMerge, type ItemStack } from '../world/ItemStack';
+import { canMerge, makeStack, sanitizeEnchants, type ItemStack } from '../world/ItemStack';
 import { newRayHit, rayBoxDistance, raycast } from '../world/Raycast';
 import { Entity, Living, num, type DamageCause, type EntityData, type GameApi, type PlayerLike } from './Entity';
 import type { EntityKind } from './EntityView';
@@ -116,10 +116,7 @@ export class ItemEntity extends Entity {
     const id = num(d.id, 0);
     const count = num(d.count, 0);
     if (id <= 0 || count <= 0) return null;
-    const stack: ItemStack = { id, count, damage: num(d.damage, 0) };
-    if (d.enchants && typeof d.enchants === 'object' && !Array.isArray(d.enchants)) {
-      stack.enchants = d.enchants as ItemStack['enchants'];
-    }
+    const stack = makeStack(id, count, num(d.damage, 0), sanitizeEnchants(d.enchants));
     const e = new ItemEntity(stack);
     e.loadBase(d);
     return e;

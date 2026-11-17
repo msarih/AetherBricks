@@ -35,7 +35,7 @@ import { blockDrops, canHarvest, miningSpeed, type Drop } from '../world/Drops';
 import { enchantLevel } from '../world/Enchants';
 import { B, I } from '../world/Ids';
 import { getItem, isTool } from '../world/Items';
-import { makeStack } from '../world/ItemStack';
+import { cloneStackWithCount, makeStack } from '../world/ItemStack';
 import { newRayHit, rayBoxDistance, raycast } from '../world/Raycast';
 import { getChest, getFurnace } from './BlockEntities';
 import { AnvilMenu, ChestMenu, CraftingMenu, EnchantMenu, FurnaceMenu, HOTBAR_SIZE, type Menu, type XpHost } from './Inventory';
@@ -968,7 +968,7 @@ export class Interaction {
       inv.drop(held);
     } else {
       held.count--;
-      inv.drop(makeStack(held.id, 1, held.damage));
+      inv.drop(cloneStackWithCount(held, 1));
     }
     this.swing();
   }

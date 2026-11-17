@@ -844,8 +844,65 @@ async function useOnGround(page, x, z) {
         };
       });
       await page.keyboard.press('Escape'); await sleep(200);
+      const afterEscape = await ev(page, async () => {
+        const { I } = await import('/src/world/Ids.ts');
+        return window.__game.player.inventory.slots.some((x) => x && x.id === I.DIAMOND_PICKAXE && x.enchants && Object.keys(x.enchants).length > 0);
+      });
       check('table d\'enchantement : bibliothèques augmentent les niveaux proposés', offers0.bs === 0 && offers15.bs === 15 && offers15.min2 > offers0.min2 && offers15.min2 >= 20, `${JSON.stringify(offers0)} -> ${JSON.stringify(offers15)}`);
       check('table d\'enchantement : applique l\'enchantement, consomme XP/lapis et affiche au survol', enchRes.hasEnch && enchRes.xpAfter === 27 && enchRes.lapisLeft === 7 && enchRes.tip.includes('Pioche en diamant') && enchRes.tip.length > 20, JSON.stringify(enchRes));
+      check('enchantements : conservés à la fermeture du menu (Échap)', afterEscape);
+
+      // Gestes d'inventaire : clic + pose, maj-clic, lâcher au sol + ramasser
+      await ev(page, async () => {
+        const { I } = await import('/src/world/Ids.ts');
+        const { makeStack } = await import('/src/world/ItemStack.ts');
+        const g = window.__game, p = g.player;
+        p.xpLevel = 30;
+        p.inventory.slots[6] = makeStack(I.DIAMOND_PICKAXE, 1);
+        p.inventory.slots[7] = makeStack(I.LAPIS, 10);
+        T.aim(35.5, 4.5, 35.5);
+      });
+      await ticks(page, 2);
+      await rclick(page);
+      await page.waitForSelector('[data-mc="menu-enchant"]', { timeout: 5000 });
+      const moveEnch = await ev(page, async () => {
+        const { I } = await import('/src/world/Ids.ts');
+        const g = window.__game, m = g.menu, inv = g.player.inventory;
+        m.click(m.indexOf('hotbar', 6), 0, true);
+        m.click(m.indexOf('hotbar', 7), 0, true);
+        m.enchant(0);
+        m.click(m.indexOf('input', 0), 0, false);
+        const onCursor = !!(inv.cursor?.enchants && Object.keys(inv.cursor.enchants).length > 0);
+        m.click(m.indexOf('main', 0), 0, false);
+        const inMain = !!(m.slots[m.indexOf('main', 0)].stack?.enchants);
+        m.click(m.indexOf('main', 0), 0, false);
+        m.click(m.indexOf('input', 0), 0, false);
+        m.click(m.indexOf('input', 0), 0, true);
+        const afterShift = inv.slots.some((s) => s && s.id === I.DIAMOND_PICKAXE && s.enchants && Object.keys(s.enchants).length > 0);
+        return { onCursor, inMain, afterShift };
+      });
+      await page.keyboard.press('Escape'); await sleep(200);
+      await ev(page, async () => {
+        const { I } = await import('/src/world/Ids.ts');
+        const g = window.__game, inv = g.player.inventory;
+        const idx = inv.slots.findIndex((s) => s && s.id === I.DIAMOND_PICKAXE && s.enchants);
+        if (idx >= 0 && idx < 9) inv.selected = idx;
+        else if (idx >= 9) { inv.slots[0] = inv.slots[idx]; inv.slots[idx] = null; inv.selected = 0; }
+        g.interaction.dropHeld(true);
+      });
+      await ticks(page, 45);
+      await ev(page, async () => {
+        const { I } = await import('/src/world/Ids.ts');
+        const g = window.__game;
+        const it = g.entities.find((e) => e.kind === 'item' && e.stack && e.stack.id === I.DIAMOND_PICKAXE && e.stack.enchants);
+        if (it) g.player.teleport(it.x, it.y, it.z);
+      });
+      await ticks(page, 5);
+      const afterPickup = await ev(page, async () => {
+        const { I } = await import('/src/world/Ids.ts');
+        return window.__game.player.inventory.slots.some((s) => s && s.id === I.DIAMOND_PICKAXE && s.enchants && Object.keys(s.enchants).length > 0);
+      });
+      check('enchantements : conservés après clic, maj-clic et lâcher/ramasser', moveEnch.onCursor && moveEnch.inMain && moveEnch.afterShift && afterPickup, JSON.stringify({ moveEnch, afterPickup }));
 
       // 3) Enclume : réparation par matériau + fusion de deux épées Tranchant II → Tranchant III
       await ev(page, async () => {
@@ -1481,8 +1538,12 @@ async function useOnGround(page, x, z) {
       const M = await import('/src/entity/Mobs.ts');
       const { I } = await import('/src/world/Ids.ts');
       const { makeStack } = await import('/src/world/ItemStack.ts');
+      const { getChest } = await import('/src/game/BlockEntities.ts');
       const g = window.__game;
       g.player.inventory.slots[8] = makeStack(I.IRON_SWORD, 1, 5, { sharpness: 3, unbreaking: 2 });
+      const chest = getChest(g.world, 40, 4, 38);
+      chest.items[5] = makeStack(I.DIAMOND_PICKAXE, 1, 0, { efficiency: 4 });
+      g.world.markBlockEntityDirty(chest);
       const w = M.createMob('wolf', g.rng);
       w.tamed = true;
       w.owner = 'player';
@@ -1511,13 +1572,18 @@ async function useOnGround(page, x, z) {
     await page.waitForFunction('window.__game && window.__game.ready === true', { timeout: 120000 });
     await install(page);
     await ticks(page, 20);
-    const now = await ev(page, () => { const g = window.__game; return { block: T.block(70, 4, 67), inv: T.inv(), ench: g.player.inventory.slots[8]?.enchants ?? null, time: g.time, pos: [g.player.x, g.player.y, g.player.z], cows: T.mobs('cow').filter((e) => Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, near: T.mobs('cow').filter((e) => Math.hypot(e.x - 70.5, e.z - 67.5) < 6).length, babies: T.mobs('cow').filter((e) => e.baby && Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, wolves: T.mobs('wolf').filter((e) => e.tamed && e.owner === 'player' && e.sitting).length, spiders: T.mobs('spider').filter((e) => Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, bed: g.player.bed, chest: T.block(40, 4, 38), health: g.player.health, mode: g.player.gameMode, advs: Array.from(g.player.advancements).sort() }; });
+    const now = await ev(page, async () => {
+      const { getChest } = await import('/src/game/BlockEntities.ts');
+      const g = window.__game;
+      const chest = getChest(g.world, 40, 4, 38);
+      return { block: T.block(70, 4, 67), inv: T.inv(), ench: g.player.inventory.slots[8]?.enchants ?? null, chestEnch: chest.items[5]?.enchants ?? null, time: g.time, pos: [g.player.x, g.player.y, g.player.z], cows: T.mobs('cow').filter((e) => Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, near: T.mobs('cow').filter((e) => Math.hypot(e.x - 70.5, e.z - 67.5) < 6).length, babies: T.mobs('cow').filter((e) => e.baby && Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, wolves: T.mobs('wolf').filter((e) => e.tamed && e.owner === 'player' && e.sitting).length, spiders: T.mobs('spider').filter((e) => Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, bed: g.player.bed, chest: T.block(40, 4, 38), health: g.player.health, mode: g.player.gameMode, advs: Array.from(g.player.advancements).sort() };
+    });
     if (holeAt) now.hole = await ev(page, (h) => T.block(h.x, h.y, h.z), holeAt);
     console.log('  repères après rechargement :', JSON.stringify(now));
     check('bloc posé persistant', now.block === marker.block && now.block !== 0);
     check('bloc cassé persistant', !holeAt || now.hole === 0);
     check('inventaire persistant', now.inv === marker.inv, now.inv);
-    check('enchantements persistants après sauvegarde et rechargement', JSON.stringify(now.ench) === JSON.stringify(marker.ench) && now.ench?.sharpness === 3 && now.ench?.unbreaking === 2, JSON.stringify(now.ench));
+    check('enchantements persistants après sauvegarde et rechargement (inventaire et coffre)', JSON.stringify(now.ench) === JSON.stringify(marker.ench) && now.ench?.sharpness === 3 && now.ench?.unbreaking === 2 && now.chestEnch?.efficiency === 4, JSON.stringify({ ench: now.ench, chestEnch: now.chestEnch }));
     check('position persistante', Math.hypot(now.pos[0] - marker.pos[0], now.pos[2] - marker.pos[2]) < 0.2 && Math.abs(now.pos[1] - marker.pos[1]) < 0.2, JSON.stringify(now.pos));
     check('heure persistante', now.time >= marker.time && now.time < marker.time + 200, `${marker.time} → ${now.time}`);
     check('animaux persistants (rayon 48 blocs)', Math.abs(now.cows - marker.cows) <= 2 && now.near >= 1 && marker.near >= 1, `${marker.cows} → ${now.cows} ; vache invoquée à proximité : ${marker.near} → ${now.near}`);

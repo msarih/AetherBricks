@@ -5,7 +5,7 @@
  */
 import { B, I } from '../world/Ids';
 import { maxStack } from '../world/Items';
-import type { ItemStack, Slot } from '../world/ItemStack';
+import { makeStack, sanitizeEnchants, type ItemStack, type Slot } from '../world/ItemStack';
 import { fuelTicks, smeltingResult } from '../world/Recipes';
 import type { BlockEntity, World } from '../world/World';
 
@@ -33,7 +33,7 @@ function fixSlots(v: unknown, size: number): Slot[] {
   for (let i = 0; i < size && i < v.length; i++) {
     const s = v[i] as Partial<ItemStack> | null;
     if (s && typeof s.id === 'number' && typeof s.count === 'number' && s.count > 0) {
-      out[i] = { id: s.id, count: s.count, damage: typeof s.damage === 'number' ? s.damage : 0 };
+      out[i] = makeStack(s.id, s.count, typeof s.damage === 'number' ? s.damage : 0, sanitizeEnchants(s.enchants));
     }
   }
   return out;

@@ -20,9 +20,12 @@ export function makeStack(id: number, count = 1, damage = 0, enchants?: Enchants
 
 export function cloneStack(s: Slot): Slot {
   if (!s) return null;
-  return s.enchants && Object.keys(s.enchants).length > 0
-    ? { id: s.id, count: s.count, damage: s.damage, enchants: { ...s.enchants } }
-    : { id: s.id, count: s.count, damage: s.damage };
+  return makeStack(s.id, s.count, s.damage, s.enchants);
+}
+
+/** Copie une pile en remplaçant sa quantité et en conservant usure et enchantements. */
+export function cloneStackWithCount(s: ItemStack, count: number): ItemStack {
+  return makeStack(s.id, count, s.damage, s.enchants);
 }
 
 /** Deux piles peuvent-elles fusionner ? */
@@ -55,7 +58,7 @@ export function addToSlots(slots: Slot[], stack: ItemStack, from = 0, to = slots
   for (let i = from; i < to && stack.count > 0; i++) {
     if (slots[i]) continue;
     const n = Math.min(max, stack.count);
-    slots[i] = { id: stack.id, count: n, damage: stack.damage };
+    slots[i] = cloneStackWithCount(stack, n);
     stack.count -= n;
   }
   return stack.count;
@@ -73,6 +76,20 @@ export function saveSlots(slots: Slot[]): SavedSlot[] {
 
 const VALID_ENCHANTS = new Set(['efficiency', 'unbreaking', 'sharpness', 'protection', 'fortune', 'silk_touch', 'power']);
 
+/** Valide et copie un dictionnaire d'enchantements lu depuis une sauvegarde. */
+export function sanitizeEnchants(raw: unknown): Enchants | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const e: Enchants = {};
+  let any = false;
+  for (const [k, lvl] of Object.entries(raw as Record<string, unknown>)) {
+    if (VALID_ENCHANTS.has(k) && typeof lvl === 'number' && Number.isFinite(lvl) && lvl > 0) {
+      e[k as keyof Enchants] = Math.floor(lvl);
+      any = true;
+    }
+  }
+  return any ? e : undefined;
+}
+
 export function loadSlots(data: unknown, size: number): Slot[] {
   const out: Slot[] = new Array<Slot>(size).fill(null);
   if (!Array.isArray(data)) return out;
@@ -80,20 +97,8 @@ export function loadSlots(data: unknown, size: number): Slot[] {
     const v = data[i] as unknown;
     if (!Array.isArray(v) || typeof v[0] !== 'number' || typeof v[1] !== 'number') continue;
     if (v[1] <= 0) continue;
-    let enchants: Enchants | undefined;
-    const rawEnch = v[3] as unknown;
-    if (rawEnch && typeof rawEnch === 'object' && !Array.isArray(rawEnch)) {
-      const e: Enchants = {};
-      let any = false;
-      for (const [k, lvl] of Object.entries(rawEnch as Record<string, unknown>)) {
-        if (VALID_ENCHANTS.has(k) && typeof lvl === 'number' && lvl > 0) {
-          e[k as keyof Enchants] = Math.floor(lvl);
-          any = true;
-        }
-      }
-      if (any) enchants = e;
-    }
-    out[i] = enchants ? { id: v[0], count: v[1], damage: typeof v[2] === 'number' ? v[2] : 0, enchants } : { id: v[0], count: v[1], damage: typeof v[2] === 'number' ? v[2] : 0 };
+    const enchants = sanitizeEnchants(v[3]);
+    out[i] = makeStack(v[0], v[1], typeof v[2] === 'number' ? v[2] : 0, enchants);
   }
   return out;
 }
