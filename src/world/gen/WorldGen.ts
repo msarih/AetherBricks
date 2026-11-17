@@ -11,6 +11,8 @@ import { B } from '../Ids';
 import { foliageColor, grassColor } from '../Blocks';
 import { BIOME, BIOMES, TREE, isWaterBiome } from './Biomes';
 import { placeDungeon } from './Dungeon';
+import './Mineshaft';
+import './Temples';
 import './Village';
 import { GenCanvas, type GenBlockEntity, type GenSpawn } from './GenCanvas';
 import { Simplex, clamp, hash2, hash3, lerp, mulberry32, rand2, rand3, smoothstep } from './Noise';
@@ -97,6 +99,8 @@ export interface ColumnSample {
   swamp: number;
   /** Facteur « montagne » (0..1). */
   mount: number;
+  /** Facteur « badlands » (0..1) : plateaux de terre cuite, générateur en version 2 seulement. */
+  bad: number;
   /** Hauteur nominale du sol (flottante). */
   height: number;
   /** Amplitude du bruit 3D ajouté au relief. */
@@ -105,7 +109,7 @@ export interface ColumnSample {
 }
 
 export function newColumnSample(): ColumnSample {
-  return { cont: 0, ero: 0, ridge: 0, temp: 0, humid: 0, river: 0, swamp: 0, mount: 0, height: 0, amp: 0, biome: 0 };
+  return { cont: 0, ero: 0, ridge: 0, temp: 0, humid: 0, river: 0, swamp: 0, mount: 0, bad: 0, height: 0, amp: 0, biome: 0 };
 }
 
 export interface GeneratedChunk {
@@ -185,6 +189,10 @@ export class WorldGen implements TerrainInfo {
   private sFillDepth = 0;
   private sUnder = 0;
   private sUnderDepth = 0;
+  /** Badlands : le remplissage suit les strates de terre cuite. */
+  private sBand = false;
+  /** Strates des badlands : couleur de terre cuite pour chaque altitude (cycle de 64). */
+  private readonly bands = new Uint8Array(64);
 
   constructor(seed: number, type: WorldType = 'default', genVersion = 1) {
     this.seed = seed >>> 0;
@@ -211,6 +219,43 @@ export class WorldGen implements TerrainInfo {
     this.sTree = next();
     this.sPlant = next();
     this.sSurface = next();
+    this.buildBands();
+  }
+
+  /**
+   * Strates des badlands (Minecraft, « generateBands ») : terre cuite brute, rayée d'orange,
+   * avec des bancs jaunes, bruns et rouges et quelques filets blancs bordés de gris clair.
+   * Tirage à part : il ne décale pas les autres tirages du générateur.
+   */
+  private buildBands(): void {
+    const rng = mulberry32((this.seed ^ 0xba5d1a9d) >>> 0);
+    const int = (n: number): number => Math.floor(rng() * n);
+    const bands = this.bands;
+    bands.fill(B.TERRACOTTA);
+    for (let i = int(5) + 1; i < 64; i += int(5) + 2) bands[i] = B.TERRACOTTA_ORANGE;
+    const streaks = (block: number, count: number, minLen: number, lenVar: number): void => {
+      for (let n = 0; n < count; n++) {
+        const start = int(64);
+        const len = minLen + int(lenVar);
+        for (let k = 0; k < len && start + k < 64; k++) bands[start + k] = block;
+      }
+    };
+    streaks(B.TERRACOTTA_YELLOW, 2 + int(4), 1, 3);
+    streaks(B.TERRACOTTA_BROWN, 2 + int(4), 2, 3);
+    streaks(B.TERRACOTTA_RED, 2 + int(4), 1, 3);
+    for (let n = 3 + int(3), at = 0; n > 0; n--) {
+      at += 4 + int(16);
+      if (at >= 63) break;
+      bands[at] = B.TERRACOTTA_WHITE;
+      if (at > 1 && rng() < 0.5) bands[at - 1] = B.TERRACOTTA_LIGHT_GRAY;
+      if (rng() < 0.5) bands[at + 1] = B.TERRACOTTA_LIGHT_GRAY;
+    }
+  }
+
+  /** Terre cuite de la strate qui passe en (x, y, z) : les strates ondulent un peu d'une colonne à l'autre. */
+  private band(y: number, x: number, z: number): number {
+    const off = Math.round(this.nPatch.noise2(x / 64 + 11.1, z / 64 - 7.3) * 2);
+    return this.bands[(y + off + 64) & 63];
   }
 
   // ------------------------------------------------------------------ colonnes
@@ -226,6 +271,7 @@ export class WorldGen implements TerrainInfo {
       out.river = 0;
       out.swamp = 0;
       out.mount = 0;
+      out.bad = 0;
       out.height = 4;
       out.amp = 0;
       out.biome = BIOME.PLAINS;
@@ -247,6 +293,18 @@ export class WorldGen implements TerrainInfo {
     h += this.nHill.fbm2(x / 110, z / 110, 4) * hillAmp;
     h += this.nDetail.noise2(x / 21, z / 21) * 0.8;
     h += mount * (15 + 41 * ridge * ridge);
+
+    // badlands : chaud et très sec ; le relief y forme deux étages de plateaux aux bords abrupts
+    let bad = 0;
+    if (this.features) {
+      bad = smoothstep(0.72, 0.8, temp) * smoothstep(0.34, 0.24, humid) * land * (1 - mount);
+      // les plateaux ne s'élèvent qu'une fois dans le biome (bad > 0,5) : la lisière reste au niveau du désert
+      const rise = smoothstep(0.5, 0.72, bad);
+      if (rise > 0) {
+        const mesa = this.nPatch.fbm2(x / 95 + 31.3, z / 95 - 17.7, 3);
+        h += rise * (smoothstep(-0.02, 0.05, mesa) * 14 + smoothstep(0.22, 0.28, mesa) * 11);
+      }
+    }
 
     const swamp =
       smoothstep(0.56, 0.68, humid) * smoothstep(0.4, 0.5, temp) * smoothstep(0.84, 0.74, temp) *
@@ -275,6 +333,7 @@ export class WorldGen implements TerrainInfo {
     out.river = river;
     out.swamp = swamp;
     out.mount = mount;
+    out.bad = bad;
     out.height = h;
     out.amp = (1.2 + mount * 9 + rough * land * 2.5) * (1 - 0.7 * river) * (1 - 0.8 * swamp);
     out.biome = pickBiome(out);
@@ -616,9 +675,11 @@ export class WorldGen implements TerrainInfo {
       if (run === 0) {
         this.surfaceRule(biome, y, above === B.WATER, slope, temp, patch, hsh);
         if (this.sTop) col[y] = this.sTop;
+        else if (this.sBand) col[y] = this.band(y, wx, wz);
         run = 1;
       } else if (run <= this.sFillDepth) {
-        if (this.sFill) col[y] = this.sFill;
+        if (this.sBand) col[y] = this.band(y, wx, wz);
+        else if (this.sFill) col[y] = this.sFill;
         run++;
       } else if (run <= this.sFillDepth + this.sUnderDepth) {
         if (this.sUnder) col[y] = this.sUnder;
@@ -687,6 +748,7 @@ export class WorldGen implements TerrainInfo {
     this.sFillDepth = 3 + (hsh & 1);
     this.sUnder = 0;
     this.sUnderDepth = 0;
+    this.sBand = false;
     if (underwater) {
       let b: number;
       if (y < 48) b = B.GRAVEL;
@@ -725,6 +787,13 @@ export class WorldGen implements TerrainInfo {
         break;
       case BIOME.STONY_SHORE:
         this.sTop = 0;
+        this.sFill = 0;
+        return;
+      case BIOME.BADLANDS:
+        // strates de terre cuite sur 18 blocs ; sable rouge sur les replats du bas
+        this.sBand = true;
+        this.sFillDepth = 18;
+        this.sTop = slope < 1.2 && y < 71 + patch * 3 ? B.RED_SAND : 0;
         this.sFill = 0;
         return;
       case BIOME.MOUNTAINS:
@@ -884,7 +953,7 @@ export class WorldGen implements TerrainInfo {
         const ground = this.ringTopBlock[ri];
         if (top < SEA_LEVEL || top > CHUNK_HEIGHT - 34) continue;
         if (kind === TREE.CACTUS) {
-          if (ground === B.SAND) this.cactus(lx, top + 1, lz, rng);
+          if (ground === B.SAND || ground === B.RED_SAND) this.cactus(lx, top + 1, lz, rng);
           continue;
         }
         if (ground !== B.GRASS && ground !== B.DIRT) continue;
@@ -1154,8 +1223,12 @@ export class WorldGen implements TerrainInfo {
           }
         }
 
-        if (ground === B.SAND) {
-          if (biome === BIOME.DESERT && r < 0.008) blocks[above] = B.DEAD_BUSH;
+        if (ground === B.SAND || ground === B.RED_SAND) {
+          if ((biome === BIOME.DESERT || biome === BIOME.BADLANDS) && r < 0.008) blocks[above] = B.DEAD_BUSH;
+          continue;
+        }
+        if (ground >= B.TERRACOTTA && ground <= B.TERRACOTTA_BLACK) {
+          if (r < 0.004) blocks[above] = B.DEAD_BUSH;
           continue;
         }
         if (ground !== B.GRASS) continue;
@@ -1234,6 +1307,7 @@ function pickBiome(c: ColumnSample): number {
     if (c.ero < -0.45) return BIOME.STONY_SHORE;
     return cold ? BIOME.SNOWY_BEACH : BIOME.BEACH;
   }
+  if (c.bad > 0.5) return BIOME.BADLANDS;
   if (mount > 0.42) return temp < 0.32 ? BIOME.SNOWY_MOUNTAINS : BIOME.MOUNTAINS;
   if (cold) return humid > 0.5 ? BIOME.SNOWY_TAIGA : BIOME.SNOWY_PLAINS;
   if (temp < 0.4) return humid > 0.42 ? BIOME.TAIGA : BIOME.PLAINS;

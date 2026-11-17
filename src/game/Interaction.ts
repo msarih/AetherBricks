@@ -890,6 +890,10 @@ export class Interaction {
       case SHAPE.FENCE_GATE:
         meta = pf;
         break;
+      case SHAPE.RAIL:
+        // dans l'axe du regard : 0 nord-sud, 1 est-ouest
+        meta = pf & 1;
+        break;
       case SHAPE.VINE: {
         if (side < 0 || !onto) return false;
         meta = 1 << opposite(side);

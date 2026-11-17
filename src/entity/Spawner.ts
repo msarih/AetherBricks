@@ -59,6 +59,7 @@ function animalsOf(biome: number): readonly MobKind[] | null {
   if (isWaterBiome(biome)) return null;
   switch (biome) {
     case BIOME.DESERT:
+    case BIOME.BADLANDS:
     case BIOME.BEACH:
     case BIOME.SNOWY_BEACH:
     case BIOME.STONY_SHORE:

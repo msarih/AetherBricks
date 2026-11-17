@@ -13,7 +13,7 @@ const BASE_TILES = [
   // --- Terrain ---
   'stone', 'granite', 'diorite', 'andesite', 'cobblestone', 'mossy_cobblestone', 'bedrock', 'dirt',
   'grass_top', 'grass_side', 'grass_side_overlay', 'grass_side_snowed', 'snow', 'ice', 'sand', 'gravel',
-  'clay', 'sandstone_top', 'sandstone_side', 'sandstone_bottom', 'obsidian', 'glowstone', 'netherrack', 'sponge',
+  'clay', 'red_sand', 'terracotta', 'sandstone_top', 'sandstone_side', 'sandstone_bottom', 'obsidian', 'glowstone', 'netherrack', 'sponge',
   // --- Minerais ---
   'coal_ore', 'iron_ore', 'gold_ore', 'diamond_ore', 'redstone_ore', 'lapis_ore', 'emerald_ore',
   'coal_block', 'iron_block', 'gold_block', 'diamond_block', 'lapis_block', 'emerald_block', 'redstone_block',
@@ -33,7 +33,7 @@ const BASE_TILES = [
   'anvil_top', 'anvil_side',
   'bed_head_top', 'bed_foot_top', 'bed_head_side', 'bed_foot_side', 'bed_head_end', 'bed_foot_end',
   'oak_door_top', 'oak_door_bottom', 'iron_door_top', 'iron_door_bottom', 'trapdoor', 'ladder', 'torch',
-  'glass_pane_top', 'iron_bars', 'spawner',
+  'glass_pane_top', 'iron_bars', 'spawner', 'rail',
   'redstone_dust', 'redstone_torch_on', 'redstone_torch_off',
   'piston_top', 'piston_top_sticky', 'piston_side', 'piston_bottom', 'piston_inner',
   'redstone_lamp_off', 'redstone_lamp_on',
@@ -78,11 +78,12 @@ const FRAME_IDS = [
 type BaseTile = (typeof BASE_TILES)[number];
 type WoolTile = `wool_${(typeof COLOR_NAMES)[number]}`;
 type DyeTile = `dye_${(typeof COLOR_NAMES)[number]}`;
+type TerracottaTile = `terracotta_${(typeof COLOR_NAMES)[number]}`;
 type ToolTile = `${(typeof TOOL_MATERIALS)[number]}_${(typeof TOOL_KINDS)[number]}`;
 type ArmorTile = `${(typeof ARMOR_MATERIALS)[number]}_${(typeof ARMOR_KINDS)[number]}`;
 type DialTile = `${'compass' | 'clock'}_${(typeof FRAME_IDS)[number]}`;
 
-export type TileName = BaseTile | WoolTile | DyeTile | ToolTile | ArmorTile | DialTile;
+export type TileName = BaseTile | WoolTile | DyeTile | TerracottaTile | ToolTile | ArmorTile | DialTile;
 
 function buildTileNames(): TileName[] {
   const names: TileName[] = [...BASE_TILES];
@@ -92,6 +93,8 @@ function buildTileNames(): TileName[] {
   for (const m of ARMOR_MATERIALS) for (const k of ARMOR_KINDS) names.push(`${m}_${k}`);
   for (const f of FRAME_IDS) names.push(`compass_${f}`);
   for (const f of FRAME_IDS) names.push(`clock_${f}`);
+  // ajoutées en fin de liste : les couches existantes gardent leur index
+  for (const c of COLOR_NAMES) names.push(`terracotta_${c}`);
   return names;
 }
 

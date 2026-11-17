@@ -6,7 +6,7 @@
  * Un pixel de carte est un octet : 0 = inexploré, sinon base × 4 + nuance (nuance 0..3).
  * Module pur (pas de DOM ni de Three.js).
  */
-import { BLOCKS, isLeaves } from './Blocks';
+import { BLOCKS, isLeaves, isTerracotta } from './Blocks';
 import { B, COLOR_HEX } from './Ids';
 
 /** Couleurs de base (index 0 réservé : rien). Valeurs de MapColor (Minecraft 1.12). */
@@ -36,6 +36,12 @@ const BASE: number[] = [
 ];
 const WOOL_BASE = BASE.length;
 for (const c of COLOR_HEX) BASE.push(c);
+/** Terre cuite brute puis les 16 colorées (MapColor de Minecraft 1.12), et le sable rouge. */
+const TERRACOTTA_BASE = BASE.length;
+BASE.push(
+  0x985e43, 0xd1b1a1, 0x9f5224, 0x95576c, 0x706c8a, 0xba8524, 0x677535, 0xa04d4e, 0x392923,
+  0x876b62, 0x575c5c, 0x7a4958, 0x4c3e5c, 0x4c3223, 0x4c522a, 0x8e3c2e, 0x251610,
+);
 
 const C = {
   GRASS: 1, SAND: 2, CLOTH: 3, LAVA: 4, ICE: 5, IRON: 6, PLANT: 7, SNOW: 8, CLAY: 9, DIRT: 10,
@@ -50,6 +56,8 @@ const SHADES = [180 / 255, 220 / 255, 1, 135 / 255];
 export function mapBaseColor(id: number): number {
   if (id === B.AIR || id === B.GLASS || id === B.GLASS_PANE) return 0;
   if (id >= B.WOOL_WHITE && id <= B.WOOL_BLACK) return WOOL_BASE + (id - B.WOOL_WHITE);
+  if (isTerracotta(id)) return TERRACOTTA_BASE + (id - B.TERRACOTTA);
+  if (id === B.RED_SAND) return TERRACOTTA_BASE + 2;
   if (isLeaves(id)) return C.PLANT;
   switch (id) {
     case B.GRASS:

@@ -436,6 +436,9 @@ export function selectionBoxes(id: number, meta: number, nb: NeighborFn, out: nu
     case SHAPE.REDSTONE_WIRE:
       out.push(0, 0, 0, 16, 1, 16);
       return;
+    case SHAPE.RAIL:
+      out.push(0, 0, 0, 16, 2, 16);
+      return;
     case SHAPE.PRESSURE_PLATE:
       out.push(1, 0, 1, 15, meta & 1 ? 0.5 : 1, 15);
       return;

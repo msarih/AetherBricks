@@ -1143,6 +1143,23 @@ function meshCell(id: number, meta: number): void {
       emit(opaquePass, BLOCK_TILES[id * 6], -1, NOMIP, true);
       return;
     }
+    case SHAPE.RAIL: {
+      noTint();
+      flatLight(1);
+      const y = 1 / 16;
+      quad(0, y, 1, 1, y, 1, 1, y, 0, 0, y, 0);
+      uvRect(0, 0, 1, 1);
+      if (meta & 1) {
+        // rails est-ouest : un quart de tour
+        for (let k = 0; k < 4; k++) {
+          const t = UV[k * 2];
+          UV[k * 2] = UV[k * 2 + 1];
+          UV[k * 2 + 1] = 1 - t;
+        }
+      }
+      emit(opaquePass, BLOCK_TILES[id * 6], -1, NOMIP, true);
+      return;
+    }
     case SHAPE.VINE: {
       setTint(1);
       flatLight(1);

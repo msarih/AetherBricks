@@ -24,6 +24,7 @@ import {
   PISTON_DX,
   PISTON_DY,
   PISTON_DZ,
+  isTerracotta,
 } from './Blocks';
 import { fluidTick, fluidTickDelay, lavaMix } from './Fluids';
 import { portalCanStay } from './Portal';
@@ -103,15 +104,15 @@ export function canStay(w: World, x: number, y: number, z: number, id: number, m
     case B.FERN:
       return isSoil(below);
     case B.DEAD_BUSH:
-      return below === B.SAND || isSoil(below) || below === B.CLAY || below === B.GRAVEL;
+      return below === B.SAND || below === B.RED_SAND || isTerracotta(below) || isSoil(below) || below === B.CLAY || below === B.GRAVEL;
     case B.BROWN_MUSHROOM:
     case B.RED_MUSHROOM:
       return BLOCK_OPAQUE[below] === 1;
     case B.SUGAR_CANE:
       if (below === B.SUGAR_CANE) return true;
-      return (below === B.GRASS || below === B.DIRT || below === B.SAND) && waterBeside(w, x, y - 1, z);
+      return (below === B.GRASS || below === B.DIRT || below === B.SAND || below === B.RED_SAND) && waterBeside(w, x, y - 1, z);
     case B.CACTUS:
-      if (below !== B.CACTUS && below !== B.SAND) return false;
+      if (below !== B.CACTUS && below !== B.SAND && below !== B.RED_SAND) return false;
       return !w.isSolid(x - 1, y, z) && !w.isSolid(x + 1, y, z) && !w.isSolid(x, y, z - 1) && !w.isSolid(x, y, z + 1);
     case B.WHEAT:
     case B.CARROTS:
@@ -127,6 +128,7 @@ export function canStay(w: World, x: number, y: number, z: number, id: number, m
     }
     case B.REDSTONE_WIRE:
     case B.STONE_PRESSURE_PLATE:
+    case B.RAIL:
     case B.SIGN:
       return topSolid(w, x, y - 1, z);
     case B.WALL_SIGN: {

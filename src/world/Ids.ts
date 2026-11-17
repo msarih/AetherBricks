@@ -171,6 +171,27 @@ export const B = {
   WALL_SIGN: 164,
   /** Chemin de terre des villages (15/16 de haut, comme la terre labourée). */
   GRASS_PATH: 165,
+  RED_SAND: 166,
+  /** Terre cuite brute, puis les 16 terres cuites colorées dans l'ordre des laines. */
+  TERRACOTTA: 167,
+  TERRACOTTA_WHITE: 168,
+  TERRACOTTA_ORANGE: 169,
+  TERRACOTTA_MAGENTA: 170,
+  TERRACOTTA_LIGHT_BLUE: 171,
+  TERRACOTTA_YELLOW: 172,
+  TERRACOTTA_LIME: 173,
+  TERRACOTTA_PINK: 174,
+  TERRACOTTA_GRAY: 175,
+  TERRACOTTA_LIGHT_GRAY: 176,
+  TERRACOTTA_CYAN: 177,
+  TERRACOTTA_PURPLE: 178,
+  TERRACOTTA_BLUE: 179,
+  TERRACOTTA_BROWN: 180,
+  TERRACOTTA_GREEN: 181,
+  TERRACOTTA_RED: 182,
+  TERRACOTTA_BLACK: 183,
+  /** Rail droit (méta 0 : nord-sud, 1 : est-ouest). Décor des mines abandonnées pour l'instant. */
+  RAIL: 184,
 } as const;
 
 /** Nombre maximal d'identifiants de blocs (les objets commencent à 256). */

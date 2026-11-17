@@ -86,7 +86,28 @@ async function reload(page) {
           if (y === v2a.terrainTop(cx * 16 + lx, cz * 16 + lz)) exact++;
         }
       }
-      return { version: g.world.genVersion, deterministic, v1Places, v1Entities, v2Places, v2Entities, flatEntities, cols, exact };
+      // anciens mondes : le générateur en version 1 rend exactement les chunks d'avant (copie de référence)
+      const ref = await import('/dev-tests/ref/WorldGenV1.ts');
+      const refNether = await import('/dev-tests/ref/NetherGenV1.ts');
+      const { NetherGen } = await import('/src/world/gen/NetherGen.ts');
+      const oldGen = new ref.WorldGen(Number(seed), 'default');
+      const oldNether = new refNether.NetherGen(Number(seed));
+      const newNether = new NetherGen(Number(seed), 1);
+      const oldFlat = new ref.WorldGen(Number(seed), 'flat');
+      const newFlat = new WorldGen(Number(seed), 'flat', 2);
+      let compared = 0, different = 0;
+      const eq = (a, b) => same(a.blocks, b.blocks) && same(a.meta, b.meta) && same(a.biomes, b.biomes) && same(a.heightmap, b.heightmap) && same(a.tints, b.tints);
+      const spots = [[vcx, vcz], [0, 0], [40, -75], [-60, 11], [75, 66], [3, 52], [-20, -20], [120, 5]];
+      for (const [bx, bz] of spots) for (let dz = 0; dz < 2; dz++) for (let dx = 0; dx < 2; dx++) {
+        compared++;
+        if (!eq(oldGen.generateChunk(bx + dx, bz + dz), v1.generateChunk(bx + dx, bz + dz))) different++;
+        compared++;
+        if (!eq(oldNether.generateChunk(bx + dx, bz + dz), newNether.generateChunk(bx + dx, bz + dz))) different++;
+      }
+      compared++;
+      if (!eq(oldFlat.generateChunk(1, 1), newFlat.generateChunk(1, 1))) different++;
+      const spawnSame = JSON.stringify(oldGen.findSpawn()) === JSON.stringify(v1.findSpawn());
+      return { version: g.world.genVersion, deterministic, v1Places, v1Entities, v2Places, v2Entities, flatEntities, cols, exact, compared, different, spawnSame };
     }, SEED);
     check('un nouveau monde porte la version 2 du générateur', r.version === 2, 'version ' + r.version);
     check('le même chunk est généré à l’identique, quel que soit l’ordre', r.deterministic === true);
@@ -94,6 +115,7 @@ async function reload(page) {
     check('générateur en version 2 : le village est bien là (chemins, portes, coffres, habitants)', r.v2Places > 50 && r.v2Entities > 5, JSON.stringify({ blocs: r.v2Places, entites: r.v2Entities }));
     check('monde plat : aucun lieu généré', r.flatEntities === 0, String(r.flatEntities));
     check('hauteur du sol calculée = terrain réel (au moins 98 % des colonnes)', r.exact / r.cols >= 0.98, `${r.exact}/${r.cols}`);
+    check('anciens mondes : terrain identique à l’octet près (Overworld, Nether, monde plat, point d’apparition)', r.different === 0 && r.compared >= 60 && r.spawnSame, `${r.different} chunks différents sur ${r.compared}`);
   });
 
   await section('donjon', async () => {

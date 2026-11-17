@@ -393,6 +393,26 @@ def('ice', (p) => {
   }
 });
 
+def('red_sand', (p) => {
+  p.rough([0xa9551f, 0xb45d23, 0xbe6626, 0xc66d2b, 0xcf7732], 6, 6, 0.8);
+  p.speckle(0x9a4a1a, 0.03);
+});
+
+/** Terre cuite : aplat mat, à peine marbré (teintes de Minecraft 1.12). */
+const TERRACOTTA_HEX = [
+  0xd1b1a1, 0xa05325, 0x95576c, 0x706c8a, 0xba8524, 0x677534, 0xa04d4e, 0x392a23,
+  0x876a61, 0x565b5b, 0x764556, 0x4a3b5b, 0x4d3223, 0x4c532a, 0x8e3c2e, 0x251610,
+];
+function terracotta(base: Color): Painter {
+  return (p) => {
+    const f = p.field(4, 4);
+    const g = p.field(9, 9);
+    p.each((x, y) => shade(base, 0.95 + f(x, y) * 0.07 + g(x, y) * 0.04));
+  };
+}
+def('terracotta', terracotta(0x985e43));
+COLOR_NAMES.forEach((name, i) => def(`terracotta_${name}`, terracotta(TERRACOTTA_HEX[i])));
+
 def('sand', (p) => {
   p.rough(SAND, 6, 6, 0.8);
   p.speckle(0xc4b77d, 0.03);
@@ -885,6 +905,23 @@ def('trapdoor', (p) => {
   for (const [px, py] of [[3, 3], [9, 3], [3, 9], [9, 9]] as Array<[number, number]>) {
     p.frame(px - 1, py - 1, 6, 6, 0x5b4023);
     for (let y = py; y < py + 4; y++) for (let x = px; x < px + 4; x++) p.clear(x, y);
+  }
+});
+
+def('rail', (p) => {
+  // traverses de bois, puis les deux files de rail
+  const wood = 0x7a5a34;
+  for (const y of [1, 5, 9, 13]) {
+    for (let x = 1; x < 15; x++) {
+      p.set(x, y, shade(wood, 1.05));
+      p.set(x, y + 1, shade(wood, 0.78));
+    }
+  }
+  for (let y = 0; y < TS; y++) {
+    for (const x of [3, 12]) {
+      p.set(x, y, 0xb8b8b8);
+      p.set(x + (x === 3 ? 1 : -1), y, 0x7c7c7c);
+    }
   }
 });
 

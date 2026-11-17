@@ -26,6 +26,8 @@ export const BIOME = {
   SWAMP: 18,
   MOUNTAINS: 19,
   SNOWY_MOUNTAINS: 20,
+  /** Plateaux de terre cuite colorée (générateur en version 2). */
+  BADLANDS: 21,
 } as const;
 
 export const TREE = {
@@ -146,6 +148,10 @@ biome(BIOME.MOUNTAINS, 'mountains', 'Montagnes', {
 });
 biome(BIOME.SNOWY_MOUNTAINS, 'snowy_mountains', 'Pics enneigés', {
   treeDensity: 0.03, trees: [[TREE.SPRUCE, 1]], snowy: true, waterColor: 0x3d57d6, mapColor: 0xd8dde4,
+});
+
+biome(BIOME.BADLANDS, 'badlands', 'Badlands', {
+  treeDensity: 0.012, trees: [[TREE.CACTUS, 1]], dry: true, waterColor: 0x4e7f81, mapColor: 0xd94515,
 });
 
 export function isOceanBiome(b: number): boolean {
