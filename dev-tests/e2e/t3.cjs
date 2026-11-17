@@ -250,6 +250,9 @@ const dbg = (page) => ev(page, () => { const d = window.__game.debugLines(); ret
       const from = s ? { x: s.x + 0.5, y: s.y, z: s.z + 0.5 } : { x: p.x, y: p.y, z: p.z };
       const drift = Math.hypot(p.x - from.x, p.z - from.z);
       p.health = 20; p.invulnerable = 0;
+      // faim à 17 : pas de régénération naturelle entre l'atterrissage et la mesure (elle rendrait un point de vie)
+      window.__hungerBeforeFall = p.hunger;
+      p.hunger = 17;
       p.teleport(from.x, from.y + 12, from.z);
       return { drift: +drift.toFixed(2), ground: from.y };
     }, spot);
@@ -259,6 +262,7 @@ const dbg = (page) => ev(page, () => { const d = window.__game.debugLines(); ret
     await ticks(page, 2);
     const h = (await state(page)).health;
     const landed = await ev(page, () => +window.__game.player.y.toFixed(2));
+    await ev(page, () => { window.__game.player.hunger = window.__hungerBeforeFall; });
     check('dégâts de chute de 12 blocs (8 à 9 points)', h >= 11 && h <= 12 && Math.abs(landed - fall.ground) < 0.01,
       `santé ${h}, atterrissage en y=${landed} (sol ${fall.ground}), le joueur avait dérivé de ${fall.drift} bloc(s)`);
     await ev(page, () => { window.__game.player.health = 20; });

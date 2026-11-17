@@ -486,6 +486,25 @@ async function reload(page) {
     await shot(page, 't5-mine');
   });
 
+  await section('export et import', async () => {
+    const r = await ev(page, async () => {
+      const WF = await import('/src/world/WorldFile.ts');
+      const g = window.__game;
+      await g.save();
+      // ce monde (version 2) : la copie importée garde son générateur
+      const copy = await WF.importWorld(g.storage, await (await WF.exportWorld(g.storage, g.info.id)).arrayBuffer());
+      // un monde d'avant (pas de version notée) : la copie reste sans version, donc sans lieux
+      const oldId = 'w-test-ancien';
+      const { genVersion, ...rest } = g.info;
+      void genVersion;
+      await g.storage.putWorld({ ...rest, id: oldId, name: 'Ancien', thumbnail: undefined });
+      const oldCopy = await WF.importWorld(g.storage, await (await WF.exportWorld(g.storage, oldId)).arrayBuffer());
+      for (const id of [copy.id, oldId, oldCopy.id]) await g.storage.deleteWorld(id);
+      return { copy: copy.genVersion, old: oldCopy.genVersion === undefined, distinct: copy.id !== g.info.id };
+    });
+    check('un monde exporté puis importé garde son générateur (2), un ancien monde reste sans lieux', r.copy === 2 && r.old === true && r.distinct, JSON.stringify(r));
+  });
+
   const fails = results.filter((r) => !r.ok);
   console.log(`\nBILAN : ${results.length - fails.length}/${results.length} ; erreurs de console : ${errors.length}`);
   for (const f of fails) console.log('  ECHEC : ' + f.name + (f.detail ? ' — ' + f.detail : ''));
