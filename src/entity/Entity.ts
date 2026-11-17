@@ -107,6 +107,7 @@ export abstract class Entity extends Body implements EntityView {
   sitting = false;
   collarColor = 0xd8342a;
   baby = false;
+  mobScale = 1;
   sneaking = false;
   hidden = false;
 

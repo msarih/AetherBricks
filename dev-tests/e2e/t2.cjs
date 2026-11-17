@@ -1450,19 +1450,277 @@ async function useOnGround(page, x, z) {
       }, nSpot);
       check('Nether : l\'eau s\'évapore et le lit explose', netherRules.waterEvap && netherRules.bedExploded, JSON.stringify(netherRules));
 
-      // 1 minute de jeu (1200 ticks) en difficulté normale dans le Nether : 0 créature de la surface
+      // 1 minute de jeu (1200 ticks) en difficulté normale dans le Nether : 0 créature de la surface,
+      // apparition des créatures du Nether sous le plafond, et mesure du temps de tick avant/après plafond.
       const surfaceInNether = await ev(page, () => {
         const g = window.__game;
         const surfaceKinds = new Set(['zombie', 'skeleton', 'creeper', 'spider', 'pig', 'cow', 'sheep', 'chicken', 'wolf']);
+        const netherKinds = new Set(['zombie_pigman', 'ghast', 'magma_cube']);
         const before = g.entities.filter((e) => e.kind === 'mob' && surfaceKinds.has(e.mobKind)).map((e) => e.mobKind);
         const prevDiff = g.difficulty;
         g.difficulty = 2;
+
+        // Mesure avant apparition (0 monstre)
+        const t0Before = performance.now();
+        for (let i = 0; i < 60; i++) g.tick();
+        const msBefore = (performance.now() - t0Before) / 60;
+
+        // 1200 ticks de jeu dans le Nether
         for (let i = 0; i < 1200; i++) g.tick();
+
+        // Mesure après avoir laissé les créatures apparaître jusqu'au plafond
+        const t0After = performance.now();
+        for (let i = 0; i < 60; i++) g.tick();
+        const msAfter = (performance.now() - t0After) / 60;
+
         const after = g.entities.filter((e) => e.kind === 'mob' && surfaceKinds.has(e.mobKind));
+        const counts = { zombie_pigman: 0, ghast: 0, magma_cube: 0 };
+        for (const e of g.entities) {
+          if (e.kind === 'mob' && !e.dead && netherKinds.has(e.mobKind)) counts[e.mobKind]++;
+        }
+        const totalNether = counts.zombie_pigman + counts.ghast + counts.magma_cube;
         g.difficulty = prevDiff;
-        return { beforeCount: before.length, count: after.length, found: after.slice(0, 5).map((e) => e.mobKind) };
+        return {
+          beforeCount: before.length,
+          count: after.length,
+          found: after.slice(0, 5).map((e) => e.mobKind),
+          counts,
+          totalNether,
+          msBefore: Number(msBefore.toFixed(3)),
+          msAfter: Number(msAfter.toFixed(3)),
+        };
       });
       check('Nether : aucune créature de la surface n\'apparaît en 1 minute de jeu', surfaceInNether.count === 0, JSON.stringify(surfaceInNether));
+      check('Nether : apparition naturelle des créatures du Nether (cochon-zombie majoritaire, plafond <= 40)',
+        surfaceInNether.totalNether > 0 && surfaceInNether.totalNether <= 40 &&
+        surfaceInNether.counts.zombie_pigman >= surfaceInNether.counts.magma_cube &&
+        surfaceInNether.counts.zombie_pigman > surfaceInNether.counts.ghast,
+        JSON.stringify(surfaceInNether));
+      console.log(`  bench Nether tick : avant=${surfaceInNether.msBefore} ms/tick (0 monstre), après=${surfaceInNether.msAfter} ms/tick (${surfaceInNether.totalNether} monstres)`);
+
+      // Recettes pépites d'or <-> lingot d'or
+      const nuggetRecipes = await ev(page, async () => {
+        const { I } = await import('/src/world/Ids.ts');
+        const { matchRecipe } = await import('/src/world/Recipes.ts');
+        const r1 = matchRecipe(Array(9).fill(I.GOLD_NUGGET), 3);
+        const r2 = matchRecipe([I.GOLD_INGOT], 1);
+        return {
+          toIngot: r1?.id === I.GOLD_INGOT && r1.count === 1,
+          toNuggets: r2?.id === I.GOLD_NUGGET && r2.count === 9,
+        };
+      });
+      check('Nether : recettes 9 pépites d\'or <-> 1 lingot d\'or', nuggetRecipes.toIngot && nuggetRecipes.toNuggets, JSON.stringify(nuggetRecipes));
+
+      // Arène dégagée dans le Nether (loin du portail) pour tester et capturer cochon-zombie, ghast, cube de magma
+      await ev(page, async () => {
+        const { B } = await import('/src/world/Ids.ts');
+        const g = window.__game, w = g.world, p = g.player;
+        for (const e of g.entities) if (e !== p) e.dead = true;
+        g.tick();
+        const ax = 44, ay = 64, az = 44;
+        for (let dx = -14; dx <= 14; dx++) {
+          for (let dz = -14; dz <= 14; dz++) {
+            w.setBlock(ax + dx, ay - 1, az + dz, B.NETHERRACK, 0, false);
+            for (let dy = 0; dy <= 12; dy++) w.setBlock(ax + dx, ay + dy, az + dz, B.AIR, 0, false);
+          }
+        }
+        // Éclaire l'arène à la pierre lumineuse pour des captures nettes
+        for (const [lx, ly, lz] of [[-3, -1, -3], [3, -1, -3], [-3, -1, -8], [3, -1, -8], [0, -1, -5], [0, 5, -5]]) {
+          w.setBlock(ax + lx, ay + ly, az + lz, B.GLOWSTONE, 0);
+        }
+        p.teleport(ax + 0.5, ay, az + 0.5);
+        p.gameMode = 'survival';
+        p.health = 20;
+        g._prevNetherDiff = g.difficulty;
+        g.difficulty = 2;
+      });
+
+      // 1) Cochon-zombie : neutre puis attaque en groupe après coup, butin chair + pépite d'or, capture
+      await chat(page, '/summon zombie_pigman');
+      await ticks(page, 2);
+      const pigmanNeutral = await ev(page, () => {
+        const g = window.__game, p = g.player;
+        const zp = g.entities.find((e) => e.kind === 'mob' && e.mobKind === 'zombie_pigman' && !e.dead);
+        if (!zp) return { ok: false };
+        zp.setPosition(p.x, p.y, p.z - 3.5);
+        zp.setRotation(Math.PI);
+        T.aim(zp.x, zp.y + 1.0, zp.z);
+        for (let i = 0; i < 20; i++) g.tick();
+        return { ok: true, targetNull: zp.target === null, anger: zp.angerTicks };
+      });
+      await ticks(page, 2);
+      await shot(page, '27d-zombie-pigman');
+      const pigmanGroup = await ev(page, async () => {
+        const { I } = await import('/src/world/Ids.ts');
+        const { ZombiePigman } = await import('/src/entity/Mobs.ts');
+        const g = window.__game, p = g.player;
+        const zp1 = g.entities.find((e) => e.kind === 'mob' && e.mobKind === 'zombie_pigman' && !e.dead);
+        const zp2 = new ZombiePigman();
+        zp2.setPosition(p.x + 4, p.y, p.z - 4);
+        g.spawn(zp2);
+        g.tick();
+        // Frappe zp1 : zp1 et zp2 doivent devenir hostiles envers le joueur
+        zp1.hurt(g, 2, 'attack', p);
+        const bothAngry = zp1.angerTicks > 0 && zp2.angerTicks > 0 && zp1.target === p && zp2.target === p;
+        zp1.dead = true;
+        zp2.dead = true;
+        g.tick();
+
+        // Vérifie les butins (chair putréfiée + pépite d'or sur plusieurs morts)
+        const rottenBefore = p.inventory.count(I.ROTTEN_FLESH);
+        const nuggetBefore = p.inventory.count(I.GOLD_NUGGET);
+        const drops = new Set();
+        for (let k = 0; k < 20; k++) {
+          const z = new ZombiePigman();
+          z.setPosition(p.x + 6, p.y, p.z);
+          g.spawn(z);
+          g.tick();
+          z.hurt(g, 100, 'attack', p);
+          for (let t = 0; t < 25; t++) g.tick();
+        }
+        for (const e of g.entities) if (e.kind === 'item' && !e.dead) drops.add(e.itemId);
+        return {
+          bothAngry,
+          hasRotten: drops.has(I.ROTTEN_FLESH) || p.inventory.count(I.ROTTEN_FLESH) > rottenBefore,
+          hasNugget: drops.has(I.GOLD_NUGGET) || p.inventory.count(I.GOLD_NUGGET) > nuggetBefore,
+        };
+      });
+      check('Nether : cochon-zombie neutre, colère de groupe et butins (chair + pépite d\'or)',
+        pigmanNeutral.ok && pigmanNeutral.targetNull && pigmanGroup.bothAngry && pigmanGroup.hasRotten && pigmanGroup.hasNugget,
+        JSON.stringify({ pigmanNeutral, pigmanGroup }));
+
+      // 2) Ghast : volant 4x4x4, boule de feu renvoyable qui tue le ghast, butin poudre à canon, capture
+      await ev(page, () => { window.__game.player.gameMode = 'creative'; });
+      await chat(page, '/summon ghast');
+      await ticks(page, 2);
+      const ghastSetup = await ev(page, () => {
+        const g = window.__game, p = g.player;
+        const gh = g.entities.find((e) => e.kind === 'mob' && e.mobKind === 'ghast' && !e.dead);
+        if (!gh) return { ok: false };
+        gh.setPosition(p.x, p.y + 2.5, p.z - 10);
+        gh.setRotation(Math.PI);
+        T.aim(gh.x, gh.y + 2.0, gh.z);
+        return { ok: true, width: gh.width, height: gh.height, flying: gh.flying };
+      });
+      await ticks(page, 2);
+      await shot(page, '27e-ghast');
+      await ev(page, () => {
+        const g = window.__game;
+        g.player.gameMode = 'survival';
+        g.player.health = 20;
+      });
+      const ghastCombat = await ev(page, async () => {
+        const { I } = await import('/src/world/Ids.ts');
+        const g = window.__game, p = g.player;
+        const gh = g.entities.find((e) => e.kind === 'mob' && e.mobKind === 'ghast' && !e.dead);
+        if (!gh) return { ok: false };
+        gh.setPosition(p.x, p.y + 2, p.z - 8);
+        let fb = null;
+        for (let i = 0; i < 120 && !fb; i++) {
+          p.health = 20;
+          g.tick();
+          fb = g.entities.find((e) => e.kind === 'fireball' && !e.dead) || null;
+        }
+        if (!fb) return { ok: false, fired: false, target: gh.target?.kind ?? null, sees: gh.seesTarget, gy: gh.y, gz: gh.z };
+        const vxBefore = fb.vx, vzBefore = fb.vz;
+        // Renvoyer la boule de feu en la frappant
+        const deflected = fb.hurt(g, 1, 'attack', p);
+        const reversed = fb.vz * vzBefore < 0 || fb.deflected;
+        for (let i = 0; i < 80 && !gh.dead; i++) { p.health = 20; g.tick(); }
+        for (let i = 0; i < 25; i++) { p.health = 20; g.tick(); }
+        const gunpowder = g.entities.some((e) => e.kind === 'item' && !e.dead && e.itemId === I.GUNPOWDER);
+        gh.dead = true;
+        g.tick();
+        return { ok: true, fired: true, deflected, reversed, ghastDead: gh.dead, gunpowder, vxBefore, vzBefore };
+      });
+      check('Nether : ghast volant 4×4, boule de feu renvoyée et poudre à canon',
+        ghastSetup.ok && ghastSetup.width === 4 && ghastSetup.height === 4 && ghastSetup.flying &&
+        ghastCombat.ok && ghastCombat.fired && ghastCombat.deflected && ghastCombat.reversed && ghastCombat.ghastDead && ghastCombat.gunpowder,
+        JSON.stringify({ ghastSetup, ghastCombat }));
+
+      // 3) Cube de magma : saute, immunisé à la lave, se divise en mourant, lâche crème de magma si taille > 1, capture
+      await ev(page, async () => {
+        const { B } = await import('/src/world/Ids.ts');
+        const g = window.__game, w = g.world, p = g.player;
+        for (const e of g.entities) if (e !== p) e.dead = true;
+        g.tick();
+        const ax = Math.floor(p.x), ay = 64, az = Math.floor(p.z);
+        for (let dx = -6; dx <= 6; dx++) {
+          for (let dz = -6; dz <= 6; dz++) {
+            w.setBlock(ax + dx, ay - 1, az + dz, B.NETHERRACK, 0, false);
+            for (let dy = 0; dy <= 5; dy++) w.setBlock(ax + dx, ay + dy, az + dz, B.AIR, 0, false);
+          }
+        }
+        p.teleport(ax + 0.5, ay, az + 0.5);
+        p.health = 20;
+      });
+      await chat(page, '/summon magma_cube');
+      await ticks(page, 2);
+      const magmaPos = await ev(page, () => {
+        const g = window.__game, p = g.player;
+        const mc = g.entities
+          .filter((e) => e.kind === 'mob' && e.mobKind === 'magma_cube' && !e.dead)
+          .sort((a, b) => a.distanceSqTo(p) - b.distanceSqTo(p))[0];
+        if (!mc) return { ok: false };
+        mc.setPosition(p.x, p.y, p.z - 3.5);
+        mc.setRotation(Math.PI);
+        T.aim(mc.x, mc.y + 0.5, mc.z);
+        return { ok: true, size: mc.size };
+      });
+      await ticks(page, 2);
+      await shot(page, '27f-magma-cube');
+      const magmaResult = await ev(page, async () => {
+        const { B, I } = await import('/src/world/Ids.ts');
+        const g = window.__game, w = g.world, p = g.player;
+        const mc = g.entities.find((e) => e.kind === 'mob' && e.mobKind === 'magma_cube' && !e.dead);
+        if (!mc) return { ok: false };
+        let jumped = false;
+        for (let i = 0; i < 40; i++) {
+          p.health = 20;
+          g.tick();
+          if (mc.vy > 0.1) jumped = true;
+        }
+        // Test d'immunité à la lave
+        p.health = 20;
+        const lx = Math.floor(mc.x), ly = Math.floor(mc.y), lz = Math.floor(mc.z);
+        w.setBlock(lx, ly, lz, B.LAVA, 0, false);
+        const hpBeforeLava = mc.health;
+        for (let i = 0; i < 40; i++) { p.health = 20; g.tick(); }
+        const lavaImmune = mc.health === hpBeforeLava;
+        w.setBlock(lx, ly, lz, B.AIR, 0, false);
+
+        // Division à la mort + crème de magma
+        const creamBefore = p.inventory.count(I.MAGMA_CREAM);
+        mc.hurt(g, 100, 'attack', p);
+        for (let i = 0; i < 25; i++) g.tick();
+        const children = g.entities.filter((e) => e.kind === 'mob' && e.mobKind === 'magma_cube' && !e.dead);
+        const hasCream = g.entities.some((e) => e.kind === 'item' && !e.dead && e.itemId === I.MAGMA_CREAM) || p.inventory.count(I.MAGMA_CREAM) > creamBefore;
+
+        // La plus petite taille (1) ne se divise pas et ne lâche pas de crème de magma
+        const { MagmaCube } = await import('/src/entity/Mobs.ts');
+        for (const e of g.entities) if (e !== p) e.dead = true;
+        g.tick();
+        const prevDiffSmall = g.difficulty;
+        g.spawner.timer = -100;
+        const creamSmallBefore = p.inventory.count(I.MAGMA_CREAM);
+        const small = new MagmaCube(1);
+        small.setPosition(p.x + 2, p.y, p.z);
+        g.spawn(small);
+        g.tick();
+        small.hurt(g, 100, 'attack', p);
+        for (let i = 0; i < 25; i++) g.tick();
+        const smallNoSplit = g.entities.filter((e) => e.kind === 'mob' && e.mobKind === 'magma_cube' && !e.dead).length === 0;
+        const smallNoCream = !g.entities.some((e) => e.kind === 'item' && !e.dead && e.itemId === I.MAGMA_CREAM) && p.inventory.count(I.MAGMA_CREAM) === creamSmallBefore;
+        g.difficulty = prevDiffSmall;
+        return { ok: true, jumped, lavaImmune, splitCount: children.length, hasCream, smallNoSplit, smallNoCream };
+      });
+      check('Nether : cube de magma (saut, immunité lave, division, crème de magma)',
+        magmaPos.ok && magmaResult.ok && magmaResult.jumped && magmaResult.lavaImmune &&
+        magmaResult.splitCount >= 2 && magmaResult.hasCream && magmaResult.smallNoSplit && magmaResult.smallNoCream,
+        JSON.stringify({ magmaPos, magmaResult }));
+
+      // Retour au portail du Nether avant le retour en surface
+      await ev(page, () => { window.__game.player.teleport(11, 65, 10.5); });
 
       // Retour à la surface en passant par le portail (immédiat en créatif)
       await ev(page, async () => {
@@ -1502,14 +1760,35 @@ async function useOnGround(page, x, z) {
       check('Nether : nouveau portail de retour en monde plat posé au sol (y = 4)',
         flatReturn.dim === 'overworld' && Math.abs(flatReturn.y - 4) <= 0.5,
         JSON.stringify(flatReturn));
+
+      // Aucune créature du Nether n'apparaît dans l'Overworld (600 ticks de nuit en difficulté normale)
+      const netherInOverworld = await ev(page, () => {
+        const g = window.__game;
+        const prevDiff = g.difficulty;
+        const prevTime = g.time;
+        g.portalCooldown = 1000;
+        g.difficulty = 2;
+        g.time = 18000;
+        for (let i = 0; i < 600; i++) g.tick();
+        const netherKinds = new Set(['zombie_pigman', 'ghast', 'magma_cube']);
+        const found = g.entities.filter((e) => e.kind === 'mob' && netherKinds.has(e.mobKind)).map((e) => e.mobKind);
+        g.difficulty = prevDiff;
+        g.time = prevTime;
+        return { count: found.length, found: found.slice(0, 5) };
+      });
+      check('Overworld : aucune créature du Nether n\'apparaît en surface', netherInOverworld.count === 0, JSON.stringify(netherInOverworld));
     } finally {
       await ev(page, async () => {
         const g = window.__game;
+        if (g._prevNetherDiff !== undefined) { g.difficulty = g._prevNetherDiff; delete g._prevNetherDiff; }
         g.player.gameMode = 'survival';
-        g.portalCooldown = 0;
+        g.player.health = 20;
+        g.player.dead = false;
+        if (g.ui.modal) g.respawn?.();
+        g.portalCooldown = 200;
         g.portalTicks = 0;
         if (g.dimension !== 'overworld') await g.switchDimension('overworld', 10, 10);
-        g.player.teleport(81.5, 4, 82.5);
+        g.player.teleport(64.5, 4, 60.5);
         for (let i = 0; i < 120; i++) {
           g.chunks.update(64, 60);
           if (g.chunks.isReady(64, 60, 2)) break;
@@ -1843,9 +2122,17 @@ async function useOnGround(page, x, z) {
       w.health = 20;
       w.setPosition(71.5, 4, 68.5);
       g.spawn(w);
+      const mc = M.createMob('magma_cube', g.rng);
+      mc.setSize(4);
+      mc.setPosition(73.5, 4, 68.5);
+      g.spawn(mc);
+      const zp = M.createMob('zombie_pigman', g.rng);
+      zp.angerTicks = 500;
+      zp.setPosition(75.5, 4, 68.5);
+      g.spawn(zp);
     });
     await ticks(page, 10);
-    marker = await ev(page, () => { const g = window.__game; return { block: T.block(70, 4, 67), inv: T.inv(), ench: g.player.inventory.slots[8]?.enchants ?? null, time: g.time, pos: [g.player.x, g.player.y, g.player.z], cows: T.mobs('cow').filter((e) => Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, near: T.mobs('cow').filter((e) => Math.hypot(e.x - 70.5, e.z - 67.5) < 6).length, babies: T.mobs('cow').filter((e) => e.baby && Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, wolves: T.mobs('wolf').filter((e) => e.tamed && e.owner === 'player' && e.sitting).length, spiders: T.mobs('spider').filter((e) => Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, hole: null, bed: g.player.bed, chest: T.block(40, 4, 38), health: g.player.health, mode: g.player.gameMode, advs: Array.from(g.player.advancements).sort() }; });
+    marker = await ev(page, () => { const g = window.__game; return { block: T.block(70, 4, 67), inv: T.inv(), ench: g.player.inventory.slots[8]?.enchants ?? null, time: g.time, pos: [g.player.x, g.player.y, g.player.z], cows: T.mobs('cow').filter((e) => Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, near: T.mobs('cow').filter((e) => Math.hypot(e.x - 70.5, e.z - 67.5) < 6).length, babies: T.mobs('cow').filter((e) => e.baby && Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, wolves: T.mobs('wolf').filter((e) => e.tamed && e.owner === 'player' && e.sitting).length, spiders: T.mobs('spider').filter((e) => Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, magmaSize: T.mobs('magma_cube').find((e) => e.size === 4)?.size ?? 0, pigmanAngry: (T.mobs('zombie_pigman').find((e) => e.angerTicks > 0)?.angerTicks ?? 0) > 0, hole: null, bed: g.player.bed, chest: T.block(40, 4, 38), health: g.player.health, mode: g.player.gameMode, advs: Array.from(g.player.advancements).sort() }; });
     if (holeAt) marker.hole = await ev(page, (h) => T.block(h.x, h.y, h.z), holeAt);
     console.log('  repères avant sauvegarde :', JSON.stringify(marker));
     await page.keyboard.press('Escape');
@@ -1867,7 +2154,7 @@ async function useOnGround(page, x, z) {
       const { getChest } = await import('/src/game/BlockEntities.ts');
       const g = window.__game;
       const chest = getChest(g.world, 40, 4, 38);
-      return { block: T.block(70, 4, 67), inv: T.inv(), ench: g.player.inventory.slots[8]?.enchants ?? null, chestEnch: chest.items[5]?.enchants ?? null, time: g.time, pos: [g.player.x, g.player.y, g.player.z], cows: T.mobs('cow').filter((e) => Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, near: T.mobs('cow').filter((e) => Math.hypot(e.x - 70.5, e.z - 67.5) < 6).length, babies: T.mobs('cow').filter((e) => e.baby && Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, wolves: T.mobs('wolf').filter((e) => e.tamed && e.owner === 'player' && e.sitting).length, spiders: T.mobs('spider').filter((e) => Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, bed: g.player.bed, chest: T.block(40, 4, 38), health: g.player.health, mode: g.player.gameMode, advs: Array.from(g.player.advancements).sort() };
+      return { block: T.block(70, 4, 67), inv: T.inv(), ench: g.player.inventory.slots[8]?.enchants ?? null, chestEnch: chest.items[5]?.enchants ?? null, time: g.time, pos: [g.player.x, g.player.y, g.player.z], cows: T.mobs('cow').filter((e) => Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, near: T.mobs('cow').filter((e) => Math.hypot(e.x - 70.5, e.z - 67.5) < 6).length, babies: T.mobs('cow').filter((e) => e.baby && Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, wolves: T.mobs('wolf').filter((e) => e.tamed && e.owner === 'player' && e.sitting).length, spiders: T.mobs('spider').filter((e) => Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, magmaSize: T.mobs('magma_cube').find((e) => e.size === 4)?.size ?? 0, pigmanAngry: (T.mobs('zombie_pigman').find((e) => e.angerTicks > 0)?.angerTicks ?? 0) > 0, bed: g.player.bed, chest: T.block(40, 4, 38), health: g.player.health, mode: g.player.gameMode, advs: Array.from(g.player.advancements).sort() };
     });
     if (holeAt) now.hole = await ev(page, (h) => T.block(h.x, h.y, h.z), holeAt);
     console.log('  repères après rechargement :', JSON.stringify(now));
@@ -1881,6 +2168,7 @@ async function useOnGround(page, x, z) {
     check('petit animal persistant après rechargement', marker.babies >= 1 && now.babies >= 1, `${marker.babies} → ${now.babies}`);
     check('loup apprivoisé persistant avec maître et état assis', marker.wolves >= 1 && now.wolves >= 1, `${marker.wolves} → ${now.wolves}`);
     check('monstres persistants', now.spiders >= 1 && marker.spiders >= 1, `${marker.spiders} → ${now.spiders}`);
+    check('créatures du Nether persistantes (taille cube de magma + colère cochon-zombie)', marker.magmaSize === 4 && now.magmaSize === 4 && marker.pigmanAngry && now.pigmanAngry, JSON.stringify({ magma: [marker.magmaSize, now.magmaSize], pigmanAngry: [marker.pigmanAngry, now.pigmanAngry] }));
     check('lit et blocs à entité persistants', JSON.stringify(now.bed) === JSON.stringify(marker.bed) && now.chest === marker.chest);
     check('plaque de pression enfoncée avant sauvegarde se relâche après rechargement', (await ev(page, () => window.__game.world.getMeta(72, 4, 70))) === 0);
     check('progrès persistants (toute la chaîne jusqu\'au fer)', JSON.stringify(now.advs) === JSON.stringify(marker.advs) && now.advs.length >= 10 && now.advs.includes('iron'), JSON.stringify(now.advs));

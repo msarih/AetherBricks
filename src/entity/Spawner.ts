@@ -11,7 +11,7 @@ import { hash2, mulberry32 } from '../world/gen/Noise';
 import type { GameApi } from './Entity';
 import { getMobModel } from './MobModels';
 import type { MobKind } from './MobModels';
-import { ANIMAL_CAP, ANIMAL_RADIUS, HOSTILE_KINDS, PASSIVE_KINDS, createMob } from './Mobs';
+import { ANIMAL_CAP, ANIMAL_RADIUS, HOSTILE_KINDS, MagmaCube, PASSIVE_KINDS, createMob } from './Mobs';
 import { isBoxFree } from './Physics';
 
 export { ANIMAL_CAP, ANIMAL_RADIUS };
@@ -35,8 +35,17 @@ const MAX_LIGHT = 7;
 
 const TAU = Math.PI * 2;
 
-/** Espèces de monstres, pondérées. */
+/** Espèces de monstres de la surface, pondérées. */
 const MONSTER_TABLE: readonly MobKind[] = ['zombie', 'zombie', 'zombie', 'skeleton', 'skeleton', 'skeleton', 'creeper', 'creeper', 'spider', 'spider'];
+
+/** Espèces du Nether, pondérées (cochon-zombie majoritaire, cube de magma moins fréquent, ghast rare). */
+const NETHER_TABLE: readonly MobKind[] = [
+  'zombie_pigman', 'zombie_pigman', 'zombie_pigman', 'zombie_pigman',
+  'zombie_pigman', 'zombie_pigman', 'zombie_pigman', 'zombie_pigman',
+  'zombie_pigman', 'zombie_pigman', 'zombie_pigman', 'zombie_pigman',
+  'magma_cube', 'magma_cube', 'magma_cube',
+  'ghast',
+];
 
 const FARM: readonly MobKind[] = ['cow', 'sheep', 'pig', 'chicken'];
 const FOREST: readonly MobKind[] = ['cow', 'sheep', 'pig', 'chicken', 'wolf'];
@@ -154,16 +163,23 @@ export class Spawner {
     return y + 1;
   }
 
-  /** À chaque tick : apparition des monstres dans le noir, plafonds de population. */
+  /** À chaque tick : apparition des monstres dans le noir (surface) ou des créatures du Nether, plafonds de population. */
   tick(game: GameApi): void {
-    if (game.dimension === 'nether') return;
     if (++this.timer < SPAWN_INTERVAL) return;
     this.timer = 0;
     const difficulty = Math.max(0, Math.min(3, Math.floor(game.difficulty)));
     const cap = MONSTER_CAPS[difficulty];
     if (cap <= 0) return;
-    let count = this.countMonsters(game);
+    const count = this.countMonsters(game);
     if (count >= cap) return;
+    if (game.dimension === 'nether') {
+      this.tickNether(game, count, cap);
+      return;
+    }
+    this.tickOverworld(game, count, cap);
+  }
+
+  private tickOverworld(game: GameApi, count: number, cap: number): void {
 
     const w = game.world;
     const p = game.player;
@@ -202,6 +218,111 @@ export class Spawner {
         count++;
       }
     }
+  }
+
+  private tickNether(game: GameApi, count: number, cap: number): void {
+    const w = game.world;
+    const p = game.player;
+    const rng = game.rng;
+    for (let pack = 0; pack < PACKS_PER_CYCLE && count < cap; pack++) {
+      const a = rng() * TAU;
+      const dist = MIN_DISTANCE + rng() * (MAX_DISTANCE - MIN_DISTANCE);
+      const x = Math.floor(p.x + Math.cos(a) * dist);
+      const z = Math.floor(p.z + Math.sin(a) * dist);
+      const kind = NETHER_TABLE[Math.floor(rng() * NETHER_TABLE.length)];
+
+      if (kind === 'ghast') {
+        const y = 20 + Math.floor(rng() * 88);
+        if (!this.canSpawnGhast(game, x, y, z)) continue;
+        const ghast = createMob('ghast', rng);
+        if (!ghast) continue;
+        ghast.setPosition(x + 0.5, y, z + 0.5);
+        ghast.setRotation(rng() * TAU);
+        game.spawn(ghast);
+        count++;
+        continue;
+      }
+
+      const startY = 8 + Math.floor(rng() * 112);
+      const y = this.findFloor(w, x, startY, z, 24);
+      if (y < 0 || w.getBlock(x, y - 1, z) === B.BEDROCK) continue;
+      const size = kind === 'zombie_pigman' ? 1 + Math.floor(rng() * 3) : 1;
+      for (let i = 0; i < size && count < cap; i++) {
+        let sx = x;
+        let sy = y;
+        let sz = z;
+        if (i > 0) {
+          sx += Math.floor(rng() * 7) - 3;
+          sz += Math.floor(rng() * 7) - 3;
+          sy = this.findFloor(w, sx, y + 3, sz, 6);
+          if (sy < 0 || w.getBlock(sx, sy - 1, sz) === B.BEDROCK) continue;
+        }
+        if (!this.canSpawnNetherGround(game, kind, sx, sy, sz)) continue;
+        const mob = createMob(kind, rng);
+        if (!mob) break;
+        if (mob instanceof MagmaCube) {
+          const r = rng();
+          mob.setSize(r < 0.35 ? 4 : r < 0.75 ? 2 : 1);
+        }
+        mob.setPosition(sx + 0.5, sy, sz + 0.5);
+        mob.setRotation(rng() * TAU);
+        game.spawn(mob);
+        count++;
+      }
+    }
+  }
+
+  private canSpawnNetherGround(game: GameApi, kind: MobKind, x: number, y: number, z: number): boolean {
+    const w = game.world;
+    const chunk = w.chunkAt(x, z);
+    if (!chunk || !chunk.meshed) return false;
+    if (y < 1 || y + 2 >= CHUNK_HEIGHT) return false;
+    const below = w.getBlock(x, y - 1, z);
+    if (BLOCK_OPAQUE[below] !== 1 || BLOCK_SHAPE[below] !== SHAPE.CUBE || below === B.BEDROCK) return false;
+    if (!isOpenCell(w.getBlock(x, y, z)) || !isOpenCell(w.getBlock(x, y + 1, z))) return false;
+    const p = game.player;
+    const dx = x + 0.5 - p.x;
+    const dy = y - p.y;
+    const dz = z + 0.5 - p.z;
+    if (dx * dx + dy * dy + dz * dz < MIN_DISTANCE * MIN_DISTANCE) return false;
+
+    const m = getMobModel(kind);
+    const hw = m.width / 2;
+    const x0 = x + 0.5 - hw;
+    const z0 = z + 0.5 - hw;
+    const x1 = x + 0.5 + hw;
+    const z1 = z + 0.5 + hw;
+    for (let bz = Math.floor(z0); bz <= Math.floor(z1); bz++) {
+      for (let bx = Math.floor(x0); bx <= Math.floor(x1); bx++) {
+        if (!w.isLoaded(bx, bz)) return false;
+        if (isFluidId(w.getBlock(bx, y, bz)) || isFluidId(w.getBlock(bx, y + 1, bz))) return false;
+      }
+    }
+    return isBoxFree(w, x0, y, z0, x1, y + m.height, z1);
+  }
+
+  private canSpawnGhast(game: GameApi, x: number, y: number, z: number): boolean {
+    const w = game.world;
+    const chunk = w.chunkAt(x, z);
+    if (!chunk || !chunk.meshed) return false;
+    if (y < 10 || y + 5 >= CHUNK_HEIGHT) return false;
+    const p = game.player;
+    const dx = x + 0.5 - p.x;
+    const dy = y - p.y;
+    const dz = z + 0.5 - p.z;
+    if (dx * dx + dy * dy + dz * dz < MIN_DISTANCE * MIN_DISTANCE) return false;
+
+    // Espace dégagé 5x5x5 autour du ghast
+    for (let bz = z - 2; bz <= z + 2; bz++) {
+      for (let bx = x - 2; bx <= x + 2; bx++) {
+        if (!w.isLoaded(bx, bz)) return false;
+        for (let by = y; by <= y + 4; by++) {
+          const id = w.getBlock(bx, by, bz);
+          if (!isOpenCell(id) || isFluidId(id)) return false;
+        }
+      }
+    }
+    return isBoxFree(w, x - 1.5, y, z - 1.5, x + 2.5, y + 4, z + 2.5);
   }
 
   /** Nombre de monstres vivants chargés. */

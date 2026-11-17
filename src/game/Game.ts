@@ -95,6 +95,9 @@ const MOB_LABELS: Record<string, string> = {
   skeleton: 'un squelette',
   spider: 'une araignée',
   creeper: 'un creeper',
+  zombie_pigman: 'un cochon-zombie',
+  ghast: 'un ghast',
+  magma_cube: 'un cube de magma',
 };
 
 function lerp(a: number, b: number, t: number): number {

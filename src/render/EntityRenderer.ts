@@ -713,6 +713,8 @@ function visualKey(e: EntityView): string {
       return 'a';
     case 'bobber':
       return 'f';
+    case 'fireball':
+      return 'fb';
   }
 }
 
@@ -735,6 +737,9 @@ const SHADOW_DIAMETER: Record<MobKind, number> = {
   skeleton: 0.95,
   creeper: 0.95,
   spider: 1.7,
+  zombie_pigman: 0.95,
+  ghast: 4.5,
+  magma_cube: 0.8,
   player: 0.95,
 };
 
@@ -836,7 +841,7 @@ class MobVisual implements Visual {
     const age = e.age + alpha;
 
     let flash = 0;
-    const baseScale = e.baby ? 0.5 : 1;
+    const baseScale = e.baby ? 0.5 : e.mobScale;
     this.body.scale.setScalar(baseScale);
     const headMesh = this.parts.get('head');
     if (headMesh) headMesh.scale.setScalar(e.baby ? 1.5 : 1);
@@ -844,6 +849,7 @@ class MobVisual implements Visual {
     switch (this.kind) {
       case 'player':
       case 'zombie':
+      case 'zombie_pigman':
       case 'skeleton':
         this.animateBiped(e, walk, age, headX, headY);
         break;
@@ -913,6 +919,18 @@ class MobVisual implements Visual {
           this.rot(`leg${pair * 2 + 1}`, 0, -SPIDER_YAW[pair] - fy, SPIDER_ROLL[pair] - fz);
         }
         break;
+      case 'ghast':
+        for (let i = 0; i < 9; i++) {
+          this.rot(`tent${i}`, Math.sin(age * 0.16 + i * 0.8) * 0.28, 0, 0);
+        }
+        break;
+      case 'magma_cube': {
+        const jumpVy = clamp(e.y - e.py, -0.3, 0.5);
+        const stretch = 1 + jumpVy * 0.35;
+        const squash = 1 / Math.sqrt(stretch);
+        this.body.scale.set(baseScale * squash, baseScale * stretch, baseScale * squash);
+        break;
+      }
     }
     this.material.uniforms.uFlash.value = flash;
 
@@ -933,7 +951,7 @@ class MobVisual implements Visual {
     const f = Math.sin(sw * PI);
     const f1 = Math.sin((1 - (1 - sw) * (1 - sw)) * PI);
 
-    if (this.kind === 'zombie') {
+    if (this.kind === 'zombie' || this.kind === 'zombie_pigman') {
       // Bras tendus vers l'avant
       ray = -(0.1 - f * 0.6);
       lay = 0.1 - f * 0.6;
@@ -1189,6 +1207,33 @@ class ArrowVisual implements Visual {
   }
 }
 
+/** Boule de feu de ghast : cube incandescent en rotation. */
+class FireballVisual implements Visual {
+  readonly root = new THREE.Group();
+  stamp = 0;
+  private readonly material: THREE.MeshBasicMaterial;
+  private readonly geometry: THREE.BoxGeometry;
+
+  constructor(readonly key: string) {
+    this.geometry = new THREE.BoxGeometry(0.75, 0.75, 0.75);
+    this.material = new THREE.MeshBasicMaterial({ color: 0xff7a1a });
+    const mesh = new THREE.Mesh(this.geometry, this.material);
+    mesh.position.y = 0.5;
+    this.root.add(mesh);
+  }
+
+  update(e: EntityView, alpha: number, time: number): void {
+    placeRoot(this.root, e, alpha);
+    const mesh = this.root.children[0];
+    mesh.rotation.set(time * 5, time * 7, 0);
+  }
+
+  dispose(): void {
+    this.geometry.dispose();
+    this.material.dispose();
+  }
+}
+
 /** Nombre de segments de la ligne de pêche. */
 const LINE_SEGMENTS = 12;
 const BOBBER_RED = 0xd62c2c;
@@ -1311,6 +1356,8 @@ export class EntityRenderer {
         return new ArrowVisual(key);
       case 'bobber':
         return new BobberVisual(key, this.lineAnchor);
+      case 'fireball':
+        return new FireballVisual(key);
     }
   }
 

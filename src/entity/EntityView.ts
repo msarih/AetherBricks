@@ -5,7 +5,7 @@
  */
 import type { MobKind } from './MobModels';
 
-export type EntityKind = 'mob' | 'player' | 'item' | 'falling_block' | 'arrow' | 'tnt' | 'bobber';
+export type EntityKind = 'mob' | 'player' | 'item' | 'falling_block' | 'arrow' | 'tnt' | 'bobber' | 'fireball';
 
 export interface EntityView {
   /** Identifiant unique, stable pendant toute la vie de l'entité. */
@@ -71,6 +71,8 @@ export interface EntityView {
   collarColor: number;
   /** Petit animal (taille réduite, tête plus grande). */
   baby: boolean;
+  /** Facteur d'échelle du modèle (ex. cube de magma selon sa taille). */
+  mobScale: number;
   /** Accroupi (joueur) : le corps s'incline. */
   sneaking: boolean;
   /** Le maillage ne doit pas être dessiné (joueur en vue à la première personne). */

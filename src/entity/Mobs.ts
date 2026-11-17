@@ -18,12 +18,12 @@ import type { DamageCause, Entity, EntityData, GameApi, PlayerLike } from './Ent
 import type { EntityKind } from './EntityView';
 import { getMobModel } from './MobModels';
 import type { MobKind } from './MobModels';
-import { Arrow } from './Objects';
+import { Arrow, Fireball } from './Objects';
 import { findPath, type PathPoint } from './Pathfinder';
 import { isBoxFree } from './Physics';
 
 export const PASSIVE_KINDS: readonly MobKind[] = ['pig', 'cow', 'sheep', 'chicken', 'wolf'];
-export const HOSTILE_KINDS: readonly MobKind[] = ['zombie', 'skeleton', 'creeper', 'spider'];
+export const HOSTILE_KINDS: readonly MobKind[] = ['zombie', 'skeleton', 'creeper', 'spider', 'zombie_pigman', 'ghast', 'magma_cube'];
 
 /** Rayon (en blocs) autour des parents ou de l'œuf dans lequel on compte les animaux. */
 export const ANIMAL_RADIUS = 32;
@@ -1172,6 +1172,14 @@ export abstract class Monster extends Mob {
     return true;
   }
 
+  protected followRange(): number {
+    return FOLLOW_RANGE;
+  }
+
+  protected loseRange(): number {
+    return LOSE_RANGE;
+  }
+
   /** Disparition loin du joueur : toujours au-delà de 96 blocs, au hasard au-delà de 32 après 30 s sans le voir. */
   private checkDespawn(game: GameApi): boolean {
     const dSq = this.distanceSqTo(game.player);
@@ -1186,18 +1194,20 @@ export abstract class Monster extends Mob {
   private updateTarget(game: GameApi): void {
     const p = game.player;
     let t = this.target;
+    const lose = this.loseRange();
     if (t) {
       const lost = t === p ? !p.targetable : !t.alive;
-      if (lost || this.distanceSqTo(t) > LOSE_RANGE * LOSE_RANGE) {
+      if (lost || this.distanceSqTo(t) > lose * lose) {
         this.dropTarget();
         t = null;
       }
     }
     const phase = (this.age + this.id) % 10;
+    const follow = this.followRange();
     if (t) {
       if (phase % 5 === 0) this.seesTarget = this.canSee(game.world, t);
       if (this.seesTarget && t === p) this.unseenTicks = 0;
-    } else if (phase === 0 && p.targetable && this.distanceSqTo(p) <= FOLLOW_RANGE * FOLLOW_RANGE && this.aggressive(game) && this.canSee(game.world, p)) {
+    } else if (phase === 0 && p.targetable && this.distanceSqTo(p) <= follow * follow && this.aggressive(game) && this.canSee(game.world, p)) {
       this.setTarget(p);
       this.unseenTicks = 0;
     }
@@ -1479,6 +1489,224 @@ export class Spider extends Monster {
   }
 }
 
+export class ZombiePigman extends Monster {
+  angerTicks = 0;
+
+  constructor() {
+    super('zombie_pigman', 20, 0.058);
+    this.voice = 'zombie';
+    this.fireImmune = true;
+    this.itemId = I.GOLDEN_SWORD;
+    this.itemCount = 1;
+  }
+
+  protected override aggressive(_game: GameApi): boolean {
+    return this.angerTicks > 0;
+  }
+
+  protected override behave(game: GameApi): void {
+    if (this.angerTicks > 0) {
+      this.angerTicks--;
+      if (this.angerTicks === 0 && this.target === game.player) this.dropTarget();
+    }
+    super.behave(game);
+  }
+
+  protected override onHurt(game: GameApi, cause: DamageCause, attacker: Entity | null): void {
+    super.onHurt(game, cause, attacker);
+    if (!attacker || attacker === this || !(attacker instanceof Living)) return;
+    if (attacker === game.player && !game.player.targetable) return;
+    const duration = 400 + Math.floor(game.rng() * 400);
+    this.angerTicks = Math.max(this.angerTicks, duration);
+    // Alerte les autres cochons-zombies dans un rayon de 32 blocs
+    for (const e of game.entities) {
+      if (e !== this && e instanceof ZombiePigman && e.alive && this.distanceSqTo(e) <= 32 * 32) {
+        e.angerTicks = Math.max(e.angerTicks, duration);
+        e.setTarget(attacker);
+      }
+    }
+  }
+
+  protected fight(game: GameApi, t: Living): void {
+    this.chase(game, t);
+    this.melee(game, t, (this.width + t.width) / 2 + 0.6, 2 + clamp(Math.floor(game.difficulty), 1, 3));
+  }
+
+  protected dropLoot(game: GameApi): void {
+    this.drop(game, I.ROTTEN_FLESH, randInt(game.rng, 0, 1));
+    if (game.rng() < 0.5) this.drop(game, I.GOLD_NUGGET, 1);
+  }
+
+  override saveExtra(d: EntityData): void {
+    if (this.angerTicks > 0) d.anger = this.angerTicks;
+  }
+
+  override loadExtra(d: EntityData): void {
+    this.angerTicks = Math.max(0, Math.floor(num(d.anger, 0)));
+  }
+}
+
+export class Ghast extends Monster {
+  private shootTimer = 40;
+  private wanderGoalX = 0;
+  private wanderGoalY = 64;
+  private wanderGoalZ = 0;
+  private flyTimer = 0;
+
+  constructor() {
+    super('ghast', 10, 0.045);
+    this.fireImmune = true;
+    this.flying = true;
+  }
+
+  protected override followRange(): number {
+    return 48;
+  }
+
+  protected override loseRange(): number {
+    return 64;
+  }
+
+  protected override idle(game: GameApi): void {
+    const w = game.world;
+    if (--this.flyTimer <= 0 || this.collidedH || this.collidedV) {
+      this.flyTimer = 40 + Math.floor(game.rng() * 60);
+      this.wanderGoalX = this.x + (game.rng() - 0.5) * 32;
+      this.wanderGoalY = clamp(this.y + (game.rng() - 0.5) * 12, 16, 108);
+      this.wanderGoalZ = this.z + (game.rng() - 0.5) * 32;
+    }
+    const dx = this.wanderGoalX - this.x;
+    const dy = this.wanderGoalY - this.y;
+    const dz = this.wanderGoalZ - this.z;
+    const d = Math.sqrt(dx * dx + dz * dz);
+    if (d > 1) {
+      this.face(this.wanderGoalX, this.wanderGoalZ);
+      this.moveForward = 0.8;
+    }
+    this.vy += clamp(dy * 0.015, -0.04, 0.04);
+    // Évite de s'écraser sur le sol ou le plafond
+    if (w.isSolid(Math.floor(this.x), Math.floor(this.y - 2), Math.floor(this.z))) this.vy += 0.03;
+  }
+
+  protected fight(game: GameApi, t: Living): void {
+    const dx = t.x - this.x;
+    const dy = t.y + t.eyeHeight - (this.y + this.eyeHeight);
+    const dz = t.z - this.z;
+    const d = Math.sqrt(dx * dx + dz * dz);
+    this.face(t.x, t.z);
+    if (d > 24) this.moveForward = 0.8;
+    else if (d < 12) this.moveForward = -0.6;
+    const targetY = t.y + 6;
+    this.vy += clamp((targetY - this.y) * 0.02, -0.05, 0.05);
+
+    if (this.seesTarget && d <= 48) {
+      if (--this.shootTimer <= 0) {
+        this.shootTimer = 50 + Math.floor(game.rng() * 30);
+        const fb = new Fireball();
+        fb.owner = this;
+        const len = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
+        const sx = this.x + (dx / len) * 2.6;
+        const sy = this.y + this.eyeHeight + (dy / len) * 2.6 - 0.5;
+        const sz = this.z + (dz / len) * 2.6;
+        fb.shoot(sx, sy, sz, dx, dy, dz, 0.55);
+        game.spawn(fb);
+        game.sound('fire', this.x, this.y + this.eyeHeight, this.z, 1, 0.9 + game.rng() * 0.2);
+      }
+    } else if (this.shootTimer < 20) {
+      this.shootTimer = 20;
+    }
+  }
+
+  protected dropLoot(game: GameApi): void {
+    this.drop(game, I.GUNPOWDER, randInt(game.rng, 1, 2));
+  }
+}
+
+export class MagmaCube extends Monster {
+  size = 2;
+  private jumpWait = 10;
+
+  constructor(size = 2) {
+    super('magma_cube', 4, 0.05);
+    this.fireImmune = true;
+    this.setSize(size);
+  }
+
+  setSize(s: number): void {
+    const clamped = s >= 4 ? 4 : s >= 2 ? 2 : 1;
+    this.size = clamped;
+    const scale = clamped * 0.52;
+    this.width = scale;
+    this.height = scale;
+    this.eyeHeight = scale * 0.6;
+    this.mobScale = scale / 0.52;
+    this.maxHealth = clamped * clamped;
+    this.health = this.maxHealth;
+  }
+
+  override hurt(game: GameApi, amount: number, cause: DamageCause, attacker: Entity | null = null): boolean {
+    if (cause === 'fall') return false;
+    return super.hurt(game, amount, cause, attacker);
+  }
+
+  protected override idle(game: GameApi): void {
+    if (this.onGround && --this.jumpWait <= 0) {
+      this.jumpWait = 15 + Math.floor(game.rng() * 25);
+      this.yaw += (game.rng() - 0.5) * 1.6;
+      this.headYaw = this.yaw;
+      this.leap();
+    } else if (!this.onGround) {
+      this.moveForward = 0.85;
+    }
+  }
+
+  protected fight(game: GameApi, t: Living): void {
+    this.face(t.x, t.z);
+    if (this.onGround && --this.jumpWait <= 0) {
+      this.jumpWait = 8 + Math.floor(game.rng() * 10);
+      this.leap();
+    } else if (!this.onGround) {
+      this.moveForward = 1;
+    }
+    if (this.size > 1) {
+      this.melee(game, t, (this.width + t.width) / 2 + 0.35, this.size + Math.floor(game.difficulty));
+    } else {
+      this.melee(game, t, (this.width + t.width) / 2 + 0.3, 1);
+    }
+  }
+
+  private leap(): void {
+    this.vy = 0.44 + this.size * 0.04;
+    this.onGround = false;
+    this.moveForward = 1;
+  }
+
+  protected dropLoot(game: GameApi): void {
+    if (this.size > 1) {
+      this.drop(game, I.MAGMA_CREAM, 1);
+      const childSize = Math.floor(this.size / 2);
+      const count = 2 + Math.floor(game.rng() * 3);
+      for (let i = 0; i < count; i++) {
+        const child = new MagmaCube(childSize);
+        const ox = (game.rng() - 0.5) * this.width * 0.8;
+        const oz = (game.rng() - 0.5) * this.width * 0.8;
+        child.setPosition(this.x + ox, this.y + 0.3, this.z + oz);
+        child.setRotation(game.rng() * TAU);
+        child.vy = 0.25;
+        game.spawn(child);
+      }
+    }
+  }
+
+  override saveExtra(d: EntityData): void {
+    d.size = this.size;
+  }
+
+  override loadExtra(d: EntityData): void {
+    this.setSize(num(d.size, 2));
+  }
+}
+
 // =============================================================================================
 // Fabrique, chargement, œuf
 // =============================================================================================
@@ -1507,6 +1735,12 @@ export function createMob(kind: MobKind, rng: () => number = Math.random): Mob |
       return new Creeper();
     case 'spider':
       return new Spider();
+    case 'zombie_pigman':
+      return new ZombiePigman();
+    case 'ghast':
+      return new Ghast();
+    case 'magma_cube':
+      return new MagmaCube();
     default:
       return null;
   }
