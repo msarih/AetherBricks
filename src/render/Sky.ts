@@ -852,7 +852,30 @@ export class Sky {
     rain: number,
     thunder: number,
     viewDistance: number,
+    nether = false,
   ): void {
+    if (nether) {
+      this.dayFactor = 0.25;
+      const nr = 0x33 / 255;
+      const ng = 0x08 / 255;
+      const nb = 0x08 / 255;
+      this.skyColor.setRGB(nr, ng, nb);
+      this.fogColor.setRGB(nr, ng, nb);
+      this.skyLight.setRGB(0.28, 0.2, 0.2);
+      const dome = this.dome.material.uniforms;
+      (dome.uSky.value as THREE.Color).setRGB(nr, ng, nb);
+      (dome.uFog.value as THREE.Color).setRGB(nr, ng, nb);
+      (dome.uVoid.value as THREE.Color).setRGB(0.1, 0.02, 0.02);
+      dome.uSunsetAlpha.value = 0;
+      this.sun.visible = false;
+      this.moon.visible = false;
+      this.stars.visible = false;
+      this.cloudDepth.visible = false;
+      this.cloudColor.visible = false;
+      this.precip.visible = false;
+      this.root.position.copy(camera.position);
+      return;
+    }
     rain = clamp01(rain);
     // Comme Minecraft : l'orage n'a d'effet qu'à la mesure de la pluie.
     thunder = clamp01(thunder) * rain;

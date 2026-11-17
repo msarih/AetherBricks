@@ -5,6 +5,7 @@
  * `tick()` tourne à 20 ticks par seconde (logique) ; `frame()` à chaque image (contour du bloc visé).
  */
 import { Living, type Entity, type GameApi } from '../entity/Entity';
+import { notifyTamedWolves } from '../entity/Mobs';
 import { Arrow, FishingBobber, Thrown } from '../entity/Objects';
 import type { Input } from '../player/Input';
 import { attackDamage, type Player } from '../player/Player';
@@ -12,6 +13,7 @@ import type { HandRenderer } from '../render/HandRenderer';
 import type { Selection } from '../render/Selection';
 import type { UiApi } from '../ui/UiApi';
 import { applyBonemeal, canStay, fireCanStay, neighborChanged, topSolid } from '../world/Behavior';
+import { tryIgnitePortal } from '../world/Portal';
 import { META_DOOR_HINGE_RIGHT, META_DOOR_OPEN, META_DOOR_UPPER, ccw, collisionBoxes, cw, opposite } from '../world/BlockModels';
 import {
   BLOCKS,
@@ -31,12 +33,13 @@ import {
 } from '../world/Blocks';
 import { CHUNK_HEIGHT, FACE_DOWN, FACE_DX, FACE_DY, FACE_DZ, FACE_EAST, FACE_NORTH, FACE_SOUTH, FACE_UP, FACE_WEST } from '../world/Constants';
 import { blockDrops, canHarvest, miningSpeed, type Drop } from '../world/Drops';
+import { enchantLevel } from '../world/Enchants';
 import { B, I } from '../world/Ids';
 import { getItem, isTool } from '../world/Items';
-import { makeStack } from '../world/ItemStack';
+import { cloneStackWithCount, makeStack } from '../world/ItemStack';
 import { newRayHit, rayBoxDistance, raycast } from '../world/Raycast';
 import { getChest, getFurnace } from './BlockEntities';
-import { ChestMenu, CraftingMenu, FurnaceMenu, HOTBAR_SIZE, type Menu } from './Inventory';
+import { AnvilMenu, ChestMenu, CraftingMenu, EnchantMenu, FurnaceMenu, HOTBAR_SIZE, type Menu, type XpHost } from './Inventory';
 
 /** Ce dont l'interaction a besoin, en plus du contrat des entités. Implémenté par Game. */
 export interface InteractionHost extends GameApi {
@@ -53,6 +56,10 @@ export interface InteractionHost extends GameApi {
   openMenu(menu: Menu): void;
   /** Le joueur clique sur un lit. */
   trySleep(x: number, y: number, z: number, meta: number): void;
+  /** Clic droit avec une carte vierge en main. */
+  createMap(): void;
+  /** Un panneau vient d'être posé en (x, y, z) : ouvrir la saisie de son texte. */
+  openSignEditor(x: number, y: number, z: number): void;
 }
 
 /** Portée de la main, en blocs. */
@@ -262,10 +269,11 @@ export class Interaction {
     }
 
     const held = p.heldItemId;
+    const eff = enchantLevel(p.inventory.held, 'efficiency');
     let damage: number;
     if (def.hardness === 0) damage = 1;
     else {
-      damage = miningSpeed(id, held) / def.hardness / (canHarvest(id, held) ? 30 : 100);
+      damage = miningSpeed(id, held, eff) / def.hardness / (canHarvest(id, held) ? 30 : 100);
       if (g.headInWater) damage /= 5;
       if (!p.onGround) damage /= 5;
     }
@@ -303,12 +311,17 @@ export class Interaction {
     const creative = p.creative;
 
     w.host.effect('break', x, y, z, id, meta);
+    p.addStat(`mined:${id}`);
     let drops: Drop[] = [];
+
+    const heldStack = p.inventory.held;
+    const fortune = enchantLevel(heldStack, 'fortune');
+    const silkTouch = enchantLevel(heldStack, 'silk_touch') > 0;
 
     if (isDoor(id)) {
       // les deux moitiés partent ensemble, un seul butin
       const ly = meta & META_DOOR_UPPER ? y - 1 : y;
-      if (!creative) drops = blockDrops(id, meta & ~META_DOOR_UPPER, held, g.rng);
+      if (!creative) drops = blockDrops(id, meta & ~META_DOOR_UPPER, held, g.rng, fortune, silkTouch);
       if (w.getBlock(x, ly, z) === id) w.setBlock(x, ly, z, B.AIR, 0, false);
       if (w.getBlock(x, ly + 1, z) === id) w.setBlock(x, ly + 1, z, B.AIR, 0, false);
       this.notifyAround(x, ly, z);
@@ -318,13 +331,13 @@ export class Interaction {
       const s = meta & 4 ? -1 : 1;
       const ox = x + FACING_DX[d] * s;
       const oz = z + FACING_DZ[d] * s;
-      if (!creative) drops = blockDrops(B.BED, meta | 4, held, g.rng);
+      if (!creative) drops = blockDrops(B.BED, meta | 4, held, g.rng, fortune, silkTouch);
       w.setBlock(x, y, z, B.AIR, 0, false);
       if (w.getBlock(ox, y, oz) === B.BED) w.setBlock(ox, y, oz, B.AIR, 0, false);
       this.notifyAround(x, y, z);
       this.notifyAround(ox, y, oz);
     } else {
-      if (!creative) drops = blockDrops(id, meta, held, g.rng);
+      if (!creative) drops = blockDrops(id, meta, held, g.rng, fortune, silkTouch);
       if (id === B.ICE && !creative && drops.length === 0) {
         const below = w.getBlock(x, y - 1, z);
         w.setBlock(x, y, z, BLOCK_SOLID[below] === 1 || isFluid(below) ? B.WATER : B.AIR, 0);
@@ -354,11 +367,15 @@ export class Interaction {
     const p = g.player;
     const held = p.heldItemId;
     let damage = attackDamage(held);
+    const sharp = enchantLevel(p.inventory.held, 'sharpness');
+    if (sharp > 0) damage += 0.5 * sharp + 0.5;
     const crit = p.fallDistance > 0 && !p.onGround && !p.inWater && !p.onLadder && !p.flying;
     if (crit) damage *= 1.5;
     const ok = e.hurt(g, damage, 'attack', p);
+    if (ok) p.addStat('damage_dealt', damage);
     const ey = e.y + e.height * 0.6;
     if (ok) {
+      if (e instanceof Living) notifyTamedWolves(g, e);
       g.sound(crit ? 'attack_crit' : 'attack', e.x, ey, e.z, 0.7, 0.9 + g.rng() * 0.2);
       if (crit) g.particles('crit', e.x, ey, e.z, 8, 0.4);
       if (isTool(held)) p.damageHeld(g);
@@ -428,6 +445,7 @@ export class Interaction {
     const arrow = new Arrow();
     arrow.owner = p;
     arrow.fromPlayer = true;
+    arrow.powerLevel = enchantLevel(p.inventory.held, 'power');
     arrow.critical = power >= 1;
     arrow.shoot(p.x + l.x * 0.3, p.y + p.eyeHeight - 0.1, p.z + l.z * 0.3, l.x, l.y, l.z, power * 3, 1, g.rng);
     g.spawn(arrow);
@@ -478,7 +496,7 @@ export class Interaction {
     const h = this.hit;
     const { x, y, z, id, meta } = h;
 
-    if (id === B.OAK_DOOR || id === B.IRON_DOOR) {
+    if (id === B.OAK_DOOR) {
       const ly = meta & META_DOOR_UPPER ? y - 1 : y;
       const lower = w.getBlockAndMeta(x, ly, z);
       const upper = w.getBlockAndMeta(x, ly + 1, z);
@@ -486,6 +504,19 @@ export class Interaction {
       if ((lower & 255) === id) w.setMeta(x, ly, z, open ? (lower >> 8) | META_DOOR_OPEN : (lower >> 8) & ~META_DOOR_OPEN);
       if ((upper & 255) === id) w.setMeta(x, ly + 1, z, open ? (upper >> 8) | META_DOOR_OPEN : (upper >> 8) & ~META_DOOR_OPEN);
       g.sound(open ? 'door_open' : 'door_close', x + 0.5, ly + 1, z + 0.5, 0.8, 0.9 + g.rng() * 0.2);
+      return true;
+    }
+    if (id === B.LEVER) {
+      w.setMeta(x, y, z, meta ^ 8, true);
+      g.sound('door_open', x + 0.5, y + 0.5, z + 0.5, 0.5, meta & 8 ? 0.5 : 0.6);
+      return true;
+    }
+    if (id === B.STONE_BUTTON) {
+      if (!(meta & 8)) {
+        w.setMeta(x, y, z, meta | 8, true);
+        w.scheduleTick(x, y, z, 20);
+        g.sound('door_open', x + 0.5, y + 0.5, z + 0.5, 0.5, 0.6);
+      }
       return true;
     }
     if (id === B.TRAPDOOR || id === B.FENCE_GATE) {
@@ -515,11 +546,44 @@ export class Interaction {
       g.openMenu(new FurnaceMenu(p.inventory, furnace, () => w.markBlockEntityDirty(furnace)));
       return true;
     }
+    if (id === B.ENCHANTING_TABLE) {
+      let bookshelves = 0;
+      for (let dz = -2; dz <= 2; dz++) {
+        for (let dx = -2; dx <= 2; dx++) {
+          if (Math.abs(dx) !== 2 && Math.abs(dz) !== 2) continue;
+          const midX = x + Math.sign(dx);
+          const midZ = z + Math.sign(dz);
+          for (let dy = 0; dy <= 1; dy++) {
+            if (w.getBlock(x + dx, y + dy, z + dz) !== B.BOOKSHELF) continue;
+            if (w.getBlock(midX, y + dy, midZ) === B.AIR) bookshelves++;
+          }
+        }
+      }
+      g.openMenu(new EnchantMenu(p.inventory, Math.min(15, bookshelves), this.xpHost()));
+      return true;
+    }
+    if (id === B.ANVIL) {
+      g.openMenu(new AnvilMenu(p.inventory, this.xpHost()));
+      return true;
+    }
     if (id === B.BED) {
       g.trySleep(x, y, z, meta);
       return true;
     }
     return false;
+  }
+
+  private xpHost(): XpHost {
+    const g = this.game;
+    const p = g.player;
+    return {
+      get xpLevel() { return p.xpLevel; },
+      get creative() { return p.creative; },
+      get enchantSeed() { return p.enchantSeed; },
+      spendLevels: (n: number) => { p.xpLevel = Math.max(0, p.xpLevel - n); },
+      rotateEnchantSeed: () => { p.enchantSeed = (Math.floor(g.rng() * 0xfffffffe) >>> 0) + 1; },
+      rng: g.rng,
+    };
   }
 
   /** Direction horizontale du regard : 0 sud (+z), 1 ouest (-x), 2 nord (-z), 3 est (+x). */
@@ -549,8 +613,10 @@ export class Interaction {
         const x = h.x + FACE_DX[h.face];
         const y = h.y + FACE_DY[h.face];
         const z = h.z + FACE_DZ[h.face];
-        if (w.getBlock(x, y, z) !== B.AIR || !fireCanStay(w, x, y, z)) return false;
-        w.setBlock(x, y, z, B.FIRE, 0);
+        if (!tryIgnitePortal(w, x, y, z)) {
+          if (w.getBlock(x, y, z) !== B.AIR || !fireCanStay(w, x, y, z)) return false;
+          w.setBlock(x, y, z, B.FIRE, 0);
+        }
       }
       g.sound('ignite', h.x + 0.5, h.y + 0.5, h.z + 0.5, 0.8, 0.9 + g.rng() * 0.2);
       p.damageHeld(g);
@@ -571,6 +637,7 @@ export class Interaction {
       return true;
     }
 
+    if (held === I.SIGN) return this.placeSign();
     if (item.places >= 0) return this.place(item.places);
     return false;
   }
@@ -610,6 +677,12 @@ export class Interaction {
         z += FACE_DZ[h.face];
       }
       if (y < 0 || y >= CHUNK_HEIGHT || BLOCK_REPLACEABLE[w.getBlock(x, y, z)] !== 1) return false;
+      if (held === I.WATER_BUCKET && (g as { dimension?: string }).dimension === 'nether') {
+        w.host.effect('fizz', x, y, z);
+        p.replaceHeld(I.BUCKET);
+        this.swing();
+        return true;
+      }
       w.setBlock(x, y, z, held === I.WATER_BUCKET ? B.WATER : B.LAVA, 0);
       p.replaceHeld(I.BUCKET);
       g.sound('bucket_empty', x + 0.5, y + 0.5, z + 0.5, 0.8);
@@ -651,6 +724,13 @@ export class Interaction {
         this.bobber = nb;
         g.sound('bow', ex, ey, ez, 0.5, 0.4 + g.rng() * 0.2);
       }
+      this.swing();
+      return true;
+    }
+
+    if (held === I.MAP) {
+      if (!this.freshClick) return false;
+      g.createMap();
       this.swing();
       return true;
     }
@@ -785,7 +865,9 @@ export class Interaction {
         if (meta < 0) return false;
         break;
       }
-      case SHAPE.TORCH: {
+      case SHAPE.TORCH:
+      case SHAPE.LEVER:
+      case SHAPE.BUTTON: {
         meta = -1;
         if (side >= 0 && onto && canStay(w, x, y, z, id, side + 1)) meta = side + 1;
         else if (canStay(w, x, y, z, id, 0)) meta = 0;
@@ -802,7 +884,12 @@ export class Interaction {
         break;
       }
       default:
-        if (def.rot === ROT.AXIS) meta = face === FACE_UP || face === FACE_DOWN || !onto ? 0 : face === FACE_WEST || face === FACE_EAST ? 1 : 2;
+        if (id === B.PISTON || id === B.STICKY_PISTON) {
+          g.player.look(this.look);
+          if (this.look.y > 0.7) meta = 1;
+          else if (this.look.y < -0.7) meta = 0;
+          else meta = opposite(pf) + 2;
+        } else if (def.rot === ROT.AXIS) meta = face === FACE_UP || face === FACE_DOWN || !onto ? 0 : face === FACE_WEST || face === FACE_EAST ? 1 : 2;
         else if (def.rot === ROT.FACING) meta = opposite(pf);
         else if (isLeaves(id)) meta = 1;
         break;
@@ -815,6 +902,43 @@ export class Interaction {
     // le bloc a pu être aussitôt refusé par le monde (support manquant…)
     if (w.getBlock(x, y, z) !== id && !def.gravity) return false;
     return this.placed(x, y, z, id);
+  }
+
+  /**
+   * Panneau : posé sur le dessus d'un bloc, il se dresse sur un poteau, face au joueur (16 orientations) ;
+   * posé contre une face latérale, il se plaque au mur. Puis la saisie du texte s'ouvre.
+   */
+  private placeSign(): boolean {
+    const g = this.game;
+    const w = g.world;
+    const h = this.hit;
+    const face = h.face;
+    if (face === FACE_DOWN) return false;
+    let x = h.x;
+    let y = h.y;
+    let z = h.z;
+    const onto = BLOCK_REPLACEABLE[h.id] !== 1;
+    if (onto) {
+      x += FACE_DX[face];
+      y += FACE_DY[face];
+      z += FACE_DZ[face];
+    }
+    if (!this.replaceable(x, y, z)) return false;
+    const side = faceFacing(face);
+    let id: number = B.SIGN;
+    let meta: number;
+    if (onto && side >= 0) {
+      id = B.WALL_SIGN;
+      meta = side;
+    } else {
+      // la face écrite regarde le joueur : direction (sin r·π/8, cos r·π/8) = opposé du regard
+      meta = Math.round(g.player.yaw / (Math.PI / 8)) & 15;
+    }
+    if (!canStay(w, x, y, z, id, meta)) return false;
+    if (!w.setBlock(x, y, z, id, meta) || w.getBlock(x, y, z) !== id) return false;
+    this.placed(x, y, z, id);
+    g.openSignEditor(x, y, z);
+    return true;
   }
 
   private placeDoor(x: number, y: number, z: number, id: number, pf: number): boolean {
@@ -906,7 +1030,7 @@ export class Interaction {
       inv.drop(held);
     } else {
       held.count--;
-      inv.drop(makeStack(held.id, 1, held.damage));
+      inv.drop(cloneStackWithCount(held, 1));
     }
     this.swing();
   }

@@ -14,7 +14,7 @@ import {
 } from '../Blocks';
 import {
   META_DOOR_HINGE_RIGHT, META_DOOR_UPPER, ccw, cw, doorNamedFacing, edgeBox, fenceBoxes, fenceConnections,
-  fenceGateBoxes, fluidHeight, opposite, paneConnections, stairsBoxes, type NeighborFn,
+  fenceGateBoxes, fluidHeight, opposite, paneConnections, selectionBoxes, stairsBoxes, type NeighborFn,
 } from '../BlockModels';
 import type { MeshRequest, MeshResult, PassData } from './MeshTypes';
 
@@ -826,8 +826,8 @@ function meshCrop(id: number, meta: number): void {
   }
 }
 
-function meshTorch(meta: number): void {
-  const tile = T.torch;
+function meshTorch(id: number, meta: number): void {
+  const tile = id === B.REDSTONE_TORCH ? T.redstone_torch_on : id === B.REDSTONE_TORCH_OFF ? T.redstone_torch_off : T.torch;
   noTint();
   flatLight(1);
   let bx = 0.5;
@@ -836,8 +836,9 @@ function meshTorch(meta: number): void {
   let tz = 0.5;
   let y0 = 0;
   let y1 = 1;
-  if (meta > 0) {
-    const f = (meta - 1) & 3;
+  const side = meta & 7;
+  if (side > 0) {
+    const f = (side - 1) & 3;
     bx = 0.5 - FACING_DX[f] * 0.5;
     bz = 0.5 - FACING_DZ[f] * 0.5;
     tx = 0.5 - FACING_DX[f] * 0.1;
@@ -1064,8 +1065,49 @@ function meshCell(id: number, meta: number): void {
       emit(opaquePass, BLOCK_TILES[id * 6 + FACE_NORTH], -1, NOMIP, true);
       return;
     case SHAPE.TORCH:
-      meshTorch(meta);
+      meshTorch(id, meta);
       return;
+    case SHAPE.REDSTONE_WIRE: {
+      const r = 0x4b + Math.round(((meta & 15) / 15) * 0xb4);
+      setColor(r << 16);
+      flatLight(1);
+      const y = 1 / 64;
+      quad(0, y, 1, 1, y, 1, 1, y, 0, 0, y, 0);
+      uvRect(0, 0, 1, 1);
+      emit(opaquePass, T.redstone_dust, -1, NOMIP, true);
+      return;
+    }
+    case SHAPE.LEVER:
+    case SHAPE.BUTTON:
+    case SHAPE.PRESSURE_PLATE:
+    case SHAPE.PISTON_HEAD: {
+      tmpBoxes.length = 0;
+      selectionBoxes(id, meta, nb, tmpBoxes);
+      noTint();
+      for (let o = 0; o < tmpBoxes.length; o += 6) boxAll(opaquePass, id, tmpBoxes, o, NOMIP, -1);
+      if (id === B.LEVER) {
+        tmpBoxes.length = 0;
+        if ((meta & 7) === 0) {
+          const x0 = meta & 8 ? 10 : 4;
+          tmpBoxes.push(x0, 3, 7, x0 + 2, 11, 9);
+        } else {
+          const y0 = meta & 8 ? 2 : 9;
+          tmpBoxes.push(7, y0, 7, 9, y0 + 5, 9);
+        }
+        boxAll(opaquePass, B.OAK_PLANKS, tmpBoxes, 0, NOMIP, -1);
+      }
+      return;
+    }
+    case SHAPE.SIGN:
+      // dessiné avec son texte par render/SignRenderer
+      return;
+    case SHAPE.PORTAL: {
+      tmpBoxes.length = 0;
+      selectionBoxes(id, meta, nb, tmpBoxes);
+      noTint();
+      boxAll(translucentPass, id, tmpBoxes, 0, NOMIP, -1);
+      return;
+    }
     case SHAPE.PANE:
       meshPane(id);
       return;

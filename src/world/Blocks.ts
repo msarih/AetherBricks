@@ -30,6 +30,14 @@ export const SHAPE = {
   LILY_PAD: 19,
   VINE: 20,
   FIRE: 21,
+  REDSTONE_WIRE: 22,
+  LEVER: 23,
+  BUTTON: 24,
+  PRESSURE_PLATE: 25,
+  PISTON_HEAD: 26,
+  PORTAL: 27,
+  /** Panneau : rien dans le maillage des chunks, dessiné à part avec son texte (render/SignRenderer). */
+  SIGN: 28,
 } as const;
 
 export const TINT = { NONE: 0, GRASS: 1, FOLIAGE: 2, FIXED: 3 } as const;
@@ -301,6 +309,14 @@ reg(B.CHEST, 'chest', 'Coffre', {
   tiles: { top: 'chest_top', bottom: 'chest_top', side: 'chest_side', front: 'chest_front' },
   shape: SHAPE.CHEST, rot: ROT.FACING, opaque: false, hardness: 2.5, ...wood, category: 'utilitaire',
 });
+reg(B.ENCHANTING_TABLE, 'enchanting_table', 'Table d\'enchantement', {
+  tiles: { top: 'enchanting_table_top', bottom: 'enchanting_table_bottom', side: 'enchanting_table_side' },
+  hardness: 5, ...rock, harvestTier: 1, category: 'utilitaire',
+});
+reg(B.ANVIL, 'anvil', 'Enclume', {
+  tiles: { top: 'anvil_top', bottom: 'anvil_side', side: 'anvil_side' },
+  hardness: 5, ...rock, harvestTier: 1, category: 'utilitaire',
+});
 reg(B.BED, 'bed', 'Lit', {
   tiles: { top: 'bed_head_top', bottom: 'oak_planks', side: 'bed_head_side' }, shape: SHAPE.BED, opaque: false,
   hardness: 0.2, sound: 'wood', itemTile: 'bed_item', stack: 1, category: 'utilitaire',
@@ -438,6 +454,64 @@ reg(B.IRON_DOOR, 'iron_door', 'Porte en fer', {
   tiles: { all: 'iron_door_bottom', top: 'iron_door_top' }, shape: SHAPE.DOOR, opaque: false, hardness: 5, tool: 'pickaxe',
   harvestTier: 1, sound: 'metal', itemTile: 'iron_door_item', category: 'decoration',
 });
+reg(B.REDSTONE_WIRE, 'redstone_wire', 'Poudre de redstone', {
+  tiles: 'redstone_dust', shape: SHAPE.REDSTONE_WIRE, solid: false, opaque: false, hardness: 0,
+  sound: 'stone', needsSupport: true, hasItem: false, category: 'aucune',
+});
+reg(B.REDSTONE_TORCH, 'redstone_torch', 'Torche de redstone', {
+  tiles: 'redstone_torch_on', shape: SHAPE.TORCH, solid: false, opaque: false, hardness: 0, emit: 7,
+  sound: 'wood', needsSupport: true, itemTile: 'redstone_torch_on', category: 'utilitaire',
+});
+reg(B.REDSTONE_TORCH_OFF, 'redstone_torch_off', 'Torche de redstone éteinte', {
+  tiles: 'redstone_torch_off', shape: SHAPE.TORCH, solid: false, opaque: false, hardness: 0, emit: 0,
+  sound: 'wood', needsSupport: true, hasItem: false, category: 'aucune',
+});
+reg(B.LEVER, 'lever', 'Levier', {
+  tiles: 'cobblestone', shape: SHAPE.LEVER, solid: false, opaque: false, hardness: 0.5,
+  sound: 'wood', needsSupport: true, category: 'utilitaire',
+});
+reg(B.STONE_BUTTON, 'stone_button', 'Bouton en pierre', {
+  tiles: 'stone', shape: SHAPE.BUTTON, solid: false, opaque: false, hardness: 0.5,
+  sound: 'stone', needsSupport: true, category: 'utilitaire',
+});
+reg(B.STONE_PRESSURE_PLATE, 'stone_pressure_plate', 'Plaque de pression en pierre', {
+  tiles: 'stone', shape: SHAPE.PRESSURE_PLATE, solid: false, opaque: false, hardness: 0.5, tool: 'pickaxe',
+  sound: 'stone', needsSupport: true, category: 'utilitaire',
+});
+reg(B.PISTON, 'piston', 'Piston', {
+  tiles: { top: 'piston_top', bottom: 'piston_bottom', side: 'piston_side' },
+  hardness: 1.5, tool: 'pickaxe', sound: 'stone', category: 'utilitaire',
+});
+reg(B.STICKY_PISTON, 'sticky_piston', 'Piston collant', {
+  tiles: { top: 'piston_top_sticky', bottom: 'piston_bottom', side: 'piston_side' },
+  hardness: 1.5, tool: 'pickaxe', sound: 'stone', category: 'utilitaire',
+});
+reg(B.PISTON_HEAD, 'piston_head', 'Tête de piston', {
+  tiles: 'piston_top', shape: SHAPE.PISTON_HEAD, opaque: false, hardness: 1.5, tool: 'pickaxe',
+  sound: 'stone', hasItem: false, category: 'aucune',
+});
+reg(B.REDSTONE_LAMP, 'redstone_lamp', 'Lampe à redstone', {
+  tiles: 'redstone_lamp_off', hardness: 0.3, sound: 'glass', category: 'utilitaire',
+});
+reg(B.REDSTONE_LAMP_LIT, 'redstone_lamp_lit', 'Lampe à redstone allumée', {
+  tiles: 'redstone_lamp_on', hardness: 0.3, emit: 15, sound: 'glass', hasItem: false, category: 'aucune',
+});
+reg(B.NETHER_PORTAL, 'nether_portal', 'Portail du Nether', {
+  tiles: 'nether_portal', shape: SHAPE.PORTAL, solid: false, opaque: false, translucent: true,
+  emit: 11, hardness: -1, sound: 'glass', hasItem: false, category: 'aucune',
+});
+reg(B.NETHER_QUARTZ_ORE, 'nether_quartz_ore', 'Minerai de quartz du Nether', {
+  tiles: 'nether_quartz_ore', hardness: 3, tool: 'pickaxe', harvestTier: 1, sound: 'stone', category: 'nature',
+});
+// Panneaux : posés par l'objet « Panneau » (sur un bloc : sur poteau ; contre un mur : mural)
+reg(B.SIGN, 'standing_sign', 'Panneau', {
+  tiles: 'oak_planks', shape: SHAPE.SIGN, solid: false, opaque: false, hardness: 1, tool: 'axe',
+  sound: 'wood', needsSupport: true, hasItem: false, category: 'aucune',
+});
+reg(B.WALL_SIGN, 'wall_sign', 'Panneau mural', {
+  tiles: 'oak_planks', shape: SHAPE.SIGN, solid: false, opaque: false, hardness: 1, tool: 'axe',
+  sound: 'wood', needsSupport: true, hasItem: false, category: 'aucune',
+});
 
 // Identifiants non attribués : on les fait pointer vers un bloc de secours pour éviter tout crash
 for (let id = 0; id < BLOCK_ID_LIMIT; id++) {
@@ -462,6 +536,13 @@ void WOOD_LABELS;
 export const FACING_TO_FACE = [FACE_SOUTH, FACE_WEST, FACE_NORTH, FACE_EAST] as const;
 export const FACING_DX = [0, -1, 0, 1] as const;
 export const FACING_DZ = [1, 0, -1, 0] as const;
+
+/** Direction d'un piston (0 haut +y, 1 bas -y, 2 sud +z, 3 ouest -x, 4 nord -z, 5 est +x). */
+export const PISTON_DX = [0, 0, 0, -1, 0, 1] as const;
+export const PISTON_DY = [1, -1, 0, 0, 0, 0] as const;
+export const PISTON_DZ = [0, 0, 1, 0, -1, 0] as const;
+const PISTON_FACES = [FACE_UP, FACE_DOWN, FACE_SOUTH, FACE_WEST, FACE_NORTH, FACE_EAST] as const;
+const PISTON_OPPOSITE_FACES = [FACE_DOWN, FACE_UP, FACE_NORTH, FACE_EAST, FACE_SOUTH, FACE_WEST] as const;
 
 export function isLeaves(id: number): boolean {
   return id >= B.OAK_LEAVES && id <= B.ACACIA_LEAVES;
@@ -500,6 +581,14 @@ export function isFlower(id: number): boolean {
  */
 export function faceTile(id: number, meta: number, face: number): number {
   const d = BLOCKS[id];
+  if (id === B.PISTON || id === B.STICKY_PISTON) {
+    const f = Math.min(5, meta & 7);
+    if (face === PISTON_FACES[f]) {
+      return meta & 8 ? T.piston_inner : id === B.STICKY_PISTON ? T.piston_top_sticky : T.piston_top;
+    }
+    if (face === PISTON_OPPOSITE_FACES[f]) return T.piston_bottom;
+    return T.piston_side;
+  }
   if (d.rot === ROT.NONE) {
     if (id === B.FARMLAND && face === FACE_UP) return meta > 0 ? T.farmland_wet : T.farmland_dry;
     return d.tiles[face];

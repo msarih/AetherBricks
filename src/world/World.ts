@@ -10,6 +10,7 @@ import { CHUNK_HEIGHT, chunkKey, type WorldType } from './Constants';
 import { mulberry32 } from './gen/Noise';
 import type { Chunk } from './Chunk';
 import { neighborChanged, randomTick, scheduledTick } from './Behavior';
+import { hasRedstoneNearby, isRedstoneBlock, tickRedstone, updateRedstoneAround } from './Redstone';
 
 /** Donnée attachée à un bloc (coffre, fourneau, générateur de monstres). */
 export interface BlockEntity {
@@ -40,6 +41,8 @@ export interface WorldHost {
   effect(kind: WorldEffect, x: number, y: number, z: number, a?: number, b?: number): void;
   /** Une entité de bloc vient d'être retirée (son bloc a disparu) : lâcher son contenu. */
   blockEntityRemoved(be: BlockEntity): void;
+  /** Pousse les entités dans la boîte donnée (piston). */
+  pushEntities?(x0: number, y0: number, z0: number, x1: number, y1: number, z1: number, dx: number, dy: number, dz: number): void;
 }
 
 const NO_HOST: WorldHost = {
@@ -73,7 +76,7 @@ const MAX_SCHEDULED_PER_TICK = 3000;
 const RANDOM_TICK_RADIUS = 5;
 
 function hasBlockEntity(id: number): boolean {
-  return id === B.CHEST || id === B.FURNACE || id === B.FURNACE_LIT || id === B.SPAWNER;
+  return id === B.CHEST || id === B.FURNACE || id === B.FURNACE_LIT || id === B.SPAWNER || id === B.SIGN || id === B.WALL_SIGN;
 }
 
 export class World {
@@ -226,6 +229,9 @@ export class World {
     if (notify) {
       neighborChanged(this, x, y, z);
       this.notifyNeighbors(x, y, z);
+      if (isRedstoneBlock(old) || isRedstoneBlock(id) || hasRedstoneNearby(this, x, y, z)) {
+        updateRedstoneAround(this, x, y, z);
+      }
     }
     return true;
   }
@@ -466,6 +472,7 @@ export class World {
   /** Avance le monde d'un tick : ticks planifiés puis ticks aléatoires autour de (px, pz). */
   tick(px: number, pz: number): void {
     this.age++;
+    tickRedstone(this);
 
     // --- ticks planifiés ---
     let due = this.overflow;

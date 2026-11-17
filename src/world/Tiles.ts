@@ -29,9 +29,15 @@ const BASE_TILES = [
   'crafting_table_top', 'crafting_table_side', 'crafting_table_front',
   'furnace_top', 'furnace_side', 'furnace_front', 'furnace_front_on',
   'chest_top', 'chest_side', 'chest_front',
+  'enchanting_table_top', 'enchanting_table_side', 'enchanting_table_bottom',
+  'anvil_top', 'anvil_side',
   'bed_head_top', 'bed_foot_top', 'bed_head_side', 'bed_foot_side', 'bed_head_end', 'bed_foot_end',
   'oak_door_top', 'oak_door_bottom', 'iron_door_top', 'iron_door_bottom', 'trapdoor', 'ladder', 'torch',
   'glass_pane_top', 'iron_bars', 'spawner',
+  'redstone_dust', 'redstone_torch_on', 'redstone_torch_off',
+  'piston_top', 'piston_top_sticky', 'piston_side', 'piston_bottom', 'piston_inner',
+  'redstone_lamp_off', 'redstone_lamp_on',
+  'nether_portal', 'nether_quartz_ore',
   // --- Végétation ---
   'tall_grass', 'fern', 'dead_bush', 'dandelion', 'poppy', 'blue_orchid', 'allium', 'azure_bluet',
   'red_tulip', 'orange_tulip', 'white_tulip', 'pink_tulip', 'oxeye_daisy', 'cornflower',
@@ -49,7 +55,7 @@ const BASE_TILES = [
   'particle_smoke', 'particle_flame', 'particle_bubble', 'particle_heart', 'particle_splash',
   'particle_crit', 'particle_lava', 'particle_snow', 'particle_rain', 'particle_explosion',
   // --- Objets ---
-  'stick', 'coal', 'charcoal', 'iron_ingot', 'gold_ingot', 'diamond', 'emerald', 'lapis', 'redstone', 'flint',
+  'stick', 'coal', 'charcoal', 'iron_ingot', 'gold_ingot', 'gold_nugget', 'magma_cream', 'diamond', 'emerald', 'lapis', 'redstone', 'flint',
   'wheat_seeds', 'wheat', 'bread', 'apple', 'golden_apple', 'raw_porkchop', 'cooked_porkchop',
   'raw_beef', 'steak', 'raw_chicken', 'cooked_chicken', 'raw_mutton', 'cooked_mutton', 'rotten_flesh',
   'bone', 'bone_meal', 'string', 'feather', 'gunpowder', 'leather', 'egg', 'arrow', 'bow',
@@ -59,6 +65,14 @@ const BASE_TILES = [
   'carrot', 'potato', 'baked_potato', 'glowstone_dust', 'quartz', 'cookie', 'pumpkin_pie',
   'mushroom_stew', 'bowl', 'fishing_rod', 'fishing_rod_cast', 'raw_fish', 'cooked_fish',
   'door_item', 'iron_door_item', 'bed_item', 'sugar_cane_item',
+  'map', 'filled_map', 'sign',
+] as const;
+
+/** Images animées de la boussole et de l'horloge (aiguille, cadran), 32 chacune. */
+export const DIAL_FRAMES = 32;
+const FRAME_IDS = [
+  '00', '01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12', '13', '14', '15',
+  '16', '17', '18', '19', '20', '21', '22', '23', '24', '25', '26', '27', '28', '29', '30', '31',
 ] as const;
 
 type BaseTile = (typeof BASE_TILES)[number];
@@ -66,8 +80,9 @@ type WoolTile = `wool_${(typeof COLOR_NAMES)[number]}`;
 type DyeTile = `dye_${(typeof COLOR_NAMES)[number]}`;
 type ToolTile = `${(typeof TOOL_MATERIALS)[number]}_${(typeof TOOL_KINDS)[number]}`;
 type ArmorTile = `${(typeof ARMOR_MATERIALS)[number]}_${(typeof ARMOR_KINDS)[number]}`;
+type DialTile = `${'compass' | 'clock'}_${(typeof FRAME_IDS)[number]}`;
 
-export type TileName = BaseTile | WoolTile | DyeTile | ToolTile | ArmorTile;
+export type TileName = BaseTile | WoolTile | DyeTile | ToolTile | ArmorTile | DialTile;
 
 function buildTileNames(): TileName[] {
   const names: TileName[] = [...BASE_TILES];
@@ -75,6 +90,8 @@ function buildTileNames(): TileName[] {
   for (const c of COLOR_NAMES) names.push(`dye_${c}`);
   for (const m of TOOL_MATERIALS) for (const k of TOOL_KINDS) names.push(`${m}_${k}`);
   for (const m of ARMOR_MATERIALS) for (const k of ARMOR_KINDS) names.push(`${m}_${k}`);
+  for (const f of FRAME_IDS) names.push(`compass_${f}`);
+  for (const f of FRAME_IDS) names.push(`clock_${f}`);
   return names;
 }
 
@@ -91,4 +108,10 @@ export const T = (() => {
 })();
 
 export const TILE_SIZE = 16;
+
+/** Tuile de l'image `frame` (0..31) de la boussole ou de l'horloge. */
+export function dialTile(kind: 'compass' | 'clock', frame: number): number {
+  const f = ((Math.floor(frame) % DIAL_FRAMES) + DIAL_FRAMES) % DIAL_FRAMES;
+  return T[`${kind}_${FRAME_IDS[f]}`];
+}
 export { TOOL_MATERIALS, TOOL_KINDS, ARMOR_MATERIALS, ARMOR_KINDS };

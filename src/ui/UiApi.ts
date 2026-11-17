@@ -39,6 +39,13 @@ export interface UiGame {
   /** 0 paisible, 1 facile, 2 normal, 3 difficile. */
   difficulty: number;
 
+  /** Statistiques du joueur (voir game/Stats) : clé → valeur. */
+  readonly stats: Readonly<Record<string, number>>;
+  /** Tuile animée d'un objet (aiguille de la boussole, cadran de l'horloge), ou -1. */
+  dynamicTile(itemId: number): number;
+  /** Texte du panneau en (x, y, z), saisi dans l'écran ouvert par UiApi.openSignEditor() (4 lignes). */
+  setSignText(x: number, y: number, z: number, lines: string[]): void;
+
   /** Lignes de l'écran de débogage (F3) : colonne de gauche et colonne de droite. */
   debugLines(): { left: string[]; right: string[] };
 
@@ -116,6 +123,8 @@ export interface UiApi {
   openPause(): void;
   /** Ouvre la saisie du chat, pré-remplie avec `initial` (« / » pour une commande). */
   openChat(initial?: string): void;
+  /** Saisie du texte d'un panneau qui vient d'être posé (4 lignes de 15 caractères au plus). */
+  openSignEditor(x: number, y: number, z: number, lines: readonly string[]): void;
   /** Écran de mort. */
   showDeath(message: string): void;
   /** Ferme l'écran ouvert, sans rien demander au jeu. */

@@ -15,11 +15,11 @@
  * abîmé ou étranger donne une erreur au libellé clair et n'écrit rien de partiel.
  */
 import { CHUNK_AREA, CHUNK_VOLUME, type GameMode, type WorldType } from './Constants';
-import { createWorldId, rleDecode, rleEncode, type SavedChunk, type Storage, type WorldInfo } from './Storage';
+import { createWorldId, netherStorageId, rleDecode, rleEncode, type SavedChunk, type Storage, type WorldInfo } from './Storage';
 
 export const WORLD_FILE_EXTENSION = '.aetherworld';
 const SIGNATURE = 'AEBWORLD';
-const FORMAT_VERSION = 1;
+const FORMAT_VERSION = 2;
 const TINT_BYTES = CHUNK_AREA * 9;
 /** Chunks lus ou écrits par lot (une transaction par lot à l'import). */
 const BATCH = 32;
@@ -34,6 +34,7 @@ const DAMAGED = 'fichier abîmé';
 interface FileHeader {
   info: WorldInfo;
   chunkCount: number;
+  netherChunkCount?: number;
 }
 
 interface ChunkHeader {
@@ -65,23 +66,30 @@ export async function exportWorld(storage: Storage, id: string, onProgress?: (do
   const info = await storage.getWorld(id);
   if (!info) throw new Error('Monde introuvable');
   const keys = Array.from(await storage.chunkKeys(id)).sort((a, b) => a - b);
+  const nId = netherStorageId(id);
+  const nKeys = Array.from(await storage.chunkKeys(nId)).sort((a, b) => a - b);
+  const total = Math.max(1, keys.length + nKeys.length);
   const parts: Uint8Array[] = [encoder.encode(SIGNATURE), u32(FORMAT_VERSION)];
-  const header: FileHeader = { info, chunkCount: keys.length };
+  const header: FileHeader = { info, chunkCount: keys.length, ...(nKeys.length > 0 ? { netherChunkCount: nKeys.length } : {}) };
   parts.push(...jsonPart(header));
-  for (let i = 0; i < keys.length; i += BATCH) {
-    const batch = await Promise.all(keys.slice(i, i + BATCH).map((key) => storage.loadChunk(id, key)));
-    for (const chunk of batch) {
-      if (!chunk) throw new Error('Un chunk du monde est illisible');
-      const buffers = [rleEncode(chunk.blocks), rleEncode(chunk.meta), rleEncode(chunk.biomes), rleEncode(chunk.tints)];
-      const head: ChunkHeader = {
-        key: chunk.key,
-        blockEntities: chunk.blockEntities,
-        entities: chunk.entities,
-        sizes: [buffers[0].length, buffers[1].length, buffers[2].length, buffers[3].length],
-      };
-      parts.push(...jsonPart(head), ...buffers);
+  let done = 0;
+  for (const [srcId, list] of [[id, keys], [nId, nKeys]] as const) {
+    for (let i = 0; i < list.length; i += BATCH) {
+      const batch = await Promise.all(list.slice(i, i + BATCH).map((key) => storage.loadChunk(srcId, key)));
+      for (const chunk of batch) {
+        if (!chunk) throw new Error('Un chunk du monde est illisible');
+        const buffers = [rleEncode(chunk.blocks), rleEncode(chunk.meta), rleEncode(chunk.biomes), rleEncode(chunk.tints)];
+        const head: ChunkHeader = {
+          key: chunk.key,
+          blockEntities: chunk.blockEntities,
+          entities: chunk.entities,
+          sizes: [buffers[0].length, buffers[1].length, buffers[2].length, buffers[3].length],
+        };
+        parts.push(...jsonPart(head), ...buffers);
+        done++;
+      }
+      onProgress?.(Math.min(1, done / total));
     }
-    onProgress?.(Math.min(1, (i + BATCH) / Math.max(1, keys.length)));
   }
   return new Blob(parts as BlobPart[], { type: 'application/octet-stream' });
 }
@@ -203,16 +211,20 @@ export async function importWorld(storage: Storage, data: ArrayBuffer, onProgres
   }
   if (signature !== SIGNATURE) throw new Error('ce fichier n’est pas un monde AetherBricks');
   const version = r.u32();
-  if (version !== FORMAT_VERSION) throw new Error(`version de fichier non prise en charge (${version})`);
+  if (version !== 1 && version !== FORMAT_VERSION) throw new Error(`version de fichier non prise en charge (${version})`);
   const header = r.json();
   if (!isRecord(header)) throw new Error(DAMAGED);
   const count = header.chunkCount;
   if (typeof count !== 'number' || !Number.isInteger(count) || count < 0 || count > MAX_CHUNKS) throw new Error(DAMAGED);
+  const nCount = header.netherChunkCount === undefined ? 0 : header.netherChunkCount;
+  if (typeof nCount !== 'number' || !Number.isInteger(nCount) || nCount < 0 || count + nCount > MAX_CHUNKS) throw new Error(DAMAGED);
   const info = readInfo(header.info, Date.now());
 
   // lecture et validation complètes avant toute écriture
   const chunks: SavedChunk[] = [];
   for (let i = 0; i < count; i++) chunks.push(readChunk(r));
+  const netherChunks: SavedChunk[] = [];
+  for (let i = 0; i < nCount; i++) netherChunks.push(readChunk(r));
   if (!r.done) throw new Error(DAMAGED);
 
   const names = new Set((await storage.listWorlds()).map((w) => w.name));
@@ -224,10 +236,21 @@ export async function importWorld(storage: Storage, data: ArrayBuffer, onProgres
   }
 
   await storage.putWorld(info);
+  const total = Math.max(1, chunks.length + netherChunks.length);
+  let written = 0;
   try {
     for (let i = 0; i < chunks.length; i += BATCH) {
-      await storage.saveChunks(info.id, chunks.slice(i, i + BATCH));
-      onProgress?.(Math.min(1, (i + BATCH) / Math.max(1, chunks.length)));
+      const slice = chunks.slice(i, i + BATCH);
+      await storage.saveChunks(info.id, slice);
+      written += slice.length;
+      onProgress?.(Math.min(1, written / total));
+    }
+    const nId = netherStorageId(info.id);
+    for (let i = 0; i < netherChunks.length; i += BATCH) {
+      const slice = netherChunks.slice(i, i + BATCH);
+      await storage.saveChunks(nId, slice);
+      written += slice.length;
+      onProgress?.(Math.min(1, written / total));
     }
   } catch (error) {
     await storage.deleteWorld(info.id).catch(() => undefined);

@@ -43,3 +43,4 @@ export const FACE_OPPOSITE = [1, 0, 3, 2, 5, 4];
 
 export type GameMode = 'survival' | 'creative';
 export type WorldType = 'default' | 'flat';
+export type Dimension = 'overworld' | 'nether';

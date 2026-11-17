@@ -5,11 +5,14 @@
  */
 import type { SfxName } from '../audio/Sfx';
 import { Living, num, round3, type DamageCause, type Entity, type GameApi, type PlayerLike } from '../entity/Entity';
+import { notifyTamedWolves } from '../entity/Mobs';
 import type { EntityKind } from '../entity/EntityView';
 import type { MobKind } from '../entity/MobModels';
 import { JUMP_VELOCITY, travel, updateMedium } from '../entity/Physics';
 import { Inventory } from '../game/Inventory';
+import { STAT, addStat, craftedKey, killedByKey, loadStats, type Stats } from '../game/Stats';
 import type { GameMode } from '../world/Constants';
+import { armorProtectionFactor } from '../world/Enchants';
 import { getItem } from '../world/Items';
 import { makeStack, type ItemStack } from '../world/ItemStack';
 
@@ -53,6 +56,8 @@ export class Player extends Living implements PlayerLike {
   xpLevel = 0;
   /** Avancement vers le niveau suivant (0..1). */
   xpProgress = 0;
+  /** Graine d'enchantement du joueur (fixe les propositions jusqu'au prochain enchantement). */
+  enchantSeed = 1337;
 
   sprinting = false;
   /** Utilisation d'un objet en cours (manger, bander l'arc) et sa durée en ticks. */
@@ -68,6 +73,8 @@ export class Player extends Living implements PlayerLike {
   deathBy: Entity | null = null;
   /** Identifiants des progrès (étape guidée) déjà accomplis par le joueur. */
   readonly advancements = new Set<string>();
+  /** Statistiques (écran « Statistiques » du menu de pause). */
+  stats: Stats = {};
 
   /** Balancement de la vue : amplitude (0..1) et distance parcourue, avec leurs valeurs du tick précédent. */
   pBob = 0;
@@ -89,6 +96,11 @@ export class Player extends Living implements PlayerLike {
     super();
     this.gameMode = gameMode;
     this.stepHeight = 0.6;
+    this.inventory.crafted = (id, count) => this.addStat(craftedKey(id), count);
+  }
+
+  addStat(key: string, n = 1): void {
+    addStat(this.stats, key, n);
   }
 
   // ------------------------------------------------------------------ PlayerLike
@@ -132,7 +144,7 @@ export class Player extends Living implements PlayerLike {
     if (this.creative) return;
     const id = this.inventory.heldId;
     if (id === 0) return;
-    if (this.inventory.damageHeld(amount)) {
+    if (this.inventory.damageHeld(amount, game.rng)) {
       game.sound('tool_break', this.x, this.y + this.eyeHeight, this.z, 0.9);
       game.itemParticles(this.x, this.y + this.eyeHeight - 0.3, this.z, id, 8);
     }
@@ -276,6 +288,13 @@ export class Player extends Living implements PlayerLike {
     const dz = this.z - this.pz;
     const dist = Math.sqrt(dx * dx + dz * dz);
 
+    // distances parcourues (un déplacement de plus de 2 blocs en un tick est une téléportation)
+    if (dist > 0 && dist < 2) {
+      if (this.inWater) this.addStat(STAT.SWIM, dist * 100);
+      else if (this.flying) this.addStat(STAT.FLY, dist * 100);
+      else if (this.onGround) this.addStat(STAT.WALK, dist * 100);
+    }
+
     const target = this.onGround ? Math.min(1, dist * 10) : 0;
     this.bob += (target - this.bob) * 0.4;
     this.walk += dist * 0.6;
@@ -316,6 +335,7 @@ export class Player extends Living implements PlayerLike {
 
   protected jump(): void {
     this.vy = JUMP_VELOCITY;
+    this.addStat(STAT.JUMP);
     if (this.sprinting) {
       this.vx -= Math.sin(this.yaw) * 0.2;
       this.vz -= Math.cos(this.yaw) * 0.2;
@@ -360,6 +380,7 @@ export class Player extends Living implements PlayerLike {
     if (ok) {
       this.sleeping = false;
       this.stopUsing();
+      if (attacker instanceof Living) notifyTamedWolves(game, attacker);
     }
     return ok;
   }
@@ -368,13 +389,16 @@ export class Player extends Living implements PlayerLike {
     if (ARMOR_CAUSES.has(cause)) {
       const points = this.inventory.armorPoints();
       if (points > 0) {
-        if (this.inventory.damageArmor(Math.max(1, Math.floor(amount / 4)))) {
+        if (this.inventory.damageArmor(Math.max(1, Math.floor(amount / 4)), game.rng)) {
           game.sound('tool_break', this.x, this.y + 1, this.z, 0.9);
         }
         amount = (amount * (25 - points)) / 25;
       }
+      const epf = armorProtectionFactor(this.inventory.armor);
+      if (epf > 0) amount *= 1 - epf * 0.04;
     }
     this.exhaustion += 0.1;
+    this.addStat(STAT.DAMAGE_TAKEN, amount);
     return amount;
   }
 
@@ -389,6 +413,8 @@ export class Player extends Living implements PlayerLike {
   protected onDeath(game: GameApi, cause: DamageCause, attacker: Entity | null): void {
     this.deathCause = cause;
     this.deathBy = attacker;
+    this.addStat(STAT.DEATHS);
+    if (attacker && attacker.kind === 'mob') this.addStat(killedByKey(attacker.mobKind));
     this.sprinting = false;
     this.flying = false;
     this.sleeping = false;
@@ -457,9 +483,11 @@ export class Player extends Living implements PlayerLike {
       fall: round3(this.fallDistance),
       xpLevel: this.xpLevel,
       xpProgress: round3(this.xpProgress),
+      enchantSeed: this.enchantSeed,
       flying: this.flying,
       bed: this.bed ? [this.bed.x, this.bed.y, this.bed.z] : null,
       advancements: [...this.advancements],
+      stats: { ...this.stats },
       inventory: this.inventory.save(),
     };
   }
@@ -479,6 +507,7 @@ export class Player extends Living implements PlayerLike {
     this.fallDistance = Math.max(0, num(d.fall, 0));
     this.xpLevel = Math.max(0, Math.floor(num(d.xpLevel, 0)));
     this.xpProgress = Math.max(0, Math.min(0.999, num(d.xpProgress, 0)));
+    this.enchantSeed = Math.max(1, Math.floor(num(d.enchantSeed, 1337)) >>> 0);
     this.flying = d.flying === true && this.creative;
     const bed = d.bed;
     this.bed =
@@ -489,6 +518,7 @@ export class Player extends Living implements PlayerLike {
     if (Array.isArray(d.advancements)) {
       for (const id of d.advancements) if (typeof id === 'string') this.advancements.add(id);
     }
+    this.stats = loadStats(d.stats);
     this.inventory.load(d.inventory);
     if (this.health <= 0) this.deathTime = 20;
   }

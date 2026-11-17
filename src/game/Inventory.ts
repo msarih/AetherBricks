@@ -5,7 +5,9 @@
  */
 import { I } from '../world/Ids';
 import { getItem, maxStack } from '../world/Items';
-import { addToSlots, canMerge, loadSlots, maxDamage, saveSlots, type ItemStack, type Slot } from '../world/ItemStack';
+import { addToSlots, canMerge, cloneStack, cloneStackWithCount, loadSlots, maxDamage, saveSlots, type ItemStack, type Slot } from '../world/ItemStack';
+import { canEnchantItem, computeAnvilResult, enchantLevel, hasEnchants, rollEnchantOffers, type EnchantOffer } from '../world/Enchants';
+import { mulberry32 } from '../world/gen/Noise';
 import { RECIPES, fuelTicks, ingredientAccepts, matchRecipe, recipeFitsGrid, smeltingResult, type Ingredient, type Recipe } from '../world/Recipes';
 import { FURNACE_COOK_TICKS, type ChestEntity, type FurnaceEntity } from './BlockEntities';
 
@@ -23,6 +25,8 @@ export class Inventory {
   cursor: Slot = null;
   /** Lâche une pile dans le monde (branché par le joueur). */
   drop: (stack: ItemStack) => void = () => {};
+  /** Le joueur vient de prendre le résultat d'une fabrication (statistiques). */
+  crafted: (itemId: number, count: number) => void = () => {};
 
   get held(): Slot {
     return this.slots[this.selected];
@@ -57,13 +61,19 @@ export class Inventory {
     if (s.count <= 0) this.slots[this.selected] = null;
   }
 
-  /** Use l'objet tenu. Retourne true s'il vient de se briser. */
-  damageHeld(amount = 1): boolean {
+  /** Use l'objet tenu (en tenant compte de Solidité). Retourne true s'il vient de se briser. */
+  damageHeld(amount: number, rng: () => number): boolean {
     const s = this.slots[this.selected];
     if (!s) return false;
     const max = maxDamage(s.id);
     if (max <= 0) return false;
-    s.damage += amount;
+    const unbreaking = enchantLevel(s, 'unbreaking');
+    let applied = 0;
+    for (let i = 0; i < amount; i++) {
+      if (unbreaking === 0 || rng() < 1 / (unbreaking + 1)) applied++;
+    }
+    if (applied === 0) return false;
+    s.damage += applied;
     if (s.damage >= max) {
       this.slots[this.selected] = null;
       return true;
@@ -107,15 +117,21 @@ export class Inventory {
     return n;
   }
 
-  /** Use chaque pièce d'armure portée. Retourne true si une pièce s'est brisée. */
-  damageArmor(amount: number): boolean {
+  /** Use chaque pièce d'armure portée (en tenant compte de Solidité). Retourne true si une pièce s'est brisée. */
+  damageArmor(amount: number, rng: () => number): boolean {
     let broke = false;
     for (let i = 0; i < 4; i++) {
       const s = this.armor[i];
       if (!s) continue;
       const max = maxDamage(s.id);
       if (max <= 0) continue;
-      s.damage += amount;
+      const unbreaking = enchantLevel(s, 'unbreaking');
+      let applied = 0;
+      for (let k = 0; k < amount; k++) {
+        if (unbreaking === 0 || rng() < 0.6 + 0.4 / (unbreaking + 1)) applied++;
+      }
+      if (applied === 0) continue;
+      s.damage += applied;
       if (s.damage >= max) {
         this.armor[i] = null;
         broke = true;
@@ -164,7 +180,7 @@ export class Inventory {
 // ============================================================================================ menus
 
 export type SlotGroup = 'hotbar' | 'main' | 'armor' | 'craft' | 'result' | 'container' | 'input' | 'fuel' | 'output';
-export type MenuType = 'inventory' | 'crafting' | 'chest' | 'furnace' | 'creative';
+export type MenuType = 'inventory' | 'crafting' | 'chest' | 'furnace' | 'enchant' | 'anvil' | 'creative';
 
 /** Une case d'un menu : vue sur un élément d'un tableau de piles. */
 export class MenuSlot {
@@ -266,9 +282,16 @@ export abstract class Menu {
     this.result[0] = r ? { id: r.id, count: r.count, damage: 0 } : null;
   }
 
+  /** Indique si le joueur peut prendre le contenu de la case résultat. */
+  protected canTakeResult(): boolean {
+    return true;
+  }
+
   /** Consomme un exemplaire de chaque ingrédient. */
-  private consumeIngredients(): void {
+  protected consumeIngredients(): void {
     if (!this.grid) return;
+    const made = matchRecipe(this.grid.map((s) => (s ? s.id : 0)), this.gridW);
+    if (made) this.inv.crafted(made.id, made.count);
     for (let i = 0; i < this.grid.length; i++) {
       const s = this.grid[i];
       if (!s) continue;
@@ -423,14 +446,14 @@ export abstract class Menu {
     const s = slot.stack;
 
     if (slot.takeOnly) {
-      if (!s) return;
+      if (!s || (slot.group === 'result' && !this.canTakeResult())) return;
       if (!cur) {
         if (slot.group !== 'result' && button === 1 && s.count > 1) {
           const n = Math.ceil(s.count / 2);
-          inv.cursor = { id: s.id, count: n, damage: s.damage };
+          inv.cursor = cloneStackWithCount(s, n);
           s.count -= n;
         } else {
-          inv.cursor = { id: s.id, count: s.count, damage: s.damage };
+          inv.cursor = cloneStack(s);
           slot.stack = null;
           if (slot.group === 'result') this.consumeIngredients();
         }
@@ -447,7 +470,7 @@ export abstract class Menu {
       if (!s) return;
       if (button === 1 && s.count > 1) {
         const n = Math.ceil(s.count / 2);
-        inv.cursor = { id: s.id, count: n, damage: s.damage };
+        inv.cursor = cloneStackWithCount(s, n);
         s.count -= n;
       } else {
         inv.cursor = s;
@@ -457,7 +480,7 @@ export abstract class Menu {
       if (!slot.accepts(cur)) return;
       const n = Math.min(button === 1 ? 1 : cur.count, slot.room(cur));
       if (n <= 0) return;
-      slot.stack = { id: cur.id, count: n, damage: cur.damage };
+      slot.stack = cloneStackWithCount(cur, n);
       cur.count -= n;
       if (cur.count <= 0) inv.cursor = null;
     } else if (canMerge(s, cur)) {
@@ -481,7 +504,7 @@ export abstract class Menu {
     if (!cur) return;
     if (button === 1 && cur.count > 1) {
       cur.count--;
-      this.inv.drop({ id: cur.id, count: 1, damage: cur.damage });
+      this.inv.drop(cloneStackWithCount(cur, 1));
     } else {
       this.inv.cursor = null;
       this.inv.drop(cur);
@@ -519,8 +542,8 @@ export abstract class Menu {
     const h = inv.slots[hotbar];
     const s = slot.stack;
     if (slot.takeOnly) {
-      if (!s || h) return;
-      inv.slots[hotbar] = { id: s.id, count: s.count, damage: s.damage };
+      if (!s || h || (slot.group === 'result' && !this.canTakeResult())) return;
+      inv.slots[hotbar] = cloneStack(s);
       slot.stack = null;
       if (slot.group === 'result') this.consumeIngredients();
     } else {
@@ -538,7 +561,8 @@ export abstract class Menu {
     const s = slot?.stack;
     if (!slot || !s) return;
     if (slot.group === 'result') {
-      this.inv.drop({ id: s.id, count: s.count, damage: s.damage });
+      if (!this.canTakeResult()) return;
+      this.inv.drop(cloneStack(s)!);
       slot.stack = null;
       this.consumeIngredients();
     } else if (all || s.count <= 1) {
@@ -546,7 +570,7 @@ export abstract class Menu {
       this.inv.drop(s);
     } else {
       s.count--;
-      this.inv.drop({ id: s.id, count: 1, damage: s.damage });
+      this.inv.drop(cloneStackWithCount(s, 1));
     }
     this.changed();
   }
@@ -571,7 +595,7 @@ export abstract class Menu {
       if (n <= 0) continue;
       const s = slot.stack;
       if (s) s.count += n;
-      else slot.stack = { id: cur.id, count: n, damage: cur.damage };
+      else slot.stack = cloneStackWithCount(cur, n);
       cur.count -= n;
     }
     if (cur.count <= 0) this.inv.cursor = null;
@@ -609,7 +633,7 @@ export abstract class Menu {
       if (t.stack) continue;
       const n = Math.min(t.room(s), s.count);
       if (n <= 0) continue;
-      t.stack = { id: s.id, count: n, damage: s.damage };
+      t.stack = cloneStackWithCount(s, n);
       s.count -= n;
     }
   }
@@ -627,9 +651,9 @@ export abstract class Menu {
     if (!first) return;
     for (let guard = 0; guard < 64; guard++) {
       const s = slot.stack;
-      if (!s || s.id !== first.id) break;
+      if (!s || s.id !== first.id || !this.canTakeResult()) break;
       if (this.capacity(s, targets) < s.count) break;
-      this.pour({ id: s.id, count: s.count, damage: s.damage }, targets);
+      this.pour(cloneStack(s)!, targets);
       slot.stack = null;
       this.consumeIngredients();
     }
@@ -766,6 +790,201 @@ export class FurnaceMenu extends Menu {
     }
     if (smeltingResult(s.id) && this.transfer(slot, this.group('input'))) return;
     if (fuelTicks(s.id) > 0 && this.transfer(slot, this.group('fuel'))) return;
+    this.transfer(slot, this.group(slot.group === 'main' ? 'hotbar' : 'main'));
+  }
+}
+
+export interface XpHost {
+  readonly xpLevel: number;
+  readonly creative: boolean;
+  readonly enchantSeed: number;
+  spendLevels(n: number): void;
+  rotateEnchantSeed(): void;
+  rng(): number;
+}
+
+/** Table d'enchantement : 1 objet à enchanter + 1 emplacement de lapis-lazuli, 3 propositions. */
+export class EnchantMenu extends Menu {
+  readonly type: MenuType = 'enchant';
+  readonly title = 'Enchanter';
+  readonly tableSlots: Slot[] = [null, null];
+  offers: EnchantOffer[] = [];
+  private lastItemId = 0;
+
+  constructor(inv: Inventory, readonly bookshelves: number, private readonly xp: XpHost) {
+    super(inv);
+    this.addSlot('input', 0, this.tableSlots, 0, false, (s) => canEnchantItem(s.id), 1);
+    this.addSlot('fuel', 0, this.tableSlots, 1, false, (s) => s.id === I.LAPIS, 64);
+    this.addPlayerSlots();
+  }
+
+  get playerLevel(): number {
+    return this.xp.xpLevel;
+  }
+
+  get creative(): boolean {
+    return this.xp.creative;
+  }
+
+  /** Applique l'une des trois propositions (0..2). Retourne true si l'enchantement a réussi. */
+  enchant(option: number): boolean {
+    const item = this.tableSlots[0];
+    const offer = this.offers[option];
+    if (!item || !offer || hasEnchants(item)) return false;
+    if (!this.xp.creative) {
+      if (this.xp.xpLevel < offer.minLevel) return false;
+      const lapis = this.tableSlots[1];
+      if (!lapis || lapis.id !== I.LAPIS || lapis.count < offer.lapisCost) return false;
+      lapis.count -= offer.lapisCost;
+      if (lapis.count <= 0) this.tableSlots[1] = null;
+      this.xp.spendLevels(offer.lapisCost);
+    }
+    item.enchants = { ...offer.enchants };
+    this.xp.rotateEnchantSeed();
+    this.offers = [];
+    this.lastItemId = item.id;
+    return true;
+  }
+
+  protected changed(): void {
+    const item = this.tableSlots[0];
+    if (!item || hasEnchants(item)) {
+      this.offers = [];
+      this.lastItemId = item ? item.id : 0;
+      return;
+    }
+    if (item.id !== this.lastItemId || this.offers.length === 0) {
+      this.lastItemId = item.id;
+      const seed = (this.xp.enchantSeed ^ Math.imul(item.id, 2654435761) ^ Math.imul(this.bookshelves + 1, 40503)) >>> 0;
+      this.offers = rollEnchantOffers(item.id, this.bookshelves, mulberry32(seed));
+    }
+  }
+
+  close(): void {
+    for (let i = 0; i < this.tableSlots.length; i++) {
+      const s = this.tableSlots[i];
+      if (!s) continue;
+      this.tableSlots[i] = null;
+      if (this.inv.add(s) > 0) this.inv.drop(s);
+    }
+    super.close();
+  }
+
+  protected quickMove(slot: MenuSlot): void {
+    const s = slot.stack;
+    if (!s) return;
+    if (slot.group === 'input' || slot.group === 'fuel') {
+      this.transfer(slot, this.group('hotbar', 'main').reverse());
+      return;
+    }
+    if (s.id === I.LAPIS && this.transfer(slot, this.group('fuel'))) return;
+    if (canEnchantItem(s.id) && this.transfer(slot, this.group('input'))) return;
+    this.transfer(slot, this.group(slot.group === 'main' ? 'hotbar' : 'main'));
+  }
+}
+
+/** Enclume : répare un objet avec un matériau ou fusionne deux objets identiques. */
+export class AnvilMenu extends Menu {
+  readonly type: MenuType = 'anvil';
+  readonly title = 'Réparer et enchanter';
+  readonly anvilSlots: Slot[] = [null, null, null];
+  cost = 0;
+  private materialUsed = 0;
+
+  constructor(inv: Inventory, private readonly xp: XpHost) {
+    super(inv);
+    this.addSlot('input', 0, this.anvilSlots, 0, false, null, 1);
+    this.addSlot('fuel', 0, this.anvilSlots, 1, false, null, 64);
+    this.addSlot('result', 0, this.anvilSlots, 2, true);
+    this.addPlayerSlots();
+  }
+
+  get playerLevel(): number {
+    return this.xp.xpLevel;
+  }
+
+  get creative(): boolean {
+    return this.xp.creative;
+  }
+
+  get canAfford(): boolean {
+    return this.anvilSlots[2] !== null && (this.xp.creative || this.xp.xpLevel >= this.cost);
+  }
+
+  protected canTakeResult(): boolean {
+    return this.canAfford;
+  }
+
+  protected consumeIngredients(): void {
+    this.consumeInputs();
+  }
+
+  click(i: number, button: number, shift: boolean): void {
+    const slot = this.slots[i];
+    if (slot && slot.group === 'result') {
+      const res = slot.stack;
+      if (!res || !this.canAfford) return;
+      if (shift) {
+        const copy = cloneStack(res)!;
+        const left = this.inv.add(copy);
+        if (left > 0) return;
+        this.consumeInputs();
+        return;
+      }
+      const cur = this.inv.cursor;
+      if (cur !== null) return;
+      this.inv.cursor = cloneStack(res);
+      this.consumeInputs();
+      return;
+    }
+    super.click(i, button, shift);
+  }
+
+  private consumeInputs(): void {
+    if (!this.xp.creative) this.xp.spendLevels(this.cost);
+    this.anvilSlots[0] = null;
+    const right = this.anvilSlots[1];
+    if (right) {
+      right.count -= this.materialUsed;
+      if (right.count <= 0) this.anvilSlots[1] = null;
+    }
+    this.anvilSlots[2] = null;
+    this.changed();
+  }
+
+  protected changed(): void {
+    const out = computeAnvilResult(this.anvilSlots[0], this.anvilSlots[1]);
+    if (out) {
+      this.anvilSlots[2] = out.result;
+      this.cost = out.cost;
+      this.materialUsed = out.materialUsed;
+    } else {
+      this.anvilSlots[2] = null;
+      this.cost = 0;
+      this.materialUsed = 0;
+    }
+  }
+
+  close(): void {
+    this.anvilSlots[2] = null;
+    for (let i = 0; i < 2; i++) {
+      const s = this.anvilSlots[i];
+      if (!s) continue;
+      this.anvilSlots[i] = null;
+      if (this.inv.add(s) > 0) this.inv.drop(s);
+    }
+    super.close();
+  }
+
+  protected quickMove(slot: MenuSlot): void {
+    const s = slot.stack;
+    if (!s) return;
+    if (slot.group === 'input' || slot.group === 'fuel' || slot.group === 'result') {
+      this.transfer(slot, this.group('hotbar', 'main').reverse());
+      return;
+    }
+    if (this.transfer(slot, this.group('input'))) return;
+    if (this.transfer(slot, this.group('fuel'))) return;
     this.transfer(slot, this.group(slot.group === 'main' ? 'hotbar' : 'main'));
   }
 }

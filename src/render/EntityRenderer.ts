@@ -13,7 +13,7 @@ import * as THREE from 'three';
 import type { Atlas } from './Atlas';
 import { createModelMaterial, lightColor, passGeometry, worldUniforms } from './ChunkMaterials';
 import type { EntityView } from '../entity/EntityView';
-import { getMobModel, getSheepModel, type MobKind, type MobModel } from '../entity/MobModels';
+import { getMobModel, getSheepModel, getWolfModel, type MobKind, type MobModel } from '../entity/MobModels';
 import { BLOCKS, TINT } from '../world/Blocks';
 import { B, BLOCK_ID_LIMIT, I } from '../world/Ids';
 import { getItem } from '../world/Items';
@@ -700,7 +700,9 @@ function visualKey(e: EntityView): string {
   switch (e.kind) {
     case 'mob':
     case 'player':
-      return e.mobKind === 'sheep' ? `m:sheep:${e.woolColor}:${e.sheared ? 1 : 0}` : `m:${e.mobKind}`;
+      if (e.mobKind === 'sheep') return `m:sheep:${e.woolColor}:${e.sheared ? 1 : 0}`;
+      if (e.mobKind === 'wolf') return `m:wolf:${e.tamed ? 1 : 0}:${e.angry ? 1 : 0}:${e.collarColor & 0xffffff}`;
+      return `m:${e.mobKind}`;
     case 'item':
       return `i:${e.itemId}:${itemCopies(e.itemCount)}`;
     case 'falling_block':
@@ -711,6 +713,8 @@ function visualKey(e: EntityView): string {
       return 'a';
     case 'bobber':
       return 'f';
+    case 'fireball':
+      return 'fb';
   }
 }
 
@@ -728,10 +732,14 @@ const SHADOW_DIAMETER: Record<MobKind, number> = {
   cow: 1.3,
   sheep: 1.3,
   chicken: 0.6,
+  wolf: 0.9,
   zombie: 0.95,
   skeleton: 0.95,
   creeper: 0.95,
   spider: 1.7,
+  zombie_pigman: 0.95,
+  ghast: 4.5,
+  magma_cube: 0.8,
   player: 0.95,
 };
 
@@ -759,7 +767,11 @@ class MobVisual implements Visual {
 
   constructor(readonly key: string, private readonly atlas: Atlas, e: EntityView) {
     this.kind = e.mobKind;
-    this.model = e.mobKind === 'sheep' ? getSheepModel(e.woolColor, e.sheared) : getMobModel(e.mobKind);
+    this.model = e.mobKind === 'sheep'
+      ? getSheepModel(e.woolColor, e.sheared)
+      : e.mobKind === 'wolf'
+        ? getWolfModel(e.tamed, e.angry, e.collarColor)
+        : getMobModel(e.mobKind);
     const assets = getMobAssets(this.model);
     this.material = createMobMaterial(assets.texture);
     this.body.rotation.order = 'YXZ';
@@ -829,7 +841,7 @@ class MobVisual implements Visual {
     const age = e.age + alpha;
 
     let flash = 0;
-    const baseScale = e.baby ? 0.5 : 1;
+    const baseScale = e.baby ? 0.5 : e.mobScale;
     this.body.scale.setScalar(baseScale);
     const headMesh = this.parts.get('head');
     if (headMesh) headMesh.scale.setScalar(e.baby ? 1.5 : 1);
@@ -837,6 +849,7 @@ class MobVisual implements Visual {
     switch (this.kind) {
       case 'player':
       case 'zombie':
+      case 'zombie_pigman':
       case 'skeleton':
         this.animateBiped(e, walk, age, headX, headY);
         break;
@@ -871,6 +884,33 @@ class MobVisual implements Visual {
         this.rot('wingL', 0, 0, -angle);
         break;
       }
+      case 'wolf':
+        if (e.sitting) {
+          this.offset('body', 0, -3, 0);
+          this.rot('body', 0.45, 0, 0);
+          this.offset('head', 0, -2, 0);
+          this.rot('leg0', -0.2, 0, 0);
+          this.rot('leg1', -0.2, 0, 0);
+          this.rot('leg2', -1.25, 0, 0);
+          this.rot('leg3', -1.25, 0, 0);
+          this.offset('leg2', 0, -2, 2);
+          this.offset('leg3', 0, -2, 2);
+          this.offset('tail', 0, -4, 0);
+          this.rot('tail', 0.4, 0, 0);
+        } else {
+          this.offset('body', 0, 0, 0);
+          this.rot('body', 0, 0, 0);
+          this.offset('head', 0, 0, 0);
+          this.rot('leg0', -walk, 0, 0);
+          this.rot('leg1', walk, 0, 0);
+          this.rot('leg2', walk, 0, 0);
+          this.rot('leg3', -walk, 0, 0);
+          this.offset('leg2', 0, 0, 0);
+          this.offset('leg3', 0, 0, 0);
+          this.offset('tail', 0, 0, 0);
+          this.rot('tail', e.tamed ? 1.1 : e.angry ? 0.9 : 0.45, 0, 0);
+        }
+        break;
       case 'spider':
         for (let pair = 0; pair < 4; pair++) {
           const fy = -Math.cos(swing * 0.6662 * 2 + SPIDER_PHASE[pair]) * 0.4 * amount;
@@ -879,6 +919,18 @@ class MobVisual implements Visual {
           this.rot(`leg${pair * 2 + 1}`, 0, -SPIDER_YAW[pair] - fy, SPIDER_ROLL[pair] - fz);
         }
         break;
+      case 'ghast':
+        for (let i = 0; i < 9; i++) {
+          this.rot(`tent${i}`, Math.sin(age * 0.16 + i * 0.8) * 0.28, 0, 0);
+        }
+        break;
+      case 'magma_cube': {
+        const jumpVy = clamp(e.y - e.py, -0.3, 0.5);
+        const stretch = 1 + jumpVy * 0.35;
+        const squash = 1 / Math.sqrt(stretch);
+        this.body.scale.set(baseScale * squash, baseScale * stretch, baseScale * squash);
+        break;
+      }
     }
     this.material.uniforms.uFlash.value = flash;
 
@@ -899,7 +951,7 @@ class MobVisual implements Visual {
     const f = Math.sin(sw * PI);
     const f1 = Math.sin((1 - (1 - sw) * (1 - sw)) * PI);
 
-    if (this.kind === 'zombie') {
+    if (this.kind === 'zombie' || this.kind === 'zombie_pigman') {
       // Bras tendus vers l'avant
       ray = -(0.1 - f * 0.6);
       lay = 0.1 - f * 0.6;
@@ -996,6 +1048,15 @@ class MobVisual implements Visual {
     arm.add(group);
     this.held = model;
     this.heldGroup = group;
+  }
+
+  /** Calcule la position monde du bout de la canne à pêche tenue en main droite. Retourne false sinon. */
+  getHeldTip(out: THREE.Vector3): boolean {
+    if (!this.heldGroup || this.heldId !== I.FISHING_ROD) return false;
+    this.root.updateMatrixWorld(true);
+    // Bout de la canne dans le sprite 16×16 (pixel (14, 1) → centre (14.5, 1.5))
+    out.set(14.5 / 16 - 0.5, 0.5 - 1.5 / 16, 0).applyMatrix4(this.heldGroup.matrixWorld);
+    return true;
   }
 
   dispose(): void {
@@ -1146,6 +1207,33 @@ class ArrowVisual implements Visual {
   }
 }
 
+/** Boule de feu de ghast : cube incandescent en rotation. */
+class FireballVisual implements Visual {
+  readonly root = new THREE.Group();
+  stamp = 0;
+  private readonly material: THREE.MeshBasicMaterial;
+  private readonly geometry: THREE.BoxGeometry;
+
+  constructor(readonly key: string) {
+    this.geometry = new THREE.BoxGeometry(0.75, 0.75, 0.75);
+    this.material = new THREE.MeshBasicMaterial({ color: 0xff7a1a });
+    const mesh = new THREE.Mesh(this.geometry, this.material);
+    mesh.position.y = 0.5;
+    this.root.add(mesh);
+  }
+
+  update(e: EntityView, alpha: number, time: number): void {
+    placeRoot(this.root, e, alpha);
+    const mesh = this.root.children[0];
+    mesh.rotation.set(time * 5, time * 7, 0);
+  }
+
+  dispose(): void {
+    this.geometry.dispose();
+    this.material.dispose();
+  }
+}
+
 /** Nombre de segments de la ligne de pêche. */
 const LINE_SEGMENTS = 12;
 const BOBBER_RED = 0xd62c2c;
@@ -1244,7 +1332,10 @@ export class EntityRenderer {
       }
       v.stamp = frame;
       v.root.visible = !e.hidden;
-      if (!e.hidden) v.update(e, alpha, time);
+      if (!e.hidden) {
+        v.update(e, alpha, time);
+        if (e.kind === 'player' && v instanceof MobVisual) v.getHeldTip(this.lineAnchor);
+      }
     }
     for (const [id, v] of this.visuals) {
       if (v.stamp !== frame) this.remove(id, v);
@@ -1265,6 +1356,8 @@ export class EntityRenderer {
         return new ArrowVisual(key);
       case 'bobber':
         return new BobberVisual(key, this.lineAnchor);
+      case 'fireball':
+        return new FireballVisual(key);
     }
   }
 

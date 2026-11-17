@@ -40,6 +40,8 @@ export interface UiContext {
   openPause(): void;
   /** Écran d'options ; `back` est appelé par « Terminé » et Échap. */
   openOptions(back: () => void, pausing: boolean): void;
+  /** Écran des statistiques (depuis la pause) ; `back` est appelé par « Terminé » et Échap. */
+  openStats(back: () => void): void;
   /** Menu principal, sur la page demandée, avec un éventuel message d'erreur à afficher. */
   openTitle(page: TitlePage, error?: string): void;
   /**

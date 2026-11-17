@@ -315,6 +315,11 @@ function checkWorldId(worldId: unknown): void {
   }
 }
 
+/** Clé de stockage des chunks du Nether pour un monde donné (laisse la surface intacte). */
+export function netherStorageId(worldId: string): string {
+  return `${worldId}:nether`;
+}
+
 function checkChunkKey(key: unknown): void {
   if (typeof key !== 'number' || !Number.isFinite(key)) {
     throw new Error(`clé de chunk invalide (${String(key)})`);
@@ -811,9 +816,10 @@ export class Storage {
     return this.backend.putWorld(info);
   }
 
-  /** Supprime le monde et tous ses chunks. */
+  /** Supprime le monde et tous ses chunks (surface et Nether). */
   async deleteWorld(id: string): Promise<void> {
     this.guard('Suppression du monde impossible', () => checkWorldId(id));
+    await this.backend.deleteWorld(netherStorageId(id)).catch(() => undefined);
     return this.backend.deleteWorld(id);
   }
 

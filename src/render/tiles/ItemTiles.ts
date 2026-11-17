@@ -135,6 +135,54 @@ const INGOT_ROWS: Rows = [
 ];
 def('iron_ingot', spr(INGOT_ROWS, IRON_INGOT));
 def('gold_ingot', spr(INGOT_ROWS, GOLD_INGOT));
+def(
+  'gold_nugget',
+  spr(
+    [
+      '................',
+      '................',
+      '................',
+      '.......kkkk.....',
+      '.....kkwwhhk....',
+      '....kwwhhhhbk...',
+      '...kwhhhbbbbdk..',
+      '...khhbbbbdddk..',
+      '...kbbbbbddddk..',
+      '....kbbbddddk...',
+      '.....kssddsk....',
+      '......kkkkk.....',
+      '................',
+      '................',
+      '................',
+      '................',
+    ],
+    GOLD_INGOT,
+  ),
+);
+def(
+  'magma_cream',
+  spr(
+    [
+      '................',
+      '................',
+      '.....kkkkkk.....',
+      '...kkoorrrrk....',
+      '..koorrrrryyk...',
+      '..korrrryyyyrk..',
+      '.korrryywwyyrdk.',
+      '.korryywywyrrdk.',
+      '.kddrrryyrrrddk.',
+      '.kddrrrrrrrrddk.',
+      '..kddddrrrrddk..',
+      '..kddddddrdddk..',
+      '...kkddddddkk...',
+      '.....kkkkkk.....',
+      '................',
+      '................',
+    ],
+    { k: 0x2e0804, d: 0x6b1808, r: 0xb8340c, o: 0xe66214, y: 0xf7b824, w: 0xfff08a },
+  ),
+);
 def('brick', spr(INGOT_ROWS, { k: 0x40190f, s: 0x6e2f1f, d: 0x8c3f2b, b: 0xb0563a, h: 0xcb7250, w: 0xe09474 }));
 
 def(
@@ -1493,3 +1541,136 @@ for (const m of ARMOR_MATERIALS) {
     def(`${m}_${kind}`, spr(ARMOR_ROWS[kind], MATERIALS[m]));
   }
 }
+
+// ---------------------------------------------------------------------------
+// Repères : boussole, horloge, cartes, panneau
+// ---------------------------------------------------------------------------
+
+/** Nombre d'images de la boussole et de l'horloge (voir DIAL_FRAMES dans world/Tiles). */
+const DIAL_FRAMES_ITEMS = 32;
+
+/** Distance du centre (7,5 ; 7,5) d'un sprite 16×16. */
+function radius(x: number, y: number): number {
+  return Math.hypot(x - 7.5, y - 7.5);
+}
+
+/**
+ * Boîtier rond commun à la boussole et à l'horloge : contour, anneau éclairé en haut à gauche,
+ * fond du cadran peint par `face` (rayon intérieur ≈ 5).
+ */
+function dialCase(p: Px, ring: Pal, face: (x: number, y: number) => Color): void {
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) {
+      const r = radius(x, y);
+      if (r > 7.6) continue;
+      if (r > 6.6) p.set(x, y, ring.k);
+      else if (r > 5.2) {
+        const light = (7.5 - x) + (7.5 - y);
+        p.set(x, y, light > 3 ? ring.h : light < -3 ? ring.d : ring.b);
+      } else p.set(x, y, face(x, y));
+    }
+  }
+}
+
+const COMPASS_RING: Pal = { k: 0x262626, d: 0x5e5e5e, b: 0x8c8c8c, h: 0xc4c4c4 };
+const CLOCK_RING: Pal = { k: 0x4f3a06, d: 0x9c7412, b: 0xd9a921, h: 0xfbe17a };
+
+/** Boussole : l'aiguille rouge montre la direction `frame` (0 = droit devant, sens horaire, 32 crans). */
+function compass(frame: number): Painter {
+  return (p) => {
+    dialCase(p, COMPASS_RING, (x, y) => (x + y < 14 ? 0x434951 : 0x363b42));
+    const a = (frame / DIAL_FRAMES_ITEMS) * Math.PI * 2;
+    const dx = Math.sin(a);
+    const dy = -Math.cos(a);
+    // queue grise puis pointe rouge, d'un pixel d'épaisseur, depuis le centre
+    line(p, Math.round(7.5 - dx * 3.2), Math.round(7.5 - dy * 3.2), Math.round(7.5), Math.round(7.5), 0x9a9a9a);
+    line(p, Math.round(7.5), Math.round(7.5), Math.round(7.5 + dx * 4.6), Math.round(7.5 + dy * 4.6), 0xd92b2b);
+    p.set(Math.round(7.5 + dx * 4.6), Math.round(7.5 + dy * 4.6), 0xff5a4a);
+    p.set(7, 7, 0x1c1c1c);
+  };
+}
+
+/**
+ * Horloge : le disque du cadran tourne avec l'heure. `frame` 0 = midi (soleil en haut),
+ * 16 = minuit (lune en haut). Moitié jour bleu ciel, moitié nuit bleu nuit.
+ */
+function clock(frame: number): Painter {
+  return (p) => {
+    const rho = (frame / DIAL_FRAMES_ITEMS) * Math.PI * 2;
+    const sx = Math.sin(rho);
+    const sy = -Math.cos(rho);
+    dialCase(p, CLOCK_RING, (x, y) => {
+      const vx = x - 7.5;
+      const vy = y - 7.5;
+      const day = vx * sx + vy * sy >= 0;
+      return day ? (vx * sx + vy * sy > 2 ? 0x8cc4f2 : 0x5a9fe0) : 0x1d2550;
+    });
+    const sunX = Math.round(7.5 + sx * 2.8);
+    const sunY = Math.round(7.5 + sy * 2.8);
+    const moonX = Math.round(7.5 - sx * 2.8);
+    const moonY = Math.round(7.5 - sy * 2.8);
+    for (const [ox, oy] of [[0, 0], [-1, 0], [0, -1], [-1, -1]]) {
+      if (radius(sunX + ox, sunY + oy) <= 5.2) p.set(sunX + ox, sunY + oy, 0xffd83a);
+      if (radius(moonX + ox, moonY + oy) <= 5.2) p.set(moonX + ox, moonY + oy, 0xd8dce6);
+    }
+    // repère fixe en haut du cadran : l'heure se lit à cet endroit
+    p.set(7, 2, 0x4f3a06);
+    p.set(8, 2, 0x4f3a06);
+  };
+}
+
+for (let f = 0; f < DIAL_FRAMES_ITEMS; f++) {
+  const id = String(f).padStart(2, '0') as '00';
+  def(`compass_${id}`, compass(f));
+  def(`clock_${id}`, clock(f));
+}
+
+/** Feuille de papier d'une carte : bord brun, fond crème. */
+function paper(p: Px): void {
+  for (let y = 1; y < 15; y++) {
+    for (let x = 1; x < 15; x++) {
+      const border = x === 1 || x === 14 || y === 1 || y === 14;
+      p.set(x, y, border ? 0x8a6d43 : (x + y) % 5 === 0 ? 0xe2d3a8 : 0xeee2bd);
+    }
+  }
+}
+
+def('map', (p) => {
+  paper(p);
+  // quelques traits pâles : la carte est encore vierge
+  for (const y of [5, 8, 11]) for (let x = 4; x < 12; x++) if ((x + y) % 3 !== 0) p.set(x, y, 0xcfbd8c);
+});
+
+def('filled_map', (p) => {
+  paper(p);
+  // relief esquissé : eau, plaine, forêt et un chemin, avec le repère rouge du joueur
+  for (let y = 3; y < 13; y++) {
+    for (let x = 3; x < 13; x++) {
+      const n = Math.sin(x * 1.3) + Math.cos(y * 1.1) + Math.sin((x + y) * 0.7);
+      p.set(x, y, n > 1.2 ? 0x4f7a3a : n > 0 ? 0x86a85a : n > -1 ? 0xb8a36b : 0x5b7fc4);
+    }
+  }
+  p.set(8, 7, 0xd92b2b);
+  p.set(7, 8, 0xd92b2b);
+  p.set(8, 8, 0xff5a4a);
+});
+
+/** Panneau : planche sur un poteau. */
+def('sign', spr([
+  '................',
+  '.kkkkkkkkkkkkkk.',
+  '.khhhhhhhhhhhbk.',
+  '.khbbbbbbbbbbdk.',
+  '.khbddbbbddbbdk.',
+  '.khbbbbbbbbbbdk.',
+  '.khbbddbbbbddbk.',
+  '.khbbbbbbbbbbdk.',
+  '.kbddddddddddddk',
+  '.kkkkkkkkkkkkkk.',
+  '.......kMk......',
+  '.......kLk......',
+  '.......kMk......',
+  '.......kLk......',
+  '.......kMk......',
+  '.......kkk......',
+].map((r) => r.slice(0, 16)), { k: 0x3d2c12, h: 0xc29a5b, b: 0xa77f43, d: 0x7d5c2c, L: 0x94702f, M: 0x664a1e }));

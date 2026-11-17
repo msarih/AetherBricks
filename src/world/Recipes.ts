@@ -118,6 +118,10 @@ ARMOR_MATERIAL_INGREDIENTS.forEach((material, m) => {
 shaped([' |S', '| S', ' |S'], { '|': I.STICK, S: I.STRING }, I.BOW);
 shaped(['F', '|', 'P'], { F: I.FLINT, '|': I.STICK, P: I.FEATHER }, I.ARROW, 4);
 shaped(['  |', ' |S', '| S'], { '|': I.STICK, S: I.STRING }, I.FISHING_ROD);
+shaped([' # ', '#R#', ' # '], { '#': I.IRON_INGOT, R: I.REDSTONE }, I.COMPASS);
+shaped([' # ', '#R#', ' # '], { '#': I.GOLD_INGOT, R: I.REDSTONE }, I.CLOCK);
+shaped(['PPP', 'PCP', 'PPP'], { P: I.PAPER, C: I.COMPASS }, I.MAP);
+shaped(['###', '###', ' | '], { '#': PLANKS, '|': I.STICK }, I.SIGN, 3);
 shaped([' #', '# '], { '#': I.IRON_INGOT }, I.SHEARS);
 shapeless([I.IRON_INGOT, I.FLINT], I.FLINT_AND_STEEL);
 shaped(['# #', ' # '], { '#': I.IRON_INGOT }, I.BUCKET);
@@ -136,6 +140,8 @@ shaped(['|#|', '|#|'], { '#': PLANKS, '|': I.STICK }, B.FENCE_GATE);
 shaped(['###', '###'], { '#': B.GLASS }, B.GLASS_PANE, 16);
 shaped(['###', '###'], { '#': I.IRON_INGOT }, B.IRON_BARS, 16);
 shaped(['###', 'BBB', '###'], { '#': PLANKS, B: I.BOOK }, B.BOOKSHELF);
+shaped([' B ', 'DOD', 'OOO'], { B: I.BOOK, D: I.DIAMOND, O: B.OBSIDIAN }, B.ENCHANTING_TABLE);
+shaped(['BBB', ' I ', 'III'], { B: B.IRON_BLOCK, I: I.IRON_INGOT }, B.ANVIL);
 
 // ---------------------------------------------------------------------------
 // Dalles (6 pour 3 blocs) et escaliers (4 pour 6 blocs)
@@ -174,6 +180,13 @@ for (const [source, stairs] of STAIRS_SOURCES) shaped(['#  ', '## ', '###'], { '
 // Blocs de construction et de décoration
 // ---------------------------------------------------------------------------
 shaped(['GSG', 'SGS', 'GSG'], { G: I.GUNPOWDER, S: B.SAND }, B.TNT);
+shaped(['R', 'S'], { R: I.REDSTONE, S: I.STICK }, B.REDSTONE_TORCH);
+shaped(['S', 'C'], { S: I.STICK, C: B.COBBLESTONE }, B.LEVER);
+shapeless([B.STONE], B.STONE_BUTTON);
+shaped(['SS'], { S: B.STONE }, B.STONE_PRESSURE_PLATE);
+shaped(['PPP', 'CIC', 'CRC'], { P: B.OAK_PLANKS, C: B.COBBLESTONE, I: I.IRON_INGOT, R: I.REDSTONE }, B.PISTON);
+shapeless([B.PISTON, B.VINE], B.STICKY_PISTON);
+shaped([' R ', 'RGR', ' R '], { R: I.REDSTONE, G: B.GLOWSTONE }, B.REDSTONE_LAMP);
 shaped(['##', '##'], { '#': B.SAND }, B.SANDSTONE);
 shaped(['##', '##'], { '#': I.BRICK }, B.BRICKS);
 shaped(['##', '##'], { '#': I.CLAY_BALL }, B.CLAY);
@@ -209,6 +222,8 @@ for (const [item, block] of MINERAL_BLOCKS) {
   shaped(['###', '###', '###'], { '#': item }, block);
   shaped(['#'], { '#': block }, item, 9);
 }
+shaped(['###', '###', '###'], { '#': I.GOLD_NUGGET }, I.GOLD_INGOT);
+shaped(['#'], { '#': I.GOLD_INGOT }, I.GOLD_NUGGET, 9);
 
 // ---------------------------------------------------------------------------
 // Teintures

@@ -266,6 +266,7 @@ export function collisionBoxes(id: number, meta: number, nb: NeighborFn, out: nu
     case SHAPE.TORCH:
     case SHAPE.VINE:
     case SHAPE.FIRE:
+    case SHAPE.SIGN:
       return;
     case SHAPE.CUBE:
       out.push(0, 0, 0, 16, 16, 16);
@@ -321,8 +322,55 @@ export function collisionBoxes(id: number, meta: number, nb: NeighborFn, out: nu
     case SHAPE.LILY_PAD:
       out.push(1, 0, 1, 15, 1.5, 15);
       return;
+    case SHAPE.PISTON_HEAD:
+      pistonHeadBoxes(meta, out);
+      return;
     default:
       out.push(0, 0, 0, 16, 16, 16);
+  }
+}
+
+function pistonHeadBoxes(meta: number, out: number[]): void {
+  const f = meta & 7;
+  // Plateau (4/16 d'épaisseur) au bout + tige centrale (4x4)
+  switch (f) {
+    case 0: // +y
+      out.push(0, 12, 0, 16, 16, 16, 6, 0, 6, 10, 12, 10);
+      break;
+    case 1: // -y
+      out.push(0, 0, 0, 16, 4, 16, 6, 4, 6, 10, 16, 10);
+      break;
+    case 2: // +z
+      out.push(0, 0, 12, 16, 16, 16, 6, 6, 0, 10, 10, 12);
+      break;
+    case 3: // -x
+      out.push(0, 0, 0, 4, 16, 16, 4, 6, 6, 16, 10, 10);
+      break;
+    case 4: // -z
+      out.push(0, 0, 0, 16, 16, 4, 6, 6, 4, 10, 10, 16);
+      break;
+    default: // +x
+      out.push(12, 0, 0, 16, 16, 16, 0, 6, 6, 12, 10, 10);
+      break;
+  }
+}
+
+function wallAttachBox(f: number, w: number, h: number, d: number, y0: number, out: number[]): void {
+  const x0 = 8 - w / 2;
+  const x1 = 8 + w / 2;
+  switch (f & 3) {
+    case 0: // support au nord (z=0..d)
+      out.push(x0, y0, 0, x1, y0 + h, d);
+      break;
+    case 1: // support à l'est (x=16-d..16)
+      out.push(16 - d, y0, x0, 16, y0 + h, x1);
+      break;
+    case 2: // support au sud (z=16-d..16)
+      out.push(x0, y0, 16 - d, x1, y0 + h, 16);
+      break;
+    default: // support à l'ouest (x=0..d)
+      out.push(0, y0, x0, d, y0 + h, x1);
+      break;
   }
 }
 
@@ -384,6 +432,34 @@ export function selectionBoxes(id: number, meta: number, nb: NeighborFn, out: nu
       return;
     case SHAPE.SNOW_LAYER:
       out.push(0, 0, 0, 16, ((meta & 7) + 1) * 2, 16);
+      return;
+    case SHAPE.REDSTONE_WIRE:
+      out.push(0, 0, 0, 16, 1, 16);
+      return;
+    case SHAPE.PRESSURE_PLATE:
+      out.push(1, 0, 1, 15, meta & 1 ? 0.5 : 1, 15);
+      return;
+    case SHAPE.BUTTON: {
+      const d = meta & 8 ? 1 : 2;
+      const side = meta & 7;
+      if (side === 0) out.push(5, 0, 6, 11, d, 10);
+      else wallAttachBox((side - 1) & 3, 6, 4, d, 6, out);
+      return;
+    }
+    case SHAPE.LEVER: {
+      const side = meta & 7;
+      if (side === 0) out.push(5, 0, 4, 11, 3, 12);
+      else wallAttachBox((side - 1) & 3, 6, 8, 3, 4, out);
+      return;
+    }
+    case SHAPE.PORTAL:
+      if (meta & 1) out.push(6, 0, 0, 10, 16, 16);
+      else out.push(0, 0, 6, 16, 16, 10);
+      return;
+    case SHAPE.SIGN:
+      // panneau mural : planche de 2/16 contre le mur, entre 4,5 et 12,5 de haut ; sur poteau : boîte centrale
+      if (id === B.WALL_SIGN) edgeBox(meta & 3, 2, 4.5, 12.5, out);
+      else out.push(4, 0, 4, 12, 16, 12);
       return;
     case SHAPE.CUBE:
       out.push(0, 0, 0, 16, 16, 16);

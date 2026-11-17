@@ -69,7 +69,8 @@ async function useOnGround(page, x, z) {
   await shot(page, '10-plat');
 
   await section('déplacement', async () => {
-    await ev(page, () => T.look(0, 0));
+    try {
+      await ev(page, () => T.look(0, 0));
     let a = await pos(page);
     await page.keyboard.down('KeyW'); await ticks(page, 20); await page.keyboard.up('KeyW');
     let b = await pos(page);
@@ -99,12 +100,16 @@ async function useOnGround(page, x, z) {
     check('saut (Espace)', maxY > 5.0 && maxY < 5.4, `y max ${maxY.toFixed(2)}`);
     await ticks(page, 20);
     b = await pos(page);
-    check('retombe au sol', b.g && Math.abs(b.y - 4) < 0.01, `y=${b.y.toFixed(2)}`);
+      check('retombe au sol', b.g && Math.abs(b.y - 4) < 0.01, `y=${b.y.toFixed(2)}`);
+    } finally {
+      for (const k of ['KeyW', 'ControlLeft', 'ShiftLeft', 'KeyD', 'Space']) await page.keyboard.up(k).catch(() => undefined);
+    }
   });
 
   let holeAt = null;
   await section('casser un bloc', async () => {
-    await ev(page, () => { const p = window.__game.player; p.teleport(Math.floor(p.x) + 0.5, p.y, Math.floor(p.z) + 0.5); T.look(0, -Math.PI / 2); });
+    try {
+      await ev(page, () => { const p = window.__game.player; p.teleport(Math.floor(p.x) + 0.5, p.y, Math.floor(p.z) + 0.5); T.look(0, -Math.PI / 2); });
     await ticks(page, 2);
     const h = await ev(page, () => T.hit());
     check('bloc visé sous les pieds', h && h.y === 3, JSON.stringify(h));
@@ -120,7 +125,10 @@ async function useOnGround(page, x, z) {
     check('butin ramassé', after !== before && after.length > 0, `inventaire : ${after}`);
     const p = await pos(page);
     check('le joueur tombe dans le trou', Math.abs(p.y - 3) < 0.01, `y=${p.y.toFixed(2)}`);
-    await shot(page, '11-trou');
+      await shot(page, '11-trou');
+    } finally {
+      await ev(page, () => { window.__game.input.buttons[0] = false; }).catch(() => undefined);
+    }
   });
 
   await section('poser un bloc', async () => {
@@ -144,7 +152,8 @@ async function useOnGround(page, x, z) {
   });
 
   await section('inventaire et fabrication (souris réelle)', async () => {
-    await chat(page, '/give oak_log 4');
+    try {
+      await chat(page, '/give oak_log 4');
     await page.keyboard.press('KeyE');
     await page.waitForSelector('[data-mc="menu-inventory"]', { timeout: 5000 });
     check('E ouvre l\'inventaire', (await state(page)).modal === true);
@@ -246,10 +255,17 @@ async function useOnGround(page, x, z) {
       advInfo.advs.includes('crafting_table') && advInfo.advs.includes('wooden_pickaxe') && advInfo.goal.includes('fourneau') && !advInfo.msgs.some((m) => m.includes('Première pioche')),
       JSON.stringify(advInfo));
     await shot(page, '14c-progres-toast');
+    } finally {
+      if (await ev(page, () => window.__game.ui.modal).catch(() => false)) {
+        await page.keyboard.press('Escape').catch(() => undefined);
+        await sleep(200);
+      }
+    }
   });
 
   await section('chat et commandes', async () => {
-    await page.keyboard.press('KeyT');
+    try {
+      await page.keyboard.press('KeyT');
     await page.waitForSelector('[data-mc="chat"]', { timeout: 5000 });
     await sleep(200);
     await page.keyboard.type('/time set night');
@@ -271,12 +287,21 @@ async function useOnGround(page, x, z) {
     await chat(page, '/tp 8.5 4 8.5');
     const p = await pos(page);
     check('/tp', Math.abs(p.x - 8.5) < 0.01 && Math.abs(p.z - 8.5) < 0.01, JSON.stringify(p));
-    await chat(page, '/nimporte');
-    console.log('  messages :', JSON.stringify(await ev(page, () => window.__msgs.slice(-6))));
+      await chat(page, '/nimporte');
+      console.log('  messages :', JSON.stringify(await ev(page, () => window.__msgs.slice(-6))));
+    } finally {
+      if (await ev(page, () => window.__game.ui.modal).catch(() => false)) {
+        await page.keyboard.press('Escape').catch(() => undefined);
+        await sleep(150);
+      }
+      await chat(page, '/weather clear').catch(() => undefined);
+      await chat(page, '/gamemode survival').catch(() => undefined);
+    }
   });
 
   await section('créatures et combat', async () => {
-    await ev(page, () => { window.__game.difficulty = 2; window.__game.spawner.timer = 0; });
+    try {
+      await ev(page, () => { window.__game.difficulty = 2; window.__game.spawner.timer = 0; });
     await chat(page, '/time set night');
     await ev(page, () => T.aim(8.5, 4, 3.5)); await ticks(page, 2);
     await chat(page, '/summon zombie');
@@ -456,9 +481,145 @@ async function useOnGround(page, x, z) {
       return res;
     });
     check('un petit rejoint l\'adulte de son espèce et reste près de lui (adulte immobile)', followRes.d0 >= 6.9 && followRes.closest < 3.5 && followRes.end < 4 && followRes.calfBaby, JSON.stringify(followRes));
-    await ev(page, () => { const g = window.__game; const p = g.player; p.teleport(p.x, p.y, p.z + 4); T.aim(8.5, 4.6, 3.5); });
-    await ticks(page, 10);
-    await shot(page, '18-animaux');
+      await ev(page, () => { const g = window.__game; const p = g.player; p.teleport(p.x, p.y, p.z + 4); T.aim(8.5, 4.6, 3.5); });
+      await ticks(page, 10);
+      await shot(page, '18-animaux');
+    } finally {
+      await ev(page, () => {
+        const g = window.__game, w = g.world;
+        for (let x = 6; x <= 10; x++) { w.setBlock(x, 4, 6, 0, 0); w.setBlock(x, 5, 6, 0, 0); }
+        for (let z = 1; z <= 6; z++) {
+          w.setBlock(6, 4, z, 0, 0); w.setBlock(6, 5, z, 0, 0);
+          w.setBlock(10, 4, z, 0, 0); w.setBlock(10, 5, z, 0, 0);
+        }
+        if (window.__z) window.__z.dead = true;
+        if (window.__zWall) window.__zWall.dead = true;
+        g.difficulty = 0;
+        g.player.health = 20;
+      }).catch(() => undefined);
+      await chat(page, '/time set day').catch(() => undefined);
+    }
+  });
+
+  await section('loup apprivoisable', async () => {
+    try {
+      await chat(page, '/tp 15.5 4 15.5');
+      await ticks(page, 4);
+      await ev(page, () => { const p = window.__game.player; p.health = 20; T.aim(15.5, 4.4, 12.5); });
+      await ticks(page, 2);
+      await chat(page, '/summon wolf');
+      await ticks(page, 2);
+      const wild = await ev(page, () => {
+        const l = T.mobs('wolf');
+        const w = l[l.length - 1];
+        window.__testWolf = w;
+        return w ? { tamed: w.tamed, angry: w.angry, health: w.health } : null;
+      });
+      check('loup : /summon wolf fait apparaître un loup sauvage', !!wild && !wild.tamed && !wild.angry && wild.health === 8, JSON.stringify(wild));
+
+      // sauvage : devient hostile si on le frappe
+      const angryRes = await ev(page, () => {
+        const g = window.__game, w = window.__testWolf;
+        w.hurt(g, 2, 'attack', g.player);
+        for (let i = 0; i < 5; i++) g.tick();
+        return { angry: w.angry, targetIsPlayer: w.target === g.player };
+      });
+      check('loup sauvage : devient hostile si on le frappe', angryRes.angry && angryRes.targetIsPlayer, JSON.stringify(angryRes));
+      await ev(page, () => { if (window.__testWolf) window.__testWolf.dead = true; });
+      await ticks(page, 2);
+
+      // apprivoisement aux os (1/3 de chance, déterministe : 0.8 échoue, 0.1 réussit)
+      await chat(page, '/give bone 3');
+      await chat(page, '/give cooked_porkchop 2');
+      const tameRes = await ev(page, async () => {
+        const M = await import('/src/entity/Mobs.ts');
+        const g = window.__game;
+        T.select('bone');
+        const w = M.createMob('wolf', g.rng);
+        w.setPosition(15.5, 4, 13.5);
+        g.spawn(w);
+        window.__testWolf = w;
+        const origRng = g.rng;
+        let step = 0;
+        Object.defineProperty(g, 'rng', { configurable: true, value: () => (step++ === 0 ? 0.8 : 0.1) });
+        const try1 = w.interact(g, g.player);
+        const afterFail = { tamed: w.tamed, bones: T.count('bone') };
+        const try2 = w.interact(g, g.player);
+        Object.defineProperty(g, 'rng', { configurable: true, value: origRng });
+        return { try1, afterFail, try2, tamed: w.tamed, sitting: w.sitting, owner: w.owner, health: w.health, maxHealth: w.maxHealth, bones: T.count('bone') };
+      });
+      check('loup : apprivoisement aux os (1/3) donne un loup assis avec collier et 20 PV',
+        tameRes.try1 && !tameRes.afterFail.tamed && tameRes.try2 && tameRes.tamed && tameRes.sitting && tameRes.owner === 'player' && tameRes.health === 20 && tameRes.maxHealth === 20 && tameRes.bones === 1,
+        JSON.stringify(tameRes));
+      await ev(page, () => { window.__testWolf.setRotation(Math.PI); T.aim(15.5, 4.45, 13.5); });
+      await ticks(page, 2);
+      await shot(page, '18b-loup-apprivoise');
+
+      // clic droit : assis ↔ debout ; debout il suit et se téléporte si trop loin
+      const followWolf = await ev(page, () => {
+        const g = window.__game, w = window.__testWolf;
+        // main vide pour basculer assis/debout
+        g.player.inventory.selected = 8;
+        w.interact(g, g.player); // se lève
+        const stood = !w.sitting;
+        g.player.teleport(15.5, 4, 21.5);
+        for (let i = 0; i < 30; i++) g.tick();
+        const distAfterWalk = Math.hypot(w.x - g.player.x, w.z - g.player.z);
+        // téléportation si > 12 blocs
+        g.player.teleport(35.5, 4, 21.5);
+        g.tick();
+        g.tick();
+        const distAfterTp = Math.hypot(w.x - g.player.x, w.z - g.player.z);
+        // rasseoir
+        w.interact(g, g.player);
+        const satAgain = w.sitting;
+        return { stood, distAfterWalk: +distAfterWalk.toFixed(2), distAfterTp: +distAfterTp.toFixed(2), satAgain };
+      });
+      check('loup apprivoisé : assis/debout, suit le maître et se téléporte si trop loin',
+        followWolf.stood && followWolf.distAfterWalk < 5 && followWolf.distAfterTp < 5 && followWolf.satAgain,
+        JSON.stringify(followWolf));
+
+      // attaque ce que le maître frappe, et la viande le soigne
+      const combatHeal = await ev(page, async () => {
+        const M = await import('/src/entity/Mobs.ts');
+        const g = window.__game, w = window.__testWolf;
+        w.interact(g, g.player); // debout
+        const target = M.createMob('sheep', g.rng);
+        target.setPosition(w.x + 1.8, w.y, w.z);
+        g.spawn(target);
+        M.notifyTamedWolves(g, target);
+        const targeted = w.target === target;
+        const hp0 = target.health;
+        for (let i = 0; i < 80 && target.health === hp0; i++) g.tick();
+        const attacked = target.health < hp0;
+        target.dead = true;
+        w.target = null;
+        // soin par la viande
+        w.hurt(g, 6, 'fall');
+        const hurtHp = w.health;
+        T.select('cooked_porkchop');
+        const healed = w.interact(g, g.player);
+        const finalHp = w.health;
+        w.dead = true;
+        g.tick();
+        return { targeted, attacked, hurtHp, healed, finalHp };
+      });
+      check('loup apprivoisé : attaque les cibles du maître et la viande le soigne',
+        combatHeal.targeted && combatHeal.attacked && combatHeal.hurtHp === 14 && combatHeal.healed && combatHeal.finalHp === 20,
+        JSON.stringify(combatHeal));
+    } finally {
+      await ev(page, () => {
+        const g = window.__game;
+        if (window.__testWolf) window.__testWolf.dead = true;
+        g.player.health = 20;
+        const boneId = T.id('bone');
+        const porkId = T.id('cooked_porkchop');
+        for (let i = 0; i < g.player.inventory.slots.length; i++) {
+          const st = g.player.inventory.slots[i];
+          if (st && (st.id === boneId || st.id === porkId)) g.player.inventory.slots[i] = null;
+        }
+      }).catch(() => undefined);
+    }
   });
 
   await section('mort et réapparition', async () => {
@@ -524,7 +685,8 @@ async function useOnGround(page, x, z) {
   });
 
   await section('établi, coffre, fourneau', async () => {
-    await chat(page, '/tp 40.5 4 40.5');
+    try {
+      await chat(page, '/tp 40.5 4 40.5');
     await ticks(page, 5);
     for (const n of ['crafting_table', 'chest', 'furnace']) await chat(page, `/give ${n}`);
     const spots = [['crafting_table', 39, 'menu-crafting'], ['chest', 40, 'menu-chest'], ['furnace', 41, 'menu-furnace']];
@@ -573,8 +735,600 @@ async function useOnGround(page, x, z) {
     c = await dom('output'); await page.mouse.click(c[0], c[1]); await sleep(150);
     const cur = await ev(page, () => { const c = window.__game.player.inventory.cursor; return c ? c.id : 0; });
     const ingot = await ev(page, () => T.id('iron_ingot'));
-    check('le fourneau cuit le minerai en lingot (menu fermé)', cur === ingot, `curseur ${cur}, attendu ${ingot}`);
-    await page.keyboard.press('Escape'); await sleep(250);
+      check('le fourneau cuit le minerai en lingot (menu fermé)', cur === ingot, `curseur ${cur}, attendu ${ingot}`);
+    } finally {
+      if (await ev(page, () => window.__game.ui.modal).catch(() => false)) {
+        await page.keyboard.press('Escape').catch(() => undefined);
+        await sleep(250);
+      }
+    }
+  });
+
+  await section('enchantements et enclume', async () => {
+    try {
+      await chat(page, '/tp 35.5 4 38.5');
+      await ticks(page, 4);
+      // 1) Recettes + rétrocompatibilité des anciens mondes (piles à 3 éléments sans enchants)
+      const baseChecks = await ev(page, async () => {
+        const { B, I } = await import('/src/world/Ids.ts');
+        const R = await import('/src/world/Recipes.ts');
+        const IS = await import('/src/world/ItemStack.ts');
+        const enchRec = R.matchRecipe([0, I.BOOK, 0, I.DIAMOND, B.OBSIDIAN, I.DIAMOND, B.OBSIDIAN, B.OBSIDIAN, B.OBSIDIAN], 3);
+        const anvilRec = R.matchRecipe([B.IRON_BLOCK, B.IRON_BLOCK, B.IRON_BLOCK, 0, I.IRON_INGOT, 0, I.IRON_INGOT, I.IRON_INGOT, I.IRON_INGOT], 3);
+        const oldLoaded = IS.loadSlots([[I.IRON_PICKAXE, 1, 12], null], 2);
+        return {
+          enchRec: !!enchRec && enchRec.id === B.ENCHANTING_TABLE,
+          anvilRec: !!anvilRec && anvilRec.id === B.ANVIL,
+          oldOk: !!oldLoaded[0] && oldLoaded[0].id === I.IRON_PICKAXE && oldLoaded[0].damage === 12 && oldLoaded[0].enchants === undefined && oldLoaded[1] === null,
+        };
+      });
+      check('table d\'enchantement et enclume : recettes et relecture d\'anciens objets', baseChecks.enchRec && baseChecks.anvilRec && baseChecks.oldOk, JSON.stringify(baseChecks));
+
+      // 2) Table d'enchantement : 0 bibliothèques vs 15 bibliothèques, coût XP + lapis, infobulle
+      await ev(page, async () => {
+        const { B, I } = await import('/src/world/Ids.ts');
+        const { makeStack } = await import('/src/world/ItemStack.ts');
+        const g = window.__game, w = g.world, p = g.player;
+        w.setBlock(35, 4, 35, B.ENCHANTING_TABLE);
+        p.xpLevel = 30;
+        p.inventory.slots[6] = makeStack(I.DIAMOND_PICKAXE, 1);
+        p.inventory.slots[7] = makeStack(I.LAPIS, 10);
+      });
+      await ev(page, () => T.aim(35.5, 4.5, 35.5));
+      await ticks(page, 2);
+      await rclick(page);
+      await page.waitForSelector('[data-mc="menu-enchant"]', { timeout: 5000 });
+      const offers0 = await ev(page, () => {
+        const g = window.__game;
+        const m = g.menu;
+        m.tableSlots[0] = g.player.inventory.slots[6];
+        g.player.inventory.slots[6] = null;
+        m.changed();
+        return { bs: m.bookshelves, min2: m.offers[2] ? m.offers[2].minLevel : 0 };
+      });
+      await page.keyboard.press('Escape'); await sleep(200);
+
+      // Pose 15 bibliothèques autour (anneau 5×5×2)
+      await ev(page, async () => {
+        const { B } = await import('/src/world/Ids.ts');
+        const w = window.__game.world;
+        let placed = 0;
+        for (let dy = 0; dy <= 1 && placed < 15; dy++) {
+          for (let dx = -2; dx <= 2 && placed < 15; dx++) {
+            for (let dz = -2; dz <= 2 && placed < 15; dz++) {
+              if (Math.abs(dx) !== 2 && Math.abs(dz) !== 2) continue;
+              w.setBlock(35 + dx, 4 + dy, 35 + dz, B.BOOKSHELF);
+              placed++;
+            }
+          }
+        }
+      });
+      await ev(page, () => T.aim(35.5, 4.5, 35.5));
+      await ticks(page, 2);
+      await rclick(page);
+      await page.waitForSelector('[data-mc="menu-enchant"]', { timeout: 5000 });
+      await ev(page, async () => {
+        const { I } = await import('/src/world/Ids.ts');
+        const { makeStack } = await import('/src/world/ItemStack.ts');
+        const m = window.__game.menu;
+        m.tableSlots[0] = makeStack(I.DIAMOND_PICKAXE, 1);
+        m.tableSlots[1] = makeStack(I.LAPIS, 10);
+        m.changed();
+      });
+      await sleep(150);
+      await shot(page, '25b-table-enchantement');
+      const offers15 = await ev(page, () => {
+        const m = window.__game.menu;
+        return { bs: m.bookshelves, min2: m.offers[2] ? m.offers[2].minLevel : 0 };
+      });
+      await page.click('[data-mc="enchant-2"]');
+      await sleep(150);
+      // Survol de la case enchantée pour vérifier l'infobulle
+      const slotPos = await page.evaluate(() => {
+        const e = document.querySelector('[data-mc="menu-enchant"] [data-group="input"]');
+        const r = e.getBoundingClientRect();
+        return [r.x + r.width / 2, r.y + r.height / 2];
+      });
+      await page.mouse.move(slotPos[0], slotPos[1]);
+      await sleep(150);
+      const enchRes = await ev(page, () => {
+        const g = window.__game, m = g.menu;
+        const item = m.tableSlots[0];
+        const lapisLeft = m.tableSlots[1] ? m.tableSlots[1].count : 0;
+        const tip = document.querySelector('.mc-tooltip')?.textContent ?? '';
+        return {
+          hasEnch: !!(item && item.enchants && Object.keys(item.enchants).length > 0),
+          xpAfter: g.player.xpLevel,
+          lapisLeft,
+          tip,
+        };
+      });
+      await page.keyboard.press('Escape'); await sleep(200);
+      const afterEscape = await ev(page, async () => {
+        const { I } = await import('/src/world/Ids.ts');
+        return window.__game.player.inventory.slots.some((x) => x && x.id === I.DIAMOND_PICKAXE && x.enchants && Object.keys(x.enchants).length > 0);
+      });
+      check('table d\'enchantement : bibliothèques augmentent les niveaux proposés', offers0.bs === 0 && offers15.bs === 15 && offers15.min2 > offers0.min2 && offers15.min2 >= 20, `${JSON.stringify(offers0)} -> ${JSON.stringify(offers15)}`);
+      check('table d\'enchantement : applique l\'enchantement, consomme XP/lapis et affiche au survol', enchRes.hasEnch && enchRes.xpAfter === 27 && enchRes.lapisLeft === 7 && enchRes.tip.includes('Pioche en diamant') && enchRes.tip.length > 20, JSON.stringify(enchRes));
+      check('enchantements : conservés à la fermeture du menu (Échap)', afterEscape);
+
+      // Gestes d'inventaire : clic + pose, maj-clic, lâcher au sol + ramasser
+      await ev(page, async () => {
+        const { I } = await import('/src/world/Ids.ts');
+        const { makeStack } = await import('/src/world/ItemStack.ts');
+        const g = window.__game, p = g.player;
+        p.xpLevel = 30;
+        p.inventory.slots[6] = makeStack(I.DIAMOND_PICKAXE, 1);
+        p.inventory.slots[7] = makeStack(I.LAPIS, 10);
+        T.aim(35.5, 4.5, 35.5);
+      });
+      await ticks(page, 2);
+      await rclick(page);
+      await page.waitForSelector('[data-mc="menu-enchant"]', { timeout: 5000 });
+      const moveEnch = await ev(page, async () => {
+        const { I } = await import('/src/world/Ids.ts');
+        const { makeStack } = await import('/src/world/ItemStack.ts');
+        const g = window.__game, m = g.menu, inv = g.player.inventory;
+        m.click(m.indexOf('hotbar', 6), 0, true);
+        m.click(m.indexOf('hotbar', 7), 0, true);
+        m.enchant(0);
+        m.click(m.indexOf('input', 0), 0, false);
+        const onCursor = !!(inv.cursor?.enchants && Object.keys(inv.cursor.enchants).length > 0);
+        m.click(m.indexOf('main', 0), 0, false);
+        const inMain = !!(m.slots[m.indexOf('main', 0)].stack?.enchants);
+        m.click(m.indexOf('main', 0), 0, false);
+        m.click(m.indexOf('input', 0), 0, false);
+        m.click(m.indexOf('input', 0), 0, true);
+        const afterShift = inv.slots.some((s) => s && s.id === I.DIAMOND_PICKAXE && s.enchants && Object.keys(s.enchants).length > 0);
+        // Propositions fixes tant qu'on n'enchante pas, puis renouvelées après enchantement
+        inv.slots[6] = makeStack(I.IRON_PICKAXE, 1);
+        const inp = m.indexOf('input', 0);
+        m.click(m.indexOf('hotbar', 6), 0, true);
+        const offerSig1 = JSON.stringify(m.offers.map((o) => [o.minLevel, o.enchants]));
+        m.click(inp, 0, false); // retire sur le curseur
+        m.click(inp, 0, false); // remet dans la table
+        const offerSig2 = JSON.stringify(m.offers.map((o) => [o.minLevel, o.enchants]));
+        inv.slots[7] = makeStack(I.LAPIS, 10);
+        m.click(m.indexOf('hotbar', 7), 0, true);
+        g.player.xpLevel = 30;
+        m.enchant(0);
+        m.click(inp, 0, true);
+        inv.slots[6] = makeStack(I.IRON_PICKAXE, 1);
+        m.click(m.indexOf('hotbar', 6), 0, true);
+        const offerSigAfter = JSON.stringify(m.offers.map((o) => [o.minLevel, o.enchants]));
+        m.click(inp, 0, true);
+        return { onCursor, inMain, afterShift, fixedOk: offerSig1 === offerSig2 && m.offers.length === 0, rotatedOk: offerSig1 !== offerSigAfter };
+      });
+      await page.keyboard.press('Escape'); await sleep(200);
+      await ev(page, async () => {
+        const { I } = await import('/src/world/Ids.ts');
+        const g = window.__game, inv = g.player.inventory;
+        const idx = inv.slots.findIndex((s) => s && s.id === I.DIAMOND_PICKAXE && s.enchants);
+        if (idx >= 0 && idx < 9) inv.selected = idx;
+        else if (idx >= 9) { inv.slots[0] = inv.slots[idx]; inv.slots[idx] = null; inv.selected = 0; }
+        g.interaction.dropHeld(true);
+      });
+      await ticks(page, 45);
+      await ev(page, async () => {
+        const { I } = await import('/src/world/Ids.ts');
+        const g = window.__game;
+        const it = g.entities.find((e) => e.kind === 'item' && e.stack && e.stack.id === I.DIAMOND_PICKAXE && e.stack.enchants);
+        if (it) g.player.teleport(it.x, it.y, it.z);
+      });
+      await ticks(page, 5);
+      const afterPickup = await ev(page, async () => {
+        const { I } = await import('/src/world/Ids.ts');
+        return window.__game.player.inventory.slots.some((s) => s && s.id === I.DIAMOND_PICKAXE && s.enchants && Object.keys(s.enchants).length > 0);
+      });
+      check('enchantements : conservés après clic, maj-clic et lâcher/ramasser', moveEnch.onCursor && moveEnch.inMain && moveEnch.afterShift && afterPickup, JSON.stringify({ moveEnch, afterPickup }));
+      check('table d\'enchantement : propositions fixes jusqu\'à un enchantement', moveEnch.fixedOk && moveEnch.rotatedOk, JSON.stringify(moveEnch));
+
+      // 3) Enclume : réparation par matériau + fusion de deux épées Tranchant II → Tranchant III
+      await ev(page, async () => {
+        const { B } = await import('/src/world/Ids.ts');
+        window.__game.world.setBlock(38, 4, 38, B.ANVIL);
+      });
+      await ev(page, () => T.aim(38.5, 4.5, 38.5));
+      await ticks(page, 2);
+      await rclick(page);
+      await page.waitForSelector('[data-mc="menu-anvil"]', { timeout: 5000 });
+      const anvilRes = await ev(page, async () => {
+        const { I } = await import('/src/world/Ids.ts');
+        const { makeStack } = await import('/src/world/ItemStack.ts');
+        const g = window.__game, m = g.menu;
+        // Réparation d'une pioche en fer usée avec des lingots
+        m.anvilSlots[0] = makeStack(I.IRON_PICKAXE, 1, 100);
+        m.anvilSlots[1] = makeStack(I.IRON_INGOT, 4, 0);
+        m.changed();
+        const repairedDamage = m.anvilSlots[2] ? m.anvilSlots[2].damage : -1;
+        const repairCost = m.cost;
+        const xpBeforeRepair = g.player.xpLevel;
+        m.click(m.indexOf('result', 0), 0, true);
+        const xpAfterRepair = g.player.xpLevel;
+        // Fusion de deux épées Tranchant II
+        m.anvilSlots[0] = makeStack(I.IRON_SWORD, 1, 10, { sharpness: 2 });
+        m.anvilSlots[1] = makeStack(I.IRON_SWORD, 1, 10, { sharpness: 2 });
+        m.changed();
+        const combinedSharp = m.anvilSlots[2]?.enchants?.sharpness ?? 0;
+        const combineCost = m.cost;
+        return { repairedDamage, repairCost, xpBeforeRepair, xpAfterRepair, combinedSharp, combineCost };
+      });
+      await shot(page, '25c-enclume');
+      await ev(page, () => { const m = window.__game.menu; m.click(m.indexOf('result', 0), 0, true); });
+      await page.keyboard.press('Escape'); await sleep(200);
+      check('enclume : répare un outil, fusionne deux enchantements (Tranchant II+II → III) et coûte des niveaux',
+        anvilRes.repairedDamage === 0 && anvilRes.repairCost > 0 && anvilRes.xpAfterRepair === anvilRes.xpBeforeRepair - anvilRes.repairCost && anvilRes.combinedSharp === 3 && anvilRes.combineCost > 0,
+        JSON.stringify(anvilRes));
+
+      // Raccourcis sur l'enclume (numberKey, dropKey) : pas de résultat gratuit ni dupliqué
+      await ev(page, () => T.aim(38.5, 4.5, 38.5));
+      await ticks(page, 2);
+      await rclick(page);
+      await page.waitForSelector('[data-mc="menu-anvil"]', { timeout: 5000 });
+      const anvilShortcut = await ev(page, async () => {
+        const { I } = await import('/src/world/Ids.ts');
+        const { makeStack } = await import('/src/world/ItemStack.ts');
+        const g = window.__game, m = g.menu, inv = g.player.inventory;
+        inv.slots[0] = null; inv.slots[1] = null;
+        inv.slots[6] = makeStack(I.IRON_PICKAXE, 1, 200);
+        inv.slots[7] = makeStack(I.IRON_INGOT, 5);
+        m.click(m.indexOf('hotbar', 6), 0, true);
+        m.click(m.indexOf('hotbar', 7), 0, true);
+        const res = m.indexOf('result', 0);
+        const cost = m.cost;
+        // Sans assez de niveaux : numberKey et dropKey ne donnent rien
+        g.player.xpLevel = 0;
+        m.numberKey(res, 0);
+        m.dropKey(res, false);
+        const blocked = inv.slots[0] === null && m.anvilSlots[0] !== null && m.anvilSlots[2] !== null;
+        // Avec niveaux : numberKey paie et consomme ; les gestes suivants ne dupliquent pas
+        g.player.xpLevel = 30;
+        m.numberKey(res, 0);
+        m.numberKey(res, 1);
+        m.dropKey(res, false);
+        const paid = inv.slots[0]?.id === I.IRON_PICKAXE && inv.slots[0]?.damage === 0
+          && inv.slots[1] === null && g.player.xpLevel === 30 - cost
+          && m.anvilSlots[0] === null && m.anvilSlots[2] === null;
+        // dropKey paie et consomme aussi quand les niveaux suffisent
+        inv.slots[6] = makeStack(I.IRON_PICKAXE, 1, 200);
+        inv.slots[7] = makeStack(I.IRON_INGOT, 5);
+        m.click(m.indexOf('hotbar', 6), 0, true);
+        m.click(m.indexOf('hotbar', 7), 0, true);
+        const xpBeforeDrop = g.player.xpLevel;
+        const dropCost = m.cost;
+        const dropsBefore = g.entities.filter((e) => e.kind === 'item').length;
+        m.dropKey(res, false);
+        const dropsAfter = g.entities.filter((e) => e.kind === 'item').length;
+        const droppedOk = dropsAfter === dropsBefore + 1 && g.player.xpLevel === xpBeforeDrop - dropCost && m.anvilSlots[0] === null;
+        return { blocked, paid, droppedOk };
+      });
+      await page.keyboard.press('Escape'); await sleep(200);
+      check('enclume : raccourcis (touches 1-9, lâcher) paient les niveaux et ne dupliquent pas le résultat',
+        anvilShortcut.blocked && anvilShortcut.paid && anvilShortcut.droppedOk,
+        JSON.stringify(anvilShortcut));
+
+      // 4) Effets réels des 7 enchantements
+      const effects = await ev(page, async () => {
+        const { B, I } = await import('/src/world/Ids.ts');
+        const D = await import('/src/world/Drops.ts');
+        const { makeStack } = await import('/src/world/ItemStack.ts');
+        const { Inventory } = await import('/src/game/Inventory.ts');
+        const M = await import('/src/entity/Mobs.ts');
+        const { Arrow } = await import('/src/entity/Objects.ts');
+        const g = window.__game, p = g.player;
+        // Efficacité
+        const spd0 = D.miningSpeed(B.STONE, I.IRON_PICKAXE, 0);
+        const spd3 = D.miningSpeed(B.STONE, I.IRON_PICKAXE, 3);
+        // Solidité (tirage fixe 0.5 : sans Solidité use de 1 ; Solidité III ignore si rng >= 0.25)
+        const inv = new Inventory();
+        inv.slots[0] = makeStack(I.IRON_PICKAXE, 1, 0);
+        inv.damageHeld(1, () => 0.5);
+        const dmgNoUnb = inv.slots[0].damage;
+        inv.slots[0] = makeStack(I.IRON_PICKAXE, 1, 0, { unbreaking: 3 });
+        inv.damageHeld(1, () => 0.5);
+        const dmgUnb3 = inv.slots[0].damage;
+        // Fortune
+        const dropNoFort = D.blockDrops(B.DIAMOND_ORE, 0, I.IRON_PICKAXE, () => 0.9, 0, false)[0].count;
+        const dropFort3 = D.blockDrops(B.DIAMOND_ORE, 0, I.IRON_PICKAXE, () => 0.9, 3, false)[0].count;
+        // Toucher de soie
+        const dropSilkStone = D.blockDrops(B.STONE, 0, I.IRON_PICKAXE, g.rng, 0, true)[0].id;
+        const dropSilkOre = D.blockDrops(B.DIAMOND_ORE, 0, I.IRON_PICKAXE, g.rng, 0, true)[0].id;
+        // Tranchant
+        if (g.ui.modal) g.ui.closeModal();
+        p.teleport(38.5, 4, 43.5);
+        const cow1 = M.createMob('cow', g.rng); cow1.setPosition(p.x, p.y, p.z - 2);
+        const cow2 = M.createMob('cow', g.rng); cow2.setPosition(p.x, p.y, p.z - 2);
+        g.spawn(cow1);
+        const oldHeld = p.inventory.slots[p.inventory.selected];
+        T.aim(cow1.x, cow1.y + 0.7, cow1.z);
+        p.inventory.slots[p.inventory.selected] = makeStack(I.IRON_SWORD, 1, 0);
+        g.interaction.frame(1); g.input.presses[0]++; g.tick();
+        const dmgSword = 10 - cow1.health;
+        cow1.dead = true; g.tick();
+        g.spawn(cow2);
+        T.aim(cow2.x, cow2.y + 0.7, cow2.z);
+        p.inventory.slots[p.inventory.selected] = makeStack(I.IRON_SWORD, 1, 0, { sharpness: 4 });
+        g.interaction.frame(1); g.input.presses[0]++; g.tick();
+        const dmgSharp = 10 - cow2.health;
+        cow2.dead = true;
+        // Protection
+        const oldChest = p.inventory.armor[1];
+        p.health = 20; p.invulnerable = 0;
+        p.inventory.armor[1] = makeStack(I.IRON_CHESTPLATE, 1, 0);
+        p.hurt(g, 10, 'attack');
+        const hpPlain = p.health;
+        p.health = 20; p.invulnerable = 0;
+        p.inventory.armor[1] = makeStack(I.IRON_CHESTPLATE, 1, 0, { protection: 4 });
+        p.hurt(g, 10, 'attack');
+        const hpProt = p.health;
+        p.inventory.armor[1] = oldChest;
+        p.health = 20; p.invulnerable = 0;
+        // Puissance (arc)
+        const pig1 = M.createMob('pig', g.rng); pig1.setPosition(35.5, 4, 41.5);
+        const pig2 = M.createMob('pig', g.rng); pig2.setPosition(35.5, 4, 42.5);
+        g.spawn(pig1); g.spawn(pig2);
+        const a0 = new Arrow(); a0.owner = p; a0.powerLevel = 0; a0.shoot(35.5, 4.5, 40.9, 0, 0, 1, 2, 0, g.rng); g.spawn(a0);
+        const a3 = new Arrow(); a3.owner = p; a3.powerLevel = 3; a3.shoot(35.5, 4.5, 41.9, 0, 0, 1, 2, 0, g.rng); g.spawn(a3);
+        for (let i = 0; i < 4; i++) g.tick();
+        const arrowDmg0 = 10 - pig1.health;
+        const arrowDmg3 = 10 - pig2.health;
+        pig1.dead = pig2.dead = true;
+        p.inventory.slots[p.inventory.selected] = oldHeld;
+        g.tick();
+        return { spd0, spd3, dmgNoUnb, dmgUnb3, dropNoFort, dropFort3, dropSilkStone, dropSilkOre, stoneId: B.STONE, oreId: B.DIAMOND_ORE, dmgSword, dmgSharp, hpPlain, hpProt, arrowDmg0, arrowDmg3 };
+      });
+      check('enchantements : les 7 effets réels (Efficacité, Solidité, Fortune, Toucher de soie, Tranchant, Protection, Puissance)',
+        effects.spd3 > effects.spd0 &&
+        effects.dmgNoUnb === 1 && effects.dmgUnb3 === 0 &&
+        effects.dropFort3 > effects.dropNoFort &&
+        effects.dropSilkStone === effects.stoneId && effects.dropSilkOre === effects.oreId &&
+        effects.dmgSharp > effects.dmgSword &&
+        effects.hpProt > effects.hpPlain &&
+        effects.arrowDmg3 > effects.arrowDmg0,
+        JSON.stringify(effects));
+    } finally {
+      if (await ev(page, () => window.__game.ui.modal).catch(() => false)) {
+        await page.keyboard.press('Escape').catch(() => undefined);
+        await sleep(200);
+      }
+      await ev(page, () => {
+        const g = window.__game, w = g.world, p = g.player;
+        for (let dy = 0; dy <= 1; dy++) for (let dx = -2; dx <= 2; dx++) for (let dz = -2; dz <= 2; dz++) w.setBlock(35 + dx, 4 + dy, 35 + dz, 0);
+        w.setBlock(38, 4, 38, 0);
+        p.health = 20; p.xpLevel = 0; p.invulnerable = 0;
+        const cleanIds = new Set([T.id('diamond_pickaxe'), T.id('iron_pickaxe'), T.id('iron_sword'), T.id('lapis'), T.id('iron_ingot')]);
+        for (let i = 0; i < p.inventory.slots.length; i++) {
+          const st = p.inventory.slots[i];
+          if (st && cleanIds.has(st.id)) p.inventory.slots[i] = null;
+        }
+      }).catch(() => undefined);
+    }
+  });
+
+  await section('redstone', async () => {
+    try {
+      await chat(page, '/tp 46.5 4 50.5');
+      await ticks(page, 5);
+      // 1) Poussière (15 → 0) + levier + lampe + porte en fer + torche inverseuse
+      const r1 = await ev(page, async () => {
+        const { B } = await import('/src/world/Ids.ts');
+        const g = window.__game, w = g.world;
+        w.setBlock(46, 4, 48, B.LEVER, 0);
+        for (let i = 0; i < 17; i++) w.setBlock(47 + i, 4, 48, B.REDSTONE_WIRE, 0);
+        w.setBlock(48, 4, 47, B.REDSTONE_LAMP, 0);
+        w.setBlock(50, 4, 47, B.IRON_DOOR, 0, false);
+        w.setBlock(50, 5, 47, B.IRON_DOOR, 8);
+        w.setBlock(48, 4, 49, B.REDSTONE_WIRE, 0);
+        w.setBlock(49, 4, 49, B.STONE, 0);
+        w.setBlock(49, 4, 50, B.REDSTONE_TORCH, 1);
+        T.aim(46.5, 4.1, 48.5);
+        return {
+          lampBefore: w.getBlock(48, 4, 47) === B.REDSTONE_LAMP_LIT,
+          doorBefore: (w.getMeta(50, 4, 47) & 4) !== 0,
+        };
+      });
+      await rclick(page);
+      await ticks(page, 5);
+      const r2 = await ev(page, async () => {
+        const { B } = await import('/src/world/Ids.ts');
+        const g = window.__game, w = g.world;
+        // Torche isolée (loin de la lampe) : 7 lumière allumée, 0 éteinte
+        const { BLOCK_EMIT } = await import('/src/world/Blocks.ts');
+        w.setBlock(46, 4, 66, B.LEVER, 0);
+        w.setBlock(47, 4, 66, B.STONE, 0);
+        w.setBlock(48, 4, 66, B.REDSTONE_TORCH, 4);
+        return {
+          p0: w.getMeta(47, 4, 48),
+          p5: w.getMeta(52, 4, 48),
+          p14: w.getMeta(61, 4, 48),
+          p15: w.getMeta(62, 4, 48),
+          lampAfter: w.getBlock(48, 4, 47) === B.REDSTONE_LAMP_LIT,
+          doorAfter: (w.getMeta(50, 4, 47) & 4) !== 0,
+          torchOff: w.getBlock(49, 4, 50) === B.REDSTONE_TORCH_OFF,
+          emitOn: BLOCK_EMIT[B.REDSTONE_TORCH],
+          emitOff: BLOCK_EMIT[B.REDSTONE_TORCH_OFF],
+        };
+      });
+      await ticks(page, 6);
+      const torchLightOn = await ev(page, () => window.__game.world.getBlockLight(48, 4, 66));
+      await ev(page, () => window.__game.world.setMeta(46, 4, 66, 8, true));
+      await ticks(page, 6);
+      const torchLightOff = await ev(page, () => window.__game.world.getBlockLight(48, 4, 66));
+      await ev(page, () => {
+        const w = window.__game.world;
+        w.setBlock(46, 4, 66, 0, 0, false);
+        w.setBlock(47, 4, 66, 0, 0, false);
+        w.setBlock(48, 4, 66, 0, 0, false);
+      });
+      check('redstone : poussière (15 → 1 par bloc), levier, lampe, porte en fer et torche inverseuse (0 lumière éteinte)',
+        !r1.lampBefore && !r1.doorBefore &&
+        r2.p0 === 15 && r2.p5 === 10 && r2.p14 === 1 && r2.p15 === 0 &&
+        r2.lampAfter && r2.doorAfter && r2.torchOff &&
+        r2.emitOn === 7 && r2.emitOff === 0 && torchLightOn === 7 && torchLightOff === 0,
+        JSON.stringify({ r1, r2, torchLightOn, torchLightOff }));
+
+      // Vérifie que la porte en fer ne s'ouvre pas à la main
+      const ironHand = await ev(page, async () => {
+        const { B } = await import('/src/world/Ids.ts');
+        const g = window.__game, w = g.world;
+        w.setBlock(52, 4, 51, B.IRON_DOOR, 0, false);
+        w.setBlock(52, 5, 51, B.IRON_DOOR, 8);
+        T.aim(52.5, 4.5, 51.2);
+        return (w.getMeta(52, 4, 51) & 4) !== 0;
+      });
+      await rclick(page);
+      const ironHandAfter = await ev(page, () => (window.__game.world.getMeta(52, 4, 51) & 4) !== 0);
+      check('redstone : la porte en fer ne s\'ouvre pas à la main', !ironHand && !ironHandAfter);
+
+      // 2) Bouton (retombe après 20 ticks) et plaque de pression
+      await ev(page, async () => {
+        const { B } = await import('/src/world/Ids.ts');
+        const g = window.__game, w = g.world;
+        w.setBlock(46, 4, 52, B.STONE_BUTTON, 0);
+        w.setBlock(47, 4, 52, B.REDSTONE_LAMP, 0);
+        T.aim(46.5, 4.05, 52.5);
+      });
+      await rclick(page);
+      await ticks(page, 2);
+      const btnOn = await ev(page, async () => {
+        const { B } = await import('/src/world/Ids.ts');
+        return window.__game.world.getBlock(47, 4, 52) === B.REDSTONE_LAMP_LIT;
+      });
+      await ticks(page, 22);
+      const btnOff = await ev(page, async () => {
+        const { B } = await import('/src/world/Ids.ts');
+        return window.__game.world.getBlock(47, 4, 52) === B.REDSTONE_LAMP;
+      });
+      check('redstone : bouton allume la lampe puis retombe après 20 ticks', btnOn && btnOff, `on=${btnOn} off=${btnOff}`);
+
+      await ev(page, async () => {
+        const { B } = await import('/src/world/Ids.ts');
+        const g = window.__game, w = g.world, p = g.player;
+        w.setBlock(48, 4, 54, B.STONE_PRESSURE_PLATE, 0);
+        w.setBlock(49, 4, 54, B.REDSTONE_LAMP, 0);
+        p.teleport(48.5, 4, 54.5);
+      });
+      await ticks(page, 2);
+      const plateOn = await ev(page, async () => {
+        const { B } = await import('/src/world/Ids.ts');
+        return window.__game.world.getBlock(49, 4, 54) === B.REDSTONE_LAMP_LIT;
+      });
+      await ev(page, () => window.__game.player.teleport(46.5, 4, 50.5));
+      await ticks(page, 14);
+      const plateOff = await ev(page, async () => {
+        const { B } = await import('/src/world/Ids.ts');
+        return window.__game.world.getBlock(49, 4, 54) === B.REDSTONE_LAMP;
+      });
+      check('redstone : plaque de pression s\'active sous le joueur puis se relâche', plateOn && plateOff, `on=${plateOn} off=${plateOff}`);
+
+      // 3) Piston, piston collant et TNT
+      const pistonRes = await ev(page, async () => {
+        const { B } = await import('/src/world/Ids.ts');
+        const g = window.__game, w = g.world;
+        w.setBlock(54, 4, 50, B.PISTON, 5);
+        w.setBlock(55, 4, 50, B.STONE, 0);
+        w.setBlock(54, 4, 51, B.LEVER, 0);
+        w.setMeta(54, 4, 51, 8, true);
+        const pushed = w.getBlock(55, 4, 50) === B.PISTON_HEAD && w.getBlock(56, 4, 50) === B.STONE;
+        w.setMeta(54, 4, 51, 0, true);
+        const normalLeft = w.getBlock(56, 4, 50) === B.STONE && w.getBlock(55, 4, 50) === B.AIR;
+
+        w.setBlock(54, 4, 52, B.STICKY_PISTON, 5);
+        w.setBlock(55, 4, 52, B.STONE, 0);
+        w.setBlock(54, 4, 53, B.LEVER, 0);
+        w.setMeta(54, 4, 53, 8, true);
+        const stickyPushed = w.getBlock(55, 4, 52) === B.PISTON_HEAD && w.getBlock(56, 4, 52) === B.STONE;
+        w.setMeta(54, 4, 53, 0, true);
+        const stickyPulled = w.getBlock(55, 4, 52) === B.STONE && w.getBlock(56, 4, 52) === B.AIR;
+        w.setMeta(54, 4, 51, 8, true);
+
+        w.setBlock(58, 4, 52, B.TNT, 0);
+        w.setBlock(58, 4, 53, B.REDSTONE_BLOCK, 0);
+        const tntPrimed = w.getBlock(58, 4, 52) === B.AIR && g.entities.some((e) => e.kind === 'tnt');
+        for (const e of g.entities) if (e.kind === 'tnt') e.dead = true;
+
+        // Piston casse la poudre fragile et pousse une créature devant lui
+        const M = await import('/src/entity/Mobs.ts');
+        w.setBlock(60, 4, 50, B.PISTON, 5);
+        w.setBlock(61, 4, 50, B.REDSTONE_WIRE, 0);
+        const pig = M.createMob('pig', g.rng);
+        pig.setPosition(61.5, 4, 50.5);
+        g.spawn(pig);
+        w.setBlock(60, 4, 51, B.LEVER, 0);
+        w.setMeta(60, 4, 51, 8, true);
+        const wireBroken = w.getBlock(61, 4, 50) === B.PISTON_HEAD && w.getBlock(62, 4, 50) === B.AIR;
+        const entityPushed = pig.x >= 62;
+        pig.dead = true;
+        return { pushed, normalLeft, stickyPushed, stickyPulled, tntPrimed, wireBroken, entityPushed };
+      });
+      check('redstone : piston pousse, piston collant pousse et ramène, casse la poudre, pousse les entités, TNT s\'allume',
+        pistonRes.pushed && pistonRes.normalLeft && pistonRes.stickyPushed && pistonRes.stickyPulled && pistonRes.tntPrimed && pistonRes.wireBroken && pistonRes.entityPushed,
+        JSON.stringify(pistonRes));
+
+      await ev(page, () => { const p = window.__game.player; p.teleport(45.5, 4, 51.5); T.aim(50.5, 4.3, 48); });
+      await ticks(page, 2);
+      await shot(page, '26b-redstone');
+
+      // 4) Grand circuit 16×16 : extinction complète + mesure de performance
+      const bench = await ev(page, async () => {
+        const { B } = await import('/src/world/Ids.ts');
+        const { MAX_REDSTONE_UPDATES } = await import('/src/world/Redstone.ts');
+        const g = window.__game, w = g.world;
+        const measure = (fn) => {
+          const t0 = performance.now();
+          for (let i = 0; i < 40; i++) fn(i);
+          return (performance.now() - t0) / 40;
+        };
+        const baseMs = measure(() => g.tick());
+        for (let z = 70; z < 86; z++) {
+          for (let x = 70; x < 86; x++) {
+            w.setBlock(x, 4, z, (x % 5 === 4 && z % 5 === 4) ? B.REDSTONE_LAMP : B.REDSTONE_WIRE, 0, false);
+          }
+        }
+        w.setBlock(69, 4, 71, B.LEVER, 0);
+        const countActive = () => {
+          let wires = 0, lamps = 0;
+          for (let z = 70; z < 86; z++) {
+            for (let x = 70; x < 86; x++) {
+              const v = w.getBlockAndMeta(x, 4, z);
+              if ((v & 255) === B.REDSTONE_WIRE && (v >> 8) > 0) wires++;
+              else if ((v & 255) === B.REDSTONE_LAMP_LIT) lamps++;
+            }
+          }
+          return { wires, lamps };
+        };
+        w.setMeta(69, 4, 71, 8, true);
+        const on1 = countActive();
+        w.setMeta(69, 4, 71, 0, true);
+        for (let i = 0; i < 10; i++) g.tick();
+        const off1 = countActive();
+        const circuitMs = measure((i) => {
+          if (i % 4 === 0) w.setMeta(69, 4, 71, (i & 4) ? 8 : 0, true);
+          g.tick();
+        });
+        w.setMeta(69, 4, 71, 0, true);
+        for (let i = 0; i < 10; i++) g.tick();
+        const off2 = countActive();
+        for (let z = 70; z < 86; z++) for (let x = 69; x < 86; x++) w.setBlock(x, 4, z, B.AIR, 0, false);
+        return { baseMs, circuitMs, cap: MAX_REDSTONE_UPDATES, on1, off1, off2 };
+      });
+      console.log(`  perf redstone : base=${bench.baseMs.toFixed(3)} ms/tick, grand circuit=${bench.circuitMs.toFixed(3)} ms/tick (borne=${bench.cap})`);
+      check('redstone : grand circuit 16×16 s\'allume et s\'éteint complètement',
+        bench.on1.wires > 100 && bench.on1.lamps > 0 && bench.off1.wires === 0 && bench.off1.lamps === 0 && bench.off2.wires === 0 && bench.off2.lamps === 0,
+        JSON.stringify(bench));
+      check('redstone : propagation bornée et coût par tick maîtrisé', bench.cap === 512 && bench.circuitMs < 50, JSON.stringify(bench));
+    } finally {
+      await ev(page, async () => {
+        const g = window.__game, w = g.world;
+        for (let x = 45; x <= 64; x++) {
+          for (let z = 46; z <= 59; z++) {
+            w.setBlock(x, 4, z, 0, 0, false);
+            w.setBlock(x, 5, z, 0, 0, false);
+          }
+        }
+        for (const e of g.entities) if (e.kind === 'tnt') e.dead = true;
+      }).catch(() => undefined);
+    }
   });
 
   await section('seau d\'eau', async () => {
@@ -599,17 +1353,468 @@ async function useOnGround(page, x, z) {
     check('l\'eau restante se retire', left === 0, `${left} cellules d'eau`);
   });
 
+  await section('portail du Nether', async () => {
+    try {
+      await chat(page, '/tp 81.5 4 82.5');
+      await ticks(page, 5);
+      // Cadre d'obsidienne 4×5 en (80..83, 4..8, 80), allumé au briquet par clic droit
+      await ev(page, async () => {
+        const { B, I } = await import('/src/world/Ids.ts');
+        const { makeStack } = await import('/src/world/ItemStack.ts');
+        const g = window.__game, w = g.world, p = g.player;
+        for (let u = 0; u < 4; u++) {
+          for (let v = 0; v < 5; v++) {
+            const border = u === 0 || u === 3 || v === 0 || v === 4;
+            w.setBlock(80 + u, 4 + v, 80, border ? B.OBSIDIAN : B.AIR, 0, false);
+          }
+        }
+        p.inventory.slots[0] = makeStack(I.FLINT_AND_STEEL, 1);
+        p.inventory.selected = 0;
+        T.aim(81.5, 5.0, 80.5);
+      });
+      await ticks(page, 2);
+      await rclick(page);
+      const litPortal = await ev(page, async () => {
+        const { B } = await import('/src/world/Ids.ts');
+        const w = window.__game.world;
+        let count = 0;
+        for (let u = 1; u <= 2; u++) for (let v = 1; v <= 3; v++) if (w.getBlock(80 + u, 4 + v, 80) === B.NETHER_PORTAL) count++;
+        return count;
+      });
+      check('Nether : le briquet allume le portail d\'obsidienne 4×5', litPortal === 6, `${litPortal}/6 blocs de portail`);
+
+      // Rester 4 s (80 ticks) dans le portail en survie change de dimension
+      await ev(page, () => { window.__game.player.teleport(81.5, 5, 80.5); });
+      await ticks(page, 85);
+      await page.waitForFunction(
+        "window.__game && window.__game.dimension === 'nether' && window.__game.chunks.isReady(window.__game.player.x, window.__game.player.z, 2)",
+        { timeout: 30000 },
+      );
+      await ticks(page, 5);
+      const netherInfo = await ev(page, async () => {
+        const { B } = await import('/src/world/Ids.ts');
+        const g = window.__game, w = g.world, p = g.player;
+        let netherrack = 0, bedrock = 0, lava = 0, quartz = 0;
+        const ix = Math.floor(p.x), iz = Math.floor(p.z);
+        for (let dx = -8; dx <= 8; dx++) {
+          for (let dz = -8; dz <= 8; dz++) {
+            for (let y = 0; y < 128; y++) {
+              const id = w.getBlock(ix + dx, y, iz + dz);
+              if (id === B.NETHERRACK) netherrack++;
+              else if (id === B.BEDROCK) bedrock++;
+              else if (id === B.LAVA) lava++;
+              else if (id === B.NETHER_QUARTZ_ORE) quartz++;
+            }
+          }
+        }
+        return { dim: g.dimension, x: p.x, z: p.z, skyDarken: w.skyDarken, netherrack, bedrock, lava, quartz };
+      });
+      await shot(page, '27c-nether');
+      check('Nether : téléportation 1:8, terrain Nether et lumière ambiante faible',
+        netherInfo.dim === 'nether' && Math.abs(netherInfo.x - 10) <= 64 && Math.abs(netherInfo.z - 10) <= 64 &&
+        netherInfo.netherrack > 500 && netherInfo.bedrock > 100 && netherInfo.skyDarken === 11,
+        JSON.stringify(netherInfo));
+
+      // Eau évaporée + lit qui explose dans le Nether (hors du portail)
+      const nSpot = await ev(page, async () => {
+        const { B, I } = await import('/src/world/Ids.ts');
+        const { makeStack } = await import('/src/world/ItemStack.ts');
+        const g = window.__game, w = g.world, p = g.player;
+        const bx = Math.floor(p.x) + 6, by = Math.floor(p.y), bz = Math.floor(p.z) + 6;
+        for (let dx = -1; dx <= 3; dx++) {
+          for (let dz = -1; dz <= 1; dz++) {
+            w.setBlock(bx + dx, by - 1, bz + dz, B.OBSIDIAN, 0, false);
+            w.setBlock(bx + dx, by, bz + dz, B.AIR, 0, false);
+            w.setBlock(bx + dx, by + 1, bz + dz, B.AIR, 0, false);
+          }
+        }
+        p.teleport(bx - 0.5, by, bz + 0.5);
+        p.inventory.slots[0] = makeStack(I.WATER_BUCKET, 1);
+        p.inventory.selected = 0;
+        T.aim(bx + 0.5, by - 0.1, bz + 0.5);
+        return { bx, by, bz };
+      });
+      await ticks(page, 2);
+      await rclick(page);
+      const netherRules = await ev(page, async ({ bx, by, bz }) => {
+        const { B, I } = await import('/src/world/Ids.ts');
+        const g = window.__game, w = g.world, p = g.player;
+        const waterEvap = w.getBlock(bx, by, bz) === B.AIR && p.inventory.slots[0]?.id === I.BUCKET;
+        w.setBlock(bx + 2, by - 1, bz, B.NETHERRACK, 0, false);
+        w.setBlock(bx + 2, by, bz, B.BED, 0, false);
+        const bedHpBefore = p.health;
+        g.trySleep(bx + 2, by, bz, 0);
+        const bedExploded = w.getBlock(bx + 2, by, bz) === B.AIR && w.getBlock(bx + 2, by - 1, bz) === B.AIR;
+        p.health = bedHpBefore;
+        return { waterEvap, bedExploded };
+      }, nSpot);
+      check('Nether : l\'eau s\'évapore et le lit explose', netherRules.waterEvap && netherRules.bedExploded, JSON.stringify(netherRules));
+
+      // 1 minute de jeu (1200 ticks) en difficulté normale dans le Nether : 0 créature de la surface,
+      // apparition des créatures du Nether sous le plafond, et mesure du temps de tick avant/après plafond.
+      const surfaceInNether = await ev(page, () => {
+        const g = window.__game;
+        const surfaceKinds = new Set(['zombie', 'skeleton', 'creeper', 'spider', 'pig', 'cow', 'sheep', 'chicken', 'wolf']);
+        const netherKinds = new Set(['zombie_pigman', 'ghast', 'magma_cube']);
+        const before = g.entities.filter((e) => e.kind === 'mob' && surfaceKinds.has(e.mobKind)).map((e) => e.mobKind);
+        const prevDiff = g.difficulty;
+        g.difficulty = 2;
+
+        // Mesure avant apparition (0 monstre)
+        const t0Before = performance.now();
+        for (let i = 0; i < 60; i++) g.tick();
+        const msBefore = (performance.now() - t0Before) / 60;
+
+        // 1200 ticks de jeu dans le Nether
+        for (let i = 0; i < 1200; i++) g.tick();
+
+        // Mesure après avoir laissé les créatures apparaître jusqu'au plafond
+        const t0After = performance.now();
+        for (let i = 0; i < 60; i++) g.tick();
+        const msAfter = (performance.now() - t0After) / 60;
+
+        const after = g.entities.filter((e) => e.kind === 'mob' && surfaceKinds.has(e.mobKind));
+        const counts = { zombie_pigman: 0, ghast: 0, magma_cube: 0 };
+        for (const e of g.entities) {
+          if (e.kind === 'mob' && !e.dead && netherKinds.has(e.mobKind)) counts[e.mobKind]++;
+        }
+        const totalNether = counts.zombie_pigman + counts.ghast + counts.magma_cube;
+        g.difficulty = prevDiff;
+        return {
+          beforeCount: before.length,
+          count: after.length,
+          found: after.slice(0, 5).map((e) => e.mobKind),
+          counts,
+          totalNether,
+          msBefore: Number(msBefore.toFixed(3)),
+          msAfter: Number(msAfter.toFixed(3)),
+        };
+      });
+      check('Nether : aucune créature de la surface n\'apparaît en 1 minute de jeu', surfaceInNether.count === 0, JSON.stringify(surfaceInNether));
+      check('Nether : apparition naturelle des créatures du Nether (cochon-zombie majoritaire, plafond <= 40)',
+        surfaceInNether.totalNether > 0 && surfaceInNether.totalNether <= 40 &&
+        surfaceInNether.counts.zombie_pigman >= surfaceInNether.counts.magma_cube &&
+        surfaceInNether.counts.zombie_pigman > surfaceInNether.counts.ghast,
+        JSON.stringify(surfaceInNether));
+      console.log(`  bench Nether tick : avant=${surfaceInNether.msBefore} ms/tick (0 monstre), après=${surfaceInNether.msAfter} ms/tick (${surfaceInNether.totalNether} monstres)`);
+
+      // Recettes pépites d'or <-> lingot d'or
+      const nuggetRecipes = await ev(page, async () => {
+        const { I } = await import('/src/world/Ids.ts');
+        const { matchRecipe } = await import('/src/world/Recipes.ts');
+        const r1 = matchRecipe(Array(9).fill(I.GOLD_NUGGET), 3);
+        const r2 = matchRecipe([I.GOLD_INGOT], 1);
+        return {
+          toIngot: r1?.id === I.GOLD_INGOT && r1.count === 1,
+          toNuggets: r2?.id === I.GOLD_NUGGET && r2.count === 9,
+        };
+      });
+      check('Nether : recettes 9 pépites d\'or <-> 1 lingot d\'or', nuggetRecipes.toIngot && nuggetRecipes.toNuggets, JSON.stringify(nuggetRecipes));
+
+      // Arène dégagée dans le Nether (loin du portail) pour tester et capturer cochon-zombie, ghast, cube de magma
+      await ev(page, async () => {
+        const { B } = await import('/src/world/Ids.ts');
+        const g = window.__game, w = g.world, p = g.player;
+        for (const e of g.entities) if (e !== p) e.dead = true;
+        g.tick();
+        const ax = 44, ay = 64, az = 44;
+        for (let dx = -14; dx <= 14; dx++) {
+          for (let dz = -14; dz <= 14; dz++) {
+            w.setBlock(ax + dx, ay - 1, az + dz, B.NETHERRACK, 0, false);
+            for (let dy = 0; dy <= 12; dy++) w.setBlock(ax + dx, ay + dy, az + dz, B.AIR, 0, false);
+          }
+        }
+        // Éclaire l'arène à la pierre lumineuse pour des captures nettes
+        for (const [lx, ly, lz] of [[-3, -1, -3], [3, -1, -3], [-3, -1, -8], [3, -1, -8], [0, -1, -5], [0, 5, -5]]) {
+          w.setBlock(ax + lx, ay + ly, az + lz, B.GLOWSTONE, 0);
+        }
+        p.teleport(ax + 0.5, ay, az + 0.5);
+        p.gameMode = 'survival';
+        p.health = 20;
+        g._prevNetherDiff = g.difficulty;
+        g.difficulty = 2;
+      });
+
+      // 1) Cochon-zombie : neutre puis attaque en groupe après coup, butin chair + pépite d'or, capture
+      await chat(page, '/summon zombie_pigman');
+      await ticks(page, 2);
+      const pigmanNeutral = await ev(page, () => {
+        const g = window.__game, p = g.player;
+        const zp = g.entities.find((e) => e.kind === 'mob' && e.mobKind === 'zombie_pigman' && !e.dead);
+        if (!zp) return { ok: false };
+        zp.setPosition(p.x, p.y, p.z - 3.5);
+        zp.setRotation(Math.PI);
+        T.aim(zp.x, zp.y + 1.0, zp.z);
+        for (let i = 0; i < 20; i++) g.tick();
+        return { ok: true, targetNull: zp.target === null, anger: zp.angerTicks };
+      });
+      await ticks(page, 2);
+      await shot(page, '27d-zombie-pigman');
+      const pigmanGroup = await ev(page, async () => {
+        const { I } = await import('/src/world/Ids.ts');
+        const { ZombiePigman } = await import('/src/entity/Mobs.ts');
+        const g = window.__game, p = g.player;
+        const zp1 = g.entities.find((e) => e.kind === 'mob' && e.mobKind === 'zombie_pigman' && !e.dead);
+        const zp2 = new ZombiePigman();
+        zp2.setPosition(p.x + 4, p.y, p.z - 4);
+        g.spawn(zp2);
+        g.tick();
+        // Frappe zp1 : zp1 et zp2 doivent devenir hostiles envers le joueur
+        zp1.hurt(g, 2, 'attack', p);
+        const bothAngry = zp1.angerTicks > 0 && zp2.angerTicks > 0 && zp1.target === p && zp2.target === p;
+        zp1.dead = true;
+        zp2.dead = true;
+        g.tick();
+
+        // Vérifie les butins (chair putréfiée + pépite d'or sur plusieurs morts)
+        const rottenBefore = p.inventory.count(I.ROTTEN_FLESH);
+        const nuggetBefore = p.inventory.count(I.GOLD_NUGGET);
+        const drops = new Set();
+        for (let k = 0; k < 20; k++) {
+          const z = new ZombiePigman();
+          z.setPosition(p.x + 6, p.y, p.z);
+          g.spawn(z);
+          g.tick();
+          z.hurt(g, 100, 'attack', p);
+          for (let t = 0; t < 25; t++) g.tick();
+        }
+        for (const e of g.entities) if (e.kind === 'item' && !e.dead) drops.add(e.itemId);
+        return {
+          bothAngry,
+          hasRotten: drops.has(I.ROTTEN_FLESH) || p.inventory.count(I.ROTTEN_FLESH) > rottenBefore,
+          hasNugget: drops.has(I.GOLD_NUGGET) || p.inventory.count(I.GOLD_NUGGET) > nuggetBefore,
+        };
+      });
+      check('Nether : cochon-zombie neutre, colère de groupe et butins (chair + pépite d\'or)',
+        pigmanNeutral.ok && pigmanNeutral.targetNull && pigmanGroup.bothAngry && pigmanGroup.hasRotten && pigmanGroup.hasNugget,
+        JSON.stringify({ pigmanNeutral, pigmanGroup }));
+
+      // 2) Ghast : volant 4x4x4, boule de feu renvoyable qui tue le ghast, butin poudre à canon, capture
+      await ev(page, () => { window.__game.player.gameMode = 'creative'; });
+      await chat(page, '/summon ghast');
+      await ticks(page, 2);
+      const ghastSetup = await ev(page, () => {
+        const g = window.__game, p = g.player;
+        const gh = g.entities.find((e) => e.kind === 'mob' && e.mobKind === 'ghast' && !e.dead);
+        if (!gh) return { ok: false };
+        gh.setPosition(p.x, p.y + 2.5, p.z - 10);
+        gh.setRotation(Math.PI);
+        T.aim(gh.x, gh.y + 2.0, gh.z);
+        return { ok: true, width: gh.width, height: gh.height, flying: gh.flying };
+      });
+      await ticks(page, 2);
+      await shot(page, '27e-ghast');
+      await ev(page, () => {
+        const g = window.__game;
+        g.player.gameMode = 'survival';
+        g.player.health = 20;
+      });
+      const ghastCombat = await ev(page, async () => {
+        const { I } = await import('/src/world/Ids.ts');
+        const g = window.__game, p = g.player;
+        const gh = g.entities.find((e) => e.kind === 'mob' && e.mobKind === 'ghast' && !e.dead);
+        if (!gh) return { ok: false };
+        gh.setPosition(p.x, p.y + 2, p.z - 8);
+        let fb = null;
+        for (let i = 0; i < 120 && !fb; i++) {
+          p.health = 20;
+          g.tick();
+          fb = g.entities.find((e) => e.kind === 'fireball' && !e.dead) || null;
+        }
+        if (!fb) return { ok: false, fired: false, target: gh.target?.kind ?? null, sees: gh.seesTarget, gy: gh.y, gz: gh.z };
+        const vxBefore = fb.vx, vzBefore = fb.vz;
+        // Renvoyer la boule de feu en la frappant
+        const deflected = fb.hurt(g, 1, 'attack', p);
+        const reversed = fb.vz * vzBefore < 0 || fb.deflected;
+        for (let i = 0; i < 80 && !gh.dead; i++) { p.health = 20; g.tick(); }
+        for (let i = 0; i < 25; i++) { p.health = 20; g.tick(); }
+        const gunpowder = g.entities.some((e) => e.kind === 'item' && !e.dead && e.itemId === I.GUNPOWDER);
+        gh.dead = true;
+        g.tick();
+        return { ok: true, fired: true, deflected, reversed, ghastDead: gh.dead, gunpowder, vxBefore, vzBefore };
+      });
+      check('Nether : ghast volant 4×4, boule de feu renvoyée et poudre à canon',
+        ghastSetup.ok && ghastSetup.width === 4 && ghastSetup.height === 4 && ghastSetup.flying &&
+        ghastCombat.ok && ghastCombat.fired && ghastCombat.deflected && ghastCombat.reversed && ghastCombat.ghastDead && ghastCombat.gunpowder,
+        JSON.stringify({ ghastSetup, ghastCombat }));
+
+      // 3) Cube de magma : saute, immunisé à la lave, se divise en mourant, lâche crème de magma si taille > 1, capture
+      await ev(page, async () => {
+        const { B } = await import('/src/world/Ids.ts');
+        const g = window.__game, w = g.world, p = g.player;
+        for (const e of g.entities) if (e !== p) e.dead = true;
+        g.tick();
+        const ax = Math.floor(p.x), ay = 64, az = Math.floor(p.z);
+        for (let dx = -6; dx <= 6; dx++) {
+          for (let dz = -6; dz <= 6; dz++) {
+            w.setBlock(ax + dx, ay - 1, az + dz, B.NETHERRACK, 0, false);
+            for (let dy = 0; dy <= 5; dy++) w.setBlock(ax + dx, ay + dy, az + dz, B.AIR, 0, false);
+          }
+        }
+        p.teleport(ax + 0.5, ay, az + 0.5);
+        p.health = 20;
+      });
+      await chat(page, '/summon magma_cube');
+      await ticks(page, 2);
+      const magmaPos = await ev(page, () => {
+        const g = window.__game, p = g.player;
+        const mc = g.entities
+          .filter((e) => e.kind === 'mob' && e.mobKind === 'magma_cube' && !e.dead)
+          .sort((a, b) => a.distanceSqTo(p) - b.distanceSqTo(p))[0];
+        if (!mc) return { ok: false };
+        mc.setPosition(p.x, p.y, p.z - 3.5);
+        mc.setRotation(Math.PI);
+        T.aim(mc.x, mc.y + 0.5, mc.z);
+        return { ok: true, size: mc.size };
+      });
+      await ticks(page, 2);
+      await shot(page, '27f-magma-cube');
+      const magmaResult = await ev(page, async () => {
+        const { B, I } = await import('/src/world/Ids.ts');
+        const g = window.__game, w = g.world, p = g.player;
+        const mc = g.entities.find((e) => e.kind === 'mob' && e.mobKind === 'magma_cube' && !e.dead);
+        if (!mc) return { ok: false };
+        let jumped = false;
+        for (let i = 0; i < 40; i++) {
+          p.health = 20;
+          g.tick();
+          if (mc.vy > 0.1) jumped = true;
+        }
+        // Test d'immunité à la lave
+        p.health = 20;
+        const lx = Math.floor(mc.x), ly = Math.floor(mc.y), lz = Math.floor(mc.z);
+        w.setBlock(lx, ly, lz, B.LAVA, 0, false);
+        const hpBeforeLava = mc.health;
+        for (let i = 0; i < 40; i++) { p.health = 20; g.tick(); }
+        const lavaImmune = mc.health === hpBeforeLava;
+        w.setBlock(lx, ly, lz, B.AIR, 0, false);
+
+        // Division à la mort + crème de magma
+        const creamBefore = p.inventory.count(I.MAGMA_CREAM);
+        mc.hurt(g, 100, 'attack', p);
+        for (let i = 0; i < 25; i++) g.tick();
+        const children = g.entities.filter((e) => e.kind === 'mob' && e.mobKind === 'magma_cube' && !e.dead);
+        const hasCream = g.entities.some((e) => e.kind === 'item' && !e.dead && e.itemId === I.MAGMA_CREAM) || p.inventory.count(I.MAGMA_CREAM) > creamBefore;
+
+        // La plus petite taille (1) ne se divise pas et ne lâche pas de crème de magma
+        const { MagmaCube } = await import('/src/entity/Mobs.ts');
+        for (const e of g.entities) if (e !== p) e.dead = true;
+        g.tick();
+        const prevDiffSmall = g.difficulty;
+        g.spawner.timer = -100;
+        const creamSmallBefore = p.inventory.count(I.MAGMA_CREAM);
+        const small = new MagmaCube(1);
+        small.setPosition(p.x + 2, p.y, p.z);
+        g.spawn(small);
+        g.tick();
+        small.hurt(g, 100, 'attack', p);
+        for (let i = 0; i < 25; i++) g.tick();
+        const smallNoSplit = g.entities.filter((e) => e.kind === 'mob' && e.mobKind === 'magma_cube' && !e.dead).length === 0;
+        const smallNoCream = !g.entities.some((e) => e.kind === 'item' && !e.dead && e.itemId === I.MAGMA_CREAM) && p.inventory.count(I.MAGMA_CREAM) === creamSmallBefore;
+        g.difficulty = prevDiffSmall;
+        return { ok: true, jumped, lavaImmune, splitCount: children.length, hasCream, smallNoSplit, smallNoCream };
+      });
+      check('Nether : cube de magma (saut, immunité lave, division, crème de magma)',
+        magmaPos.ok && magmaResult.ok && magmaResult.jumped && magmaResult.lavaImmune &&
+        magmaResult.splitCount >= 2 && magmaResult.hasCream && magmaResult.smallNoSplit && magmaResult.smallNoCream,
+        JSON.stringify({ magmaPos, magmaResult }));
+
+      // Retour au portail du Nether avant le retour en surface
+      await ev(page, () => { window.__game.player.teleport(11, 65, 10.5); });
+
+      // Retour à la surface en passant par le portail (immédiat en créatif)
+      await ev(page, async () => {
+        const g = window.__game, p = g.player;
+        g.portalCooldown = 0;
+        p.gameMode = 'creative';
+        const { B } = await import('/src/world/Ids.ts');
+        const ix = Math.floor(p.x), iy = Math.floor(p.y), iz = Math.floor(p.z);
+        for (let dx = -12; dx <= 12; dx++) {
+          for (let dz = -12; dz <= 12; dz++) {
+            for (let dy = -2; dy <= 4; dy++) {
+              if (g.world.getBlock(ix + dx, iy + dy, iz + dz) === B.NETHER_PORTAL) {
+                p.teleport(ix + dx + 0.5, iy + dy, iz + dz + 0.5);
+                return;
+              }
+            }
+          }
+        }
+      });
+      await ticks(page, 5);
+      await page.waitForFunction(
+        "window.__game && window.__game.dimension === 'overworld' && window.__game.chunks.isReady(window.__game.player.x, window.__game.player.z, 2)",
+        { timeout: 30000 },
+      );
+      const back = await ev(page, () => ({ dim: window.__game.dimension, x: window.__game.player.x, z: window.__game.player.z }));
+      check('Nether : le retour ramène au portail de départ en surface',
+        back.dim === 'overworld' && Math.hypot(back.x - 81.5, back.z - 80.5) < 16,
+        JSON.stringify(back));
+
+      // Retour sur une zone vierge en monde plat : le nouveau portail est posé au vrai sol (y = 4, pas perché à 63)
+      await ev(page, async () => {
+        const g = window.__game;
+        g.dimension = 'nether';
+        await g.switchDimension('overworld', 120, 120);
+      });
+      const flatReturn = await ev(page, () => ({ dim: window.__game.dimension, x: window.__game.player.x, y: window.__game.player.y, z: window.__game.player.z }));
+      check('Nether : nouveau portail de retour en monde plat posé au sol (y = 4)',
+        flatReturn.dim === 'overworld' && Math.abs(flatReturn.y - 4) <= 0.5,
+        JSON.stringify(flatReturn));
+
+      // Aucune créature du Nether n'apparaît dans l'Overworld (600 ticks de nuit en difficulté normale)
+      const netherInOverworld = await ev(page, () => {
+        const g = window.__game;
+        const prevDiff = g.difficulty;
+        const prevTime = g.time;
+        g.portalCooldown = 1000;
+        g.difficulty = 2;
+        g.time = 18000;
+        for (let i = 0; i < 600; i++) g.tick();
+        const netherKinds = new Set(['zombie_pigman', 'ghast', 'magma_cube']);
+        const found = g.entities.filter((e) => e.kind === 'mob' && netherKinds.has(e.mobKind)).map((e) => e.mobKind);
+        g.difficulty = prevDiff;
+        g.time = prevTime;
+        return { count: found.length, found: found.slice(0, 5) };
+      });
+      check('Overworld : aucune créature du Nether n\'apparaît en surface', netherInOverworld.count === 0, JSON.stringify(netherInOverworld));
+    } finally {
+      await ev(page, async () => {
+        const g = window.__game;
+        if (g._prevNetherDiff !== undefined) { g.difficulty = g._prevNetherDiff; delete g._prevNetherDiff; }
+        g.player.gameMode = 'survival';
+        g.player.health = 20;
+        g.player.dead = false;
+        if (g.ui.modal) g.respawn?.();
+        g.portalCooldown = 200;
+        g.portalTicks = 0;
+        if (g.dimension !== 'overworld') await g.switchDimension('overworld', 10, 10);
+        g.player.teleport(64.5, 4, 60.5);
+        for (let i = 0; i < 120; i++) {
+          g.chunks.update(64, 60);
+          if (g.chunks.isReady(64, 60, 2)) break;
+          await new Promise((r) => setTimeout(r, 25));
+        }
+      }).catch(() => undefined);
+    }
+  });
+
   await section('pêche', async () => {
-    // un bassin de 11 × 7 creusé dans le sol plat, le joueur sur la berge
-    const pond = await ev(page, async () => {
-      const { B } = await import('/src/world/Ids.ts');
-      const g = window.__game, w = g.world;
-      const old = w.getBlock(64, 3, 60);
-      for (let x = 60; x <= 70; x++) for (let z = 57; z <= 63; z++) w.setBlock(x, 3, z, B.WATER, 0);
-      for (const e of g.entities) if (e.kind === 'mob' && Math.hypot(e.x - 62, e.z - 60) < 16) e.dead = true;
-      g.player.teleport(57.5, 4, 60.5);
-      return { old };
-    });
+    let pondOld = 0;
+    let rodId = 0;
+    let caught = 0;
+    try {
+      // un bassin de 11 × 7 creusé dans le sol plat, le joueur sur la berge
+      const pond = await ev(page, async () => {
+        const { B, I } = await import('/src/world/Ids.ts');
+        const g = window.__game, w = g.world;
+        const old = w.getBlock(64, 3, 60);
+        for (let x = 60; x <= 70; x++) for (let z = 57; z <= 63; z++) w.setBlock(x, 3, z, B.WATER, 0);
+        for (const e of g.entities) if (e.kind === 'mob' && Math.hypot(e.x - 62, e.z - 60) < 16) e.dead = true;
+        g.player.teleport(57.5, 4, 60.5);
+        return { old, rodId: I.FISHING_ROD };
+      });
+      pondOld = pond.old;
+      rodId = pond.rodId;
     await ticks(page, 5);
     await chat(page, '/give fishing_rod');
     const bob = () => ev(page, () => { const b = window.__game.entities.find((e) => e.kind === 'bobber' && !e.dead); return b ? { x: +b.x.toFixed(2), y: +b.y.toFixed(3), z: +b.z.toFixed(2), floating: b.floating, grounded: b.grounded, wait: b.waitTicks, bite: b.biteTicks, hooked: !!b.hooked } : null; });
@@ -627,6 +1832,35 @@ async function useOnGround(page, x, z) {
       !!b1 && b1.floating && !b1.grounded && b1.x >= 60 && b1.x < 71 && b1.z >= 57 && b1.z < 64 && b1.y > 3.6 && b1.y < 3.95 && r1.fishing && r1.damage === 0,
       `${JSON.stringify(b1)} ${JSON.stringify(r1)}`);
     check('pêche : l\'attente avant la touche est tirée entre 5 et 30 secondes', !!b1 && b1.wait > 50 && b1.wait < 600 && b1.bite === 0, JSON.stringify(b1));
+
+    // --- ligne en vue extérieure (F5) : part du bout réel de la canne, pas de l'épaule
+    await page.keyboard.press('F5');
+    await page.keyboard.press('F5');
+    await ev(page, () => { T.look(-Math.PI / 2 - 0.55, 0.15); });
+    await ticks(page, 2);
+    await sleep(100);
+    const f5Line = await ev(page, () => {
+      const g = window.__game;
+      const p = g.player;
+      const er = g.entityRenderer;
+      const a = er.lineAnchor;
+      const pv = er.visuals.get(p.id);
+      const oldShoulder = { x: p.x - Math.sin(p.yaw) * 0.7 + Math.cos(p.yaw) * 0.35, y: p.y + 1.35, z: p.z - Math.cos(p.yaw) * 0.7 - Math.sin(p.yaw) * 0.35 };
+      const diffOld = Math.hypot(a.x - oldShoulder.x, a.y - oldShoulder.y, a.z - oldShoulder.z);
+      const bobVis = Array.from(er.visuals.values()).find((v) => v.key === 'f');
+      const pts = bobVis ? bobVis.points : null;
+      const endX = pts ? bobVis.root.position.x + pts[pts.length - 3] : 0;
+      const endY = pts ? bobVis.root.position.y + pts[pts.length - 2] : 0;
+      const endZ = pts ? bobVis.root.position.z + pts[pts.length - 1] : 0;
+      const lineToAnchor = Math.hypot(endX - a.x, endY - a.y, endZ - a.z);
+      const handleW = pv && pv.heldGroup ? a.clone().set(-0.4, -0.4, 0).applyMatrix4(pv.heldGroup.matrixWorld) : null;
+      return { view: g.viewMode, hasHeld: !!(pv && pv.heldGroup), diffOld: +diffOld.toFixed(3), lineToAnchor: +lineToAnchor.toFixed(4), tipY: +a.y.toFixed(3), handleY: handleW ? +handleW.y.toFixed(3) : 0 };
+    });
+    await shot(page, '27b-peche-f5');
+    await page.keyboard.press('F5');
+    await ev(page, () => T.aim(64.5, 4.8, 60.5));
+    await ticks(page, 2);
+    check('pêche (F5) : la ligne part du bout de la canne (plus de l\'épaule)', f5Line.view === 2 && f5Line.hasHeld && f5Line.diffOld > 0.3 && f5Line.lineToAnchor < 0.01, JSON.stringify(f5Line));
 
     // --- tenir le bouton ne remonte pas la ligne ; un clic sans touche ne rapporte rien
     await ev(page, () => { window.__game.input.buttons[2] = true; });
@@ -658,7 +1892,7 @@ async function useOnGround(page, x, z) {
     const known = await drops();
     await rclick(page);
     const flying = (await drops()).filter((id) => before.allowed.includes(id));
-    const caught = flying.find((id) => !known.includes(id)) ?? flying[flying.length - 1];
+    caught = flying.find((id) => !known.includes(id)) ?? flying[flying.length - 1] ?? 0;
     const had = await ev(page, (id) => window.__game.player.inventory.count(id), caught ?? 0);
     await ticks(page, 40);
     // la prise vole vers le pêcheur ; si elle retombe un peu court, il fait les deux pas qui manquent
@@ -755,19 +1989,24 @@ async function useOnGround(page, x, z) {
     check('pêche : recette de la canne, cuisson du poisson, valeurs nutritives', rules.craft && rules.smelt && rules.food, JSON.stringify(rules));
     check('pêche : tirage des prises (poisson ≈ 85 %, objets sans valeur, trouvailles usées)', rules.fish && rules.junk && rules.treasure && rules.share > 0.8 && rules.share < 0.9, JSON.stringify(rules));
 
-    // --- remise en état : sol rebouché, canne et prises retirées
-    await ev(page, (old, rodId, caught) => {
-      const g = window.__game, w = g.world, inv = g.player.inventory;
-      for (let x = 60; x <= 70; x++) for (let z = 57; z <= 63; z++) w.setBlock(x, 3, z, old, 0);
-      for (let i = 0; i < inv.slots.length; i++) { const st = inv.slots[i]; if (st && st.id === rodId) inv.slots[i] = null; }
-      if (caught && caught !== rodId) inv.remove(caught, 1);
-      for (const e of g.entities) if ((e.kind === 'item' && Math.hypot(e.x - 62, e.z - 60) < 16) || e.kind === 'bobber') e.dead = true;
-    }, pond.old, await ev(page, () => T.id('fishing_rod')), caught ?? 0);
-    await ticks(page, 3);
+    } finally {
+      // --- remise en état : vue, entrées, sol rebouché, canne et prises retirées
+      await ev(page, (old, rodId, caught) => {
+        const g = window.__game, w = g.world, inv = g.player.inventory;
+        g.viewMode = 0;
+        g.input.buttons[2] = false;
+        if (old) for (let x = 60; x <= 70; x++) for (let z = 57; z <= 63; z++) w.setBlock(x, 3, z, old, 0);
+        if (rodId) for (let i = 0; i < inv.slots.length; i++) { const st = inv.slots[i]; if (st && st.id === rodId) inv.slots[i] = null; }
+        if (caught && caught !== rodId) inv.remove(caught, 1);
+        for (const e of g.entities) if ((e.kind === 'item' && Math.hypot(e.x - 62, e.z - 60) < 16) || e.kind === 'bobber') e.dead = true;
+      }, pondOld, rodId, caught).catch(() => undefined);
+      await ticks(page, 3).catch(() => undefined);
+    }
   });
 
   await section('lit et sommeil', async () => {
-    await chat(page, '/tp 60.5 4 60.5');
+    try {
+      await chat(page, '/tp 60.5 4 60.5');
     await ticks(page, 5);
     await chat(page, '/give bed');
     await ev(page, () => T.select('bed'));
@@ -799,24 +2038,41 @@ async function useOnGround(page, x, z) {
     });
     check('réveil au matin suivant', Math.floor(s.time / 24000) === day0 + 1 && s.time % 24000 < 1000, `time ${s.time}`);
     check('au réveil, le joueur est debout à côté du lit (pas dessus)', wakeInfo.onGround && wakeInfo.blockAtFeet === 0 && wakeInfo.dist >= 0.8 && wakeInfo.dist <= 2.5 && Math.abs(wakeInfo.y - 4) < 0.01, JSON.stringify(wakeInfo));
-    check('le lit devient le point de réapparition', await ev(page, () => !!window.__game.player.bed));
+      check('le lit devient le point de réapparition', await ev(page, () => !!window.__game.player.bed));
+    } finally {
+      await ev(page, () => {
+        const g = window.__game;
+        if (g.player.sleeping) { g.player.sleeping = false; g.player.sleepTicks = 0; }
+      }).catch(() => undefined);
+      await chat(page, '/time set day').catch(() => undefined);
+    }
   });
 
   await section('vues F5, F1, F3', async () => {
-    await ev(page, () => T.look(0.6, -0.2));
-    await page.keyboard.press('F5'); await sleep(300);
-    check('F5 : vue de dos', await ev(page, () => window.__game.viewMode === 1));
-    await shot(page, '28-f5-dos');
-    await page.keyboard.press('F5'); await sleep(300);
-    await shot(page, '29-f5-face');
-    await page.keyboard.press('F5'); await sleep(200);
-    check('F5 : retour à la première personne', await ev(page, () => window.__game.viewMode === 0));
-    await page.keyboard.press('F3'); await sleep(700);
-    await shot(page, '30-f3');
-    await page.keyboard.press('F3');
-    await page.keyboard.press('F1'); await sleep(300);
-    await shot(page, '31-f1');
-    await page.keyboard.press('F1');
+    try {
+      await ev(page, () => T.look(0.6, -0.2));
+      await page.keyboard.press('F5'); await sleep(300);
+      check('F5 : vue de dos', await ev(page, () => window.__game.viewMode === 1));
+      await shot(page, '28-f5-dos');
+      await page.keyboard.press('F5'); await sleep(300);
+      await shot(page, '29-f5-face');
+      await page.keyboard.press('F5'); await sleep(200);
+      check('F5 : retour à la première personne', await ev(page, () => window.__game.viewMode === 0));
+      await page.keyboard.press('F3'); await sleep(700);
+      await shot(page, '30-f3');
+      await page.keyboard.press('F3');
+      await page.keyboard.press('F1'); await sleep(300);
+      await shot(page, '31-f1');
+      await page.keyboard.press('F1');
+    } finally {
+      await ev(page, () => {
+        const g = window.__game;
+        g.viewMode = 0;
+        g.hudVisible = true;
+        g.ui.setHudVisible(true);
+        g.ui.setDebug(null);
+      }).catch(() => undefined);
+    }
   });
 
   await section('molette et touches 1-9', async () => {
@@ -843,8 +2099,40 @@ async function useOnGround(page, x, z) {
     });
     await chat(page, '/difficulty normal');
     await chat(page, '/summon spider');
+    await ev(page, async () => {
+      const M = await import('/src/entity/Mobs.ts');
+      const { I } = await import('/src/world/Ids.ts');
+      const { makeStack } = await import('/src/world/ItemStack.ts');
+      const { getChest } = await import('/src/game/BlockEntities.ts');
+      const g = window.__game;
+      g.player.inventory.slots[8] = makeStack(I.IRON_SWORD, 1, 5, { sharpness: 3, unbreaking: 2 });
+      const chest = getChest(g.world, 40, 4, 38);
+      chest.items[5] = makeStack(I.DIAMOND_PICKAXE, 1, 0, { efficiency: 4 });
+      g.world.markBlockEntityDirty(chest);
+      const { B } = await import('/src/world/Ids.ts');
+      g.world.setBlock(72, 4, 70, B.STONE_PRESSURE_PLATE, 0);
+      g.player.teleport(72.5, 4, 70.5);
+      g.tick();
+      g.player.teleport(70.5, 4, 70.5);
+      const w = M.createMob('wolf', g.rng);
+      w.tamed = true;
+      w.owner = 'player';
+      w.sitting = true;
+      w.maxHealth = 20;
+      w.health = 20;
+      w.setPosition(71.5, 4, 68.5);
+      g.spawn(w);
+      const mc = M.createMob('magma_cube', g.rng);
+      mc.setSize(4);
+      mc.setPosition(73.5, 4, 68.5);
+      g.spawn(mc);
+      const zp = M.createMob('zombie_pigman', g.rng);
+      zp.angerTicks = 500;
+      zp.setPosition(75.5, 4, 68.5);
+      g.spawn(zp);
+    });
     await ticks(page, 10);
-    marker = await ev(page, () => { const g = window.__game; return { block: T.block(70, 4, 67), inv: T.inv(), time: g.time, pos: [g.player.x, g.player.y, g.player.z], cows: T.mobs('cow').filter((e) => Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, near: T.mobs('cow').filter((e) => Math.hypot(e.x - 70.5, e.z - 67.5) < 6).length, babies: T.mobs('cow').filter((e) => e.baby && Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, spiders: T.mobs('spider').filter((e) => Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, hole: null, bed: g.player.bed, chest: T.block(40, 4, 38), health: g.player.health, mode: g.player.gameMode, advs: Array.from(g.player.advancements).sort() }; });
+    marker = await ev(page, () => { const g = window.__game; return { block: T.block(70, 4, 67), inv: T.inv(), ench: g.player.inventory.slots[8]?.enchants ?? null, time: g.time, pos: [g.player.x, g.player.y, g.player.z], cows: T.mobs('cow').filter((e) => Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, near: T.mobs('cow').filter((e) => Math.hypot(e.x - 70.5, e.z - 67.5) < 6).length, babies: T.mobs('cow').filter((e) => e.baby && Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, wolves: T.mobs('wolf').filter((e) => e.tamed && e.owner === 'player' && e.sitting).length, spiders: T.mobs('spider').filter((e) => Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, magmaSize: T.mobs('magma_cube').find((e) => e.size === 4)?.size ?? 0, pigmanAngry: (T.mobs('zombie_pigman').find((e) => e.angerTicks > 0)?.angerTicks ?? 0) > 0, hole: null, bed: g.player.bed, chest: T.block(40, 4, 38), health: g.player.health, mode: g.player.gameMode, advs: Array.from(g.player.advancements).sort() }; });
     if (holeAt) marker.hole = await ev(page, (h) => T.block(h.x, h.y, h.z), holeAt);
     console.log('  repères avant sauvegarde :', JSON.stringify(marker));
     await page.keyboard.press('Escape');
@@ -862,19 +2150,28 @@ async function useOnGround(page, x, z) {
     await page.waitForFunction('window.__game && window.__game.ready === true', { timeout: 120000 });
     await install(page);
     await ticks(page, 20);
-    const now = await ev(page, () => { const g = window.__game; return { block: T.block(70, 4, 67), inv: T.inv(), time: g.time, pos: [g.player.x, g.player.y, g.player.z], cows: T.mobs('cow').filter((e) => Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, near: T.mobs('cow').filter((e) => Math.hypot(e.x - 70.5, e.z - 67.5) < 6).length, babies: T.mobs('cow').filter((e) => e.baby && Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, spiders: T.mobs('spider').filter((e) => Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, bed: g.player.bed, chest: T.block(40, 4, 38), health: g.player.health, mode: g.player.gameMode, advs: Array.from(g.player.advancements).sort() }; });
+    const now = await ev(page, async () => {
+      const { getChest } = await import('/src/game/BlockEntities.ts');
+      const g = window.__game;
+      const chest = getChest(g.world, 40, 4, 38);
+      return { block: T.block(70, 4, 67), inv: T.inv(), ench: g.player.inventory.slots[8]?.enchants ?? null, chestEnch: chest.items[5]?.enchants ?? null, time: g.time, pos: [g.player.x, g.player.y, g.player.z], cows: T.mobs('cow').filter((e) => Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, near: T.mobs('cow').filter((e) => Math.hypot(e.x - 70.5, e.z - 67.5) < 6).length, babies: T.mobs('cow').filter((e) => e.baby && Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, wolves: T.mobs('wolf').filter((e) => e.tamed && e.owner === 'player' && e.sitting).length, spiders: T.mobs('spider').filter((e) => Math.hypot(e.x - g.player.x, e.z - g.player.z) < 48).length, magmaSize: T.mobs('magma_cube').find((e) => e.size === 4)?.size ?? 0, pigmanAngry: (T.mobs('zombie_pigman').find((e) => e.angerTicks > 0)?.angerTicks ?? 0) > 0, bed: g.player.bed, chest: T.block(40, 4, 38), health: g.player.health, mode: g.player.gameMode, advs: Array.from(g.player.advancements).sort() };
+    });
     if (holeAt) now.hole = await ev(page, (h) => T.block(h.x, h.y, h.z), holeAt);
     console.log('  repères après rechargement :', JSON.stringify(now));
     check('bloc posé persistant', now.block === marker.block && now.block !== 0);
     check('bloc cassé persistant', !holeAt || now.hole === 0);
     check('inventaire persistant', now.inv === marker.inv, now.inv);
+    check('enchantements persistants après sauvegarde et rechargement (inventaire et coffre)', JSON.stringify(now.ench) === JSON.stringify(marker.ench) && now.ench?.sharpness === 3 && now.ench?.unbreaking === 2 && now.chestEnch?.efficiency === 4, JSON.stringify({ ench: now.ench, chestEnch: now.chestEnch }));
     check('position persistante', Math.hypot(now.pos[0] - marker.pos[0], now.pos[2] - marker.pos[2]) < 0.2 && Math.abs(now.pos[1] - marker.pos[1]) < 0.2, JSON.stringify(now.pos));
     check('heure persistante', now.time >= marker.time && now.time < marker.time + 200, `${marker.time} → ${now.time}`);
     check('animaux persistants (rayon 48 blocs)', Math.abs(now.cows - marker.cows) <= 2 && now.near >= 1 && marker.near >= 1, `${marker.cows} → ${now.cows} ; vache invoquée à proximité : ${marker.near} → ${now.near}`);
     check('petit animal persistant après rechargement', marker.babies >= 1 && now.babies >= 1, `${marker.babies} → ${now.babies}`);
+    check('loup apprivoisé persistant avec maître et état assis', marker.wolves >= 1 && now.wolves >= 1, `${marker.wolves} → ${now.wolves}`);
     check('monstres persistants', now.spiders >= 1 && marker.spiders >= 1, `${marker.spiders} → ${now.spiders}`);
+    check('créatures du Nether persistantes (taille cube de magma + colère cochon-zombie)', marker.magmaSize === 4 && now.magmaSize === 4 && marker.pigmanAngry && now.pigmanAngry, JSON.stringify({ magma: [marker.magmaSize, now.magmaSize], pigmanAngry: [marker.pigmanAngry, now.pigmanAngry] }));
     check('lit et blocs à entité persistants', JSON.stringify(now.bed) === JSON.stringify(marker.bed) && now.chest === marker.chest);
-    check('progrès persistants (toute la chaîne jusqu\'au fer)', JSON.stringify(now.advs) === JSON.stringify(marker.advs) && now.advs.length === 10, JSON.stringify(now.advs));
+    check('plaque de pression enfoncée avant sauvegarde se relâche après rechargement', (await ev(page, () => window.__game.world.getMeta(72, 4, 70))) === 0);
+    check('progrès persistants (toute la chaîne jusqu\'au fer)', JSON.stringify(now.advs) === JSON.stringify(marker.advs) && now.advs.length >= 10 && now.advs.includes('iron'), JSON.stringify(now.advs));
     await shot(page, '33-recharge');
   });
 

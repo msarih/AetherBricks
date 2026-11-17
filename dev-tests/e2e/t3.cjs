@@ -278,7 +278,8 @@ const dbg = (page) => ev(page, () => { const d = window.__game.debugLines(); ret
 
   await section('torche et porte', async () => {
     if (!spot) return;
-    await ev(page, (s) => { window.__game.difficulty = 0; window.__game.player.teleport(s.x + 0.5, s.y, s.z + 0.5); }, spot);
+    try {
+      await ev(page, (s) => { window.__game.difficulty = 0; window.__game.player.teleport(s.x + 0.5, s.y, s.z + 0.5); }, spot);
     await chat(page, '/time set midnight');
     await chat(page, '/give torch 8'); await chat(page, '/give oak_door 2');
     await ticks(page, 20);
@@ -331,10 +332,17 @@ const dbg = (page) => ev(page, () => { const d = window.__game.debugLines(); ret
     await shot(page, '49-porte-ouverte');
     await page.keyboard.down('KeyD'); await ticks(page, 16); await page.keyboard.up('KeyD');
     const px = (await pos(page)).x;
-    console.log('  x après avoir marché vers la porte ouverte :', px.toFixed(2), '(porte en x =', spot.x + 1, ')');
+      console.log('  x après avoir marché vers la porte ouverte :', px.toFixed(2), '(porte en x =', spot.x + 1, ')');
+    } finally {
+      await ev(page, () => {
+        const g = window.__game;
+        if (!g.settings.smoothLighting) { g.settings.smoothLighting = true; g.applySettings(); }
+      }).catch(() => undefined);
+    }
   });
 
   await section('noyade et vue sous l\'eau', async () => {
+    try {
     const find = () => ev(page, () => { const g = window.__game, w = g.world, p = g.player; for (let r = 0; r < 150; r += 3) for (let a = 0; a < 40; a++) { const x = Math.floor(p.x + Math.cos(a / 40 * 6.283) * r), z = Math.floor(p.z + Math.sin(a / 40 * 6.283) * r); if (!w.isLoaded(x, z)) continue; let y = 70; while (y > 40 && w.getBlock(x, y, z) === 0) y--; if (w.getBlock(x, y, z) !== 18) continue; let d = 0; while (w.getBlock(x, y - d, z) === 18) d++; if (d >= 4) return { x, y, z, d }; } return null; });
     let w = await find();
     for (const [dx, dz] of [[220, 0], [0, 220], [-220, 0], [0, -220], [440, 440]]) {
@@ -357,10 +365,15 @@ const dbg = (page) => ev(page, () => { const d = window.__game.debugLines(); ret
     const b = await ev(page, () => ({ air: window.__game.player.air, head: window.__game.headInWater, y: window.__game.player.y }));
     await shot(page, '51-surface');
     await page.keyboard.up('Space');
-    check('Espace fait remonter à la surface, l\'air revient', b.head === false && b.y > a.y && b.air > a.air, JSON.stringify(b));
+      check('Espace fait remonter à la surface, l\'air revient', b.head === false && b.y > a.y && b.air > a.air, JSON.stringify(b));
+    } finally {
+      await page.keyboard.up('Space').catch(() => undefined);
+      await ev(page, () => { window.__game.player.health = 20; }).catch(() => undefined);
+    }
   });
 
   await section('pluie, nuit, orage (captures)', async () => {
+    try {
     await chat(page, '/gamemode creative');
     const sp = await ev(page, () => window.__game.spawnPoint);
     await chat(page, `/tp ${sp.x} 96 ${sp.z}`);
@@ -376,18 +389,32 @@ const dbg = (page) => ev(page, () => { const d = window.__game.debugLines(); ret
     await shot(page, '54-nuit');
     await chat(page, '/time set day'); await chat(page, '/weather thunder'); await ticks(page, 100);
     await shot(page, '55-orage');
-    check('orage actif', await ev(page, () => window.__game.raining && window.__game.thundering));
-    await chat(page, '/weather clear');
+      check('orage actif', await ev(page, () => window.__game.raining && window.__game.thundering));
+    } finally {
+      await chat(page, '/weather clear').catch(() => undefined);
+      await ev(page, () => { window.__game.player.flying = false; }).catch(() => undefined);
+    }
   });
 
   // repère pour la section « export et import » : un bloc posé à la main et l'état du joueur avant de quitter
   let marker = null;
   await section('quitter vers le titre, renommer', async () => {
     marker = await ev(page, async () => {
-      const { B } = await import('/src/world/Ids.ts');
+      const { B, I } = await import('/src/world/Ids.ts');
+      const M = await import('/src/entity/Mobs.ts');
+      const { makeStack } = await import('/src/world/ItemStack.ts');
       const g = window.__game, p = g.player;
       const m = { x: Math.floor(p.x) + 2, y: Math.min(120, Math.floor(p.y) + 3), z: Math.floor(p.z) };
       g.world.setBlock(m.x, m.y, m.z, B.DIAMOND_BLOCK);
+      p.inventory.slots[8] = makeStack(I.DIAMOND_PICKAXE, 1, 2, { fortune: 2 });
+      const wolf = M.createMob('wolf', g.rng);
+      wolf.tamed = true;
+      wolf.owner = 'player';
+      wolf.sitting = true;
+      wolf.maxHealth = 20;
+      wolf.health = 20;
+      wolf.setPosition(p.x + 1, p.y, p.z);
+      g.spawn(wolf);
       return { ...m, id: B.DIAMOND_BLOCK, px: p.x, py: p.y, pz: p.z, inv: T.inv() };
     });
     await page.keyboard.press('Escape');
@@ -471,6 +498,8 @@ const dbg = (page) => ev(page, () => { const d = window.__game.debugLines(); ret
       await shot(page, '56d-import');
 
       // comparaison octet pour octet de ce qui est enregistré
+      const fileVer = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(8, true);
+      check('export : format .aetherworld en version 2', fileVer === 2, `version=${fileVer}`);
       const cmp = await page.evaluate(async () => {
         const { Storage } = await import('/src/world/Storage.ts');
         const s = await Storage.open();
@@ -497,9 +526,9 @@ const dbg = (page) => ev(page, () => { const d = window.__game.debugLines(); ret
       await page.waitForFunction('window.__game && window.__game.ready === true', { timeout: 120000 });
       await install(page);
       await ticks(page, 5);
-      const got = await ev(page, (m) => { const p = window.__game.player; return { id: T.block(m.x, m.y, m.z), d: Math.hypot(p.x - m.px, p.y - m.py, p.z - m.pz), inv: T.inv(), seed: window.__game.world.seed }; }, marker);
-      check('import : le monde importé se joue (bloc posé, position et inventaire retrouvés)',
-        got.id === marker.id && got.d < 1.5 && got.inv === marker.inv && got.seed === 1337, `${JSON.stringify(got)} attendu ${JSON.stringify(marker)}`);
+      const got = await ev(page, (m) => { const p = window.__game.player; return { id: T.block(m.x, m.y, m.z), d: Math.hypot(p.x - m.px, p.y - m.py, p.z - m.pz), inv: T.inv(), ench: p.inventory.slots[8]?.enchants ?? null, seed: window.__game.world.seed, wolfOk: T.mobs('wolf').some((w) => w.tamed && w.owner === 'player' && w.sitting && w.health === 20) }; }, marker);
+      check('import : le monde importé se joue (bloc posé, position, inventaire, enchantement et loup apprivoisé retrouvés)',
+        got.id === marker.id && got.d < 1.5 && got.inv === marker.inv && got.ench?.fortune === 2 && got.seed === 1337 && got.wolfOk, `${JSON.stringify(got)} attendu ${JSON.stringify(marker)}`);
       await shot(page, '56e-monde-importe');
 
       // on retire le monde importé : l'original doit rester seul
@@ -522,6 +551,43 @@ const dbg = (page) => ev(page, () => { const d = window.__game.debugLines(); ret
       }
       const left = await names();
       check('import : supprimer le monde importé laisse l\'original', sel === 'Monde renommé (2)' && left.join('|') === 'Monde renommé', `sélection « ${sel} », reste ${JSON.stringify(left)}`);
+
+      // Compatibilité avec une archive .aetherworld v1 créée avant l'ajout du Nether
+      const v1Path = path.resolve(__dirname, 'fixtures/overworld-v1.aetherworld');
+      if (fs.existsSync(v1Path)) {
+        await upload(v1Path);
+        await page.waitForFunction(() => document.querySelectorAll('.mc-world-name').length >= 2, { timeout: 30000 });
+        await sleep(300);
+        await click(page, 'world-play');
+        await page.waitForFunction('window.__game && window.__game.ready === true', { timeout: 120000 });
+        await install(page);
+        await ticks(page, 10);
+        const v1Res = await ev(page, async () => {
+          const { B, I } = await import('/src/world/Ids.ts');
+          const g = window.__game, p = g.player;
+          return {
+            dim: g.dimension,
+            cobble: g.world.getBlock(25, 4, 25) === B.COBBLESTONE,
+            posOk: Math.hypot(p.x - 23.5, p.z - 25.5) < 0.5,
+            pickOk: p.inventory.slots[0]?.id === I.DIAMOND_PICKAXE && p.inventory.slots[0]?.enchants?.efficiency === 3,
+          };
+        });
+        check('import : archive .aetherworld v1 antérieure au Nether se charge sans perte',
+          v1Res.dim === 'overworld' && v1Res.cobble && v1Res.posOk && v1Res.pickOk,
+          JSON.stringify(v1Res));
+        await page.keyboard.press('Escape');
+        await page.waitForSelector('[data-mc="quit"]', { timeout: 5000 });
+        await click(page, 'quit');
+        await page.waitForSelector('[data-mc="title"]', { timeout: 30000 });
+        await click(page, 'play');
+        await page.waitForSelector('[data-mc="world-delete"]:not([disabled])', { timeout: 10000 });
+        await sleep(300);
+        await click(page, 'world-delete');
+        await page.waitForSelector('[data-mc="confirm"]', { timeout: 5000 });
+        await click(page, 'confirm');
+        await sleep(500);
+      }
+
       await click(page, 'back'); await sleep(300);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });

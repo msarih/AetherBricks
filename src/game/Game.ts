@@ -13,7 +13,7 @@
  */
 import * as THREE from 'three';
 import type { Sfx, SfxName } from '../audio/Sfx';
-import type { DamageCause, Entity, GameApi } from '../entity/Entity';
+import { Living, type DamageCause, type Entity, type GameApi } from '../entity/Entity';
 import type { MobKind } from '../entity/MobModels';
 import { HOSTILE_KINDS, Monster, PASSIVE_KINDS, createMob, hatchEgg } from '../entity/Mobs';
 import { FallingBlock, ItemEntity, Thrown, Tnt } from '../entity/Objects';
@@ -26,27 +26,33 @@ import type { Atlas } from '../render/Atlas';
 import { worldUniforms } from '../render/ChunkMaterials';
 import { ChunkRenderer } from '../render/ChunkRenderer';
 import { EntityRenderer } from '../render/EntityRenderer';
-import { HandRenderer, type HandState } from '../render/HandRenderer';
+import { HandRenderer, type HandState, type HeldMap } from '../render/HandRenderer';
 import { Particles, type ParticleKind, type ParticleWorld } from '../render/Particles';
 import { Selection } from '../render/Selection';
+import { SignRenderer } from '../render/SignRenderer';
 import { Sky, type SkyEnvironment } from '../render/Sky';
 import type { UiApi, UiGame } from '../ui/UiApi';
 import { BLOCKS, BLOCK_SHAPE, BLOCK_SOLID, FACING_DX, FACING_DZ, SHAPE, isLeaves, isLog } from '../world/Blocks';
 import type { Chunk } from '../world/Chunk';
 import { ChunkManager, type ChunkHooks } from '../world/ChunkManager';
-import { CHUNK_HEIGHT, DAY_TICKS, TICKS_PER_SECOND, chunkKey, type GameMode } from '../world/Constants';
-import { B } from '../world/Ids';
+import { CHUNK_HEIGHT, DAY_TICKS, TICKS_PER_SECOND, chunkKey, type Dimension, type GameMode } from '../world/Constants';
+import { B, I } from '../world/Ids';
 import { ITEMS, getItem, itemLabel } from '../world/Items';
 import { makeStack } from '../world/ItemStack';
+import { dialTile } from '../world/Tiles';
+import { findOrCreatePortal } from '../world/Portal';
 import { newRayHit, raycast } from '../world/Raycast';
-import { formatKeyCode } from '../world/Storage';
+import { formatKeyCode, netherStorageId } from '../world/Storage';
 import type { Settings, Storage, WorldInfo } from '../world/Storage';
-import { World, type BlockEntity, type WorldEffect, type WorldHost } from '../world/World';
+import { World, posKey, posKeyX, posKeyY, posKeyZ, type BlockEntity, type WorldEffect, type WorldHost } from '../world/World';
 import { BIOMES } from '../world/gen/Biomes';
 import { WorldGen } from '../world/gen/WorldGen';
-import { blockEntityItems, tickBlockEntities } from './BlockEntities';
+import { blockEntityItems, cleanSignLines, getSign, tickBlockEntities } from './BlockEntities';
 import { ADVANCEMENTS, advancementText } from './Advancements';
+import { Dial, bearing, clockTarget, dialNoise } from './Dials';
 import { explode as runExplosion } from './Explosion';
+import { MapStore, type MapData } from './Maps';
+import { STAT, type Stats } from './Stats';
 import { Interaction, particleTile, particleTint, type InteractionHost } from './Interaction';
 import { CreativeMenu, HOTBAR_SIZE, InventoryMenu, type Inventory, type Menu } from './Inventory';
 
@@ -94,6 +100,9 @@ const MOB_LABELS: Record<string, string> = {
   skeleton: 'un squelette',
   spider: 'une araignée',
   creeper: 'un creeper',
+  zombie_pigman: 'un cochon-zombie',
+  ghast: 'un ghast',
+  magma_cube: 'un cube de magma',
 };
 
 function lerp(a: number, b: number, t: number): number {
@@ -149,6 +158,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
   readonly fx: Particles;
   readonly sky: Sky;
   readonly entityRenderer: EntityRenderer;
+  private readonly signRenderer: SignRenderer;
   readonly hand: HandRenderer;
   readonly player: Player;
   readonly entities: Entity[] = [];
@@ -160,6 +170,18 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
   readonly info: WorldInfo;
 
   private level = 2;
+  /** Dimension courante ('overworld' ou 'nether'). */
+  dimension: Dimension = 'overworld';
+  private portalTicks = 0;
+  private portalCooldown = 0;
+  private dimensionSwitching = false;
+  /** Cartes du monde (numéro → pixels), sauvegardées avec l'état. */
+  readonly maps = new MapStore();
+  private readonly compassDial = new Dial();
+  private readonly clockDial = new Dial();
+  /** Hasard purement visuel (cadrans affolés dans le Nether), distinct de celui du jeu. */
+  private readonly dialRng = dialNoise(0x5eed);
+  private readonly heldMapState: HeldMap = { id: 0, colors: new Uint8Array(0), version: 0, markerX: 0, markerZ: 0, dirX: 0, dirZ: -1 };
   /** Âge du monde en ticks (l'heure du jour en découle). */
   time = 1000;
   raining = false;
@@ -194,6 +216,9 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     fishing: false,
     yawDelta: 0,
     pitchDelta: 0,
+    iconTile: -1,
+    map: null,
+    pitch: 0,
   };
 
   private menu: Menu | null = null;
@@ -229,6 +254,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
   private fpsTime = 0;
   private disposed = false;
   private itemNames: Map<string, number> | null = null;
+  private readonly pressedPlates = new Map<number, number>();
 
   constructor(o: GameOptions) {
     this.renderer = o.renderer;
@@ -249,10 +275,14 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     this.rng = world.rng;
     world.host = this.createWorldHost();
 
+    const st0 = info.state as Record<string, unknown> | null;
+    this.dimension = st0?.dimension === 'nether' ? 'nether' : 'overworld';
+
     this.chunkRenderer = new ChunkRenderer(this.scene, o.atlas.texture);
     this.chunks = new ChunkManager(world, this.chunkRenderer, {
       seed: info.seed,
       worldType: info.worldType,
+      dimension: this.dimension,
       storage: o.storage,
       worldId: info.id,
       savedKeys: o.savedKeys,
@@ -273,6 +303,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     this.fx = new Particles(this.scene, o.atlas, particleWorld);
     this.sky = new Sky(this.scene, skyEnv);
     this.entityRenderer = new EntityRenderer(this.scene, o.atlas);
+    this.signRenderer = new SignRenderer(this.scene, o.atlas);
     this.hand = new HandRenderer(o.atlas);
 
     // --- joueur ---
@@ -310,6 +341,12 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       this.thunderLevel = this.thundering ? 1 : 0;
       this.weatherTimer = Math.max(0, Math.floor(num(st.weatherTimer, 0)));
       this.level = Math.max(0, Math.min(3, Math.floor(num(st.difficulty, 2))));
+      this.maps.load(st.maps);
+      if (Array.isArray(st.pressedPlates)) {
+        for (const pk of st.pressedPlates) {
+          if (typeof pk === 'number' && Number.isFinite(pk)) this.pressedPlates.set(pk, this.world.age + 10);
+        }
+      }
     }
     if (this.weatherTimer <= 0) this.weatherTimer = 12000 + Math.floor(Math.random() * 168000);
     const savedPlayer = st?.player;
@@ -391,6 +428,9 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       weatherTimer: this.weatherTimer,
       difficulty: this.difficulty,
       spawn: [this.spawnPoint.x, this.spawnPoint.y, this.spawnPoint.z],
+      dimension: this.dimension,
+      pressedPlates: Array.from(this.pressedPlates.keys()),
+      maps: this.maps.save(),
     };
     info.gameMode = this.player.gameMode;
     info.lastPlayed = Date.now();
@@ -435,6 +475,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     this.fx.dispose();
     this.sky.dispose();
     this.entityRenderer.dispose();
+    this.signRenderer.dispose();
     this.hand.dispose();
     this.sfx.stopMusic();
     this.sfx.setRain(0);
@@ -456,6 +497,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
 
   /** Une image : chargement des chunks, ticks en retard, rendu. */
   frame(dt: number): void {
+    if (this.dimensionSwitching) return;
     const p = this.player;
     this.chunks.update(p.x, p.z);
 
@@ -646,6 +688,30 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
         continue;
       }
       e.tick(this);
+      if (e instanceof Living && !e.dead) {
+        const bx = Math.floor(e.x);
+        const by = Math.floor(e.y + 0.05);
+        const bz = Math.floor(e.z);
+        const v = w.getBlockAndMeta(bx, by, bz);
+        if ((v & 255) === B.STONE_PRESSURE_PLATE) {
+          const pk = posKey(bx, by, bz);
+          this.pressedPlates.set(pk, w.age + 10);
+          if (((v >> 8) & 1) === 0) w.setMeta(bx, by, bz, 1, true);
+        }
+      }
+    }
+    if (this.pressedPlates.size > 0) {
+      for (const [pk, until] of this.pressedPlates) {
+        if (w.age >= until) {
+          this.pressedPlates.delete(pk);
+          const bx = posKeyX(pk);
+          const by = posKeyY(pk);
+          const bz = posKeyZ(pk);
+          if (w.getBlock(bx, by, bz) === B.STONE_PRESSURE_PLATE && w.getMeta(bx, by, bz) !== 0) {
+            w.setMeta(bx, by, bz, 0, true);
+          }
+        }
+      }
     }
     let n = 0;
     for (let i = 0; i < list.length; i++) {
@@ -682,9 +748,13 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     this.spawner.tick(this);
     this.atlas.tick();
     this.time++;
+    p.addStat(STAT.PLAY_TIME);
     this.tickWeather();
+    this.tickPortal();
     this.tickSleep();
     this.tickAdvancements();
+    this.tickDials();
+    this.tickHeldMap();
 
     if (!p.alive && !this.deathShown) this.showDeath();
   }
@@ -717,6 +787,16 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
   }
 
   private tickWeather(): void {
+    const w = this.world;
+    if (this.dimension === 'nether') {
+      this.raining = false;
+      this.thundering = false;
+      this.rainLevel = 0;
+      this.thunderLevel = 0;
+      w.skyDarken = 11;
+      w.raining = false;
+      return;
+    }
     if (--this.weatherTimer <= 0) {
       if (this.raining) {
         this.raining = false;
@@ -734,10 +814,111 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       this.sky.lightning();
       this.sfx.play('thunder', { volume: 0.7 + this.rng() * 0.3, pitch: 0.8 + this.rng() * 0.4 });
     }
-    const w = this.world;
     const light = this.sky.dayFactor * (1 - (this.rainLevel * 5) / 16) * (1 - (this.thunderLevel * 5) / 16);
     w.skyDarken = Math.round((1 - light) * 11);
     w.raining = this.rainLevel > 0.2;
+  }
+
+  /** Boussole (vers le point d'apparition du monde) et horloge ; toutes deux s'affolent dans le Nether. */
+  private tickDials(): void {
+    const p = this.player;
+    const nether = this.dimension === 'nether';
+    const sp = this.spawnPoint;
+    this.compassDial.update(nether ? this.dialRng() : bearing(p.x, p.z, p.yaw, sp.x + 0.5, sp.z + 0.5));
+    this.clockDial.update(nether ? this.dialRng() : clockTarget(this.dayTime));
+  }
+
+  /** La carte tenue en main se dessine autour du joueur. */
+  private tickHeldMap(): void {
+    const map = this.heldMap();
+    if (map) this.maps.update(this.world, map, this.player.x, this.player.z, this.dimension);
+  }
+
+  /** Carte remplie tenue en main (son numéro est dans le champ « usure » de la pile), ou null. */
+  heldMap(): MapData | null {
+    const s = this.player.inventory.held;
+    return s && s.id === I.FILLED_MAP ? (this.maps.get(s.damage) ?? null) : null;
+  }
+
+  /** Tuile animée de l'objet (aiguille de la boussole, cadran de l'horloge), ou -1. */
+  dynamicTile(itemId: number): number {
+    if (itemId === I.COMPASS) return dialTile('compass', this.compassDial.frame);
+    if (itemId === I.CLOCK) return dialTile('clock', this.clockDial.frame);
+    return -1;
+  }
+
+  /** Clic droit avec une carte vierge : elle devient la carte de la zone où se tient le joueur. */
+  createMap(): void {
+    const p = this.player;
+    const map = this.maps.create(p.x, p.z, this.dimension);
+    const stack = makeStack(I.FILLED_MAP, 1, map.id);
+    const inv = p.inventory;
+    p.consumeHeld();
+    if (!inv.held) inv.slots[inv.selected] = stack;
+    else if (inv.add(stack) > 0) inv.drop(stack);
+    // premier tracé immédiat de la zone visible
+    for (let i = 0; i < 16; i++) this.maps.update(this.world, map, p.x, p.z, this.dimension);
+  }
+
+  private tickPortal(): void {
+    if (this.dimensionSwitching) return;
+    if (this.portalCooldown > 0) {
+      this.portalCooldown--;
+      this.portalTicks = 0;
+      return;
+    }
+    const p = this.player;
+    const inPortal = this.world.getBlock(Math.floor(p.x), Math.floor(p.y + 0.2), Math.floor(p.z)) === B.NETHER_PORTAL;
+    if (!inPortal) {
+      this.portalTicks = 0;
+      return;
+    }
+    this.portalTicks++;
+    if (p.creative || this.portalTicks >= 80) {
+      this.portalTicks = 0;
+      const target: Dimension = this.dimension === 'overworld' ? 'nether' : 'overworld';
+      void this.switchDimension(target, p.x, p.z);
+    }
+  }
+
+  /** Change de dimension ('overworld' ↔ 'nether') avec facteur d'échelle 1:8 et lien de portail. */
+  async switchDimension(target: Dimension, portalX: number, portalZ: number): Promise<void> {
+    if (this.dimensionSwitching || this.dimension === target) return;
+    this.dimensionSwitching = true;
+    try {
+      await this.chunks.saveAll();
+      const keys = this.storage
+        ? await this.storage.chunkKeys(target === 'nether' ? netherStorageId(this.info.id) : this.info.id)
+        : new Set<number>();
+      const p = this.player;
+      this.entities.length = 0;
+      this.entities.push(p);
+      this.homes.clear();
+      this.pressedPlates.clear();
+
+      this.dimension = target;
+      this.chunks.setDimension(target, keys);
+
+      const tx = target === 'nether' ? Math.floor(portalX / 8) : Math.floor(portalX * 8);
+      const tz = target === 'nether' ? Math.floor(portalZ / 8) : Math.floor(portalZ * 8);
+      p.teleport(tx + 0.5, 80, tz + 0.5);
+      p.vx = p.vy = p.vz = 0;
+
+      for (let i = 0; i < 120 && !this.disposed; i++) {
+        this.chunks.update(tx, tz);
+        if (this.chunks.isReady(tx, tz, 2)) break;
+        await new Promise((r) => setTimeout(r, 25));
+      }
+      const dest = findOrCreatePortal(this.world, tx, tz, target);
+      p.teleport(dest.x, dest.y, dest.z);
+      p.vx = p.vy = p.vz = 0;
+      p.fallDistance = 0;
+      this.portalCooldown = 100;
+      this.portalTicks = 0;
+      await this.save();
+    } finally {
+      this.dimensionSwitching = false;
+    }
   }
 
   private tickSleep(): void {
@@ -751,6 +932,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     if (++p.sleepTicks >= SLEEP_TICKS) {
       // le matin
       this.time += (DAY_TICKS - this.dayTime) % DAY_TICKS;
+      p.addStat(STAT.SLEEP);
       this.raining = false;
       this.thundering = false;
       this.weatherTimer = 12000 + Math.floor(this.rng() * 168000);
@@ -897,7 +1079,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
 
     // --- ciel et brouillard ---
     const viewBlocks = this.chunks.viewDistance * 16;
-    this.sky.update(dt, cam, this.dayTime + (dt > 0 ? alpha : 0), this.rainLevel, this.thunderLevel, viewBlocks);
+    this.sky.update(dt, cam, this.dayTime + (dt > 0 ? alpha : 0), this.rainLevel, this.thunderLevel, viewBlocks, this.dimension === 'nether');
     const u = worldUniforms;
     u.uSkyLight.value.copy(this.sky.skyLight);
     const inWater = pointInFluid(w, B.WATER, cam.position.x, cam.position.y, cam.position.z);
@@ -926,13 +1108,14 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       // la main est dessinée avec un champ de vision fixe de 70° : on ramène le bout de la canne à celui de la caméra
       const k = Math.tan((cam.fov * DEG) / 2) / Math.tan(35 * DEG);
       this.entityRenderer.lineAnchor.set(ROD_TIP_X * k, ROD_TIP_Y * k, -1).multiplyScalar(0.8).applyMatrix4(cam.matrixWorld);
-    }
-    else {
+    } else {
+      // Repli si l'avatar n'a pas encore de modèle d'objet tenu ; sinon sync() met à jour lineAnchor sur le bout réel de la canne
       const sy = Math.sin(yaw);
       const cy = Math.cos(yaw);
       this.entityRenderer.lineAnchor.set(ex - sy * 0.7 + cy * 0.35, lerp(p.py, p.y, alpha) + 1.35, ez - cy * 0.7 - sy * 0.35);
     }
     this.entityRenderer.sync(this.entities, alpha, this.clock);
+    this.signRenderer.sync(this.world);
     this.fx.update(dt, cam);
 
     const hand = this.hand;
@@ -947,6 +1130,20 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     hs.useProgress = p.useKind === 'eat' ? Math.min(1, p.useTicks / 32) : p.useKind === 'bow' ? Math.min(1, p.useTicks / 20) : 0;
     hs.yawDelta = yaw - this.lastYaw;
     hs.pitchDelta = pitch - this.lastPitch;
+    hs.pitch = pitch;
+    hs.iconTile = this.dynamicTile(p.heldItemId);
+    const heldMap = this.heldMap();
+    if (heldMap) {
+      const hm = this.heldMapState;
+      hm.id = heldMap.id;
+      hm.colors = heldMap.colors;
+      hm.version = heldMap.version;
+      hm.markerX = lerp(p.px, p.x, alpha) - heldMap.x0;
+      hm.markerZ = lerp(p.pz, p.z, alpha) - heldMap.z0;
+      hm.dirX = -Math.sin(yaw);
+      hm.dirZ = -Math.cos(yaw);
+      hs.map = hm;
+    } else hs.map = null;
     this.lastYaw = yaw;
     this.lastPitch = pitch;
     hand.update(dt, hs);
@@ -1039,6 +1236,23 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     this.input.unlock();
   }
 
+  /** Un panneau vient d'être posé : saisie de son texte (le jeu continue pendant ce temps, comme dans Minecraft). */
+  openSignEditor(x: number, y: number, z: number): void {
+    const sign = getSign(this.world, x, y, z);
+    this.interaction.reset();
+    this.ui.openSignEditor(x, y, z, sign.lines);
+    this.input.unlock();
+  }
+
+  setSignText(x: number, y: number, z: number, lines: string[]): void {
+    const w = this.world;
+    const id = w.getBlock(x, y, z);
+    if (id !== B.SIGN && id !== B.WALL_SIGN) return;
+    const sign = getSign(w, x, y, z);
+    sign.lines = cleanSignLines(lines);
+    w.markBlockEntityDirty(sign);
+  }
+
   // ------------------------------------------------------------------ InteractionHost
 
   get headInWater(): boolean {
@@ -1063,6 +1277,11 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
   }
 
   trySleep(x: number, y: number, z: number, meta: number): void {
+    if (this.dimension === 'nether') {
+      this.world.setBlock(x, y, z, B.AIR, 0);
+      runExplosion(this, x + 0.5, y + 0.5, z + 0.5, 5, true, null);
+      return;
+    }
     const p = this.player;
     // (x, z) de la moitié « tête » du lit
     const d = meta & 3;
@@ -1220,6 +1439,13 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       blockEntityRemoved: (be: BlockEntity) => {
         for (const s of blockEntityItems(be)) this.dropItem(be.x + 0.5, be.y + 0.3, be.z + 0.5, s.id, s.count, s.damage);
       },
+      pushEntities: (x0, y0, z0, x1, y1, z1, dx, dy, dz) => {
+        for (const e of this.entitiesInBox(x0, y0, z0, x1, y1, z1, null)) {
+          if (e instanceof Living && e.alive) {
+            e.setPosition(e.x + dx, e.y + dy, e.z + dz);
+          }
+        }
+      },
     };
   }
 
@@ -1332,6 +1558,10 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
   get fade(): number {
     const p = this.player;
     return p.sleeping ? Math.min(1, p.sleepTicks / SLEEP_TICKS) : 0;
+  }
+
+  get stats(): Stats {
+    return this.player.stats;
   }
 
   get guideGoal(): string {

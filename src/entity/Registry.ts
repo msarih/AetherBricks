@@ -3,7 +3,7 @@
  */
 import type { Entity, EntityData } from './Entity';
 import { loadMob } from './Mobs';
-import { Arrow, FallingBlock, ItemEntity, Tnt } from './Objects';
+import { Arrow, FallingBlock, Fireball, ItemEntity, Tnt } from './Objects';
 
 function isEntityData(d: unknown): d is EntityData {
   if (typeof d !== 'object' || d === null) return false;
@@ -24,6 +24,8 @@ export function createEntity(data: unknown): Entity | null {
         return Tnt.load(data);
       case 'arrow':
         return Arrow.load(data);
+      case 'fireball':
+        return Fireball.load(data);
       case 'mob':
         return loadMob(data);
       default:

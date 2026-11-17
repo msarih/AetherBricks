@@ -24,7 +24,20 @@
  */
 import { mulberry32 } from '../world/gen/Noise';
 
-export type MobKind = 'pig' | 'cow' | 'sheep' | 'chicken' | 'zombie' | 'skeleton' | 'creeper' | 'spider' | 'player';
+export type MobKind =
+  | 'pig'
+  | 'cow'
+  | 'sheep'
+  | 'chicken'
+  | 'wolf'
+  | 'zombie'
+  | 'skeleton'
+  | 'creeper'
+  | 'spider'
+  | 'zombie_pigman'
+  | 'ghast'
+  | 'magma_cube'
+  | 'player';
 
 export interface ModelBox {
   /** Partie animée à laquelle appartient la boîte (toutes les boîtes d'une partie tournent autour du même pivot). */
@@ -369,6 +382,156 @@ function buildZombie(): MobModel {
   s.stamp(faceRect(m.head, 'back'), marks, pal);
   paintOutfit(s, m, { skin, shirt: 0x10a3a6, shirtDark: 0x0b7d80, trousers: 0x4a3ca8, shoes: 0x5a5a62 }, true);
   return finish('zombie', s, m.all, 0.6, 1.8, 1.62);
+}
+
+function buildZombiePigman(): MobModel {
+  const m = bipedBoxes(4);
+  const s = new Skin(64, 32, 0x7193a);
+  const pink = 0xe8a09c;
+  const darkPink = 0xc87470;
+  const rot = 0x568236;
+  const rotDark = 0x385824;
+  const bone = 0xd8d0c0;
+  const loin = 0x6b472d;
+  const loinDark = 0x482f1d;
+  const pal: Palette = { P: pink, p: darkPink, G: rot, g: rotDark, B: bone, K: BLACK, W: WHITE, E: 0x241818 };
+  s.box(m.head, pink);
+  s.fill(faceRect(m.head, 'top'), rot);
+  s.band(m.head, 0, 2, rot);
+  s.stamp(faceRect(m.head, 'front'), [
+    'GGGGGGPP',
+    'GGGgPPPP',
+    'GGGGPPPP',
+    'GWEPKEWP',
+    'PPppPPPP',
+    'PPpKKpPP',
+    'PPPppPPP',
+    'PPgPPgPP',
+  ], pal);
+  const side = ['GGGGGGGG', '..GGg...', '...BB...', '........', '..G.....', '....gg..', '........', '........'];
+  s.stamp(faceRect(m.head, 'right'), side, pal);
+  s.stamp(faceRect(m.head, 'left'), flip(side), pal);
+  s.stamp(faceRect(m.head, 'back'), side, pal);
+
+  // Torse : chair rose, lambeaux verts de zombie et pagne brun
+  s.box(m.body, pink);
+  s.stamp(faceRect(m.body, 'front'), [
+    '..GG..PP',
+    '.gGGg.BB',
+    '..GG..BB',
+    '..g.....',
+    '....PP..',
+    '........',
+  ], pal, 0, 0);
+  s.band(m.body, 8, 4, loin);
+  s.band(m.body, 8, 1, loinDark);
+  // Bras & jambes
+  s.box(m.armR, pink);
+  s.fill(faceRect(m.armR, 'top'), rot);
+  s.band(m.armR, 0, 4, rot);
+  s.band(m.armR, 4, 1, rotDark);
+  s.box(m.legR, pink);
+  s.band(m.legR, 0, 3, loin);
+  s.band(m.legR, 8, 4, rot);
+  return finish('zombie_pigman', s, m.all, 0.6, 1.8, 1.62);
+}
+
+function buildGhast(): MobModel {
+  const boxes: ModelBox[] = [];
+  const body: ModelBox = {
+    part: 'body',
+    pivot: [0, 32, 0],
+    from: [-32, 6, -32],
+    size: [64, 58, 64],
+    uv: [0, 0],
+  };
+  boxes.push(body);
+  // 9 tentacules suspendus sous le corps
+  const tentCoords: Array<[number, number, number]> = [
+    [-20, -10, -18], [0, -12, -18], [20, -9, -18],
+    [-20, -11, 0],   [0, -13, 0],   [20, -10, 0],
+    [-20, -9, 18],   [0, -11, 18],  [20, -12, 18],
+  ];
+  for (let i = 0; i < tentCoords.length; i++) {
+    const [tx, ty, tz] = tentCoords[i];
+    boxes.push({
+      part: `tent${i}`,
+      pivot: [tx, 6, tz],
+      from: [tx - 2, ty, tz - 2],
+      size: [4, 6 - ty, 4],
+      uv: [0, 124],
+    });
+  }
+
+  const s = new Skin(256, 160, 0x94a57);
+  const bodyColor = 0xf4f4f4;
+  const shadeGray = 0xd2d2d2;
+  const darkGray = 0x505050;
+  const tear = 0x9aa2b0;
+  const mouth = 0x3a1414;
+  s.box(body, bodyColor, 0.02);
+  s.fill(faceRect(body, 'bottom'), shadeGray, 0.02);
+  // Visage (64x58) : grands yeux fermés/plissés et bouche ouverte
+  const front = faceRect(body, 'front');
+  s.fill(front, darkGray, 0.01, 12, 18, 12, 4);
+  s.fill(front, darkGray, 0.01, 40, 18, 12, 4);
+  s.fill(front, tear, 0.01, 14, 22, 4, 8);
+  s.fill(front, tear, 0.01, 46, 22, 4, 8);
+  s.fill(front, mouth, 0.01, 24, 34, 16, 12);
+  s.fill(front, 0x8a1c1c, 0.01, 27, 37, 10, 6);
+  for (let i = 1; i <= 9; i++) s.box(boxes[i], 0xe6e6e6, 0.02);
+  return finish('ghast', s, boxes, 4.0, 4.0, 2.2);
+}
+
+function buildMagmaCube(): MobModel {
+  const body: ModelBox = {
+    part: 'body',
+    pivot: [0, 8, 0],
+    from: [-8, 0, -8],
+    size: [16, 16, 16],
+    uv: [0, 0],
+  };
+  const s = new Skin(64, 32, 0x4a19e);
+  const base = 0x2e0908;
+  const pal: Palette = {
+    D: base,
+    R: 0x6b1408,
+    O: 0xc8400c,
+    Y: 0xffb824,
+    W: 0xfff08a,
+  };
+  s.box(body, base, 0.03);
+  const cracks = [
+    'DDDDDDDDDDDDDDDD',
+    'DRRDDDDDDDDDRRDD',
+    'DDDDDDDDDDDDDDDD',
+    'DDORRRRRRRRRRODD',
+    'DDDDDDDDDDDDDDDD',
+    'DRRDDDDDDRRRDDDD',
+    'DDDDDDDDDDDDDDDD',
+    'DDDOORRRRRROODDD',
+    'DDDDDDDDDDDDDDDD',
+    'DDDDDRRRRDDDDDDD',
+    'DDDDDDDDDDDDDDDD',
+    'DORRRRRRRRRRRROD',
+    'DDDDDDDDDDDDDDDD',
+    'DDDRRDDDDDDRRDDD',
+    'DDDDDDDDDDDDDDDD',
+    'DDDDDDDDDDDDDDDD',
+  ];
+  for (const f of AROUND) s.stamp(faceRect(body, f), cracks, pal);
+  // Yeux jaunes/orangés brillants sur la face avant
+  s.stamp(faceRect(body, 'front'), [
+    '................',
+    '................',
+    '................',
+    '................',
+    '..OYYO....OYYO..',
+    '..OWYO....OYWO..',
+    '..OYYO....OYYO..',
+    '................',
+  ], pal);
+  return finish('magma_cube', s, [body], 0.52, 0.52, 0.3);
 }
 
 function buildSkeleton(): MobModel {
@@ -772,6 +935,98 @@ const DEFAULT_WOOL = 0xffffff;
 
 const modelCache = new Map<MobKind, MobModel>();
 const sheepCache = new Map<string, MobModel>();
+const wolfCache = new Map<string, MobModel>();
+
+// ---------------------------------------------------------------------------------------------
+// Loup (64×64) : sauvage, en colère ou apprivoisé (collier coloré)
+// ---------------------------------------------------------------------------------------------
+
+function buildWolf(tamed: boolean, angry: boolean, collarColor: number): MobModel {
+  const headPivot: Vec3 = [0, 10, 7];
+  const bodyPivot: Vec3 = [0, 10, 0];
+  const head = box('head', headPivot, [-3, 7, 5], [6, 6, 4], [0, 0]);
+  const snout = box('head', headPivot, [-1.5, 7, 9], [3, 3, 4], [20, 0]);
+  const earR = box('head', headPivot, [-3, 13, 6], [2, 2, 1], [34, 0]);
+  const earL = box('head', headPivot, [1, 13, 6], [2, 2, 1], [34, 0]);
+  const mane = box('body', bodyPivot, [-4, 6.5, 0], [8, 7, 6], [0, 10]);
+  const body = box('body', bodyPivot, [-3, 7, -7], [6, 6, 9], [0, 23]);
+  const tail = box('tail', [0, 11, -7], [-1, 5, -9], [2, 8, 2], [30, 23]);
+  const leg0 = box('leg0', [-1.5, 8, 4], [-2.5, 0, 3], [2, 8, 2], [0, 38]);
+  const leg1 = box('leg1', [1.5, 8, 4], [0.5, 0, 3], [2, 8, 2], [0, 38]);
+  const leg2 = box('leg2', [-1.5, 8, -5], [-2.5, 0, -6], [2, 8, 2], [0, 38]);
+  const leg3 = box('leg3', [1.5, 8, -5], [0.5, 0, -6], [2, 8, 2], [0, 38]);
+
+  const s = new Skin(64, 64, 0x701f);
+  const fur = angry ? 0xa3a3a3 : tamed ? 0xd2d2d2 : 0xc0c0c0;
+  const dark = angry ? 0x6c6c6c : 0x868686;
+  const light = 0xeaeaea;
+  const pal: Palette = {
+    F: fur,
+    d: dark,
+    L: light,
+    W: WHITE,
+    K: BLACK,
+    R: 0xb81d1d,
+    n: 0x222222,
+  };
+  s.box(head, fur);
+  s.fill(faceRect(head, 'top'), dark);
+  s.stamp(faceRect(head, 'front'), angry ? [
+    'ddFFdd',
+    'dFFFFd',
+    'FWKKWF',
+    'FRKKRF',
+    'FFFFFF',
+    'FLLLLF',
+  ] : tamed ? [
+    'FFFFFF',
+    'FFFFFF',
+    'FWKKWF',
+    'FFFFFF',
+    'FFFFFF',
+    'FLLLLF',
+  ] : [
+    'ddFFdd',
+    'FFFFFF',
+    'FWKKWF',
+    'FFFFFF',
+    'FFFFFF',
+    'FLLLLF',
+  ], pal);
+
+  s.box(snout, light);
+  s.fill(faceRect(snout, 'top'), fur);
+  s.stamp(faceRect(snout, 'front'), ['nnn', 'LnL', 'LLL'], pal);
+  s.box(earR, fur);
+  s.fill(faceRect(earR, 'front'), dark);
+  s.box(mane, fur);
+  s.fill(faceRect(mane, 'top'), dark);
+  if (tamed) {
+    // Collier coloré sur le haut du cou (devant de la crinière)
+    s.band(mane, 0, 2, collarColor & 0xffffff);
+  }
+  s.box(body, fur);
+  s.fill(faceRect(body, 'top'), dark);
+  s.fill(faceRect(body, 'bottom'), light);
+  s.box(tail, fur);
+  s.band(tail, 6, 2, light);
+  s.box(leg0, fur);
+  s.band(leg0, 6, 2, light);
+  s.fill(faceRect(leg0, 'bottom'), dark);
+
+  return finish('wolf', s, [head, snout, earR, earL, mane, body, tail, leg0, leg1, leg2, leg3], 0.6, 0.85, 0.68);
+}
+
+/** Variante du loup (apprivoisé, en colère, couleur du collier). */
+export function getWolfModel(tamed: boolean, angry: boolean, collarColor = 0xd8342a): MobModel {
+  const key = `${tamed ? 1 : 0}:${angry ? 1 : 0}:${collarColor & 0xffffff}`;
+  let model = wolfCache.get(key);
+  if (!model) {
+    model = buildWolf(tamed, angry, collarColor);
+    wolfCache.set(key, model);
+  }
+  return model;
+}
 
 /** Modèle d'une créature, construit au premier appel puis mis en cache (ne pas modifier l'objet renvoyé). */
 export function getMobModel(kind: MobKind): MobModel {
@@ -790,6 +1045,9 @@ export function getMobModel(kind: MobKind): MobModel {
       case 'chicken':
         model = buildChicken();
         break;
+      case 'wolf':
+        model = getWolfModel(false, false);
+        break;
       case 'zombie':
         model = buildZombie();
         break;
@@ -801,6 +1059,15 @@ export function getMobModel(kind: MobKind): MobModel {
         break;
       case 'spider':
         model = buildSpider();
+        break;
+      case 'zombie_pigman':
+        model = buildZombiePigman();
+        break;
+      case 'ghast':
+        model = buildGhast();
+        break;
+      case 'magma_cube':
+        model = buildMagmaCube();
         break;
       default:
         model = buildPlayer();

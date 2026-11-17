@@ -6,11 +6,11 @@
  * - un chunk n'est maillé que lorsque ses 8 voisins ont leurs données.
  */
 import { Chunk } from './Chunk';
-import { CHUNK_AREA, CHUNK_HEIGHT, chunkKey, type WorldType } from './Constants';
+import { CHUNK_AREA, CHUNK_HEIGHT, chunkKey, type Dimension, type WorldType } from './Constants';
 import { computeHeightmap } from './gen/WorldGen';
 import type { GenRequest, GenResponse } from './gen/gen.worker';
 import type { MeshRequest, MeshResult, PassData } from './mesh/MeshTypes';
-import type { SavedChunk, Storage } from './Storage';
+import { netherStorageId, type SavedChunk, type Storage } from './Storage';
 import type { BlockEntity, World } from './World';
 
 /** Destinataire des maillages (l'afficheur des chunks). */
@@ -56,8 +56,11 @@ export class ChunkManager {
   private readonly world: World;
   private readonly sink: ChunkSink;
   private readonly storage: Storage | null;
-  private readonly worldId: string;
-  private readonly savedKeys: Set<number>;
+  private readonly baseWorldId: string;
+  private readonly seed: number;
+  private readonly worldType: WorldType;
+  private worldId: string;
+  private savedKeys: Set<number>;
 
   private readonly genWorkers: WorkerSlot[] = [];
   private readonly meshWorkers: WorkerSlot[] = [];
@@ -74,6 +77,7 @@ export class ChunkManager {
   private centerZ = Number.NaN;
   private loadScanDone = false;
   private frame = 0;
+  private epoch = 0;
 
   /** Chunks en attente d'écriture, puis en cours d'écriture : relus d'ici s'ils reviennent avant la fin. */
   private readonly saveQueue = new Map<number, SavedChunk>();
@@ -86,12 +90,16 @@ export class ChunkManager {
   constructor(
     world: World,
     sink: ChunkSink,
-    options: { seed: number; worldType: WorldType; storage: Storage | null; worldId: string; savedKeys: Set<number>; viewDistance: number },
+    options: { seed: number; worldType: WorldType; dimension?: Dimension; storage: Storage | null; worldId: string; savedKeys: Set<number>; viewDistance: number },
   ) {
     this.world = world;
     this.sink = sink;
     this.storage = options.storage;
-    this.worldId = options.worldId;
+    this.baseWorldId = options.worldId;
+    this.seed = options.seed;
+    this.worldType = options.worldType;
+    const dim = options.dimension ?? 'overworld';
+    this.worldId = dim === 'nether' ? netherStorageId(options.worldId) : options.worldId;
     this.savedKeys = options.savedKeys;
     this.viewDistance = options.viewDistance;
 
@@ -102,10 +110,12 @@ export class ChunkManager {
       const worker = new Worker(new URL('./gen/gen.worker.ts', import.meta.url), { type: 'module' });
       const slot: WorkerSlot = { worker, busy: 0 };
       worker.onmessage = (e: MessageEvent) => {
-        slot.busy--;
-        this.onGenerated(e.data as GenResponse);
+        const res = e.data as GenResponse;
+        if (res.epoch !== undefined && res.epoch !== this.epoch) return;
+        slot.busy = Math.max(0, slot.busy - 1);
+        this.onGenerated(res);
       };
-      const init: GenRequest = { type: 'init', seed: options.seed, worldType: options.worldType };
+      const init: GenRequest = { type: 'init', seed: options.seed, worldType: options.worldType, dimension: dim };
       worker.postMessage(init);
       this.genWorkers.push(slot);
     }
@@ -176,6 +186,29 @@ export class ChunkManager {
       }
     }
     return done / total;
+  }
+
+  /** Bascule le gestionnaire vers une autre dimension en réinitialisant les workers et les chunks en mémoire. */
+  setDimension(dim: Dimension, savedKeys: Set<number>): void {
+    this.epoch++;
+    this.worldId = dim === 'nether' ? netherStorageId(this.baseWorldId) : this.baseWorldId;
+    this.savedKeys = savedKeys;
+    this.loading.clear();
+    this.storageLoads = 0;
+    for (const slot of this.genWorkers) slot.busy = 0;
+    this.saveQueue.clear();
+    this.saveWriting.clear();
+    for (const k of this.world.chunks.keys()) {
+      const cx = Math.floor(k / 0x10000) - 0x8000;
+      const cz = (k % 0x10000) - 0x8000;
+      this.sink.removeChunk(cx, cz);
+    }
+    this.world.chunks.clear();
+    this.world.dirty.clear();
+    this.world.blockEntities.clear();
+    this.loadScanDone = false;
+    const init: GenRequest = { type: 'init', seed: this.seed, worldType: this.worldType, dimension: dim };
+    for (const slot of this.genWorkers) slot.worker.postMessage(init);
   }
 
   /** Force le remaillage de tous les chunks (changement de réglage graphique). */
@@ -250,11 +283,12 @@ export class ChunkManager {
   private generate(slot: WorkerSlot, cx: number, cz: number, key: number): void {
     this.loading.add(key);
     slot.busy++;
-    const req: GenRequest = { type: 'gen', cx, cz };
+    const req: GenRequest = { type: 'gen', cx, cz, epoch: this.epoch };
     slot.worker.postMessage(req);
   }
 
   private loadFromStorage(cx: number, cz: number, key: number): void {
+    const ep = this.epoch;
     this.loading.add(key);
     this.storageLoads++;
     this.storage!
@@ -264,7 +298,8 @@ export class ChunkManager {
         return undefined;
       })
       .then((saved) => {
-        this.storageLoads--;
+        if (ep !== this.epoch) return;
+        this.storageLoads = Math.max(0, this.storageLoads - 1);
         this.loadScanDone = false;
         if (this.disposed || !this.loading.has(key)) return;
         if (saved) {

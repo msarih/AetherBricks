@@ -7,7 +7,7 @@ import { fluidHeight } from '../world/BlockModels';
 import { FISHING_BITE_MAX, FISHING_BITE_MIN, FISHING_WAIT_MAX, FISHING_WAIT_MIN, rollFishingCatch } from '../world/Fishing';
 import { B, I } from '../world/Ids';
 import { maxStack } from '../world/Items';
-import { canMerge, type ItemStack } from '../world/ItemStack';
+import { canMerge, makeStack, sanitizeEnchants, type ItemStack } from '../world/ItemStack';
 import { newRayHit, rayBoxDistance, raycast } from '../world/Raycast';
 import { Entity, Living, num, type DamageCause, type EntityData, type GameApi, type PlayerLike } from './Entity';
 import type { EntityKind } from './EntityView';
@@ -108,6 +108,7 @@ export class ItemEntity extends Entity {
     d.id = this.stack.id;
     d.count = this.stack.count;
     d.damage = this.stack.damage;
+    if (this.stack.enchants && Object.keys(this.stack.enchants).length > 0) d.enchants = { ...this.stack.enchants };
     return d;
   }
 
@@ -115,7 +116,8 @@ export class ItemEntity extends Entity {
     const id = num(d.id, 0);
     const count = num(d.count, 0);
     if (id <= 0 || count <= 0) return null;
-    const e = new ItemEntity({ id, count, damage: num(d.damage, 0) });
+    const stack = makeStack(id, count, num(d.damage, 0), sanitizeEnchants(d.enchants));
+    const e = new ItemEntity(stack);
     e.loadBase(d);
     return e;
   }
@@ -255,6 +257,8 @@ export class Arrow extends Entity {
   owner: Entity | null = null;
   /** Dégâts par unité de vitesse (2 par défaut : 6 à pleine puissance). */
   damage = 2;
+  /** Niveau de l'enchantement Puissance sur l'arc (0 = aucun). */
+  powerLevel = 0;
   critical = false;
   /** Tirée par le joueur : il peut la ramasser. */
   fromPlayer = false;
@@ -329,6 +333,7 @@ export class Arrow extends Entity {
       const target = sweepEntities(game, this, this.owner, this.x, oy, this.z, dx, dy, dz, max);
       if (target) {
         let amount = Math.ceil(speed * this.damage);
+        if (this.powerLevel > 0) amount = Math.ceil(amount * (1 + 0.25 * (this.powerLevel + 1)));
         if (this.critical) amount += Math.floor(game.rng() * (amount / 2 + 2));
         if (target.hurt(game, amount, 'arrow', this.owner)) {
           if (this.fireTicks > 0) target.fireTicks = Math.max(target.fireTicks, 100);
@@ -653,7 +658,9 @@ export class FishingBobber extends Entity {
       return 5;
     }
     if (this.biteTicks > 0) {
-      const item = new ItemEntity(rollFishingCatch(game.rng));
+      const caught = rollFishingCatch(game.rng);
+      if (caught.id === I.RAW_FISH) p.addStat('fish_caught');
+      const item = new ItemEntity(caught);
       item.setPosition(this.x, this.y + 0.1, this.z);
       item.vx = dx * 0.1;
       item.vy = dy * 0.1 + lift;
@@ -663,6 +670,122 @@ export class FishingBobber extends Entity {
       return 1;
     }
     return this.grounded ? 2 : 0;
+  }
+}
+
+/** Boule de feu tirée par un ghast : vole en ligne droite, explose à l'impact et peut être renvoyée en la frappant. */
+export class Fireball extends Entity {
+  readonly kind: EntityKind = 'fireball';
+  owner: Entity | null = null;
+  deflected = false;
+
+  constructor() {
+    super();
+    this.width = 1;
+    this.height = 1;
+  }
+
+  override get pickable(): boolean {
+    return !this.dead;
+  }
+
+  shoot(x: number, y: number, z: number, dx: number, dy: number, dz: number, speed = 0.55): void {
+    const len = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
+    this.vx = (dx / len) * speed;
+    this.vy = (dy / len) * speed;
+    this.vz = (dz / len) * speed;
+    this.setPosition(x, y, z);
+    this.yaw = this.headYaw = Math.atan2(-this.vx, -this.vz);
+    this.headPitch = Math.atan2(this.vy, Math.sqrt(this.vx * this.vx + this.vz * this.vz));
+    this.pYaw = this.yaw;
+    this.pHeadYaw = this.headYaw;
+    this.pHeadPitch = this.headPitch;
+  }
+
+  override hurt(game: GameApi, _amount: number, _cause: DamageCause, attacker: Entity | null): boolean {
+    if (this.dead || !attacker) return false;
+    const speed = Math.max(0.6, Math.sqrt(this.vx * this.vx + this.vy * this.vy + this.vz * this.vz));
+    const dx = this.x - attacker.x;
+    const dy = this.y + this.height * 0.5 - (attacker.y + attacker.height * 0.8);
+    const dz = this.z - attacker.z;
+    const len = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
+    this.vx = (dx / len) * speed;
+    this.vy = (dy / len) * speed;
+    this.vz = (dz / len) * speed;
+    this.owner = attacker;
+    this.deflected = true;
+    this.age = 0;
+    game.sound('fizz', this.x, this.y, this.z, 0.8, 1.3);
+    return true;
+  }
+
+  tick(game: GameApi): void {
+    this.beginTick();
+    const w = game.world;
+    this.updateLight(w);
+    if (this.age > 240) {
+      this.dead = true;
+      return;
+    }
+
+    const speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy + this.vz * this.vz);
+    if (speed > 1e-6) {
+      const dx = this.vx / speed;
+      const dy = this.vy / speed;
+      const dz = this.vz / speed;
+      const oy = this.y + 0.5;
+      let max = speed;
+      const blockHit = raycast(w, this.x, oy, this.z, dx, dy, dz, speed, hit, true);
+      if (blockHit) max = hit.dist;
+      const target = sweepEntities(game, this, this.owner, this.x, oy, this.z, dx, dy, dz, max);
+      if (target) {
+        this.x += dx * max;
+        this.y += dy * max;
+        this.z += dz * max;
+        this.detonate(game, target);
+        return;
+      }
+      if (blockHit) {
+        this.x += dx * max;
+        this.y += dy * max;
+        this.z += dz * max;
+        this.detonate(game, null);
+        return;
+      }
+    }
+
+    this.x += this.vx;
+    this.y += this.vy;
+    this.z += this.vz;
+    if ((this.age & 1) === 0) {
+      game.particles('flame', this.x, this.y + 0.5, this.z, 1, 0.25);
+      game.particles('smoke', this.x, this.y + 0.5, this.z, 1, 0.25);
+    }
+    if (this.y < -64 || this.y > 320) this.dead = true;
+  }
+
+  private detonate(game: GameApi, target: Entity | null): void {
+    if (this.dead) return;
+    this.dead = true;
+    if (target) {
+      const dmg = this.deflected && target.mobKind === 'ghast' ? 20 : 6;
+      target.hurt(game, dmg, 'explosion', this.owner);
+    }
+    game.explode(this.x, this.y + 0.5, this.z, 1.5, true, this.owner);
+  }
+
+  save(): EntityData | null {
+    if (this.dead) return null;
+    const d = this.saveBase('fireball');
+    if (this.deflected) d.deflected = 1;
+    return d;
+  }
+
+  static load(d: EntityData): Fireball {
+    const f = new Fireball();
+    f.loadBase(d);
+    f.deflected = Boolean(d.deflected);
+    return f;
   }
 }
 

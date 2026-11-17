@@ -4,7 +4,7 @@
  * pile du curseur qui suit la souris, infobulle, et tous les gestes : clic gauche / droit,
  * maj-clic, double clic, glisser sur plusieurs cases, touches 1 à 9, lâcher, clic hors fenêtre.
  */
-import type { CreativeMenu, FurnaceMenu, Menu, SlotGroup } from '../game/Inventory';
+import type { AnvilMenu, CreativeMenu, EnchantMenu, FurnaceMenu, Menu, SlotGroup } from '../game/Inventory';
 import type { ItemStack, Slot } from '../world/ItemStack';
 import { CREATIVE_TABS, ITEMS, itemLabel } from '../world/Items';
 import { B, I } from '../world/Ids';
@@ -88,6 +88,10 @@ export class SlotScreen implements Screen {
   private burn = -1;
   private cook = -1;
 
+  // enchantement & enclume
+  private enchantBtns: HTMLButtonElement[] = [];
+  private anvilCostEl: HTMLDivElement | null = null;
+
   // créatif
   private tabs: TabDef[] = [];
   private tab = 0;
@@ -118,6 +122,12 @@ export class SlotScreen implements Screen {
         break;
       case 'furnace':
         this.buildFurnace();
+        break;
+      case 'enchant':
+        this.buildEnchant();
+        break;
+      case 'anvil':
+        this.buildAnvil();
         break;
       case 'chest':
         this.buildChest();
@@ -452,6 +462,50 @@ export class SlotScreen implements Screen {
     this.arrowOn = el('div', 'mc-arrow-on', arrow);
     this.slot('output', 0, 116, 35, true);
     this.label('Inventaire', 8, 72);
+    this.playerSlots(8, 84, 142);
+  }
+
+  private buildEnchant(): void {
+    const em = this.menu as EnchantMenu;
+    this.size(176, 166);
+    this.label(em.title, 8, 6);
+    this.label(`Biblio. : ${em.bookshelves}`, 8, 22);
+    this.slot('input', 0, 15, 47);
+    this.slot('fuel', 0, 35, 47);
+    this.label('Lapis', 35, 37);
+    const list = el('div', 'mc-enchant-list', this.win);
+    place(list, 60, 14, 108, 60);
+    this.enchantBtns = [];
+    for (let i = 0; i < 3; i++) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'mc-enchant-opt';
+      b.dataset.mc = `enchant-${i}`;
+      b.addEventListener('click', () => {
+        if (em.enchant(i)) {
+          this.ctx.host.click();
+          this.refresh();
+        }
+      });
+      list.appendChild(b);
+      this.enchantBtns.push(b);
+    }
+    this.playerSlots(8, 84, 142);
+  }
+
+  private buildAnvil(): void {
+    const am = this.menu as AnvilMenu;
+    this.size(176, 166);
+    this.label(am.title, 28, 6);
+    this.slot('input', 0, 27, 47);
+    this.label('+', 53, 50);
+    this.slot('fuel', 0, 76, 47);
+    place(el('div', 'mc-arrow', this.win), 99, 44);
+    this.slot('result', 0, 134, 47);
+    const costEl = el('div', 'mc-anvil-cost', this.win);
+    costEl.dataset.mc = 'anvil-cost';
+    place(costEl, 92, 70);
+    this.anvilCostEl = costEl;
     this.playerSlots(8, 84, 142);
   }
 
@@ -912,6 +966,30 @@ export class SlotScreen implements Screen {
       if (cook !== this.cook && this.arrowOn) {
         this.cook = cook;
         this.arrowOn.style.width = u(cook);
+      }
+    } else if (menu.type === 'enchant') {
+      const em = menu as EnchantMenu;
+      const lapis = em.tableSlots[1]?.count ?? 0;
+      for (let i = 0; i < 3; i++) {
+        const b = this.enchantBtns[i];
+        if (!b) continue;
+        const off = em.offers[i];
+        if (!off) {
+          b.textContent = '';
+          b.disabled = true;
+          continue;
+        }
+        const ok = em.creative || (em.playerLevel >= off.minLevel && lapis >= off.lapisCost);
+        b.disabled = !ok;
+        b.textContent = `${off.preview}  (Niv. ${off.minLevel}, ${off.lapisCost} lapis)`;
+      }
+    } else if (menu.type === 'anvil' && this.anvilCostEl) {
+      const am = menu as AnvilMenu;
+      if (am.cost > 0 && am.anvilSlots[2]) {
+        this.anvilCostEl.textContent = am.creative ? 'Gratuit' : `Coût : ${am.cost} niv.`;
+        this.anvilCostEl.classList.toggle('mc-anvil-cant', !am.canAfford);
+      } else {
+        this.anvilCostEl.textContent = '';
       }
     }
 

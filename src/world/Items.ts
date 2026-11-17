@@ -97,10 +97,12 @@ const SIMPLE_ITEMS: Array<[id: number, name: TileName, label: string, category: 
   [I.CHARCOAL, 'charcoal', 'Charbon de bois', 'materiaux'],
   [I.IRON_INGOT, 'iron_ingot', 'Lingot de fer', 'materiaux'],
   [I.GOLD_INGOT, 'gold_ingot', "Lingot d'or", 'materiaux'],
+  [I.GOLD_NUGGET, 'gold_nugget', "Pépite d'or", 'materiaux'],
+  [I.MAGMA_CREAM, 'magma_cream', 'Crème de magma', 'materiaux'],
   [I.DIAMOND, 'diamond', 'Diamant', 'materiaux'],
   [I.EMERALD, 'emerald', 'Émeraude', 'materiaux'],
   [I.LAPIS, 'lapis', 'Lapis-lazuli', 'materiaux'],
-  [I.REDSTONE, 'redstone', 'Poudre de redstone', 'materiaux'],
+  [I.REDSTONE, 'redstone', 'Poudre de redstone', 'materiaux', { places: B.REDSTONE_WIRE }],
   [I.FLINT, 'flint', 'Silex', 'materiaux'],
   [I.WHEAT_SEEDS, 'wheat_seeds', 'Graines de blé', 'materiaux', { places: B.WHEAT }],
   [I.WHEAT, 'wheat', 'Blé', 'materiaux'],
@@ -151,6 +153,9 @@ const SIMPLE_ITEMS: Array<[id: number, name: TileName, label: string, category: 
   [I.FLINT_AND_STEEL, 'flint_and_steel', 'Briquet', 'outils', { stack: 1, durability: 64 }],
   [I.SHEARS, 'shears', 'Cisailles', 'outils', { stack: 1, durability: 238, tool: 'shears', speed: 5 }],
   [I.FISHING_ROD, 'fishing_rod', 'Canne à pêche', 'outils', { stack: 1, durability: 64 }],
+  [I.MAP, 'map', 'Carte vierge', 'outils'],
+  [I.FILLED_MAP, 'filled_map', 'Carte', 'aucune'],
+  [I.SIGN, 'sign', 'Panneau', 'decoration', { stack: 16 }],
   [I.BUCKET, 'bucket', 'Seau', 'outils', { stack: 16 }],
   [I.WATER_BUCKET, 'water_bucket', "Seau d'eau", 'outils', { stack: 1 }],
   [I.LAVA_BUCKET, 'lava_bucket', 'Seau de lave', 'outils', { stack: 1 }],
@@ -160,6 +165,12 @@ const SIMPLE_ITEMS: Array<[id: number, name: TileName, label: string, category: 
   [I.ARROW, 'arrow', 'Flèche', 'combat'],
 ];
 for (const [id, name, label, category, options] of SIMPLE_ITEMS) reg(id, name, label, T[name], category, false, options);
+// Boussole et horloge : l'icône change avec la direction ou l'heure (voir DYNAMIC_ICON_ITEMS)
+reg(I.COMPASS, 'compass', 'Boussole', T.compass_00, 'outils', false);
+reg(I.CLOCK, 'clock', 'Horloge', T.clock_00, 'outils', false);
+
+/** Objets dont l'icône est recalculée à chaque image par le jeu (aiguille, cadran). */
+export const DYNAMIC_ICON_ITEMS: ReadonlySet<number> = new Set([I.COMPASS, I.CLOCK]);
 
 // ---------------------------------------------------------------------------
 // Outils : 5 matériaux × 5 types (même ordre que Ids et Tiles)

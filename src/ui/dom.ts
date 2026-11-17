@@ -4,7 +4,9 @@
  */
 import type { ItemStack, Slot } from '../world/ItemStack';
 import { maxDamage } from '../world/ItemStack';
-import { itemLabel } from '../world/Items';
+import { enchantLines, hasEnchants } from '../world/Enchants';
+import { DYNAMIC_ICON_ITEMS, itemLabel } from '../world/Items';
+import { I } from '../world/Ids';
 import type { UiHost } from './UiApi';
 
 /** Crée un élément, avec classe(s), parent et texte facultatifs. */
@@ -123,14 +125,17 @@ export function slider(host: UiHost, opts: SliderOptions, parent?: Element | nul
   return root;
 }
 
-/** Signature numérique d'une pile (−1 = vide) : sert à ne toucher au DOM que si la case a changé. */
-export function stackSig(s: Slot): number {
-  return s ? (s.damage * 1024 + s.count) * 512 + s.id : -1;
+/** Signature d'une pile ('' = vide) : sert à ne toucher au DOM que si la case a changé. */
+export function stackSig(s: Slot): string {
+  if (!s) return '';
+  if (!s.enchants) return `${s.id}:${s.count}:${s.damage}`;
+  return `${s.id}:${s.count}:${s.damage}:${JSON.stringify(s.enchants)}`;
 }
 
-/** Lignes de l'infobulle d'une pile : nom, puis durabilité si l'objet est usé. */
+/** Lignes de l'infobulle d'une pile : nom, enchantements, puis durabilité si l'objet est usé. */
 export function stackTooltip(s: ItemStack): string[] {
-  const lines = [itemLabel(s.id)];
+  const lines = [itemLabel(s.id), ...enchantLines(s.enchants)];
+  if (s.id === I.FILLED_MAP) lines.push(`Carte n° ${s.damage}`);
   const max = maxDamage(s.id);
   if (max > 0 && s.damage > 0) lines.push(`Durabilité : ${Math.max(0, max - s.damage)} / ${max}`);
   return lines;
@@ -142,8 +147,9 @@ export class ItemView {
   private readonly count: HTMLSpanElement;
   private readonly bar: HTMLDivElement;
   private readonly barFill: HTMLDivElement;
-  private sig = -1;
+  private sig = '\0';
   private iconId = 0;
+  private iconUrl = '';
 
   constructor(private readonly host: UiHost, parent?: Element | null, cls = '') {
     this.el = el('div', cls ? `mc-item ${cls}` : 'mc-item', parent);
@@ -154,16 +160,24 @@ export class ItemView {
 
   /** Met à jour l'affichage ; retourne true si quelque chose a changé. */
   set(stack: Slot): boolean {
-    const sig = stackSig(stack);
-    if (sig === this.sig) return false;
-    this.sig = sig;
     const id = stack ? stack.id : 0;
-    if (id !== this.iconId) {
+    // boussole, horloge : l'image change sans que la pile change
+    const dynamic = id !== 0 && DYNAMIC_ICON_ITEMS.has(id);
+    let iconChanged = false;
+    if (id !== this.iconId || dynamic) {
       this.iconId = id;
       const url = id ? this.host.iconUrl(id) : '';
-      this.el.style.backgroundImage = url ? `url("${url}")` : '';
+      if (url !== this.iconUrl) {
+        this.iconUrl = url;
+        this.el.style.backgroundImage = url ? `url("${url}")` : '';
+        iconChanged = true;
+      }
     }
+    const sig = stackSig(stack);
+    if (sig === this.sig) return iconChanged;
+    this.sig = sig;
     this.count.textContent = stack && stack.count !== 1 ? String(stack.count) : '';
+    this.el.classList.toggle('mc-enchanted', hasEnchants(stack));
     const max = stack ? maxDamage(stack.id) : 0;
     if (stack && max > 0 && stack.damage > 0) {
       const f = Math.max(0, Math.min(1, 1 - stack.damage / max));

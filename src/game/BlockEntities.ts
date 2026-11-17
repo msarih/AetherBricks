@@ -5,7 +5,7 @@
  */
 import { B, I } from '../world/Ids';
 import { maxStack } from '../world/Items';
-import type { ItemStack, Slot } from '../world/ItemStack';
+import { makeStack, sanitizeEnchants, type ItemStack, type Slot } from '../world/ItemStack';
 import { fuelTicks, smeltingResult } from '../world/Recipes';
 import type { BlockEntity, World } from '../world/World';
 
@@ -33,7 +33,7 @@ function fixSlots(v: unknown, size: number): Slot[] {
   for (let i = 0; i < size && i < v.length; i++) {
     const s = v[i] as Partial<ItemStack> | null;
     if (s && typeof s.id === 'number' && typeof s.count === 'number' && s.count > 0) {
-      out[i] = { id: s.id, count: s.count, damage: typeof s.damage === 'number' ? s.damage : 0 };
+      out[i] = makeStack(s.id, s.count, typeof s.damage === 'number' ? s.damage : 0, sanitizeEnchants(s.enchants));
     }
   }
   return out;
@@ -50,6 +50,39 @@ export function getChest(w: World, x: number, y: number, z: number): ChestEntity
   const chest: ChestEntity = { type: 'chest', x, y, z, items: new Array<Slot>(CHEST_SIZE).fill(null) };
   w.setBlockEntity(chest);
   return chest;
+}
+
+/** Panneau : 4 lignes de texte. */
+export interface SignEntity extends BlockEntity {
+  type: 'sign';
+  lines: string[];
+}
+
+/** Lignes d'un panneau (Minecraft : 4 lignes de 15 caractères au plus, sans caractère de contrôle). */
+export const SIGN_LINES = 4;
+export const SIGN_LINE_MAX = 15;
+
+export function cleanSignLines(raw: unknown): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < SIGN_LINES; i++) {
+    const v = Array.isArray(raw) ? raw[i] : '';
+    // eslint-disable-next-line no-control-regex
+    out.push(typeof v === 'string' ? Array.from(v.replace(/[\u0000-\u001f\u007f]/g, '')).slice(0, SIGN_LINE_MAX).join('') : '');
+  }
+  return out;
+}
+
+/** Panneau en (x, y, z) : l'entité existante (lignes vérifiées) ou une nouvelle, vide. */
+export function getSign(w: World, x: number, y: number, z: number): SignEntity {
+  const be = w.getBlockEntity(x, y, z) as (BlockEntity & { lines?: unknown }) | undefined;
+  if (be && be.type === 'sign') {
+    const sign = be as SignEntity;
+    sign.lines = cleanSignLines(be.lines);
+    return sign;
+  }
+  const sign: SignEntity = { type: 'sign', x, y, z, lines: cleanSignLines(null) };
+  w.setBlockEntity(sign);
+  return sign;
 }
 
 export function getFurnace(w: World, x: number, y: number, z: number): FurnaceEntity {

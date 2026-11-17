@@ -21,8 +21,13 @@ import {
   isSapling,
   isSlab,
   isStairs,
+  PISTON_DX,
+  PISTON_DY,
+  PISTON_DZ,
 } from './Blocks';
 import { fluidTick, fluidTickDelay, lavaMix } from './Fluids';
+import { portalCanStay } from './Portal';
+import { isTorchSupportPowered, updateRedstoneAround } from './Redstone';
 import { growTree } from './Trees';
 import type { World } from './World';
 
@@ -112,9 +117,28 @@ export function canStay(w: World, x: number, y: number, z: number, id: number, m
     case B.CARROTS:
     case B.POTATOES:
       return below === B.FARMLAND;
-    case B.TORCH: {
-      if (meta === 0) return topSolid(w, x, y - 1, z);
-      const f = (meta - 1) & 3;
+    case B.TORCH:
+    case B.REDSTONE_TORCH:
+    case B.REDSTONE_TORCH_OFF: {
+      const side = meta & 7;
+      if (side === 0) return topSolid(w, x, y - 1, z);
+      const f = (side - 1) & 3;
+      return sideSolid(w, x - FACING_DX[f], y, z - FACING_DZ[f]);
+    }
+    case B.REDSTONE_WIRE:
+    case B.STONE_PRESSURE_PLATE:
+    case B.SIGN:
+      return topSolid(w, x, y - 1, z);
+    case B.WALL_SIGN: {
+      // méta = direction vers laquelle le panneau est tourné ; il tient au bloc derrière lui
+      const f = meta & 3;
+      return sideSolid(w, x - FACING_DX[f], y, z - FACING_DZ[f]);
+    }
+    case B.LEVER:
+    case B.STONE_BUTTON: {
+      const side = meta & 7;
+      if (side === 0) return topSolid(w, x, y - 1, z);
+      const f = (side - 1) & 3;
       return sideSolid(w, x - FACING_DX[f], y, z - FACING_DZ[f]);
     }
     case B.LADDER: {
@@ -213,6 +237,31 @@ export function neighborChanged(w: World, x: number, y: number, z: number): void
     case B.SNOW_LAYER:
       if (!canStay(w, x, y, z, id, meta)) w.setBlock(x, y, z, B.AIR, 0);
       return;
+    case B.NETHER_PORTAL:
+      if (!portalCanStay(w, x, y, z, meta)) w.setBlock(x, y, z, B.AIR, 0);
+      return;
+    case B.PISTON_HEAD: {
+      const f = Math.min(5, meta & 7);
+      const bx = x - PISTON_DX[f];
+      const by = y - PISTON_DY[f];
+      const bz = z - PISTON_DZ[f];
+      const bv = w.getBlockAndMeta(bx, by, bz);
+      const bid = bv & 255;
+      if ((bid !== B.PISTON && bid !== B.STICKY_PISTON) || ((bv >> 8) & 8) === 0 || ((bv >> 8) & 7) !== f) {
+        w.setBlock(x, y, z, B.AIR, 0);
+      }
+      return;
+    }
+    case B.PISTON:
+    case B.STICKY_PISTON: {
+      if (meta & 8) {
+        const f = Math.min(5, meta & 7);
+        if (w.getBlock(x + PISTON_DX[f], y + PISTON_DY[f], z + PISTON_DZ[f]) !== B.PISTON_HEAD) {
+          w.setMeta(x, y, z, f, false);
+        }
+      }
+      return;
+    }
     default:
       if (!canStay(w, x, y, z, id, meta)) w.breakBlock(x, y, z, true);
   }
@@ -365,6 +414,19 @@ export function scheduledTick(w: World, x: number, y: number, z: number, id: num
   }
   if (id === B.FIRE) {
     fireTick(w, x, y, z, meta);
+    return;
+  }
+  if (id === B.REDSTONE_TORCH || id === B.REDSTONE_TORCH_OFF) {
+    const shouldBeOff = isTorchSupportPowered(w, x, y, z, meta);
+    const isOff = id === B.REDSTONE_TORCH_OFF;
+    if (shouldBeOff !== isOff) {
+      w.setBlock(x, y, z, shouldBeOff ? B.REDSTONE_TORCH_OFF : B.REDSTONE_TORCH, meta & 7, false);
+      updateRedstoneAround(w, x, y, z);
+    }
+    return;
+  }
+  if (id === B.STONE_BUTTON) {
+    if (meta & 8) w.setMeta(x, y, z, meta & ~8, true);
     return;
   }
   if (isLeaves(id)) {
