@@ -45,7 +45,7 @@ const BASE_TILES = [
   'pumpkin_side', 'pumpkin_top', 'pumpkin_face', 'jack_o_lantern', 'melon_side', 'melon_top',
   'wheat_0', 'wheat_1', 'wheat_2', 'wheat_3', 'wheat_4', 'wheat_5', 'wheat_6', 'wheat_7',
   'carrots_0', 'carrots_1', 'carrots_2', 'carrots_3', 'potatoes_0', 'potatoes_1', 'potatoes_2', 'potatoes_3',
-  'farmland_dry', 'farmland_wet', 'lily_pad', 'vine', 'cobweb', 'hay_side', 'hay_top',
+  'farmland_dry', 'farmland_wet', 'grass_path_top', 'grass_path_side', 'lily_pad', 'vine', 'cobweb', 'hay_side', 'hay_top',
   // --- Fluides et feu (animés) ---
   'water', 'lava', 'fire',
   // --- Fissures de minage ---

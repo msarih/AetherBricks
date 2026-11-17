@@ -9,6 +9,7 @@ import { Chunk } from './Chunk';
 import { CHUNK_AREA, CHUNK_HEIGHT, chunkKey, type Dimension, type WorldType } from './Constants';
 import { computeHeightmap } from './gen/WorldGen';
 import type { GenRequest, GenResponse } from './gen/gen.worker';
+import type { GenSpawn } from './gen/WorldGen';
 import type { MeshRequest, MeshResult, PassData } from './mesh/MeshTypes';
 import { netherStorageId, type SavedChunk, type Storage } from './Storage';
 import type { BlockEntity, World } from './World';
@@ -22,7 +23,7 @@ export interface ChunkSink {
 /** Ce que le jeu fait des entités quand un chunk arrive ou repart. */
 export interface ChunkHooks {
   /** Chunk ajouté au monde. `saved` : entités sauvegardées, ou null si le chunk vient d'être généré. */
-  chunkLoaded(chunk: Chunk, savedEntities: unknown[] | null): void;
+  chunkLoaded(chunk: Chunk, savedEntities: unknown[] | null, spawns?: readonly GenSpawn[]): void;
   /** Entités du chunk à sauvegarder. Si `remove`, le chunk s'en va : les retirer du jeu. */
   chunkEntities(chunk: Chunk, remove: boolean): unknown[];
 }
@@ -59,6 +60,7 @@ export class ChunkManager {
   private readonly baseWorldId: string;
   private readonly seed: number;
   private readonly worldType: WorldType;
+  private readonly genVersion: number;
   private worldId: string;
   private savedKeys: Set<number>;
 
@@ -90,7 +92,7 @@ export class ChunkManager {
   constructor(
     world: World,
     sink: ChunkSink,
-    options: { seed: number; worldType: WorldType; dimension?: Dimension; storage: Storage | null; worldId: string; savedKeys: Set<number>; viewDistance: number },
+    options: { seed: number; worldType: WorldType; genVersion?: number; dimension?: Dimension; storage: Storage | null; worldId: string; savedKeys: Set<number>; viewDistance: number },
   ) {
     this.world = world;
     this.sink = sink;
@@ -98,6 +100,7 @@ export class ChunkManager {
     this.baseWorldId = options.worldId;
     this.seed = options.seed;
     this.worldType = options.worldType;
+    this.genVersion = options.genVersion ?? 1;
     const dim = options.dimension ?? 'overworld';
     this.worldId = dim === 'nether' ? netherStorageId(options.worldId) : options.worldId;
     this.savedKeys = options.savedKeys;
@@ -115,7 +118,7 @@ export class ChunkManager {
         slot.busy = Math.max(0, slot.busy - 1);
         this.onGenerated(res);
       };
-      const init: GenRequest = { type: 'init', seed: options.seed, worldType: options.worldType, dimension: dim };
+      const init: GenRequest = { type: 'init', seed: options.seed, worldType: options.worldType, dimension: dim, genVersion: this.genVersion };
       worker.postMessage(init);
       this.genWorkers.push(slot);
     }
@@ -207,7 +210,7 @@ export class ChunkManager {
     this.world.dirty.clear();
     this.world.blockEntities.clear();
     this.loadScanDone = false;
-    const init: GenRequest = { type: 'init', seed: this.seed, worldType: this.worldType, dimension: dim };
+    const init: GenRequest = { type: 'init', seed: this.seed, worldType: this.worldType, dimension: dim, genVersion: this.genVersion };
     for (const slot of this.genWorkers) slot.worker.postMessage(init);
   }
 
@@ -338,7 +341,8 @@ export class ChunkManager {
     if (!this.inRange(m.cx, m.cz, this.viewDistance + 1 + UNLOAD_MARGIN)) return;
     const chunk = new Chunk(m.cx, m.cz, m.blocks, m.meta, m.biomes, m.heightmap, m.tints);
     this.world.addChunk(chunk);
-    this.hooks.chunkLoaded(chunk, null);
+    for (const be of m.blockEntities) this.world.setBlockEntity(be, true);
+    this.hooks.chunkLoaded(chunk, null, m.spawns);
     this.chunkArrived(chunk);
   }
 

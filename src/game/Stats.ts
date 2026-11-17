@@ -22,6 +22,7 @@ export const STAT = {
   FISH: 'fish_caught',
   BRED: 'animals_bred',
   SLEEP: 'sleep_in_bed',
+  TRADES: 'trades',
 } as const;
 
 export const minedKey = (blockId: number): string => `mined:${blockId}`;
@@ -43,6 +44,7 @@ export const MOB_NAMES: Record<MobKind, string> = {
   zombie_pigman: 'Cochon-zombie',
   ghast: 'Ghast',
   magma_cube: 'Cube de magma',
+  villager: 'Villageois',
   player: 'Joueur',
 };
 

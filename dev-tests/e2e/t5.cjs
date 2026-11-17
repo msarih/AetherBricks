@@ -1,0 +1,294 @@
+// Batterie « lieux à découvrir » sur un monde normal en survie : générateur, donjons, coffres à butin, villages, villageois.
+const { sleep, launch, openPage, click, createWorld, shot, ticks } = require('./lib.cjs');
+const { results, check, install, ev, chat, section } = require('./h.cjs');
+
+const SEED = '1337';
+
+/** Retire les créatures hostiles et les objets au sol, joueur au calme. */
+const calm = (page) => ev(page, () => {
+  const g = window.__game;
+  g.difficulty = 0;
+  for (const e of g.entities) if (e !== g.player && e.kind === 'item') e.dead = true;
+});
+
+/** Téléporte le joueur et attend que les chunks autour de lui soient affichés. */
+async function goto(page, x, y, z) {
+  await ev(page, (x, y, z) => { const p = window.__game.player; p.teleport(x, y, z); p.vx = p.vy = p.vz = 0; p.fallDistance = 0; }, x, y, z);
+  await page.waitForFunction(() => { const g = window.__game; return g.chunks.isReady(g.player.x, g.player.z, 3); }, { timeout: 120000 });
+  await ev(page, (x, y, z) => { const p = window.__game.player; p.teleport(x, y, z); p.vx = p.vy = p.vz = 0; p.fallDistance = 0; }, x, y, z);
+  await ticks(page, 5);
+}
+
+/** Quitte vers le titre puis relance le monde (seul monde de la liste). */
+async function reload(page) {
+  await page.keyboard.press('Escape');
+  await page.waitForSelector('[data-mc="pause"]', { timeout: 5000 });
+  await sleep(200);
+  await click(page, 'quit');
+  await page.waitForSelector('[data-mc="title"]', { timeout: 30000 });
+  await sleep(300);
+  await click(page, 'play');
+  await page.waitForSelector('[data-mc="world-play"]', { timeout: 10000 });
+  await sleep(300);
+  await click(page, 'world-play');
+  await page.waitForFunction('window.__game && window.__game.ready === true', { timeout: 120000 });
+  await install(page);
+  await ticks(page, 10);
+}
+
+(async () => {
+  const errors = [];
+  const browser = await launch();
+  const page = await openPage(browser, errors);
+  await createWorld(page, { name: 'Lieux', seed: SEED });
+  await install(page);
+  await ticks(page, 20);
+  await calm(page);
+
+  await section('générateur', async () => {
+    const r = await ev(page, async (seed) => {
+      const { WorldGen } = await import('/src/world/gen/WorldGen.ts');
+      const { B } = await import('/src/world/Ids.ts');
+      const g = window.__game;
+      const v1 = new WorldGen(Number(seed), 'default', 1);
+      const v2a = new WorldGen(Number(seed), 'default', 2);
+      const v2b = new WorldGen(Number(seed), 'default', 2);
+      const flat = new WorldGen(Number(seed), 'flat', 2);
+      const village = g.locate('village');
+      const vcx = village.x >> 4, vcz = village.z >> 4;
+      const same = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
+      let deterministic = true, v1Places = 0, v2Places = 0, v2Entities = 0, v1Entities = 0, flatEntities = 0;
+      const placed = (c) => c.blocks.reduce((n, id) => n + (id === B.GRASS_PATH || id === B.SPAWNER || id === B.CHEST || id === B.OAK_DOOR ? 1 : 0), 0);
+      for (let dz = -2; dz <= 2; dz++) for (let dx = -2; dx <= 2; dx++) {
+        const a = v2a.generateChunk(vcx + dx, vcz + dz);
+        // l'autre générateur parcourt les chunks dans l'ordre inverse : le résultat ne doit pas en dépendre
+        const b = v2b.generateChunk(vcx - dx, vcz - dz);
+        const b2 = v2b.generateChunk(vcx + dx, vcz + dz);
+        void b;
+        if (!same(a.blocks, b2.blocks) || !same(a.meta, b2.meta) || JSON.stringify(a.blockEntities) !== JSON.stringify(b2.blockEntities) || JSON.stringify(a.spawns) !== JSON.stringify(b2.spawns)) deterministic = false;
+        v2Places += placed(a);
+        v2Entities += a.blockEntities.length + a.spawns.length;
+        const old = v1.generateChunk(vcx + dx, vcz + dz);
+        v1Places += placed(old);
+        v1Entities += old.blockEntities.length + old.spawns.length;
+        const f = flat.generateChunk(vcx + dx, vcz + dz);
+        flatEntities += f.blockEntities.length + f.spawns.length + placed(f);
+      }
+      // hauteur du sol calculée sans générer le chunk : elle doit être celle du terrain réel
+      let cols = 0, exact = 0;
+      const soft = (id) => id === 0 || id === B.WATER || id === B.ICE || (id >= B.OAK_LOG && id <= B.ACACIA_LOG) || (id >= B.OAK_LEAVES && id <= B.ACACIA_LEAVES) || (id >= B.TALL_GRASS && id <= B.PUMPKIN) || id === B.SNOW_LAYER || id === B.VINE || id === B.LILY_PAD || id === B.MELON;
+      for (let cz = -2; cz < 2; cz++) for (let cx = -2; cx < 2; cx++) {
+        const c = v1.generateChunk(cx, cz);
+        for (let lz = 0; lz < 16; lz += 3) for (let lx = 0; lx < 16; lx += 3) {
+          let y = 127;
+          while (y > 0 && soft(c.blocks[(y << 8) | (lz << 4) | lx])) y--;
+          cols++;
+          if (y === v2a.terrainTop(cx * 16 + lx, cz * 16 + lz)) exact++;
+        }
+      }
+      return { version: g.world.genVersion, deterministic, v1Places, v1Entities, v2Places, v2Entities, flatEntities, cols, exact };
+    }, SEED);
+    check('un nouveau monde porte la version 2 du générateur', r.version === 2, 'version ' + r.version);
+    check('le même chunk est généré à l’identique, quel que soit l’ordre', r.deterministic === true);
+    check('générateur en version 1 (anciens mondes) : aucun lieu, aucun coffre, aucun habitant', r.v1Places === 0 && r.v1Entities === 0, JSON.stringify({ blocs: r.v1Places, entites: r.v1Entities }));
+    check('générateur en version 2 : le village est bien là (chemins, portes, coffres, habitants)', r.v2Places > 50 && r.v2Entities > 5, JSON.stringify({ blocs: r.v2Places, entites: r.v2Entities }));
+    check('monde plat : aucun lieu généré', r.flatEntities === 0, String(r.flatEntities));
+    check('hauteur du sol calculée = terrain réel (au moins 98 % des colonnes)', r.exact / r.cols >= 0.98, `${r.exact}/${r.cols}`);
+  });
+
+  await section('donjon', async () => {
+    // cherche le donjon le plus proche en rejouant le générateur, puis s'y rend
+    const d = await ev(page, async (seed) => {
+      const { WorldGen } = await import('/src/world/gen/WorldGen.ts');
+      const gen = new WorldGen(Number(seed), 'default', 2);
+      for (let r = 0; r <= 14; r++) {
+        for (let cz = -r; cz <= r; cz++) for (let cx = -r; cx <= r; cx++) {
+          if (Math.max(Math.abs(cx), Math.abs(cz)) !== r) continue;
+          const c = gen.generateChunk(cx, cz);
+          const s = c.blockEntities.find((b) => b.type === 'spawner');
+          if (s) return { spawner: s, chests: c.blockEntities.filter((b) => b.type === 'chest') };
+        }
+      }
+      return null;
+    }, SEED);
+    check('un donjon existe à moins de 14 chunks de l’origine', !!d, d ? JSON.stringify(d.spawner) : '');
+    if (!d) return;
+    const s = d.spawner;
+    await goto(page, s.x + 1.5, s.y, s.z + 0.5);
+    const room = await ev(page, async (s) => {
+      const { B } = await import('/src/world/Ids.ts');
+      const g = window.__game, w = g.world;
+      const be = w.getBlockEntity(s.x, s.y, s.z);
+      let floor = 0, mossy = 0;
+      for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+        const id = w.getBlock(s.x + dx, s.y - 1, s.z + dz);
+        if (id === B.COBBLESTONE || id === B.MOSSY_COBBLESTONE) floor++;
+        if (id === B.MOSSY_COBBLESTONE) mossy++;
+      }
+      const chunk = w.chunkAt(s.x, s.z);
+      return { block: w.getBlock(s.x, s.y, s.z) === B.SPAWNER, be: be ? { type: be.type, mob: be.mob } : null, floor, mossy, modified: chunk.modified };
+    }, s);
+    check('la cage est au centre d’une salle au sol de pierres', room.block && room.floor === 9, JSON.stringify(room));
+    check('le générateur de monstres connaît son espèce', room.be && room.be.type === 'spawner' && ['zombie', 'skeleton', 'spider'].includes(room.be.mob), JSON.stringify(room.be));
+    check('le chunk du donjon reste « non modifié » tant qu’on n’y touche pas', room.modified === false);
+
+    // paisible : rien n'apparaît ; normal dans le noir : des monstres de l'espèce de la cage apparaissent
+    await ticks(page, 45);
+    const quiet = await ev(page, (kind) => T.mobs(kind).length, room.be.mob);
+    check('en paisible, la cage ne produit rien', quiet === 0, String(quiet));
+    await ev(page, () => { const g = window.__game; g.difficulty = 2; g.player.gameMode = 'creative'; });
+    let born = 0;
+    for (let i = 0; i < 12 && born === 0; i++) {
+      await ticks(page, 10);
+      born = await ev(page, (s, kind) => T.mobs(kind).filter((e) => Math.abs(e.x - s.x) < 6 && Math.abs(e.z - s.z) < 6 && Math.abs(e.y - s.y) < 4).length, s, room.be.mob);
+    }
+    check('en difficulté normale, la cage fait apparaître ses monstres dans la salle', born >= 1 && born <= 6, `${born} ${room.be.mob}`);
+    await ev(page, () => { const g = window.__game; g.difficulty = 0; g.player.gameMode = 'survival'; for (const e of g.entities) if (e.kind === 'mob' && e.mobKind !== 'villager' && e !== g.player) e.dead = true; });
+    await ticks(page, 3);
+
+    if (d.chests.length > 0) {
+      const c = d.chests[0];
+      const r = await ev(page, async (c) => {
+        const { getChest } = await import('/src/game/BlockEntities.ts');
+        const { generateLoot } = await import('/src/world/Loot.ts');
+        const g = window.__game, w = g.world;
+        const before = w.getBlockEntity(c.x, c.y, c.z);
+        const loot = before ? before.loot : null;
+        const chest = getChest(w, c.x, c.y, c.z);
+        const items = chest.items.filter(Boolean);
+        const again = generateLoot('dungeon', w.seed, c.x, c.y, c.z, 27).filter(Boolean);
+        return { loot, after: chest.loot, n: items.length, same: JSON.stringify(items) === JSON.stringify(again), modified: w.chunkAt(c.x, c.z).modified };
+      }, c);
+      check('coffre du donjon : butin tiré à la première ouverture', r.loot === 'dungeon' && r.after === undefined && r.n >= 4, JSON.stringify(r));
+      check('le butin dépend de la graine et de la position (même tirage rejoué)', r.same === true);
+      check('ouvrir le coffre marque le chunk à sauvegarder', r.modified === true);
+    } else {
+      check('coffre du donjon (aucun coffre dans ce donjon)', true);
+    }
+  });
+
+  let village = null;
+  await section('village', async () => {
+    await chat(page, '/time set day');
+    await ev(page, () => { window.__msgs.length = 0; });
+    await chat(page, '/locate village');
+    const msg = await ev(page, () => window.__msgs.join(' | '));
+    village = await ev(page, () => window.__game.locate('village'));
+    check('/locate village indique le village le plus proche', !!village && msg.includes('Village') && msg.includes(`x ${village.x}`), msg);
+    if (!village) return;
+    await goto(page, village.x + 0.5, village.y + 8, village.z + 0.5);
+    await ticks(page, 20);
+    const r = await ev(page, async (v) => {
+      const { B } = await import('/src/world/Ids.ts');
+      const w = window.__game.world;
+      let water = 0, path = 0, doors = 0, crops = 0, torches = 0;
+      for (let dz = -1; dz <= 0; dz++) for (let dx = -1; dx <= 0; dx++) if (w.getBlock(v.x + dx, v.y, v.z + dz) === B.WATER) water++;
+      for (let z = v.z - 48; z <= v.z + 48; z++) for (let x = v.x - 48; x <= v.x + 48; x++) {
+        for (let y = v.y - 10; y <= v.y + 14; y++) {
+          const id = w.getBlock(x, y, z);
+          if (id === B.GRASS_PATH || id === B.GRAVEL) path += id === B.GRASS_PATH || w.getBlock(x, y + 1, z) === B.AIR ? 1 : 0;
+          else if (id === B.OAK_DOOR) doors++;
+          else if (id === B.WHEAT || id === B.CARROTS || id === B.POTATOES) crops++;
+          else if (id === B.TORCH) torches++;
+        }
+      }
+      const smith = [...w.blockEntities.values()].filter((b) => b.type === 'chest' && b.loot === 'blacksmith').length;
+      return { water, path, doors: doors / 2, crops, torches, smith, villagers: T.mobs('villager').length };
+    }, village);
+    check('le puits est au centre du village (2 × 2 d’eau)', r.water === 4, JSON.stringify(r));
+    check('des chemins partent du puits', r.path >= 80, String(r.path));
+    check('des maisons avec leur porte (au moins 4)', r.doors >= 4, String(r.doors));
+    check('des champs cultivés et des torches', r.crops >= 14 && r.torches >= 4, JSON.stringify({ cultures: r.crops, torches: r.torches }));
+    check('les villageois habitent le village (entre 5 et 20)', r.villagers >= 5 && r.villagers <= 20, String(r.villagers));
+    await shot(page, 't5-village');
+  });
+
+  await section('villageois', async () => {
+    if (!village) throw new Error('pas de village');
+    // on choisit un villageois, on se place devant lui avec de quoi payer la première offre
+    const who = await ev(page, async () => {
+      const { makeStack } = await import('/src/world/ItemStack.ts');
+      const { I } = await import('/src/world/Ids.ts');
+      const g = window.__game, p = g.player;
+      const v = T.mobs('villager')[0];
+      window.__v = v;
+      const o = v.offers[0];
+      p.inventory.clear();
+      p.inventory.slots[0] = makeStack(o.buy, o.buyCount * 2);
+      if (o.buy2) p.inventory.slots[1] = makeStack(o.buy2, o.buy2Count * 2);
+      p.inventory.selected = 8;
+      p.teleport(v.x, v.y, v.z + 1.8);
+      T.aim(v.x, v.y + 1.4, v.z);
+      return { profession: v.profession, title: v.title, tier: v.tier, offers: v.offers.length, offer: o, emeralds: I.EMERALD };
+    });
+    check('un villageois a un métier et des offres de premier palier', who.tier === 1 && who.offers >= 1 && typeof who.title === 'string', JSON.stringify({ metier: who.title, offres: who.offers }));
+    await ticks(page, 1);
+    await ev(page, () => { const v = window.__v; T.aim(v.x, v.y + 1.4, v.z); window.__game.input.presses[2]++; });
+    await ticks(page, 3);
+    await page.waitForSelector('[data-mc="trade"]', { timeout: 5000 }).catch(() => {});
+    const open = await page.$('[data-mc="trade"]');
+    check('clic droit sur un villageois : l’écran d’échange s’ouvre', !!open);
+    if (!open) return;
+    const title = await page.$eval('[data-mc="trade-title"]', (e) => e.textContent);
+    check('l’écran porte le métier du villageois', title === who.title, title);
+    await shot(page, 't5-echange');
+    const before = await ev(page, (o) => ({ buy: window.__game.player.inventory.count(o.buy), sell: window.__game.player.inventory.count(o.sell) }), who.offer);
+    await page.click('[data-mc="trade-offer-0"]');
+    await sleep(150);
+    const after = await ev(page, (o) => ({ buy: window.__game.player.inventory.count(o.buy), sell: window.__game.player.inventory.count(o.sell), uses: window.__v.offers[0].uses, traded: window.__v.traded, stat: window.__game.stats.trades || 0 }), who.offer);
+    check('un échange : le prix est retiré, l’objet reçu', before.buy - after.buy === who.offer.buyCount && after.sell - before.sell === who.offer.sellCount, JSON.stringify({ before, after }));
+    check('l’échange est compté (offre et statistiques)', after.uses === 1 && after.traded === true && after.stat === 1, JSON.stringify(after));
+    // offre trop chère : bouton inactif, rien ne bouge
+    await ev(page, () => { window.__game.player.inventory.clear(); });
+    await sleep(120);
+    const disabled = await page.$eval('[data-mc="trade-offer-0"]', (e) => e.disabled);
+    check('sans de quoi payer, l’offre est inactive', disabled === true);
+    // premier échange : réapprovisionnement et palier suivant
+    await ticks(page, 50);
+    const stocked = await ev(page, () => ({ tier: window.__v.tier, offers: window.__v.offers.length, uses: window.__v.offers[0].uses }));
+    const rows = await page.$$eval('[data-mc^="trade-offer-"]', (els) => els.length);
+    check('le premier échange débloque le palier suivant et réapprovisionne', stocked.tier === 2 && stocked.offers > who.offers && stocked.uses === 0 && rows === stocked.offers, JSON.stringify({ stocked, rows }));
+    await page.keyboard.press('Escape');
+    await sleep(250);
+    const closed = await ev(page, () => ({ modal: window.__game.ui.modal, customer: window.__v.customer === null }));
+    check('Échap ferme l’écran et libère le villageois', closed.modal === false && closed.customer === true, JSON.stringify(closed));
+
+    // le villageois avec qui on a commercé survit au rechargement, avec ses paliers
+    const mark = await ev(page, () => { const v = window.__v; return { x: v.x, z: v.z, profession: v.profession, tier: v.tier, offers: JSON.stringify(v.offers) }; });
+    await reload(page);
+    await page.waitForFunction(() => window.__game.chunks.isReady(window.__game.player.x, window.__game.player.z, 3), { timeout: 120000 });
+    await ticks(page, 10);
+    const back = await ev(page, (m) => {
+      const list = T.mobs('villager');
+      const v = list.find((e) => e.traded);
+      return { count: list.length, found: !!v, tier: v ? v.tier : 0, same: v ? JSON.stringify(v.offers) === m.offers && v.profession === m.profession : false };
+    }, mark);
+    check('après rechargement : le villageois garde son palier et ses offres', back.found && back.tier === 2 && back.same, JSON.stringify(back));
+    check('après rechargement : pas de villageois en double', back.count >= 5 && back.count <= 20, String(back.count));
+  });
+
+  await section('nuit au village', async () => {
+    if (!village) throw new Error('pas de village');
+    await calm(page);
+    await goto(page, village.x + 0.5, village.y + 8, village.z + 0.5);
+    await chat(page, '/time set day');
+    // de jour ils sortent : on leur laisse le temps de s'éloigner, puis on fait tomber la nuit
+    await ticks(page, 400);
+    const day = await ev(page, () => T.mobs('villager').map((v) => Math.hypot(v.x - v.homeX, v.z - v.homeZ)));
+    await chat(page, '/time set night');
+    await ticks(page, 500);
+    const night = await ev(page, () => T.mobs('villager').map((v) => Math.hypot(v.x - v.homeX, v.z - v.homeZ)));
+    const far = (l) => l.filter((d) => d > 4).length;
+    const mean = (l) => l.reduce((a, b) => a + b, 0) / Math.max(1, l.length);
+    check('de jour, des villageois s’éloignent de chez eux', far(day) >= 2, `${far(day)} sur ${day.length} à plus de 4 blocs`);
+    check('la nuit, ils rentrent (presque tous à moins de 4 blocs de chez eux)', far(night) <= Math.max(1, Math.floor(night.length * 0.2)) && mean(night) < mean(day), `jour ${mean(day).toFixed(1)} → nuit ${mean(night).toFixed(1)} ; ${far(night)} encore loin`);
+    await chat(page, '/time set day');
+  });
+
+  const fails = results.filter((r) => !r.ok);
+  console.log(`\nBILAN : ${results.length - fails.length}/${results.length} ; erreurs de console : ${errors.length}`);
+  for (const f of fails) console.log('  ECHEC : ' + f.name + (f.detail ? ' — ' + f.detail : ''));
+  for (const e of errors.slice(0, 5)) console.log('  ' + e);
+  await browser.close();
+  process.exit(fails.length || errors.length ? 1 : 0);
+})().catch((e) => { console.error('ECHEC', e); process.exit(1); });

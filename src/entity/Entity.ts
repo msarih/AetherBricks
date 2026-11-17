@@ -64,6 +64,8 @@ export interface GameApi {
   itemParticles(x: number, y: number, z: number, itemId: number, count?: number): void;
   /** Lâche un objet au sol avec une petite impulsion aléatoire. Retourne l'entité créée. */
   dropItem(x: number, y: number, z: number, id: number, count: number, damage?: number): Entity;
+  /** Ouvre l'écran d'échange d'un villageois (absent hors du jeu complet). */
+  openTrade?(villager: Entity): void;
   /** Explosion : détruit des blocs, blesse et repousse les entités. */
   explode(x: number, y: number, z: number, power: number, fire: boolean, source: Entity | null): void;
   /** Entités dont la boîte coupe la boîte donnée. */
@@ -106,6 +108,7 @@ export abstract class Entity extends Body implements EntityView {
   angry = false;
   sitting = false;
   collarColor = 0xd8342a;
+  variant = 0;
   baby = false;
   mobScale = 1;
   sneaking = false;
@@ -158,6 +161,14 @@ export abstract class Entity extends Body implements EntityView {
   }
 
   /** Clic droit du joueur sur l'entité. Retourne true si l'interaction a eu lieu. */
+  /**
+   * L'entité porte un état que le joueur a créé (villageois avec qui il a commercé) : son chunk
+   * doit être sauvegardé même si aucun bloc n'y a changé, sinon elle serait régénérée à neuf.
+   */
+  get persistent(): boolean {
+    return false;
+  }
+
   interact(_game: GameApi, _player: PlayerLike): boolean {
     return false;
   }

@@ -64,6 +64,7 @@ export function mapBaseColor(id: number): number {
       return C.SAND;
     case B.DIRT:
     case B.FARMLAND:
+    case B.GRASS_PATH:
       return C.DIRT;
     case B.GRAVEL:
     case B.STONE:

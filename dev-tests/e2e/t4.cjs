@@ -314,8 +314,8 @@ async function reload(page) {
       await page.waitForSelector('[data-mc="pause"]', { timeout: 5000 });
       await page.keyboard.press('Escape');
       await sleep(200);
-      check('écran Statistiques : général (12 lignes, sauts), blocs, objets et créatures',
-        general.length === 12 && general.some((t) => t.startsWith('Sauts')) && blocks.some((t) => t.includes("Bloc d'herbe")) && items.some((t) => t.includes('4 fabriqués'))
+      check('écran Statistiques : général (13 lignes, sauts, échanges), blocs, objets et créatures',
+        general.length === 13 && general.some((t) => t.startsWith('Échanges avec des villageois')) && general.some((t) => t.startsWith('Sauts')) && blocks.some((t) => t.includes("Bloc d'herbe")) && items.some((t) => t.includes('4 fabriqués'))
           && mobs.some((t) => t.startsWith('Poule') && t.includes('1 vaincu')),
         JSON.stringify({ general: general.slice(0, 5), blocks, items, mobs }));
       statMark = await ev(page, () => ({ ...window.__game.stats }));

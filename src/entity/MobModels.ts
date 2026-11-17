@@ -37,6 +37,7 @@ export type MobKind =
   | 'zombie_pigman'
   | 'ghast'
   | 'magma_cube'
+  | 'villager'
   | 'player';
 
 export interface ModelBox {
@@ -532,6 +533,77 @@ function buildMagmaCube(): MobModel {
     '................',
   ], pal);
   return finish('magma_cube', s, [body], 0.52, 0.52, 0.3);
+}
+
+/** Couleur de la robe et du tablier par métier (fermier, bibliothécaire, prêtre, forgeron, boucher). */
+const VILLAGER_ROBES: ReadonlyArray<{ robe: number; trim: number; apron: number }> = [
+  { robe: 0x6b4a2c, trim: 0x4c3520, apron: 0 },
+  { robe: 0xe4e2dc, trim: 0xb9b4a8, apron: 0 },
+  { robe: 0x7a3f9e, trim: 0x54296f, apron: 0 },
+  { robe: 0x5a4a3c, trim: 0x3a2f26, apron: 0x2b2b2e },
+  { robe: 0x6b4a2c, trim: 0x4c3520, apron: 0xe8e6e0 },
+];
+
+/**
+ * Villageois : grande tête au long nez, robe jusqu'aux pieds, bras croisés devant la poitrine.
+ * `variant` = métier (0..4) : il change la couleur de la robe.
+ */
+function buildVillager(variant: number): MobModel {
+  const head = box('head', [0, 24, 0], [-4, 24, -4], [8, 10, 8], [0, 0]);
+  const nose = box('head', [0, 24, 0], [-1, 23, 4], [2, 4, 2], [24, 0]);
+  const body = box('body', [0, 12, 0], [-4, 12, -3], [8, 12, 6], [16, 20]);
+  const skirt = box('body', [0, 12, 0], [-4, 2, -3], [8, 10, 6], [0, 38], 0.45);
+  const armR = box('arms', [0, 21, 0], [-8, 16, -2], [4, 8, 4], [44, 22]);
+  const armL = box('arms', [0, 21, 0], [4, 16, -2], [4, 8, 4], [44, 22]);
+  const armMid = box('arms', [0, 21, 0], [-4, 16, -2], [8, 4, 4], [40, 38]);
+  const legR = box('legR', [-2, 12, 0], [-4, 0, -2], [4, 12, 4], [0, 22]);
+  const legL = box('legL', [2, 12, 0], [0, 0, -2], [4, 12, 4], [0, 22]);
+  const s = new Skin(64, 64, 0x51a6e + variant);
+  const skin = 0xbd8b72;
+  const skinDark = 0x9c6c56;
+  const c = VILLAGER_ROBES[variant] ?? VILLAGER_ROBES[0];
+  const pal: Palette = { S: skin, s: skinDark, B: 0x4a2f1f, W: WHITE, G: 0x2f7d3a, M: 0x7a4a3c };
+  s.box(head, skin);
+  s.stamp(faceRect(head, 'front'), [
+    'SSSSSSSS',
+    'SSSSSSSS',
+    'SSSSSSSS',
+    'BBBBBBBB',
+    'SWGSSGWS',
+    'SSSssSSS',
+    'SSSssSSS',
+    'SSSssSSS',
+    'SSMMMMSS',
+    'SSSSSSSS',
+  ], pal);
+  s.box(nose, skinDark);
+  s.box(body, c.robe);
+  s.band(body, 0, 1, c.trim);
+  s.box(skirt, c.robe);
+  s.band(skirt, 9, 1, c.trim);
+  if (c.apron) {
+    s.fill(faceRect(body, 'front'), c.apron, GRAIN, 1, 2, 6, 10);
+    s.fill(faceRect(skirt, 'front'), c.apron, GRAIN, 1, 0, 6, 7);
+  }
+  s.box(armR, c.robe);
+  s.box(armMid, c.robe);
+  s.fill(faceRect(armMid, 'front'), skin, GRAIN, 2, 1, 4, 2);
+  s.box(legR, c.trim);
+  s.band(legR, 9, 3, 0x3a3a3e);
+  return finish('villager', s, [head, nose, body, skirt, armR, armL, armMid, legR, legL], 0.6, 1.95, 1.62);
+}
+
+const villagerCache = new Map<number, MobModel>();
+
+/** Modèle du villageois pour un métier donné (0..4). */
+export function getVillagerModel(variant: number): MobModel {
+  const v = variant >= 0 && variant < VILLAGER_ROBES.length ? Math.floor(variant) : 0;
+  let model = villagerCache.get(v);
+  if (!model) {
+    model = buildVillager(v);
+    villagerCache.set(v, model);
+  }
+  return model;
 }
 
 function buildSkeleton(): MobModel {
@@ -1068,6 +1140,9 @@ export function getMobModel(kind: MobKind): MobModel {
         break;
       case 'magma_cube':
         model = buildMagmaCube();
+        break;
+      case 'villager':
+        model = buildVillager(0);
         break;
       default:
         model = buildPlayer();

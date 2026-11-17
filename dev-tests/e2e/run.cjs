@@ -59,6 +59,8 @@ function runScript(scriptPath) {
     await runScript(path.join(__dirname, 't3.cjs'));
     console.log('\n=== Exécution de t4.cjs (Boussole, horloge, carte, panneaux, statistiques) ===');
     await runScript(path.join(__dirname, 't4.cjs'));
+    console.log('\n=== Exécution de t5.cjs (Lieux à découvrir : donjons, villages, villageois) ===');
+    await runScript(path.join(__dirname, 't5.cjs'));
     console.log('\nTous les tests E2E sont passés avec succès.');
   } catch (err) {
     console.error('\nÉchec des tests E2E :', err.message);

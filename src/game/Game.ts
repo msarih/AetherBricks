@@ -15,10 +15,12 @@ import * as THREE from 'three';
 import type { Sfx, SfxName } from '../audio/Sfx';
 import { Living, type DamageCause, type Entity, type GameApi } from '../entity/Entity';
 import type { MobKind } from '../entity/MobModels';
-import { HOSTILE_KINDS, Monster, PASSIVE_KINDS, createMob, hatchEgg } from '../entity/Mobs';
+import { HOSTILE_KINDS, Monster, NPC_KINDS, PASSIVE_KINDS, Villager, createMob, hatchEgg } from '../entity/Mobs';
+import { isProfession, type Offer } from '../entity/Trades';
 import { FallingBlock, ItemEntity, Thrown, Tnt } from '../entity/Objects';
 import { isBoxFree, pointInFluid } from '../entity/Physics';
 import { createEntity } from '../entity/Registry';
+import { tickSpawners } from '../entity/BlockSpawner';
 import { Spawner } from '../entity/Spawner';
 import { Input } from '../player/Input';
 import { Player } from '../player/Player';
@@ -31,7 +33,7 @@ import { Particles, type ParticleKind, type ParticleWorld } from '../render/Part
 import { Selection } from '../render/Selection';
 import { SignRenderer } from '../render/SignRenderer';
 import { Sky, type SkyEnvironment } from '../render/Sky';
-import type { UiApi, UiGame } from '../ui/UiApi';
+import type { TradeView, UiApi, UiGame } from '../ui/UiApi';
 import { BLOCKS, BLOCK_SHAPE, BLOCK_SOLID, FACING_DX, FACING_DZ, SHAPE, isLeaves, isLog } from '../world/Blocks';
 import type { Chunk } from '../world/Chunk';
 import { ChunkManager, type ChunkHooks } from '../world/ChunkManager';
@@ -46,8 +48,12 @@ import { formatKeyCode, netherStorageId } from '../world/Storage';
 import type { Settings, Storage, WorldInfo } from '../world/Storage';
 import { World, posKey, posKeyX, posKeyY, posKeyZ, type BlockEntity, type WorldEffect, type WorldHost } from '../world/World';
 import { BIOMES } from '../world/gen/Biomes';
+import { NetherGen } from '../world/gen/NetherGen';
+import type { GenSpawn } from '../world/gen/GenCanvas';
+import { hash2, mulberry32 } from '../world/gen/Noise';
+import { locateStructure, type StructureKind, type TerrainInfo } from '../world/gen/Structures';
 import { WorldGen } from '../world/gen/WorldGen';
-import { blockEntityItems, cleanSignLines, getSign, tickBlockEntities } from './BlockEntities';
+import { blockEntityItems, cleanSignLines, getSign, resolveLoot, tickBlockEntities } from './BlockEntities';
 import { ADVANCEMENTS, advancementText } from './Advancements';
 import { Dial, bearing, clockTarget, dialNoise } from './Dials';
 import { explode as runExplosion } from './Explosion';
@@ -94,7 +100,20 @@ const ROD_TIP_Y = 0.12;
 const DIFFICULTY_LABELS = ['Paisible', 'Facile', 'Normale', 'Difficile'];
 const DIFFICULTY_NAMES = ['peaceful', 'easy', 'normal', 'hard'];
 const TIME_NAMES: Record<string, number> = { day: 1000, noon: 6000, night: 13000, midnight: 18000 };
-const COMMANDS = ['help', 'gamemode', 'time', 'weather', 'give', 'tp', 'kill', 'seed', 'difficulty', 'summon', 'clear', 'spawnpoint'];
+const COMMANDS = ['help', 'gamemode', 'time', 'weather', 'give', 'tp', 'kill', 'seed', 'difficulty', 'summon', 'clear', 'spawnpoint', 'locate'];
+
+/** Lieux reconnus par /locate (noms français et anglais). */
+const LOCATE_NAMES: Record<string, { kind: StructureKind; label: string }> = {
+  village: { kind: 'village', label: 'Village' },
+  temple: { kind: 'desert_temple', label: 'Temple du désert' },
+  pyramide: { kind: 'desert_temple', label: 'Temple du désert' },
+  desert: { kind: 'desert_temple', label: 'Temple du désert' },
+  jungle: { kind: 'jungle_temple', label: 'Temple de la jungle' },
+  mine: { kind: 'mineshaft', label: 'Mine abandonnée' },
+  mineshaft: { kind: 'mineshaft', label: 'Mine abandonnée' },
+  forteresse: { kind: 'fortress', label: 'Forteresse du Nether' },
+  fortress: { kind: 'fortress', label: 'Forteresse du Nether' },
+};
 const MOB_LABELS: Record<string, string> = {
   zombie: 'un zombie',
   skeleton: 'un squelette',
@@ -255,6 +274,9 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
   private disposed = false;
   private itemNames: Map<string, number> | null = null;
   private readonly pressedPlates = new Map<number, number>();
+  /** Générateur gardé pour situer les lieux (/locate) : créé à la première demande. */
+  private terrain: TerrainInfo | null = null;
+  private terrainDimension: Dimension | null = null;
 
   constructor(o: GameOptions) {
     this.renderer = o.renderer;
@@ -270,7 +292,8 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     this.camera = new THREE.PerspectiveCamera(o.settings.fov, (canvas.clientWidth || 16) / (canvas.clientHeight || 9), 0.05, 1200);
     this.camera.rotation.order = 'YXZ';
 
-    const world = new World(info.seed, info.worldType);
+    const genVersion = info.genVersion ?? 1;
+    const world = new World(info.seed, info.worldType, genVersion);
     this.world = world;
     this.rng = world.rng;
     world.host = this.createWorldHost();
@@ -282,6 +305,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     this.chunks = new ChunkManager(world, this.chunkRenderer, {
       seed: info.seed,
       worldType: info.worldType,
+      genVersion,
       dimension: this.dimension,
       storage: o.storage,
       worldId: info.id,
@@ -330,7 +354,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     if (Array.isArray(savedSpawn) && savedSpawn.length === 3 && savedSpawn.every((v) => typeof v === 'number' && Number.isFinite(v))) {
       this.spawnPoint = { x: savedSpawn[0] as number, y: savedSpawn[1] as number, z: savedSpawn[2] as number };
     } else {
-      this.spawnPoint = new WorldGen(info.seed, info.worldType).findSpawn();
+      this.spawnPoint = new WorldGen(info.seed, info.worldType, genVersion).findSpawn();
     }
     const num = (v: unknown, fallback: number): number => (typeof v === 'number' && Number.isFinite(v) ? v : fallback);
     if (st) {
@@ -438,6 +462,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     if (thumbnail) info.thumbnail = thumbnail;
     this.autosave = 0;
     await this.storage.putWorld(info);
+    this.keepPersistentEntities();
     await this.chunks.saveAll();
   }
 
@@ -745,6 +770,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     // --- monde ---
     w.tick(p.x, p.z);
     tickBlockEntities(w);
+    tickSpawners(this);
     this.spawner.tick(this);
     this.atlas.tick();
     this.time++;
@@ -886,7 +912,8 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     if (this.dimensionSwitching || this.dimension === target) return;
     this.dimensionSwitching = true;
     try {
-      await this.chunks.saveAll();
+      this.keepPersistentEntities();
+    await this.chunks.saveAll();
       const keys = this.storage
         ? await this.storage.chunkKeys(target === 'nether' ? netherStorageId(this.info.id) : this.info.id)
         : new Set<number>();
@@ -1269,6 +1296,43 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     this.fx.blockHit(x, y, z, face, particleTile(id, meta), particleTint(this, x, z, id));
   }
 
+  /** Clic droit sur un villageois : écran d'échange. Les objets passent directement par l'inventaire du joueur. */
+  openTrade(villager: Entity): void {
+    if (!(villager instanceof Villager)) return;
+    const v = villager;
+    const p = this.player;
+    const inv = p.inventory;
+    const free = (): boolean => p.gameMode === 'creative';
+    const can = (o: Offer): boolean => free() || (inv.count(o.buy) >= o.buyCount && (o.buy2 === 0 || inv.count(o.buy2) >= o.buy2Count));
+    const view: TradeView = {
+      title: v.title,
+      offers: () => v.offers.map((o) => ({
+        buy: o.buy, buyCount: o.buyCount, buy2: o.buy2, buy2Count: o.buy2Count, sell: o.sell, sellCount: o.sellCount,
+        enchanted: o.enchants !== undefined, soldOut: o.uses >= o.maxUses, affordable: can(o),
+      })),
+      trade: (index) => {
+        const o = v.offers[index];
+        if (!o || !v.alive || v.customer !== p || o.uses >= o.maxUses || !can(o)) return false;
+        if (!free()) {
+          inv.remove(o.buy, o.buyCount);
+          if (o.buy2 !== 0) inv.remove(o.buy2, o.buy2Count);
+        }
+        const stack = makeStack(o.sell, o.sellCount, 0, o.enchants);
+        if (inv.add(stack) > 0) this.dropItem(p.x, p.y + 1, p.z, stack.id, stack.count, stack.damage);
+        v.completeTrade(this, index);
+        this.sfx.play('pop', { volume: 0.5, pitch: 0.9 + Math.random() * 0.3 });
+        p.addStat(STAT.TRADES);
+        return true;
+      },
+      closed: () => {
+        if (v.customer === p) v.customer = null;
+      },
+    };
+    this.interaction.reset();
+    this.ui.openTrade(view);
+    this.input.unlock();
+  }
+
   openMenu(menu: Menu): void {
     this.interaction.reset();
     this.menu = menu;
@@ -1437,6 +1501,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       },
       effect: (kind, x, y, z, a, b) => this.worldEffect(kind, x, y, z, a ?? 0, b ?? 0),
       blockEntityRemoved: (be: BlockEntity) => {
+        resolveLoot(be, this.world.seed);
         for (const s of blockEntityItems(be)) this.dropItem(be.x + 0.5, be.y + 0.3, be.z + 0.5, s.id, s.count, s.damage);
       },
       pushEntities: (x0, y0, z0, x1, y1, z1, dx, dy, dz) => {
@@ -1472,11 +1537,12 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
 
   // ------------------------------------------------------------------ ChunkHooks
 
-  chunkLoaded(chunk: Chunk, saved: unknown[] | null): void {
+  chunkLoaded(chunk: Chunk, saved: unknown[] | null, spawns?: readonly GenSpawn[]): void {
     this.quiet = true;
     try {
       if (saved === null) {
         this.spawner.populateChunk(this, chunk);
+        if (spawns) for (const s of spawns) this.spawnGenerated(s);
       } else {
         for (const d of saved) {
           const e = createEntity(d);
@@ -1485,6 +1551,32 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       }
     } finally {
       this.quiet = false;
+    }
+  }
+
+  /** Habitant posé par le générateur (villageois dans sa maison) : métier fixé, carrière tirée de sa position. */
+  private spawnGenerated(s: GenSpawn): void {
+    if (s.kind !== 'villager') return;
+    const rng = mulberry32(hash2(Math.floor(s.x), Math.floor(s.z), (this.world.seed ^ 0x51a6e7) >>> 0));
+    const v = new Villager(rng, isProfession(s.profession) ? s.profession : undefined);
+    v.setPosition(s.x, s.y, s.z);
+    v.setRotation(rng() * Math.PI * 2);
+    v.setHome(s.x, s.z);
+    this.spawn(v);
+  }
+
+  /**
+   * Avant une sauvegarde : le chunk d'une entité à conserver (villageois avec qui le joueur a
+   * commercé) est marqué modifié, sinon il serait régénéré à neuf au prochain chargement.
+   */
+  private keepPersistentEntities(): void {
+    for (const e of this.entities) {
+      if (!e.persistent || e.dead) continue;
+      const c = this.world.chunkAt(Math.floor(e.x), Math.floor(e.z));
+      if (c) {
+        c.modified = true;
+        c.saveDirty = true;
+      }
     }
   }
 
@@ -1501,6 +1593,10 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       if (!e.dead) {
         const d = e.save();
         if (d) out.push(d);
+        if (e.persistent) {
+          chunk.modified = true;
+          chunk.saveDirty = true;
+        }
       }
       if (remove) this.homes.delete(e);
       else list[n++] = e;
@@ -1692,6 +1788,25 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     return map;
   }
 
+  /**
+   * Lieu du type donné le plus proche du joueur (village, temple…), ou null : monde plat,
+   * monde créé avant les lieux à découvrir, ou lieu d'une autre dimension.
+   */
+  locate(kind: StructureKind): { x: number; y: number; z: number; distance: number } | null {
+    if (this.world.genVersion < 2 || this.world.worldType === 'flat') return null;
+    if ((kind === 'fortress') !== (this.dimension === 'nether')) return null;
+    if (!this.terrain || this.terrainDimension !== this.dimension) {
+      this.terrain = this.dimension === 'nether'
+        ? new NetherGen(this.info.seed, this.world.genVersion)
+        : new WorldGen(this.info.seed, this.info.worldType, this.world.genVersion);
+      this.terrainDimension = this.dimension;
+    }
+    const p = this.player;
+    const s = locateStructure(this.terrain, kind, Math.floor(p.x), Math.floor(p.z));
+    if (!s) return null;
+    return { x: s.x, y: s.y, z: s.z, distance: Math.round(Math.hypot(s.x - p.x, s.z - p.z)) };
+  }
+
   private command(line: string): void {
     const args = line.split(/\s+/).filter((s) => s !== '');
     const name = (args.shift() ?? '').toLowerCase();
@@ -1702,7 +1817,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       case '?':
         say('Commandes : /gamemode <survival|creative>, /time <set|add> <valeur>, /weather <clear|rain|thunder>,');
         say('/give <objet> [quantité], /tp <x> <y> <z>, /summon <créature> [nombre], /difficulty <0-3>,');
-        say('/kill, /clear, /seed, /spawnpoint');
+        say('/kill, /clear, /seed, /spawnpoint, /locate <village|temple|jungle|mine|forteresse>');
         return;
       case 'gamemode': {
         const m = (args[0] ?? '').toLowerCase();
@@ -1786,6 +1901,27 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       case 'seed':
         say(`Graine : ${this.info.seed}`);
         return;
+      case 'locate': {
+        const key = (args[0] ?? '').toLowerCase();
+        const place = LOCATE_NAMES[key];
+        if (!place) {
+          say('Usage : /locate <village|temple|jungle|mine|forteresse>');
+          return;
+        }
+        if (this.world.genVersion < 2 || this.world.worldType === 'flat') {
+          say('Ce monde ne contient pas de lieux à découvrir (monde plat, ou créé avant leur arrivée).');
+          return;
+        }
+        const found = this.locate(place.kind);
+        if (!found) {
+          say((place.kind === 'fortress') !== (this.dimension === 'nether')
+            ? `${place.label} : à chercher ${place.kind === 'fortress' ? 'dans le Nether' : 'à la surface'}.`
+            : `${place.label} : rien à proximité.`);
+          return;
+        }
+        say(`${place.label} : x ${found.x}, z ${found.z} (à ${found.distance} blocs)`);
+        return;
+      }
       case 'difficulty': {
         const key = (args[0] ?? '').toLowerCase();
         const d = DIFFICULTY_NAMES.includes(key) ? DIFFICULTY_NAMES.indexOf(key) : /^[0-3]$/.test(key) ? Number(key) : -1;
@@ -1800,8 +1936,8 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       case 'summon': {
         const kind = (args[0] ?? '').toLowerCase() as MobKind;
         const count = args[1] === undefined ? 1 : Math.max(1, Math.min(50, Math.floor(Number(args[1])) || 1));
-        if (!PASSIVE_KINDS.includes(kind) && !HOSTILE_KINDS.includes(kind)) {
-          say(`Usage : /summon <${[...PASSIVE_KINDS, ...HOSTILE_KINDS].join('|')}> [nombre]`);
+        if (!PASSIVE_KINDS.includes(kind) && !HOSTILE_KINDS.includes(kind) && !NPC_KINDS.includes(kind)) {
+          say(`Usage : /summon <${[...PASSIVE_KINDS, ...HOSTILE_KINDS, ...NPC_KINDS].join('|')}> [nombre]`);
           return;
         }
         const v = this.lookDir;
@@ -1864,8 +2000,10 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
           return pick(['clear', 'rain', 'thunder']);
         case 'difficulty':
           return pick(DIFFICULTY_NAMES);
+        case 'locate':
+          return pick(Object.keys(LOCATE_NAMES));
         case 'summon':
-          return pick([...PASSIVE_KINDS, ...HOSTILE_KINDS]);
+          return pick([...PASSIVE_KINDS, ...HOSTILE_KINDS, ...NPC_KINDS]);
         case 'give':
           return pick([...this.items().keys()]).sort();
         case 'tp':

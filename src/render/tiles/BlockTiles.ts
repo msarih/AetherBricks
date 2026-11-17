@@ -1428,6 +1428,17 @@ function farmland(wet: boolean): Painter {
     }
   };
 }
+const PATH = [0x8a7a44, 0x978649, 0xa29252, 0xad9d5c];
+def('grass_path_top', (p) => {
+  p.rough(PATH, 5, 5, 0.6);
+});
+def('grass_path_side', (p) => {
+  dirtBase(p);
+  for (let x = 0; x < TS; x++) {
+    p.set(x, 0, p.pick(PATH));
+    p.set(x, 1, shade(p.pick(PATH), 0.86));
+  }
+});
 def('farmland_dry', farmland(false));
 def('farmland_wet', farmland(true));
 

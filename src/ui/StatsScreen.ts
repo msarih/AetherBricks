@@ -95,6 +95,7 @@ export class StatsScreen implements Screen {
         this.row('Poissons pêchés', FR.format(get(STAT.FISH)));
         this.row('Animaux élevés', FR.format(get(STAT.BRED)));
         this.row('Nuits passées dans un lit', FR.format(get(STAT.SLEEP)));
+        this.row('Échanges avec des villageois', FR.format(get(STAT.TRADES)));
         break;
       case 'blocks':
         this.counts(stats, 'mined:', (id) => (id < BLOCK_ID_LIMIT ? BLOCKS[id]?.label : undefined) ?? itemLabel(id), 'minés');

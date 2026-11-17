@@ -169,6 +169,8 @@ export const B = {
   /** Panneau sur poteau (méta : orientation 0..15, par seizièmes de tour) et panneau mural (méta : direction de sa face 0..3). */
   SIGN: 163,
   WALL_SIGN: 164,
+  /** Chemin de terre des villages (15/16 de haut, comme la terre labourée). */
+  GRASS_PATH: 165,
 } as const;
 
 /** Nombre maximal d'identifiants de blocs (les objets commencent à 256). */

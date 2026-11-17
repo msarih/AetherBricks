@@ -12,6 +12,7 @@ import type { NewWorldOptions, UiGame, UiHost } from './ui/UiApi';
 import { Storage, createWorldId, loadSettings, saveSettings, type WorldInfo } from './world/Storage';
 import { exportWorld, importWorld, worldFileName } from './world/WorldFile';
 import { DYNAMIC_ICON_ITEMS } from './world/Items';
+import { GEN_VERSION } from './world/Constants';
 import { TILE_SIZE } from './world/Tiles';
 import { hashString } from './world/gen/Noise';
 
@@ -107,6 +108,7 @@ async function main(): Promise<void> {
         seed: parseSeed(options.seed),
         worldType: options.worldType,
         gameMode: options.gameMode,
+        genVersion: GEN_VERSION,
         createdAt: now,
         lastPlayed: now,
         state: null,

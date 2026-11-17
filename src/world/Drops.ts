@@ -120,6 +120,7 @@ export function blockDrops(id: number, meta: number, tool: number, rng: () => nu
       return one(B.COBBLESTONE);
     case B.GRASS:
     case B.FARMLAND:
+    case B.GRASS_PATH:
       return one(B.DIRT);
     case B.GRAVEL: {
       const flintChance = fortune <= 0 ? 0.1 : fortune === 1 ? 0.14 : fortune === 2 ? 0.25 : 1;

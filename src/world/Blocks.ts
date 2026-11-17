@@ -425,6 +425,10 @@ reg(B.FARMLAND, 'farmland', 'Terre labourée', {
   tiles: { top: 'farmland_dry', bottom: 'dirt', side: 'dirt' }, shape: SHAPE.FARMLAND, opaque: false, lightOpacity: 15, hardness: 0.6,
   tool: 'shovel', sound: 'gravel', randomTicks: true, hasItem: false, category: 'aucune',
 });
+reg(B.GRASS_PATH, 'grass_path', 'Chemin de terre', {
+  tiles: { top: 'grass_path_top', bottom: 'dirt', side: 'grass_path_side' }, shape: SHAPE.FARMLAND, opaque: false, lightOpacity: 15,
+  hardness: 0.65, tool: 'shovel', sound: 'grass', category: 'nature',
+});
 reg(B.LILY_PAD, 'lily_pad', 'Nénuphar', {
   tiles: 'lily_pad', shape: SHAPE.LILY_PAD, solid: true, opaque: false, hardness: 0, sound: 'grass', itemTile: 'lily_pad', category: 'nature',
 });

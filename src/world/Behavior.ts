@@ -50,7 +50,7 @@ export function topSolid(w: World, x: number, y: number, z: number): boolean {
   const meta = v >> 8;
   if (isSlab(id)) return meta >= 1;
   if (isStairs(id)) return (meta & 4) !== 0;
-  return shape === SHAPE.FENCE || id === B.FARMLAND;
+  return shape === SHAPE.FENCE || id === B.FARMLAND || id === B.GRASS_PATH;
 }
 
 /** Le bloc offre-t-il des faces latérales pleines (torche murale, échelle) ? */

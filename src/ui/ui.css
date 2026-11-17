@@ -1508,3 +1508,81 @@
   flex: none;
   color: #e0e0e0;
 }
+
+/* ---------------------------------------------------------------- échanges des villageois */
+
+.mc-trade-hint {
+  color: #c8c8c8;
+  margin-bottom: calc(var(--u) * 4);
+}
+
+.mc-trade-list {
+  width: calc(var(--u) * 320);
+  height: calc(var(--u) * 140);
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #c6c6c6 #000;
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--u) * 1);
+  margin-bottom: calc(var(--u) * 6);
+}
+
+.mc-trade-row {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(var(--u) * 6);
+  padding: calc(var(--u) * 3) calc(var(--u) * 6);
+  font: inherit;
+  color: #fff;
+  text-align: left;
+  background: rgba(255, 255, 255, 0.08);
+  border: calc(var(--u) * 1) solid rgba(255, 255, 255, 0.25);
+  cursor: pointer;
+}
+
+.mc-trade-row:hover:not(:disabled) {
+  background: rgba(120, 160, 255, 0.3);
+  border-color: #fff;
+}
+
+.mc-trade-row:disabled {
+  color: #8a8a8a;
+  cursor: default;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.mc-trade-out .mc-trade-arrow {
+  color: #e05050;
+}
+
+.mc-trade-side {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 4);
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.mc-trade-item {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 3);
+  min-width: 0;
+}
+
+.mc-trade-arrow,
+.mc-trade-plus {
+  flex: none;
+}
+
+.mc-trade-enchanted {
+  color: #b48cff;
+}
+
+.mc-trade-row:disabled .mc-trade-enchanted {
+  color: #7a6a9a;
+}

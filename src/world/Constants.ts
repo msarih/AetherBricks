@@ -44,3 +44,12 @@ export const FACE_OPPOSITE = [1, 0, 3, 2, 5, 4];
 export type GameMode = 'survival' | 'creative';
 export type WorldType = 'default' | 'flat';
 export type Dimension = 'overworld' | 'nether';
+
+/**
+ * Version du générateur de monde. Elle est notée dans chaque monde à sa création : un monde
+ * garde pour toujours le générateur avec lequel il est né, sinon ses chunks jamais modifiés
+ * (qui ne sont pas sauvegardés mais régénérés) changeraient sous les pieds du joueur.
+ *  1 : relief, grottes, minerais, arbres (mondes créés avant les lieux à découvrir) ;
+ *  2 : + donjons, villages, temples, mines abandonnées, badlands, forteresses du Nether.
+ */
+export const GEN_VERSION = 2;
