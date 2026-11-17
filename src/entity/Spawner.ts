@@ -93,6 +93,7 @@ export class Spawner {
    * Déterministe : le tirage dépend de la graine du monde et des coordonnées du chunk.
    */
   populateChunk(game: GameApi, chunk: Chunk): void {
+    if (game.dimension === 'nether') return;
     const seed = (Math.imul(game.world.seed, 0x9e3779b1) ^ 0x4d0b5a11) >>> 0;
     const rng = mulberry32(hash2(chunk.cx, chunk.cz, seed));
     const chance = game.world.worldType === 'flat' ? FLAT_ANIMAL_CHUNK_CHANCE : ANIMAL_CHUNK_CHANCE;
@@ -155,6 +156,7 @@ export class Spawner {
 
   /** À chaque tick : apparition des monstres dans le noir, plafonds de population. */
   tick(game: GameApi): void {
+    if (game.dimension === 'nether') return;
     if (++this.timer < SPAWN_INTERVAL) return;
     this.timer = 0;
     const difficulty = Math.max(0, Math.min(3, Math.floor(game.difficulty)));

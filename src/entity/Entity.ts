@@ -5,7 +5,7 @@
  */
 import type { SfxName } from '../audio/Sfx';
 import type { ParticleKind } from '../render/Particles';
-import type { GameMode } from '../world/Constants';
+import type { Dimension, GameMode } from '../world/Constants';
 import { B } from '../world/Ids';
 import type { ItemStack } from '../world/ItemStack';
 import type { World } from '../world/World';
@@ -48,6 +48,8 @@ export interface GameApi {
   readonly dayTime: number;
   /** 0 paisible (aucun monstre), 1 facile, 2 normal, 3 difficile. */
   readonly difficulty: number;
+  /** Dimension courante ('overworld' ou 'nether'). */
+  readonly dimension?: Dimension;
 
   /** Ajoute une entité au monde (effective à la fin du tick courant). */
   spawn(e: Entity): void;
