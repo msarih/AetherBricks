@@ -143,6 +143,10 @@ export function blockDrops(id: number, meta: number, tool: number, rng: () => nu
       return one(I.REDSTONE, randInt(rng, 4, 5) + (fortune > 0 ? randInt(rng, 0, fortune) : 0));
     case B.LAPIS_ORE:
       return one(I.LAPIS, randInt(rng, 4, 8) * fortuneBonus());
+    case B.NETHER_QUARTZ_ORE:
+      return one(I.QUARTZ, fortuneBonus());
+    case B.NETHER_PORTAL:
+      return [];
 
     // --- Rien du tout ---
     case B.REDSTONE_WIRE:

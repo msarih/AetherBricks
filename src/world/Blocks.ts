@@ -35,6 +35,7 @@ export const SHAPE = {
   BUTTON: 24,
   PRESSURE_PLATE: 25,
   PISTON_HEAD: 26,
+  PORTAL: 27,
 } as const;
 
 export const TINT = { NONE: 0, GRASS: 1, FOLIAGE: 2, FIXED: 3 } as const;
@@ -492,6 +493,13 @@ reg(B.REDSTONE_LAMP, 'redstone_lamp', 'Lampe à redstone', {
 });
 reg(B.REDSTONE_LAMP_LIT, 'redstone_lamp_lit', 'Lampe à redstone allumée', {
   tiles: 'redstone_lamp_on', hardness: 0.3, emit: 15, sound: 'glass', hasItem: false, category: 'aucune',
+});
+reg(B.NETHER_PORTAL, 'nether_portal', 'Portail du Nether', {
+  tiles: 'nether_portal', shape: SHAPE.PORTAL, solid: false, opaque: false, translucent: true,
+  emit: 11, hardness: -1, sound: 'glass', hasItem: false, category: 'aucune',
+});
+reg(B.NETHER_QUARTZ_ORE, 'nether_quartz_ore', 'Minerai de quartz du Nether', {
+  tiles: 'nether_quartz_ore', hardness: 3, tool: 'pickaxe', harvestTier: 1, sound: 'stone', category: 'nature',
 });
 
 // Identifiants non attribués : on les fait pointer vers un bloc de secours pour éviter tout crash

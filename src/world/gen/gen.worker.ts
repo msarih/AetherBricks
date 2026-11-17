@@ -5,9 +5,12 @@
  * Message émis : { type: 'chunk', cx, cz, blocks, meta, biomes, heightmap, tints } (tampons transférés).
  */
 import { WorldGen } from './WorldGen';
-import type { WorldType } from '../Constants';
+import { NetherGen } from './NetherGen';
+import type { Dimension, WorldType } from '../Constants';
 
-export type GenRequest = { type: 'init'; seed: number; worldType: WorldType } | { type: 'gen'; cx: number; cz: number };
+export type GenRequest =
+  | { type: 'init'; seed: number; worldType: WorldType; dimension?: Dimension }
+  | { type: 'gen'; cx: number; cz: number };
 
 export interface GenResponse {
   type: 'chunk';
@@ -25,12 +28,12 @@ const ctx = self as unknown as {
   onmessage: ((e: MessageEvent) => void) | null;
 };
 
-let gen: WorldGen | null = null;
+let gen: WorldGen | NetherGen | null = null;
 
 ctx.onmessage = (e: MessageEvent) => {
   const m = e.data as GenRequest;
   if (m.type === 'init') {
-    gen = new WorldGen(m.seed, m.worldType);
+    gen = m.dimension === 'nether' ? new NetherGen(m.seed) : new WorldGen(m.seed, m.worldType);
     return;
   }
   if (!gen) return;

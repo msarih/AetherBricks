@@ -26,6 +26,7 @@ import {
   PISTON_DZ,
 } from './Blocks';
 import { fluidTick, fluidTickDelay, lavaMix } from './Fluids';
+import { portalCanStay } from './Portal';
 import { isTorchSupportPowered, updateRedstoneAround } from './Redstone';
 import { growTree } from './Trees';
 import type { World } from './World';
@@ -229,6 +230,9 @@ export function neighborChanged(w: World, x: number, y: number, z: number): void
       return;
     case B.SNOW_LAYER:
       if (!canStay(w, x, y, z, id, meta)) w.setBlock(x, y, z, B.AIR, 0);
+      return;
+    case B.NETHER_PORTAL:
+      if (!portalCanStay(w, x, y, z, meta)) w.setBlock(x, y, z, B.AIR, 0);
       return;
     case B.PISTON_HEAD: {
       const f = Math.min(5, meta & 7);

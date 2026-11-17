@@ -37,6 +37,7 @@ const BASE_TILES = [
   'redstone_dust', 'redstone_torch_on', 'redstone_torch_off',
   'piston_top', 'piston_top_sticky', 'piston_side', 'piston_bottom', 'piston_inner',
   'redstone_lamp_off', 'redstone_lamp_on',
+  'nether_portal', 'nether_quartz_ore',
   // --- Végétation ---
   'tall_grass', 'fern', 'dead_bush', 'dandelion', 'poppy', 'blue_orchid', 'allium', 'azure_bluet',
   'red_tulip', 'orange_tulip', 'white_tulip', 'pink_tulip', 'oxeye_daisy', 'cornflower',

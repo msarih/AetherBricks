@@ -1098,6 +1098,13 @@ function meshCell(id: number, meta: number): void {
       }
       return;
     }
+    case SHAPE.PORTAL: {
+      tmpBoxes.length = 0;
+      selectionBoxes(id, meta, nb, tmpBoxes);
+      noTint();
+      boxAll(translucentPass, id, tmpBoxes, 0, NOMIP, -1);
+      return;
+    }
     case SHAPE.PANE:
       meshPane(id);
       return;

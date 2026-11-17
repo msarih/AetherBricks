@@ -1753,3 +1753,23 @@ def('redstone_lamp_on', (p) => {
   p.frame(0, 0, 16, 16, 0x8d5b20);
   p.frame(2, 2, 12, 12, 0xb87f32);
 });
+
+def('nether_portal', (p) => {
+  for (let y = 0; y < TS; y++) {
+    for (let x = 0; x < TS; x++) {
+      const d = Math.sin(x * 0.7 + y * 0.5) + Math.cos(x * 0.4 - y * 0.8);
+      p.set(x, y, d > 0.5 ? 0xa94bf7 : d > -0.3 ? 0x8224d6 : 0x5c13a3, 190);
+    }
+  }
+});
+
+def('nether_quartz_ore', (p) => {
+  p.rough([0x501b1b, 0x622525, 0x723232, 0x854242, 0x935050], 6, 6, 0.6);
+  const spots: Array<[number, number]> = [[2, 3], [9, 2], [5, 8], [11, 7], [3, 12], [10, 13]];
+  for (const [x, y] of spots) {
+    p.set(x, y, 0xe8e2d8);
+    p.set(x + 1, y, 0xffffff);
+    p.set(x, y + 1, 0xc9bfb2);
+    p.set(x + 1, y + 1, 0xe8e2d8);
+  }
+});

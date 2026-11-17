@@ -549,6 +549,43 @@ const dbg = (page) => ev(page, () => { const d = window.__game.debugLines(); ret
       }
       const left = await names();
       check('import : supprimer le monde importé laisse l\'original', sel === 'Monde renommé (2)' && left.join('|') === 'Monde renommé', `sélection « ${sel} », reste ${JSON.stringify(left)}`);
+
+      // Compatibilité avec une archive .aetherworld v1 créée avant l'ajout du Nether
+      const v1Path = path.resolve(__dirname, 'fixtures/overworld-v1.aetherworld');
+      if (fs.existsSync(v1Path)) {
+        await upload(v1Path);
+        await page.waitForFunction(() => document.querySelectorAll('.mc-world-name').length >= 2, { timeout: 30000 });
+        await sleep(300);
+        await click(page, 'world-play');
+        await page.waitForFunction('window.__game && window.__game.ready === true', { timeout: 120000 });
+        await install(page);
+        await ticks(page, 10);
+        const v1Res = await ev(page, async () => {
+          const { B, I } = await import('/src/world/Ids.ts');
+          const g = window.__game, p = g.player;
+          return {
+            dim: g.dimension,
+            cobble: g.world.getBlock(25, 4, 25) === B.COBBLESTONE,
+            posOk: Math.hypot(p.x - 23.5, p.z - 25.5) < 0.5,
+            pickOk: p.inventory.slots[0]?.id === I.DIAMOND_PICKAXE && p.inventory.slots[0]?.enchants?.efficiency === 3,
+          };
+        });
+        check('import : archive .aetherworld v1 antérieure au Nether se charge sans perte',
+          v1Res.dim === 'overworld' && v1Res.cobble && v1Res.posOk && v1Res.pickOk,
+          JSON.stringify(v1Res));
+        await page.keyboard.press('Escape');
+        await page.waitForSelector('[data-mc="quit"]', { timeout: 5000 });
+        await click(page, 'quit');
+        await page.waitForSelector('[data-mc="title"]', { timeout: 30000 });
+        await click(page, 'play');
+        await page.waitForSelector('[data-mc="world-delete"]:not([disabled])', { timeout: 10000 });
+        await sleep(300);
+        await click(page, 'world-delete');
+        await page.waitForSelector('[data-mc="confirm"]', { timeout: 5000 });
+        await click(page, 'confirm');
+        await sleep(500);
+      }
+
       await click(page, 'back'); await sleep(300);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });

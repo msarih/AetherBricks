@@ -451,6 +451,10 @@ export function selectionBoxes(id: number, meta: number, nb: NeighborFn, out: nu
       else wallAttachBox((side - 1) & 3, 6, 8, 3, 4, out);
       return;
     }
+    case SHAPE.PORTAL:
+      if (meta & 1) out.push(6, 0, 0, 10, 16, 16);
+      else out.push(0, 0, 6, 16, 16, 10);
+      return;
     case SHAPE.CUBE:
       out.push(0, 0, 0, 16, 16, 16);
       return;

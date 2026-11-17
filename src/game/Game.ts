@@ -34,12 +34,13 @@ import type { UiApi, UiGame } from '../ui/UiApi';
 import { BLOCKS, BLOCK_SHAPE, BLOCK_SOLID, FACING_DX, FACING_DZ, SHAPE, isLeaves, isLog } from '../world/Blocks';
 import type { Chunk } from '../world/Chunk';
 import { ChunkManager, type ChunkHooks } from '../world/ChunkManager';
-import { CHUNK_HEIGHT, DAY_TICKS, TICKS_PER_SECOND, chunkKey, type GameMode } from '../world/Constants';
+import { CHUNK_HEIGHT, DAY_TICKS, TICKS_PER_SECOND, chunkKey, type Dimension, type GameMode } from '../world/Constants';
 import { B } from '../world/Ids';
 import { ITEMS, getItem, itemLabel } from '../world/Items';
 import { makeStack } from '../world/ItemStack';
+import { findOrCreatePortal } from '../world/Portal';
 import { newRayHit, raycast } from '../world/Raycast';
-import { formatKeyCode } from '../world/Storage';
+import { formatKeyCode, netherStorageId } from '../world/Storage';
 import type { Settings, Storage, WorldInfo } from '../world/Storage';
 import { World, posKey, posKeyX, posKeyY, posKeyZ, type BlockEntity, type WorldEffect, type WorldHost } from '../world/World';
 import { BIOMES } from '../world/gen/Biomes';
@@ -160,6 +161,11 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
   readonly info: WorldInfo;
 
   private level = 2;
+  /** Dimension courante ('overworld' ou 'nether'). */
+  dimension: Dimension = 'overworld';
+  private portalTicks = 0;
+  private portalCooldown = 0;
+  private dimensionSwitching = false;
   /** Âge du monde en ticks (l'heure du jour en découle). */
   time = 1000;
   raining = false;
@@ -250,10 +256,14 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     this.rng = world.rng;
     world.host = this.createWorldHost();
 
+    const st0 = info.state as Record<string, unknown> | null;
+    this.dimension = st0?.dimension === 'nether' ? 'nether' : 'overworld';
+
     this.chunkRenderer = new ChunkRenderer(this.scene, o.atlas.texture);
     this.chunks = new ChunkManager(world, this.chunkRenderer, {
       seed: info.seed,
       worldType: info.worldType,
+      dimension: this.dimension,
       storage: o.storage,
       worldId: info.id,
       savedKeys: o.savedKeys,
@@ -397,6 +407,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       weatherTimer: this.weatherTimer,
       difficulty: this.difficulty,
       spawn: [this.spawnPoint.x, this.spawnPoint.y, this.spawnPoint.z],
+      dimension: this.dimension,
       pressedPlates: Array.from(this.pressedPlates.keys()),
     };
     info.gameMode = this.player.gameMode;
@@ -714,6 +725,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     this.atlas.tick();
     this.time++;
     this.tickWeather();
+    this.tickPortal();
     this.tickSleep();
     this.tickAdvancements();
 
@@ -748,6 +760,16 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
   }
 
   private tickWeather(): void {
+    const w = this.world;
+    if (this.dimension === 'nether') {
+      this.raining = false;
+      this.thundering = false;
+      this.rainLevel = 0;
+      this.thunderLevel = 0;
+      w.skyDarken = 11;
+      w.raining = false;
+      return;
+    }
     if (--this.weatherTimer <= 0) {
       if (this.raining) {
         this.raining = false;
@@ -765,10 +787,70 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       this.sky.lightning();
       this.sfx.play('thunder', { volume: 0.7 + this.rng() * 0.3, pitch: 0.8 + this.rng() * 0.4 });
     }
-    const w = this.world;
     const light = this.sky.dayFactor * (1 - (this.rainLevel * 5) / 16) * (1 - (this.thunderLevel * 5) / 16);
     w.skyDarken = Math.round((1 - light) * 11);
     w.raining = this.rainLevel > 0.2;
+  }
+
+  private tickPortal(): void {
+    if (this.dimensionSwitching) return;
+    if (this.portalCooldown > 0) {
+      this.portalCooldown--;
+      this.portalTicks = 0;
+      return;
+    }
+    const p = this.player;
+    const inPortal = this.world.getBlock(Math.floor(p.x), Math.floor(p.y + 0.2), Math.floor(p.z)) === B.NETHER_PORTAL;
+    if (!inPortal) {
+      this.portalTicks = 0;
+      return;
+    }
+    this.portalTicks++;
+    if (p.creative || this.portalTicks >= 80) {
+      this.portalTicks = 0;
+      const target: Dimension = this.dimension === 'overworld' ? 'nether' : 'overworld';
+      void this.switchDimension(target, p.x, p.z);
+    }
+  }
+
+  /** Change de dimension ('overworld' ↔ 'nether') avec facteur d'échelle 1:8 et lien de portail. */
+  async switchDimension(target: Dimension, portalX: number, portalZ: number): Promise<void> {
+    if (this.dimensionSwitching || this.dimension === target) return;
+    this.dimensionSwitching = true;
+    try {
+      await this.chunks.saveAll();
+      const p = this.player;
+      this.entities.length = 0;
+      this.entities.push(p);
+      this.homes.clear();
+      this.pressedPlates.clear();
+
+      this.dimension = target;
+      const keys = this.storage
+        ? await this.storage.chunkKeys(target === 'nether' ? netherStorageId(this.info.id) : this.info.id)
+        : new Set<number>();
+      this.chunks.setDimension(target, keys);
+
+      const tx = target === 'nether' ? Math.floor(portalX / 8) : Math.floor(portalX * 8);
+      const tz = target === 'nether' ? Math.floor(portalZ / 8) : Math.floor(portalZ * 8);
+      p.teleport(tx + 0.5, 80, tz + 0.5);
+      p.vx = p.vy = p.vz = 0;
+
+      for (let i = 0; i < 120 && !this.disposed; i++) {
+        this.chunks.update(tx, tz);
+        if (this.chunks.isReady(tx, tz, 2)) break;
+        await new Promise((r) => setTimeout(r, 25));
+      }
+      const dest = findOrCreatePortal(this.world, tx, tz, target);
+      p.teleport(dest.x, dest.y, dest.z);
+      p.vx = p.vy = p.vz = 0;
+      p.fallDistance = 0;
+      this.portalCooldown = 100;
+      this.portalTicks = 0;
+      await this.save();
+    } finally {
+      this.dimensionSwitching = false;
+    }
   }
 
   private tickSleep(): void {
@@ -928,7 +1010,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
 
     // --- ciel et brouillard ---
     const viewBlocks = this.chunks.viewDistance * 16;
-    this.sky.update(dt, cam, this.dayTime + (dt > 0 ? alpha : 0), this.rainLevel, this.thunderLevel, viewBlocks);
+    this.sky.update(dt, cam, this.dayTime + (dt > 0 ? alpha : 0), this.rainLevel, this.thunderLevel, viewBlocks, this.dimension === 'nether');
     const u = worldUniforms;
     u.uSkyLight.value.copy(this.sky.skyLight);
     const inWater = pointInFluid(w, B.WATER, cam.position.x, cam.position.y, cam.position.z);
@@ -1094,6 +1176,11 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
   }
 
   trySleep(x: number, y: number, z: number, meta: number): void {
+    if (this.dimension === 'nether') {
+      this.world.setBlock(x, y, z, B.AIR, 0);
+      runExplosion(this, x + 0.5, y + 0.5, z + 0.5, 5, true, null);
+      return;
+    }
     const p = this.player;
     // (x, z) de la moitié « tête » du lit
     const d = meta & 3;

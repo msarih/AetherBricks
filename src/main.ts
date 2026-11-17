@@ -72,7 +72,8 @@ async function main(): Promise<void> {
   async function launch(info: WorldInfo): Promise<void> {
     closeGame();
     ui.showLoading('Chargement du monde', 'Ouverture de la sauvegarde…', 0);
-    const savedKeys = await storage.chunkKeys(info.id);
+    const dim = info.state?.dimension === 'nether' ? 'nether' : 'overworld';
+    const savedKeys = await storage.chunkKeys(dim === 'nether' ? `${info.id}:nether` : info.id);
     const g = new Game({ canvas, renderer, atlas, ui, sfx, settings, storage, info, savedKeys });
     game = g;
     host.game = g;

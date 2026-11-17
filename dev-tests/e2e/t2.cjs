@@ -1353,6 +1353,141 @@ async function useOnGround(page, x, z) {
     check('l\'eau restante se retire', left === 0, `${left} cellules d'eau`);
   });
 
+  await section('portail du Nether', async () => {
+    try {
+      await chat(page, '/tp 81.5 4 82.5');
+      await ticks(page, 5);
+      // Cadre d'obsidienne 4×5 en (80..83, 4..8, 80), allumé au briquet par clic droit
+      await ev(page, async () => {
+        const { B, I } = await import('/src/world/Ids.ts');
+        const { makeStack } = await import('/src/world/ItemStack.ts');
+        const g = window.__game, w = g.world, p = g.player;
+        for (let u = 0; u < 4; u++) {
+          for (let v = 0; v < 5; v++) {
+            const border = u === 0 || u === 3 || v === 0 || v === 4;
+            w.setBlock(80 + u, 4 + v, 80, border ? B.OBSIDIAN : B.AIR, 0, false);
+          }
+        }
+        p.inventory.slots[0] = makeStack(I.FLINT_AND_STEEL, 1);
+        p.inventory.selected = 0;
+        T.aim(81.5, 5.0, 80.5);
+      });
+      await ticks(page, 2);
+      await rclick(page);
+      const litPortal = await ev(page, async () => {
+        const { B } = await import('/src/world/Ids.ts');
+        const w = window.__game.world;
+        let count = 0;
+        for (let u = 1; u <= 2; u++) for (let v = 1; v <= 3; v++) if (w.getBlock(80 + u, 4 + v, 80) === B.NETHER_PORTAL) count++;
+        return count;
+      });
+      check('Nether : le briquet allume le portail d\'obsidienne 4×5', litPortal === 6, `${litPortal}/6 blocs de portail`);
+
+      // Rester 4 s (80 ticks) dans le portail en survie change de dimension
+      await ev(page, () => { window.__game.player.teleport(81.5, 5, 80.5); });
+      await ticks(page, 85);
+      await page.waitForFunction(
+        "window.__game && window.__game.dimension === 'nether' && window.__game.chunks.isReady(window.__game.player.x, window.__game.player.z, 2)",
+        { timeout: 30000 },
+      );
+      await ticks(page, 5);
+      const netherInfo = await ev(page, async () => {
+        const { B } = await import('/src/world/Ids.ts');
+        const g = window.__game, w = g.world, p = g.player;
+        let netherrack = 0, bedrock = 0, lava = 0, quartz = 0;
+        const ix = Math.floor(p.x), iz = Math.floor(p.z);
+        for (let dx = -8; dx <= 8; dx++) {
+          for (let dz = -8; dz <= 8; dz++) {
+            for (let y = 0; y < 128; y++) {
+              const id = w.getBlock(ix + dx, y, iz + dz);
+              if (id === B.NETHERRACK) netherrack++;
+              else if (id === B.BEDROCK) bedrock++;
+              else if (id === B.LAVA) lava++;
+              else if (id === B.NETHER_QUARTZ_ORE) quartz++;
+            }
+          }
+        }
+        return { dim: g.dimension, x: p.x, z: p.z, skyDarken: w.skyDarken, netherrack, bedrock, lava, quartz };
+      });
+      await shot(page, '27c-nether');
+      check('Nether : téléportation 1:8, terrain Nether et lumière ambiante faible',
+        netherInfo.dim === 'nether' && Math.abs(netherInfo.x - 10) <= 64 && Math.abs(netherInfo.z - 10) <= 64 &&
+        netherInfo.netherrack > 500 && netherInfo.bedrock > 100 && netherInfo.skyDarken === 11,
+        JSON.stringify(netherInfo));
+
+      // Eau évaporée + lit qui explose dans le Nether (hors du portail)
+      const nSpot = await ev(page, async () => {
+        const { B, I } = await import('/src/world/Ids.ts');
+        const { makeStack } = await import('/src/world/ItemStack.ts');
+        const g = window.__game, w = g.world, p = g.player;
+        const bx = Math.floor(p.x) + 6, by = Math.floor(p.y), bz = Math.floor(p.z) + 6;
+        for (let dx = -1; dx <= 3; dx++) {
+          for (let dz = -1; dz <= 1; dz++) {
+            w.setBlock(bx + dx, by - 1, bz + dz, B.OBSIDIAN, 0, false);
+            w.setBlock(bx + dx, by, bz + dz, B.AIR, 0, false);
+            w.setBlock(bx + dx, by + 1, bz + dz, B.AIR, 0, false);
+          }
+        }
+        p.teleport(bx - 0.5, by, bz + 0.5);
+        p.inventory.slots[0] = makeStack(I.WATER_BUCKET, 1);
+        p.inventory.selected = 0;
+        T.aim(bx + 0.5, by - 0.1, bz + 0.5);
+        return { bx, by, bz };
+      });
+      await ticks(page, 2);
+      await rclick(page);
+      const netherRules = await ev(page, async ({ bx, by, bz }) => {
+        const { B, I } = await import('/src/world/Ids.ts');
+        const g = window.__game, w = g.world, p = g.player;
+        const waterEvap = w.getBlock(bx, by, bz) === B.AIR && p.inventory.slots[0]?.id === I.BUCKET;
+        w.setBlock(bx + 2, by - 1, bz, B.NETHERRACK, 0, false);
+        w.setBlock(bx + 2, by, bz, B.BED, 0, false);
+        const bedHpBefore = p.health;
+        g.trySleep(bx + 2, by, bz, 0);
+        const bedExploded = w.getBlock(bx + 2, by, bz) === B.AIR && w.getBlock(bx + 2, by - 1, bz) === B.AIR;
+        p.health = bedHpBefore;
+        return { waterEvap, bedExploded };
+      }, nSpot);
+      check('Nether : l\'eau s\'évapore et le lit explose', netherRules.waterEvap && netherRules.bedExploded, JSON.stringify(netherRules));
+
+      // Retour à la surface en passant par le portail (immédiat en créatif)
+      await ev(page, async () => {
+        const g = window.__game, p = g.player;
+        g.portalCooldown = 0;
+        p.gameMode = 'creative';
+        const { B } = await import('/src/world/Ids.ts');
+        const ix = Math.floor(p.x), iy = Math.floor(p.y), iz = Math.floor(p.z);
+        for (let dx = -12; dx <= 12; dx++) {
+          for (let dz = -12; dz <= 12; dz++) {
+            for (let dy = -2; dy <= 4; dy++) {
+              if (g.world.getBlock(ix + dx, iy + dy, iz + dz) === B.NETHER_PORTAL) {
+                p.teleport(ix + dx + 0.5, iy + dy, iz + dz + 0.5);
+                return;
+              }
+            }
+          }
+        }
+      });
+      await ticks(page, 5);
+      await page.waitForFunction(
+        "window.__game && window.__game.dimension === 'overworld' && window.__game.chunks.isReady(window.__game.player.x, window.__game.player.z, 2)",
+        { timeout: 30000 },
+      );
+      const back = await ev(page, () => ({ dim: window.__game.dimension, x: window.__game.player.x, z: window.__game.player.z }));
+      check('Nether : le retour ramène au portail de départ en surface',
+        back.dim === 'overworld' && Math.hypot(back.x - 81.5, back.z - 80.5) < 16,
+        JSON.stringify(back));
+    } finally {
+      await ev(page, async () => {
+        const g = window.__game;
+        g.player.gameMode = 'survival';
+        g.portalCooldown = 0;
+        g.portalTicks = 0;
+        if (g.dimension !== 'overworld') await g.switchDimension('overworld', g.player.x, g.player.z);
+      }).catch(() => undefined);
+    }
+  });
+
   await section('pêche', async () => {
     let pondOld = 0;
     let rodId = 0;

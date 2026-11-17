@@ -164,6 +164,8 @@ export const B = {
   REDSTONE_LAMP: 158,
   REDSTONE_LAMP_LIT: 159,
   REDSTONE_TORCH_OFF: 160,
+  NETHER_PORTAL: 161,
+  NETHER_QUARTZ_ORE: 162,
 } as const;
 
 /** Nombre maximal d'identifiants de blocs (les objets commencent à 256). */

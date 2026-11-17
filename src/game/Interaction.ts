@@ -13,6 +13,7 @@ import type { HandRenderer } from '../render/HandRenderer';
 import type { Selection } from '../render/Selection';
 import type { UiApi } from '../ui/UiApi';
 import { applyBonemeal, canStay, fireCanStay, neighborChanged, topSolid } from '../world/Behavior';
+import { tryIgnitePortal } from '../world/Portal';
 import { META_DOOR_HINGE_RIGHT, META_DOOR_OPEN, META_DOOR_UPPER, ccw, collisionBoxes, cw, opposite } from '../world/BlockModels';
 import {
   BLOCKS,
@@ -606,8 +607,10 @@ export class Interaction {
         const x = h.x + FACE_DX[h.face];
         const y = h.y + FACE_DY[h.face];
         const z = h.z + FACE_DZ[h.face];
-        if (w.getBlock(x, y, z) !== B.AIR || !fireCanStay(w, x, y, z)) return false;
-        w.setBlock(x, y, z, B.FIRE, 0);
+        if (!tryIgnitePortal(w, x, y, z)) {
+          if (w.getBlock(x, y, z) !== B.AIR || !fireCanStay(w, x, y, z)) return false;
+          w.setBlock(x, y, z, B.FIRE, 0);
+        }
       }
       g.sound('ignite', h.x + 0.5, h.y + 0.5, h.z + 0.5, 0.8, 0.9 + g.rng() * 0.2);
       p.damageHeld(g);
@@ -667,6 +670,12 @@ export class Interaction {
         z += FACE_DZ[h.face];
       }
       if (y < 0 || y >= CHUNK_HEIGHT || BLOCK_REPLACEABLE[w.getBlock(x, y, z)] !== 1) return false;
+      if (held === I.WATER_BUCKET && (g as { dimension?: string }).dimension === 'nether') {
+        w.host.effect('fizz', x, y, z);
+        p.replaceHeld(I.BUCKET);
+        this.swing();
+        return true;
+      }
       w.setBlock(x, y, z, held === I.WATER_BUCKET ? B.WATER : B.LAVA, 0);
       p.replaceHeld(I.BUCKET);
       g.sound('bucket_empty', x + 0.5, y + 0.5, z + 0.5, 0.8);
