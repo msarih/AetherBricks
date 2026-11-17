@@ -678,15 +678,20 @@ export class Fireball extends Entity {
   readonly kind: EntityKind = 'fireball';
   owner: Entity | null = null;
   deflected = false;
+  /** Petite boule de feu de blaze : brûle sa cible sans rien faire exploser. */
+  small = false;
 
-  constructor() {
+  constructor(small = false) {
     super();
-    this.width = 1;
-    this.height = 1;
+    this.small = small;
+    this.width = small ? 0.4 : 1;
+    this.height = small ? 0.4 : 1;
+    if (small) this.mobScale = 0.45;
   }
 
+  /** Seule la grosse boule de feu du ghast se renvoie d'un coup. */
   override get pickable(): boolean {
-    return !this.dead;
+    return !this.dead && !this.small;
   }
 
   shoot(x: number, y: number, z: number, dx: number, dy: number, dz: number, speed = 0.55): void {
@@ -767,6 +772,19 @@ export class Fireball extends Entity {
   private detonate(game: GameApi, target: Entity | null): void {
     if (this.dead) return;
     this.dead = true;
+    if (this.small) {
+      // boule de blaze : 5 de dégâts et le feu à la cible, ou une flamme là où elle s'écrase
+      if (target) {
+        if (target.hurt(game, 5, 'fire', this.owner) && target instanceof Living && !target.fireImmune) target.fireTicks = Math.max(target.fireTicks, 100);
+      } else {
+        const bx = Math.floor(this.x);
+        const by = Math.floor(this.y + 0.5);
+        const bz = Math.floor(this.z);
+        if (game.world.getBlock(bx, by, bz) === B.AIR && game.world.isSolid(bx, by - 1, bz)) game.world.setBlock(bx, by, bz, B.FIRE, 0);
+      }
+      game.sound('fizz', this.x, this.y, this.z, 0.5, 1.6);
+      return;
+    }
     if (target) {
       const dmg = this.deflected && target.mobKind === 'ghast' ? 20 : 6;
       target.hurt(game, dmg, 'explosion', this.owner);
@@ -778,11 +796,12 @@ export class Fireball extends Entity {
     if (this.dead) return null;
     const d = this.saveBase('fireball');
     if (this.deflected) d.deflected = 1;
+    if (this.small) d.small = 1;
     return d;
   }
 
   static load(d: EntityData): Fireball {
-    const f = new Fireball();
+    const f = new Fireball(Boolean(d.small));
     f.loadBase(d);
     f.deflected = Boolean(d.deflected);
     return f;

@@ -37,7 +37,7 @@ const BASE_TILES = [
   'redstone_dust', 'redstone_torch_on', 'redstone_torch_off',
   'piston_top', 'piston_top_sticky', 'piston_side', 'piston_bottom', 'piston_inner',
   'redstone_lamp_off', 'redstone_lamp_on',
-  'nether_portal', 'nether_quartz_ore',
+  'nether_portal', 'nether_quartz_ore', 'nether_bricks', 'soul_sand', 'nether_wart_0', 'nether_wart_1', 'nether_wart_2',
   // --- Végétation ---
   'tall_grass', 'fern', 'dead_bush', 'dandelion', 'poppy', 'blue_orchid', 'allium', 'azure_bluet',
   'red_tulip', 'orange_tulip', 'white_tulip', 'pink_tulip', 'oxeye_daisy', 'cornflower',
@@ -65,7 +65,7 @@ const BASE_TILES = [
   'carrot', 'potato', 'baked_potato', 'glowstone_dust', 'quartz', 'cookie', 'pumpkin_pie',
   'mushroom_stew', 'bowl', 'fishing_rod', 'fishing_rod_cast', 'raw_fish', 'cooked_fish',
   'door_item', 'iron_door_item', 'bed_item', 'sugar_cane_item',
-  'map', 'filled_map', 'sign',
+  'map', 'filled_map', 'sign', 'nether_brick', 'nether_wart', 'blaze_rod',
 ] as const;
 
 /** Images animées de la boussole et de l'horloge (aiguille, cadran), 32 chacune. */

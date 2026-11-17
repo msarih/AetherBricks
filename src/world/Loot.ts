@@ -88,6 +88,7 @@ const TABLES: Record<LootTable, readonly Pool[]> = {
       entries: [
         [I.DIAMOND, 5, 1, 3], [I.IRON_INGOT, 5, 1, 5], [I.GOLD_INGOT, 15, 1, 3], [I.GOLDEN_SWORD, 5, 1, 1],
         [I.GOLDEN_CHESTPLATE, 5, 1, 1], [I.FLINT_AND_STEEL, 5, 1, 1], [B.OBSIDIAN, 2, 2, 4], [I.GOLD_NUGGET, 10, 2, 8],
+        [I.NETHER_WART, 5, 3, 7],
       ],
     },
   ],
@@ -97,12 +98,6 @@ const SALT = 0x10075eed;
 
 export function isLootTable(v: unknown): v is LootTable {
   return typeof v === 'string' && Object.prototype.hasOwnProperty.call(TABLES, v);
-}
-
-/** Ajoute des objets à une table (ceux d'un lot de contenu chargé après ce module). */
-export function addLoot(table: LootTable, pool: number, entries: readonly Entry[]): void {
-  const p = TABLES[table][pool];
-  (p.entries as Entry[]).push(...entries);
 }
 
 /**

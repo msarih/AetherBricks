@@ -165,7 +165,7 @@ export function fenceConnections(nb: NeighborFn): number {
   for (let f = 0; f < 4; f++) {
     const n = nb(FACING_DX[f], 0, FACING_DZ[f]);
     const id = n & 255;
-    if (id === B.OAK_FENCE || BLOCK_OPAQUE[id]) mask |= 1 << f;
+    if (BLOCK_SHAPE[id] === SHAPE.FENCE || BLOCK_OPAQUE[id]) mask |= 1 << f;
     else if (id === B.FENCE_GATE && (((n >> 8) & 1) !== (f & 1))) mask |= 1 << f;
   }
   return mask;

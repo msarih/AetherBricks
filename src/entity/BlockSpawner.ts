@@ -21,7 +21,9 @@ export const SPAWNER_RANGE = 4;
 export const SPAWNER_MAX_NEARBY = 6;
 export const SPAWNER_MIN_DELAY = 200;
 export const SPAWNER_MAX_DELAY = 800;
+/** Lumière maximale pour qu'un monstre sorte de la cage (le blaze tolère 11, comme dans Minecraft). */
 const MAX_LIGHT = 7;
+const BLAZE_MAX_LIGHT = 11;
 
 interface SpawnerState extends BlockEntity {
   mob?: unknown;
@@ -93,11 +95,11 @@ export function tickSpawners(game: GameApi): void {
       const bz = Math.floor(z);
       if (y < 1 || y + 2 >= CHUNK_HEIGHT || !w.isLoaded(bx, bz)) continue;
       if (!w.isSolid(bx, y - 1, bz) || !open(w.getBlock(bx, y, bz))) continue;
-      if (hostile && w.getLight(bx, y, bz) > MAX_LIGHT) continue;
+      if (hostile && w.getLight(bx, y, bz) > (kind === 'blaze' ? BLAZE_MAX_LIGHT : MAX_LIGHT)) continue;
       if (!isBoxFree(w, x - hw, y, z - hw, x + hw, y + model.height, z + hw)) continue;
       const mob = createMob(kind, rng);
       if (!mob) break;
-      mob.setPosition(x, y, z);
+      mob.setPosition(x, kind === 'blaze' ? y + 0.5 : y, z);
       mob.setRotation(rng() * Math.PI * 2);
       game.spawn(mob);
       game.particles('flame', x, y + model.height / 2, z, 8, 0.4);

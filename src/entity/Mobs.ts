@@ -24,7 +24,7 @@ import { findPath, type PathPoint } from './Pathfinder';
 import { isBoxFree } from './Physics';
 
 export const PASSIVE_KINDS: readonly MobKind[] = ['pig', 'cow', 'sheep', 'chicken', 'wolf'];
-export const HOSTILE_KINDS: readonly MobKind[] = ['zombie', 'skeleton', 'creeper', 'spider', 'zombie_pigman', 'ghast', 'magma_cube'];
+export const HOSTILE_KINDS: readonly MobKind[] = ['zombie', 'skeleton', 'creeper', 'spider', 'zombie_pigman', 'ghast', 'magma_cube', 'blaze', 'wither_skeleton'];
 /** Habitants : ni animaux (pas de reproduction, pas de plafond) ni monstres. */
 export const NPC_KINDS: readonly MobKind[] = ['villager'];
 
@@ -1718,6 +1718,158 @@ export class MagmaCube extends Monster {
 }
 
 // =============================================================================================
+// Forteresse du Nether : blaze et squelette wither
+// =============================================================================================
+
+/** Ticks de charge avant une salve, intervalle entre deux boules, repos après la salve. */
+const BLAZE_CHARGE = 60;
+const BLAZE_BURST_GAP = 6;
+const BLAZE_REST = 100;
+
+/**
+ * Blaze : flotte près du sol, se tient à distance et tire des salves de trois petites boules
+ * de feu ; au contact, il frappe. Insensible au feu, il lâche parfois un bâton de blaze.
+ */
+export class Blaze extends Monster {
+  /** > 0 : charge en cours ; à 0, la salve part. */
+  private charge = BLAZE_CHARGE;
+  private burst = 0;
+  private burstGap = 0;
+  private driftX = 0;
+  private driftZ = 0;
+  private driftTicks = 0;
+
+  constructor() {
+    super('blaze', 20, 0.05);
+    this.fireImmune = true;
+    this.flying = true;
+  }
+
+  protected override followRange(): number {
+    return 32;
+  }
+
+  protected override loseRange(): number {
+    return 48;
+  }
+
+  /** Reste à un bloc environ au-dessus du sol : descend s'il n'y a rien dessous, remonte s'il frôle le sol. */
+  private hover(game: GameApi, wantY: number): void {
+    const w = game.world;
+    const bx = Math.floor(this.x);
+    const bz = Math.floor(this.z);
+    let ground = Math.floor(this.y);
+    for (let i = 0; i < 6 && ground > 1 && !w.isSolid(bx, ground - 1, bz); i++) ground--;
+    const target = Math.max(wantY, ground + 0.6);
+    this.vy += clamp((target - this.y) * 0.03, -0.04, 0.05);
+    this.vy *= 0.85;
+  }
+
+  protected override idle(game: GameApi): void {
+    if (--this.driftTicks <= 0) {
+      this.driftTicks = 60 + Math.floor(game.rng() * 80);
+      this.driftX = this.x + (game.rng() - 0.5) * 10;
+      this.driftZ = this.z + (game.rng() - 0.5) * 10;
+    }
+    const dx = this.driftX - this.x;
+    const dz = this.driftZ - this.z;
+    if (dx * dx + dz * dz > 1) {
+      this.face(this.driftX, this.driftZ);
+      this.moveForward = 0.4;
+    }
+    this.hover(game, 0);
+    this.charge = BLAZE_CHARGE;
+    this.burst = 0;
+  }
+
+  protected fight(game: GameApi, t: Living): void {
+    const dx = t.x - this.x;
+    const dz = t.z - this.z;
+    const d = Math.sqrt(dx * dx + dz * dz);
+    this.face(t.x, t.z);
+    if (d > 9) this.moveForward = 0.9;
+    else if (d < 4 && !this.seesTarget) this.moveForward = 0.6;
+    this.hover(game, t.y + 0.5);
+    if (this.melee(game, t, (this.width + t.width) / 2 + 0.6, 4 + clamp(Math.floor(game.difficulty), 1, 3))) return;
+    if (!this.seesTarget || d > 28) {
+      this.charge = BLAZE_CHARGE;
+      this.burst = 0;
+      return;
+    }
+
+    if (this.burst > 0) {
+      if (--this.burstGap > 0) return;
+      this.burstGap = BLAZE_BURST_GAP;
+      this.burst--;
+      const fb = new Fireball(true);
+      fb.owner = this;
+      const oy = this.y + this.eyeHeight;
+      const ty = t.y + t.height * 0.5;
+      // un peu de dispersion, qui grandit avec la distance
+      const spread = Math.sqrt(d) * 0.25;
+      fb.shoot(this.x, oy - 0.2, this.z, dx + (game.rng() - 0.5) * spread, ty - oy + (game.rng() - 0.5) * spread, dz + (game.rng() - 0.5) * spread, 0.7);
+      game.spawn(fb);
+      game.sound('fire', this.x, oy, this.z, 0.8, 1.2 + game.rng() * 0.3);
+      if (this.burst === 0) this.charge = BLAZE_REST;
+      return;
+    }
+    // charge : il s'embrase avant de tirer
+    if (this.charge <= 20) game.particles('flame', this.x, this.y + this.height * 0.5, this.z, 2, 0.5);
+    if (--this.charge <= 0) {
+      this.burst = 3;
+      this.burstGap = 0;
+    }
+  }
+
+  protected override hurtSound(): SfxName | null {
+    return 'fizz';
+  }
+
+  protected override deathSound(): SfxName | null {
+    return 'fizz';
+  }
+
+  protected dropLoot(game: GameApi, _burning: boolean, byPlayer: boolean): void {
+    if (byPlayer) this.drop(game, I.BLAZE_ROD, randInt(game.rng, 0, 1));
+  }
+
+  protected override xpValue(): number {
+    return 10;
+  }
+}
+
+/** Durée du flétrissement infligé par un squelette wither (10 secondes). */
+const WITHER_TICKS = 200;
+
+/**
+ * Squelette wither : grand squelette noir des forteresses, armé d'une épée de pierre.
+ * Ses coups sont lourds et flétrissent : la victime perd un demi-cœur toutes les 2 secondes
+ * pendant 10 secondes.
+ */
+export class WitherSkeleton extends Monster {
+  constructor() {
+    super('wither_skeleton', 20, 0.058);
+    this.voice = 'skeleton';
+    this.fireImmune = true;
+    this.mobScale = 1.2;
+    this.itemId = I.STONE_SWORD;
+    this.itemCount = 1;
+  }
+
+  protected fight(game: GameApi, t: Living): void {
+    this.chase(game, t);
+    // 5 / 8 / 12 dégâts en facile / normal / difficile (Minecraft)
+    const damage = [5, 5, 8, 12][clamp(Math.floor(game.difficulty), 1, 3)];
+    if (this.melee(game, t, (this.width + t.width) / 2 + 0.7, damage)) t.witherTicks = Math.max(t.witherTicks, WITHER_TICKS);
+  }
+
+  protected dropLoot(game: GameApi): void {
+    this.drop(game, I.COAL, randInt(game.rng, 0, 1));
+    this.drop(game, I.BONE, randInt(game.rng, 0, 2));
+  }
+}
+
+// =============================================================================================
 // Villageois
 // =============================================================================================
 
@@ -2006,6 +2158,10 @@ export function createMob(kind: MobKind, rng: () => number = Math.random): Mob |
       return new MagmaCube();
     case 'villager':
       return new Villager(rng);
+    case 'blaze':
+      return new Blaze();
+    case 'wither_skeleton':
+      return new WitherSkeleton();
     default:
       return null;
   }

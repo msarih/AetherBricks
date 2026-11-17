@@ -118,6 +118,8 @@ export function canStay(w: World, x: number, y: number, z: number, id: number, m
     case B.CARROTS:
     case B.POTATOES:
       return below === B.FARMLAND;
+    case B.NETHER_WART:
+      return below === B.SOUL_SAND;
     case B.TORCH:
     case B.REDSTONE_TORCH:
     case B.REDSTONE_TORCH_OFF: {
@@ -547,6 +549,10 @@ export function randomTick(w: World, x: number, y: number, z: number, id: number
       if (rng() < (wet ? 0.5 : 0.17)) w.setBlock(x, y, z, id, stage + 1, false);
       return;
     }
+    case B.NETHER_WART:
+      // pousse dans le noir comme en pleine lumière, sans eau : un stade sur dix ticks aléatoires
+      if ((meta & 3) < 3 && rng() < 0.1) w.setBlock(x, y, z, id, (meta & 3) + 1, false);
+      return;
     case B.FARMLAND: {
       if (waterNearFarmland(w, x, y, z) || rainedOn(w, x, y + 1, z)) {
         if (meta !== 7) w.setBlock(x, y, z, id, 7, false);

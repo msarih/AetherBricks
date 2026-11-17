@@ -25,6 +25,7 @@ export type DamageCause =
   | 'explosion'
   | 'attack'
   | 'arrow'
+  | 'wither'
   | 'generic';
 
 /** Donnée sérialisable d'une entité (JSON pur). `type` désigne la classe à recréer. */
@@ -64,6 +65,8 @@ export interface GameApi {
   itemParticles(x: number, y: number, z: number, itemId: number, count?: number): void;
   /** Lâche un objet au sol avec une petite impulsion aléatoire. Retourne l'entité créée. */
   dropItem(x: number, y: number, z: number, id: number, count: number, damage?: number): Entity;
+  /** La colonne (x, z) est-elle dans un lieu généré de ce type (« fortress »…) ? Absent hors du jeu complet. */
+  inStructure?(kind: string, x: number, z: number): boolean;
   /** Ouvre l'écran d'échange d'un villageois (absent hors du jeu complet). */
   openTrade?(villager: Entity): void;
   /** Explosion : détruit des blocs, blesse et repousse les entités. */
@@ -287,6 +290,9 @@ export abstract class Living extends Entity {
   /** Insensible au feu et à la lave. */
   fireImmune = false;
 
+  /** Flétrissement (coup d'un squelette wither) : ticks restants ; un demi-cœur toutes les 2 secondes. */
+  witherTicks = 0;
+
   /** Dernier agresseur et âge (en ticks) du dernier coup reçu de lui. */
   attacker: Entity | null = null;
   attackerAge = 0;
@@ -331,6 +337,11 @@ export abstract class Living extends Entity {
     if (this.invulnerable > 0) this.invulnerable--;
     if (this.hurtTime > 0) this.hurtTime--;
     if (this.attacker && ++this.attackerAge > 200) this.attacker = null;
+    if (this.witherTicks > 0) {
+      this.witherTicks--;
+      if (this.witherTicks % 40 === 0) this.hurt(game, 1, 'wither', null);
+      if (this.health <= 0) return;
+    }
     if (this.swingTicks >= 0) {
       this.swingTicks++;
       if (this.swingTicks >= 6) {

@@ -192,6 +192,11 @@ export const B = {
   TERRACOTTA_BLACK: 183,
   /** Rail droit (méta 0 : nord-sud, 1 : est-ouest). Décor des mines abandonnées pour l'instant. */
   RAIL: 184,
+  NETHER_BRICKS: 185,
+  NETHER_BRICK_FENCE: 186,
+  SOUL_SAND: 187,
+  /** Verrue du Nether (méta : croissance 0..3), sur le sable des âmes. */
+  NETHER_WART: 188,
 } as const;
 
 /** Nombre maximal d'identifiants de blocs (les objets commencent à 256). */
@@ -327,6 +332,9 @@ export const I = {
 
   FILLED_MAP: 386,
   SIGN: 387,
+  NETHER_BRICK: 388,
+  NETHER_WART: 389,
+  BLAZE_ROD: 390,
 } as const;
 
 export const ITEM_ID_LIMIT = 400;

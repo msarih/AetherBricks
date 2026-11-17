@@ -790,10 +790,10 @@ export class WorldGen implements TerrainInfo {
         this.sFill = 0;
         return;
       case BIOME.BADLANDS:
-        // strates de terre cuite sur 18 blocs ; sable rouge sur les replats du bas
+        // strates de terre cuite sur 18 blocs ; des nappes de sable rouge sur les replats
         this.sBand = true;
         this.sFillDepth = 18;
-        this.sTop = slope < 1.2 && y < 71 + patch * 3 ? B.RED_SAND : 0;
+        this.sTop = slope < 1 && patch > -0.1 ? B.RED_SAND : 0;
         this.sFill = 0;
         return;
       case BIOME.MOUNTAINS:

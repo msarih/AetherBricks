@@ -201,6 +201,9 @@ export function blockDrops(id: number, meta: number, tool: number, rng: () => nu
     case B.POTATOES:
       return one(I.POTATO, (meta & 7) < 7 ? 1 : randInt(rng, 1, 4 + fortune));
 
+    case B.NETHER_WART:
+      return one(I.NETHER_WART, (meta & 3) < 3 ? 1 : randInt(rng, 2, 4 + fortune));
+
     // --- Blocs fabriqués ---
     case B.GLOWSTONE:
       return one(I.GLOWSTONE_DUST, Math.min(4, randInt(rng, 2, 4) + (fortune > 0 ? randInt(rng, 0, fortune) : 0)));

@@ -45,6 +45,8 @@ export const MOB_NAMES: Record<MobKind, string> = {
   ghast: 'Ghast',
   magma_cube: 'Cube de magma',
   villager: 'Villageois',
+  blaze: 'Blaze',
+  wither_skeleton: 'Squelette wither',
   player: 'Joueur',
 };
 

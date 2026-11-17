@@ -14,7 +14,14 @@ export const worldUniforms = {
   uFogColor: { value: new THREE.Color(0.7, 0.8, 1) },
   uFogNear: { value: 80 },
   uFogFar: { value: 160 },
+  /** Lumière minimale, même dans le noir complet (voir OVERWORLD_AMBIENT et NETHER_AMBIENT). */
+  uAmbient: { value: 0.045 },
 };
+
+/** Dans l'Overworld, le noir complet est presque noir. */
+export const OVERWORLD_AMBIENT = 0.045;
+/** Le Nether n'est jamais tout à fait noir (Minecraft : luminosité minimale de 0,1) : on y devine les murs. */
+export const NETHER_AMBIENT = 0.3;
 
 /** Courbe de luminosité d'un niveau de lumière normalisé (0..1), proche de celle de Minecraft. */
 export function lightCurve(l: number): number {
@@ -24,7 +31,6 @@ export function lightCurve(l: number): number {
 const BLOCK_LIGHT_R = 1.0;
 const BLOCK_LIGHT_G = 0.9;
 const BLOCK_LIGHT_B = 0.76;
-const AMBIENT = 0.045;
 
 /**
  * Couleur d'éclairage d'un point (même formule que le shader des chunks).
@@ -33,9 +39,10 @@ const AMBIENT = 0.045;
 export function lightColor(sky: number, block: number, skyLight: THREE.Color, out: THREE.Color): THREE.Color {
   const s = lightCurve(sky / 15);
   const b = lightCurve(block / 15);
-  out.r = Math.max(s * skyLight.r, b * BLOCK_LIGHT_R) * (1 - AMBIENT) + AMBIENT;
-  out.g = Math.max(s * skyLight.g, b * BLOCK_LIGHT_G) * (1 - AMBIENT) + AMBIENT;
-  out.b = Math.max(s * skyLight.b, b * BLOCK_LIGHT_B) * (1 - AMBIENT) + AMBIENT;
+  const a = worldUniforms.uAmbient.value;
+  out.r = Math.max(s * skyLight.r, b * BLOCK_LIGHT_R) * (1 - a) + a;
+  out.g = Math.max(s * skyLight.g, b * BLOCK_LIGHT_G) * (1 - a) + a;
+  out.b = Math.max(s * skyLight.b, b * BLOCK_LIGHT_B) * (1 - a) + a;
   return out;
 }
 
@@ -68,6 +75,7 @@ uniform vec3 uSkyLight;
 uniform vec3 uFogColor;
 uniform float uFogNear;
 uniform float uFogFar;
+uniform float uAmbient;
 uniform float uOpacity;
 #ifdef MODEL
 uniform vec2 uLight;
@@ -105,7 +113,7 @@ void main() {
 #endif
   vec3 skyL = curve(lv.x) * uSkyLight;
   vec3 blkL = curve(lv.y) * vec3(${BLOCK_LIGHT_R.toFixed(2)}, ${BLOCK_LIGHT_G.toFixed(2)}, ${BLOCK_LIGHT_B.toFixed(2)});
-  vec3 l = max(skyL, blkL) * ${(1 - AMBIENT).toFixed(3)} + ${AMBIENT.toFixed(3)};
+  vec3 l = max(skyL, blkL) * (1.0 - uAmbient) + uAmbient;
   vec3 col = base * l * vTint.a;
 #ifdef MODEL
   col *= uColor;
@@ -127,6 +135,7 @@ function baseUniforms(atlas: THREE.Texture): Record<string, THREE.IUniform> {
     uFogColor: worldUniforms.uFogColor,
     uFogNear: worldUniforms.uFogNear,
     uFogFar: worldUniforms.uFogFar,
+    uAmbient: worldUniforms.uAmbient,
     uOpacity: { value: 1 },
   };
 }

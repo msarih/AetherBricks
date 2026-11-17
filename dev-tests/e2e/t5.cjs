@@ -307,6 +307,185 @@ async function reload(page) {
     await chat(page, '/time set day');
   });
 
+  await section('badlands', async () => {
+    const r = await ev(page, async (seed) => {
+      const { WorldGen } = await import('/src/world/gen/WorldGen.ts');
+      const { BIOME } = await import('/src/world/gen/Biomes.ts');
+      const { B, I } = await import('/src/world/Ids.ts');
+      const R = await import('/src/world/Recipes.ts');
+      const gen = new WorldGen(Number(seed), 'default', 2);
+      const old = new WorldGen(Number(seed), 'default', 1);
+      // cherche la colonne de badlands la plus proche de l'origine
+      let best = null;
+      for (let z = -3000; z <= 3000; z += 60) for (let x = -3000; x <= 3000; x += 60) {
+        if (gen.biomeAt(x, z) !== BIOME.BADLANDS) continue;
+        const d = Math.hypot(x, z);
+        if (!best || d < best.d) best = { x, z, d };
+      }
+      if (!best) return { found: false };
+      const count = (c) => { const kinds = new Set(); let n = 0, sand = 0; for (const id of c.blocks) { if (id >= B.TERRACOTTA && id <= B.TERRACOTTA_BLACK) { n++; kinds.add(id); } else if (id === B.RED_SAND) sand++; } return { n, kinds: kinds.size, sand }; };
+      let total = { n: 0, kinds: 0, sand: 0 }, oldTotal = 0, biomeCols = 0;
+      for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+        const c = gen.generateChunk((best.x >> 4) + dx, (best.z >> 4) + dz);
+        const k = count(c);
+        total = { n: total.n + k.n, kinds: Math.max(total.kinds, k.kinds), sand: total.sand + k.sand };
+        biomeCols += c.biomes.reduce((a, b) => a + (b === BIOME.BADLANDS ? 1 : 0), 0);
+        const o = count(old.generateChunk((best.x >> 4) + dx, (best.z >> 4) + dz));
+        oldTotal += o.n + o.sand;
+      }
+      const m = (grid, id) => { const x = R.matchRecipe(grid, 3); return x && x.id === id ? x.count : 0; };
+      const T8 = B.TERRACOTTA;
+      return {
+        found: true, at: best, ...total, biomeCols, oldTotal,
+        stained: m([T8, T8, T8, T8, I.DYE_RED, T8, T8, T8, T8], B.TERRACOTTA_RED),
+        smelt: R.smeltingResult(B.CLAY),
+      };
+    }, SEED);
+    check('un biome de badlands existe dans ce monde', r.found === true, r.found ? `x ${r.at.x}, z ${r.at.z}` : '');
+    if (!r.found) return;
+    check('badlands : strates de terre cuite (au moins 4 couleurs) et sable rouge', r.n > 2000 && r.kinds >= 4 && r.sand > 0 && r.biomeCols > 100, JSON.stringify({ terreCuite: r.n, couleurs: r.kinds, sableRouge: r.sand, colonnes: r.biomeCols }));
+    check('anciens mondes : ni terre cuite ni sable rouge au même endroit', r.oldTotal === 0, String(r.oldTotal));
+    check('recettes : argile cuite → terre cuite ; 8 terres cuites + teinture → 8 colorées', r.stained === 8 && r.smelt && r.smelt.id === 167, JSON.stringify({ stained: r.stained, smelt: r.smelt }));
+  });
+
+  await section('pyramide du désert', async () => {
+    const t = await ev(page, () => window.__game.locate('desert_temple'));
+    check('/locate trouve une pyramide du désert', !!t, t ? `x ${t.x}, z ${t.z}` : '');
+    if (!t) return;
+    await ev(page, () => { const g = window.__game; g.difficulty = 0; g.player.gameMode = 'creative'; g.player.flying = true; });
+    await goto(page, t.x + 0.5, t.y + 14, t.z + 0.5);
+    const r = await ev(page, async (t) => {
+      const { B } = await import('/src/world/Ids.ts');
+      const w = window.__game.world;
+      const chests = [...w.blockEntities.values()].filter((b) => b.type === 'chest' && b.loot === 'desert_temple');
+      // sommet : 3 × 3 de grès et les créneaux des deux tours, à 9 blocs au-dessus du sol, à cheval sur plusieurs chunks
+      let top = 0;
+      for (let z = t.z - 10; z <= t.z + 10; z++) for (let x = t.x - 10; x <= t.x + 10; x++) if (w.getBlock(x, t.y + 9, z) === B.SANDSTONE) top++;
+      const plate = { x: t.x, y: t.y - 11, z: t.z };
+      return {
+        chests: chests.length, top,
+        blue: w.getBlock(t.x, t.y, t.z) === B.TERRACOTTA_BLUE,
+        plate: w.getBlock(plate.x, plate.y, plate.z) === B.STONE_PRESSURE_PLATE,
+        tnt: w.getBlock(plate.x, plate.y - 1, plate.z) === B.TNT,
+        tntBelow: [-1, 0, 1].flatMap((dx) => [-1, 0, 1].map((dz) => w.getBlock(plate.x + dx, plate.y - 2, plate.z + dz))).filter((id) => id === B.TNT).length,
+        chunks: new Set([[-10, -10], [10, -10], [-10, 10], [10, 10]].map(([dx, dz]) => `${(t.x + dx) >> 4},${(t.z + dz) >> 4}`)).size,
+        plate3: plate,
+      };
+    }, t);
+    check('pyramide entière malgré les frontières de chunks (sommet et créneaux : 25 blocs de grès)', r.top === 25 && r.chunks >= 2, JSON.stringify({ sommet: r.top, chunks: r.chunks }));
+    check('bloc bleu au centre du sol, 4 coffres dans la salle du trésor', r.blue && r.chests === 4, JSON.stringify({ bleu: r.blue, coffres: r.chests }));
+    check('le piège est armé : plaque de pression sur une TNT, 9 TNT sous le sol', r.plate && r.tnt && r.tntBelow === 9, JSON.stringify({ plaque: r.plate, tnt: r.tnt, dessous: r.tntBelow }));
+    // tant que personne ne marche sur la plaque, rien ne se passe ; dès qu'on y marche, tout saute
+    await ticks(page, 40);
+    const still = await ev(page, async (p) => { const { B } = await import('/src/world/Ids.ts'); return window.__game.world.getBlock(p.x, p.y - 1, p.z) === B.TNT; }, r.plate3);
+    check('le piège ne part pas tout seul', still === true);
+    await ev(page, (p) => { const pl = window.__game.player; pl.flying = false; pl.teleport(p.x + 0.5, p.y + 0.1, p.z + 0.5); pl.vx = pl.vy = pl.vz = 0; }, r.plate3);
+    await ticks(page, 130);
+    const after = await ev(page, async (p) => {
+      const { B } = await import('/src/world/Ids.ts');
+      const w = window.__game.world;
+      let tnt = 0, air = 0;
+      for (let dy = -2; dy <= 0; dy++) for (let dz = -2; dz <= 2; dz++) for (let dx = -2; dx <= 2; dx++) {
+        const id = w.getBlock(p.x + dx, p.y + dy, p.z + dz);
+        if (id === B.TNT) tnt++;
+        if (id === B.AIR) air++;
+      }
+      const chests = [...w.blockEntities.values()].filter((b) => b.type === 'chest' && Math.abs(b.x - p.x) <= 3 && Math.abs(b.z - p.z) <= 3).length;
+      return { tnt, air, chests, alive: window.__game.player.alive };
+    }, r.plate3);
+    check('marcher sur la plaque fait sauter la salle du trésor', after.tnt === 0 && after.air >= 40 && after.chests === 0, JSON.stringify(after));
+    await ev(page, () => { for (const e of window.__game.entities) if (e.kind === 'item') e.dead = true; });
+  });
+
+  await section('temple de la jungle', async () => {
+    const t = await ev(page, () => window.__game.locate('jungle_temple'));
+    check('/locate jungle trouve un temple de la jungle', !!t, t ? `x ${t.x}, z ${t.z}` : '');
+    if (!t) return;
+    await ev(page, () => { const g = window.__game; g.difficulty = 0; g.player.gameMode = 'creative'; g.player.flying = true; });
+    await goto(page, t.x + 0.5, t.y + 6, t.z + 0.5);
+    const r = await ev(page, async (t) => {
+      const { B } = await import('/src/world/Ids.ts');
+      const { FACING_DX, FACING_DZ } = await import('/src/world/Blocks.ts');
+      const w = window.__game.world;
+      const chests = [...w.blockEntities.values()].filter((b) => b.type === 'chest' && b.loot === 'jungle_temple');
+      let lever = null, piston = null, head = null, mossy = 0;
+      for (let y = t.y - 6; y <= t.y + 11; y++) for (let z = t.z - 10; z <= t.z + 10; z++) for (let x = t.x - 10; x <= t.x + 10; x++) {
+        const id = w.getBlock(x, y, z);
+        if (id === B.LEVER) lever = { x, y, z, meta: w.getMeta(x, y, z) };
+        else if (id === B.STICKY_PISTON) piston = { x, y, z, meta: w.getMeta(x, y, z) };
+        else if (id === B.PISTON_HEAD) head = { x, y, z };
+        else if (id === B.MOSSY_COBBLESTONE) mossy++;
+      }
+      if (!lever) return { chests: chests.length, mossy, lever: null };
+      const f = (lever.meta & 7) - 1;
+      // le levier est une petite pièce plaquée contre son support : on vise le pied du levier, pas le milieu de la case
+      const aim = { x: lever.x + 0.5 - FACING_DX[f] * 0.42, y: lever.y + 0.5, z: lever.z + 0.5 - FACING_DZ[f] * 0.42 };
+      return { chests: chests.length, mossy, lever, piston, head, aim, stand: { x: lever.x + FACING_DX[f] * 1.4 + 0.5, y: lever.y, z: lever.z + FACING_DZ[f] * 1.4 + 0.5 } };
+    }, t);
+    check('temple de pierres moussues, deux coffres au sous-sol', r.mossy > 300 && r.chests === 2, JSON.stringify({ moussues: r.mossy, coffres: r.chests }));
+    check('mécanisme en place : levier abaissé, piston collant sorti', !!r.lever && (r.lever.meta & 8) !== 0 && !!r.piston && (r.piston.meta & 8) !== 0 && !!r.head, JSON.stringify({ levier: r.lever, piston: r.piston }));
+    if (!r.lever || !r.piston || !r.head) return;
+    // le bloc-porte est juste devant la tête du piston ; le coffre caché, derrière lui
+    const door = { x: r.head.x * 2 - r.piston.x, y: r.head.y, z: r.head.z * 2 - r.piston.z };
+    const before = await ev(page, (d) => window.__game.world.getBlock(d.x, d.y, d.z), door);
+    await ev(page, (s, a) => { const p = window.__game.player; p.flying = true; p.teleport(s.x, s.y, s.z); p.vx = p.vy = p.vz = 0; T.aim(a.x, a.y, a.z); }, r.stand, r.aim);
+    await ticks(page, 3);
+    const aimed = await ev(page, (a) => { T.aim(a.x, a.y, a.z); return T.hit(); }, r.aim);
+    await ticks(page, 2);
+    const seen = await ev(page, () => T.hit());
+    void aimed;
+    if (!seen || seen.x !== r.lever.x || seen.y !== r.lever.y || seen.z !== r.lever.z) throw new Error('le levier n’est pas sous le viseur : ' + JSON.stringify(seen));
+    await ev(page, () => { window.__game.input.presses[2]++; });
+    await ticks(page, 10);
+    const after = await ev(page, async (r, door) => {
+      const { B } = await import('/src/world/Ids.ts');
+      const w = window.__game.world;
+      return {
+        lever: w.getMeta(r.lever.x, r.lever.y, r.lever.z) & 8,
+        piston: w.getMeta(r.piston.x, r.piston.y, r.piston.z) & 8,
+        head: w.getBlock(r.head.x, r.head.y, r.head.z),
+        door: w.getBlock(door.x, door.y, door.z),
+        mossy: B.MOSSY_COBBLESTONE,
+      };
+    }, r, door);
+    check('relever le levier fait reculer le piston : le bloc s’efface devant le coffre caché',
+      before === after.mossy && after.lever === 0 && after.piston === 0 && after.head === after.mossy && after.door === 0, JSON.stringify({ before, after }));
+  });
+
+  await section('mine abandonnée', async () => {
+    const m = await ev(page, () => window.__game.locate('mineshaft'));
+    check('/locate mine trouve une mine abandonnée', !!m, m ? `x ${m.x}, y ${m.y}, z ${m.z}` : '');
+    if (!m) return;
+    const r = await ev(page, async (seed, m) => {
+      const { WorldGen } = await import('/src/world/gen/WorldGen.ts');
+      const { B } = await import('/src/world/Ids.ts');
+      const gen = new WorldGen(Number(seed), 'default', 2);
+      const count = { rail: 0, fence: 0, planks: 0, web: 0, chest: 0, spawner: 0, torch: 0 };
+      for (let cz = (m.z - 80) >> 4; cz <= (m.z + 80) >> 4; cz++) for (let cx = (m.x - 80) >> 4; cx <= (m.x + 80) >> 4; cx++) {
+        const c = gen.generateChunk(cx, cz);
+        for (let y = 10; y < 52; y++) for (let i = 0; i < 256; i++) {
+          const id = c.blocks[(y << 8) | i];
+          if (id === B.RAIL) count.rail++; else if (id === B.OAK_FENCE) count.fence++; else if (id === B.OAK_PLANKS) count.planks++; else if (id === B.COBWEB) count.web++; else if (id === B.TORCH) count.torch++;
+        }
+        for (const be of c.blockEntities) { if (be.type === 'chest' && be.loot === 'mineshaft') count.chest++; if (be.type === 'spawner' && be.mob === 'spider') count.spawner++; }
+      }
+      return count;
+    }, SEED, m);
+    check('galeries étayées, rails, toiles et torches', r.fence >= 60 && r.planks >= 90 && r.rail >= 60 && r.web >= 5, JSON.stringify(r));
+    check('la mine cache au moins un coffre ou une cage à araignées', r.chest + r.spawner >= 1, JSON.stringify({ coffres: r.chest, cages: r.spawner }));
+    await ev(page, () => { const g = window.__game; g.player.gameMode = 'creative'; g.player.flying = true; });
+    await goto(page, m.x + 0.5, m.y + 0.2, m.z + 0.5);
+    const room = await ev(page, async (m) => {
+      const { B } = await import('/src/world/Ids.ts');
+      const w = window.__game.world;
+      let air = 0;
+      for (let dz = -4; dz <= 4; dz++) for (let dx = -4; dx <= 4; dx++) for (let dy = 0; dy <= 3; dy++) if (w.getBlock(m.x + dx, m.y + dy, m.z + dz) === B.AIR) air++;
+      return { air, floor: w.getBlock(m.x, m.y - 1, m.z) === B.DIRT, exit: w.getBlock(m.x + 6, m.y, m.z) !== B.STONE || w.getBlock(m.x - 6, m.y, m.z) !== B.STONE || w.getBlock(m.x, m.y, m.z + 6) !== B.STONE || w.getBlock(m.x, m.y, m.z - 6) !== B.STONE };
+    }, m);
+    check('salle de départ creusée sous terre (9 × 9, sol de terre) avec au moins une galerie', room.air === 324 && room.floor && room.exit, JSON.stringify(room));
+    await shot(page, 't5-mine');
+  });
+
   const fails = results.filter((r) => !r.ok);
   console.log(`\nBILAN : ${results.length - fails.length}/${results.length} ; erreurs de console : ${errors.length}`);
   for (const f of fails) console.log('  ECHEC : ' + f.name + (f.detail ? ' — ' + f.detail : ''));

@@ -137,6 +137,8 @@ shaped(['###', '###'], { '#': PLANKS }, B.TRAPDOOR, 2);
 shaped(['| |', '|||', '| |'], { '|': I.STICK }, B.LADDER, 3);
 shaped(['#|#', '#|#'], { '#': PLANKS, '|': I.STICK }, B.OAK_FENCE, 3);
 shaped(['# #', '#|#', '# #'], { '#': I.IRON_INGOT, '|': I.STICK }, B.RAIL, 16);
+shaped(['##', '##'], { '#': I.NETHER_BRICK }, B.NETHER_BRICKS);
+shaped(['###', '###'], { '#': B.NETHER_BRICKS }, B.NETHER_BRICK_FENCE, 6);
 shaped(['|#|', '|#|'], { '#': PLANKS, '|': I.STICK }, B.FENCE_GATE);
 shaped(['###', '###'], { '#': B.GLASS }, B.GLASS_PANE, 16);
 shaped(['###', '###'], { '#': I.IRON_INGOT }, B.IRON_BARS, 16);
@@ -370,6 +372,7 @@ export function matchRecipe(grid: readonly number[], gridW: number): { id: numbe
 // ---------------------------------------------------------------------------
 const SMELTING = new Map<number, number>([
   [B.CLAY, B.TERRACOTTA],
+  [B.NETHERRACK, I.NETHER_BRICK],
   [B.RED_SAND, B.GLASS],
   [B.IRON_ORE, I.IRON_INGOT],
   [B.GOLD_ORE, I.GOLD_INGOT],

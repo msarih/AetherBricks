@@ -5,7 +5,9 @@
 import { CHUNK_AREA, CHUNK_HEIGHT, CHUNK_SIZE, CHUNK_VOLUME } from '../Constants';
 import { B } from '../Ids';
 import { Simplex, mulberry32, rand2, rand3 } from './Noise';
-import type { TerrainInfo } from './Structures';
+import './Fortress';
+import { GenCanvas } from './GenCanvas';
+import { structuresNear, type TerrainInfo } from './Structures';
 import type { GeneratedChunk } from './WorldGen';
 
 const NETHER_LAVA_LEVEL = 31;
@@ -17,6 +19,7 @@ export class NetherGen implements TerrainInfo {
 
   /** Forteresses : générateur en version 2. */
   readonly features: boolean;
+  private readonly canvas = new GenCanvas();
 
   constructor(seed: number, genVersion = 1) {
     this.seed = seed >>> 0;
@@ -112,6 +115,13 @@ export class NetherGen implements TerrainInfo {
       }
     }
 
+    // forteresses : la part de chacune qui traverse ce chunk
+    if (this.features) {
+      const c = this.canvas;
+      c.begin(cx, cz, blocks, meta);
+      for (const s of structuresNear(this, ['fortress'], cx, cz, 0)) s.build(c);
+      return { cx, cz, blocks, meta, biomes, heightmap, tints, blockEntities: c.blockEntities, spawns: c.spawns };
+    }
     return { cx, cz, blocks, meta, biomes, heightmap, tints, blockEntities: [], spawns: [] };
   }
 }

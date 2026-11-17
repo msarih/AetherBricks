@@ -803,6 +803,8 @@ const WHEAT_TILES: number[] = [];
 const CARROT_TILES: number[] = [];
 const POTATO_TILES: number[] = [];
 const ROOT_STAGE = [0, 0, 1, 1, 2, 2, 2, 3];
+/** Verrue du Nether : 4 stades de croissance sur 3 images. */
+const WART_TILES = [T.nether_wart_0, T.nether_wart_1, T.nether_wart_1, T.nether_wart_2];
 for (let s = 0; s < 8; s++) {
   WHEAT_TILES.push(T[`wheat_${s}` as TileName]);
   CARROT_TILES.push(T[`carrots_${ROOT_STAGE[s]}` as TileName]);
@@ -811,7 +813,7 @@ for (let s = 0; s < 8; s++) {
 
 function meshCrop(id: number, meta: number): void {
   const stage = meta & 7;
-  const tile = id === B.WHEAT ? WHEAT_TILES[stage] : id === B.CARROTS ? CARROT_TILES[stage] : POTATO_TILES[stage];
+  const tile = id === B.WHEAT ? WHEAT_TILES[stage] : id === B.CARROTS ? CARROT_TILES[stage] : id === B.NETHER_WART ? WART_TILES[meta & 3] : POTATO_TILES[stage];
   noTint();
   flatLight(1);
   const lo = -1 / 16;

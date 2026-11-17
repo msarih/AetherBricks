@@ -908,6 +908,42 @@ def('trapdoor', (p) => {
   }
 });
 
+def('nether_bricks', (p) => {
+  const brick = 0x2f171b;
+  const f = p.field(4, 4);
+  p.each((x, y) => {
+    const row = y >> 2;
+    const off = row % 2 === 0 ? 0 : 4;
+    if ((y & 3) === 3 || ((x + off) & 7) === 7) return 0x180a0c;
+    return shade(brick, 0.9 + f(x, y) * 0.22);
+  });
+});
+def('soul_sand', (p) => {
+  p.rough([0x3f2f26, 0x48372c, 0x524034, 0x5a473a], 5, 5, 0.75);
+  // visages devinés dans le sable : deux creux sombres et une bouche
+  for (const [ox, oy] of [[2, 3], [9, 9]]) {
+    p.set(ox, oy, 0x2a1d17);
+    p.set(ox + 3, oy, 0x2a1d17);
+    for (let x = ox; x <= ox + 3; x++) p.set(x, oy + 2, 0x2f211a);
+  }
+});
+for (const [name, h] of [['nether_wart_0', 4], ['nether_wart_1', 8], ['nether_wart_2', 12]] as Array<[TileName, number]>) {
+  def(name, (p) => {
+    for (const cx of [3, 8, 12]) {
+      const top = 16 - h + (cx === 8 ? 0 : 2);
+      for (let y = top; y < 16; y++) {
+        p.set(cx, y, y === top ? 0xc0282c : 0x8a1418);
+        if (y > top + 1 && h > 4) p.set(cx + (y % 2 === 0 ? 1 : -1), y, 0x6e0e12);
+      }
+      if (h >= 12) {
+        p.set(cx - 1, top, 0xd84448);
+        p.set(cx + 1, top, 0xd84448);
+        p.set(cx, top - 1, 0xd84448);
+      }
+    }
+  });
+}
+
 def('rail', (p) => {
   // traverses de bois, puis les deux files de rail
   const wood = 0x7a5a34;

@@ -25,7 +25,7 @@ import { Spawner } from '../entity/Spawner';
 import { Input } from '../player/Input';
 import { Player } from '../player/Player';
 import type { Atlas } from '../render/Atlas';
-import { worldUniforms } from '../render/ChunkMaterials';
+import { NETHER_AMBIENT, OVERWORLD_AMBIENT, worldUniforms } from '../render/ChunkMaterials';
 import { ChunkRenderer } from '../render/ChunkRenderer';
 import { EntityRenderer } from '../render/EntityRenderer';
 import { HandRenderer, type HandState, type HeldMap } from '../render/HandRenderer';
@@ -51,7 +51,7 @@ import { BIOMES } from '../world/gen/Biomes';
 import { NetherGen } from '../world/gen/NetherGen';
 import type { GenSpawn } from '../world/gen/GenCanvas';
 import { hash2, mulberry32 } from '../world/gen/Noise';
-import { locateStructure, type StructureKind, type TerrainInfo } from '../world/gen/Structures';
+import { locateStructure, structuresNear, type StructureKind, type TerrainInfo } from '../world/gen/Structures';
 import { WorldGen } from '../world/gen/WorldGen';
 import { blockEntityItems, cleanSignLines, getSign, resolveLoot, tickBlockEntities } from './BlockEntities';
 import { ADVANCEMENTS, advancementText } from './Advancements';
@@ -122,6 +122,8 @@ const MOB_LABELS: Record<string, string> = {
   zombie_pigman: 'un cochon-zombie',
   ghast: 'un ghast',
   magma_cube: 'un cube de magma',
+  blaze: 'un blaze',
+  wither_skeleton: 'un squelette wither',
 };
 
 function lerp(a: number, b: number, t: number): number {
@@ -161,6 +163,8 @@ function deathMessage(cause: DamageCause, by: Entity | null): string {
       return by ? `Vous avez été tué par ${killer}` : 'Vous avez été tué';
     case 'arrow':
       return by ? `Vous avez été abattu par ${killer}` : 'Vous avez été abattu par une flèche';
+    case 'wither':
+      return 'Vous avez été flétri';
     default:
       return 'Vous êtes mort';
   }
@@ -913,7 +917,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     this.dimensionSwitching = true;
     try {
       this.keepPersistentEntities();
-    await this.chunks.saveAll();
+      await this.chunks.saveAll();
       const keys = this.storage
         ? await this.storage.chunkKeys(target === 'nether' ? netherStorageId(this.info.id) : this.info.id)
         : new Set<number>();
@@ -1109,6 +1113,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     this.sky.update(dt, cam, this.dayTime + (dt > 0 ? alpha : 0), this.rainLevel, this.thunderLevel, viewBlocks, this.dimension === 'nether');
     const u = worldUniforms;
     u.uSkyLight.value.copy(this.sky.skyLight);
+    u.uAmbient.value = this.dimension === 'nether' ? NETHER_AMBIENT : OVERWORLD_AMBIENT;
     const inWater = pointInFluid(w, B.WATER, cam.position.x, cam.position.y, cam.position.z);
     const inLava = !inWater && pointInFluid(w, B.LAVA, cam.position.x, cam.position.y, cam.position.z);
     if (inWater) {
@@ -1795,16 +1800,31 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
   locate(kind: StructureKind): { x: number; y: number; z: number; distance: number } | null {
     if (this.world.genVersion < 2 || this.world.worldType === 'flat') return null;
     if ((kind === 'fortress') !== (this.dimension === 'nether')) return null;
+    const p = this.player;
+    const s = locateStructure(this.terrainInfo(), kind, Math.floor(p.x), Math.floor(p.z));
+    if (!s) return null;
+    return { x: s.x, y: s.y, z: s.z, distance: Math.round(Math.hypot(s.x - p.x, s.z - p.z)) };
+  }
+
+  /** Générateur de la dimension courante, gardé pour situer les lieux sans régénérer de chunk. */
+  private terrainInfo(): TerrainInfo {
     if (!this.terrain || this.terrainDimension !== this.dimension) {
       this.terrain = this.dimension === 'nether'
         ? new NetherGen(this.info.seed, this.world.genVersion)
         : new WorldGen(this.info.seed, this.info.worldType, this.world.genVersion);
       this.terrainDimension = this.dimension;
     }
-    const p = this.player;
-    const s = locateStructure(this.terrain, kind, Math.floor(p.x), Math.floor(p.z));
-    if (!s) return null;
-    return { x: s.x, y: s.y, z: s.z, distance: Math.round(Math.hypot(s.x - p.x, s.z - p.z)) };
+    return this.terrain;
+  }
+
+  /** La colonne (x, z) est-elle dans un lieu généré du type donné ? */
+  inStructure(kind: string, x: number, z: number): boolean {
+    if (this.world.genVersion < 2 || this.world.worldType === 'flat') return false;
+    if ((kind === 'fortress') !== (this.dimension === 'nether')) return false;
+    for (const s of structuresNear(this.terrainInfo(), [kind as StructureKind], x >> 4, z >> 4, 0)) {
+      if (x >= s.x0 && x <= s.x1 && z >= s.z0 && z <= s.z1 && (!s.covers || s.covers(x, z))) return true;
+    }
+    return false;
   }
 
   private command(line: string): void {

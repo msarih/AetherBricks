@@ -450,6 +450,7 @@ export class Player extends Living implements PlayerLike {
     this.exhaustion = 0;
     this.air = 300;
     this.fireTicks = 0;
+    this.witherTicks = 0;
     this.deathTime = 0;
     this.hurtTime = 0;
     this.invulnerable = 60;

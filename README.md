@@ -22,9 +22,20 @@ npm run build    # version de production dans dist/
 - **Créatures** : vaches, cochons, moutons, poules ; zombies, squelettes, creepers et araignées la nuit.
 - **Pêche** : canne à pêche (3 bâtons + 2 ficelles) ; un clic droit lance la ligne, un second la remonte. Quand le flotteur s'enfonce, un poisson mord : poisson cru (à cuire au fourneau), parfois un objet sans valeur ou une trouvaille.
 - **S'y retrouver** : la boussole (4 lingots de fer + 1 redstone) pointe vers le point d'apparition du monde ; l'horloge (4 lingots d'or + 1 redstone) montre le soleil ou la lune ; la carte vierge (8 papiers + 1 boussole) devient, d'un clic droit, la carte de la zone de 128 × 128 blocs où l'on se tient, et se dessine tant qu'on la tient en main ; les panneaux (6 planches + 1 bâton) portent 4 lignes de texte. Le menu de pause donne les statistiques du joueur (distances, blocs minés, objets fabriqués, créatures vaincues).
+- **Lieux à découvrir** (dans les mondes créés à partir de cette version ; les mondes plus anciens gardent leur terrain tel quel) :
+  - **Donjons** : petite salle de pierres moussues ouverte sur une grotte, avec une cage qui fait apparaître des monstres tant qu'il fait noir, et un ou deux coffres.
+  - **Coffres à butin** : leur contenu est tiré à la première ouverture, à partir de la graine du monde.
+  - **Villages** (plaine, savane, désert) : puits, chemins, maisons, bibliothèque, église, forge avec son coffre, boucherie, champs, lampadaires.
+  - **Villageois** : cinq métiers reconnaissables à la robe. Un clic droit ouvre leurs échanges : on leur vend des denrées contre des émeraudes, on leur achète des objets. Un premier échange débloque le palier d'offres suivant. Ils rentrent chez eux la nuit et ouvrent les portes.
+  - **Pyramide du désert** : quatre coffres sous le bloc bleu du sol… et une plaque de pression posée sur de la TNT.
+  - **Temple de la jungle** : un coffre au sous-sol, un second caché derrière un bloc que retient un piston ; relever le levier l'ouvre.
+  - **Mines abandonnées** : galeries étayées, rails, toiles d'araignée, coffres et cages à araignées.
+  - **Badlands** : plateaux de terre cuite en strates colorées et sable rouge. La terre cuite se fabrique aussi (argile cuite au fourneau), en 16 couleurs (8 terres cuites autour d'une teinture).
+  - **Forteresse du Nether** : ponts et couloirs de briques du Nether, cages à blazes, salle où poussent les verrues du Nether, coffres. On y croise le **blaze** (salves de boules de feu, lâche un bâton de blaze) et le **squelette wither** (ses coups flétrissent : la vie baisse encore 10 secondes).
+  - `/locate <village|temple|jungle|mine|forteresse>` donne la position du lieu le plus proche.
 - **Modes** : survie et créatif (vol par double appui sur Espace, casse instantanée).
 - **Mondes** : plusieurs mondes sauvegardés dans le navigateur (IndexedDB) — créer, renommer, supprimer ; sauvegarde automatique et à la fermeture. Un monde s'exporte dans un fichier `.aetherworld` et s'importe depuis ce fichier (sauvegarde externe, passage d'un navigateur ou d'un appareil à l'autre).
-- **Commandes** (touche `/`) : `/help`, `/gamemode`, `/time`, `/weather`, `/give`, `/tp`, `/kill`, `/seed`, `/difficulty`, `/summon`, `/clear`, `/spawnpoint`.
+- **Commandes** (touche `/`) : `/help`, `/gamemode`, `/time`, `/weather`, `/give`, `/tp`, `/kill`, `/seed`, `/difficulty`, `/summon`, `/clear`, `/spawnpoint`, `/locate`.
 
 ## 🎮 Contrôles
 
@@ -59,7 +70,8 @@ Les touches sont repérées par leur position sur le clavier : sur un clavier QW
 
 ## ⚠️ Limites connues
 
-- Pas de villages, d'End ni de multijoueur.
+- Pas d'End ni de multijoueur.
+- Lieux à découvrir : uniquement dans les mondes créés à partir de cette version. Écarts avec Minecraft : l'échange avec un villageois se fait en cliquant sur une offre (pas de cases à remplir) ; les zombies n'attaquent pas les villageois ; le temple de la jungle n'a pas de piège à flèches ; dans les mines, les coffres sont posés au sol et les cages donnent des araignées ordinaires ; les rails sont un décor (pas de wagonnet) ; la forteresse a un plan plus simple, sans escaliers.
 - La boussole indique le point d'apparition du monde, pas le lit ; les cartes ne s'agrandissent pas et restent vierges dans le Nether.
 - Testé sur Chrome uniquement.
 

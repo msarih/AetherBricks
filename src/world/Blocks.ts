@@ -522,6 +522,12 @@ reg(B.NETHER_PORTAL, 'nether_portal', 'Portail du Nether', {
 reg(B.NETHER_QUARTZ_ORE, 'nether_quartz_ore', 'Minerai de quartz du Nether', {
   tiles: 'nether_quartz_ore', hardness: 3, tool: 'pickaxe', harvestTier: 1, sound: 'stone', category: 'nature',
 });
+reg(B.NETHER_BRICKS, 'nether_bricks', 'Briques du Nether', { tiles: 'nether_bricks', hardness: 2, blastResistance: 30, ...rock });
+reg(B.NETHER_BRICK_FENCE, 'nether_brick_fence', 'Barrière en briques du Nether', {
+  tiles: 'nether_bricks', shape: SHAPE.FENCE, opaque: false, hardness: 2, blastResistance: 30, ...rock, category: 'decoration',
+});
+reg(B.SOUL_SAND, 'soul_sand', 'Sable des âmes', { tiles: 'soul_sand', hardness: 0.5, tool: 'shovel', sound: 'sand', category: 'nature' });
+reg(B.NETHER_WART, 'nether_wart_crop', 'Verrues du Nether', { tiles: 'nether_wart_2', ...crop });
 reg(B.RAIL, 'rail', 'Rails', {
   tiles: 'rail', shape: SHAPE.RAIL, solid: false, opaque: false, hardness: 0.7, tool: 'pickaxe', sound: 'metal',
   needsSupport: true, itemTile: 'rail', category: 'decoration',
