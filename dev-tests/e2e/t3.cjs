@@ -498,6 +498,8 @@ const dbg = (page) => ev(page, () => { const d = window.__game.debugLines(); ret
       await shot(page, '56d-import');
 
       // comparaison octet pour octet de ce qui est enregistré
+      const fileVer = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(8, true);
+      check('export : format .aetherworld en version 2', fileVer === 2, `version=${fileVer}`);
       const cmp = await page.evaluate(async () => {
         const { Storage } = await import('/src/world/Storage.ts');
         const s = await Storage.open();

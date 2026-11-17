@@ -19,7 +19,7 @@ import { createWorldId, netherStorageId, rleDecode, rleEncode, type SavedChunk, 
 
 export const WORLD_FILE_EXTENSION = '.aetherworld';
 const SIGNATURE = 'AEBWORLD';
-const FORMAT_VERSION = 1;
+const FORMAT_VERSION = 2;
 const TINT_BYTES = CHUNK_AREA * 9;
 /** Chunks lus ou écrits par lot (une transaction par lot à l'import). */
 const BATCH = 32;
@@ -211,7 +211,7 @@ export async function importWorld(storage: Storage, data: ArrayBuffer, onProgres
   }
   if (signature !== SIGNATURE) throw new Error('ce fichier n’est pas un monde AetherBricks');
   const version = r.u32();
-  if (version !== FORMAT_VERSION) throw new Error(`version de fichier non prise en charge (${version})`);
+  if (version !== 1 && version !== FORMAT_VERSION) throw new Error(`version de fichier non prise en charge (${version})`);
   const header = r.json();
   if (!isRecord(header)) throw new Error(DAMAGED);
   const count = header.chunkCount;
