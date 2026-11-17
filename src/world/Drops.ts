@@ -82,7 +82,7 @@ export function blockDrops(id: number, meta: number, tool: number, rng: () => nu
       case B.EMERALD_ORE:
       case B.REDSTONE_ORE:
       case B.LAPIS_ORE:
-      case B.GLASS:
+    case B.GLASS:
       case B.GLASS_PANE:
       case B.ICE:
       case B.MELON:
@@ -145,6 +145,12 @@ export function blockDrops(id: number, meta: number, tool: number, rng: () => nu
       return one(I.LAPIS, randInt(rng, 4, 8) * fortuneBonus());
 
     // --- Rien du tout ---
+    case B.REDSTONE_WIRE:
+      return one(I.REDSTONE);
+    case B.REDSTONE_LAMP_LIT:
+      return one(B.REDSTONE_LAMP);
+    case B.PISTON_HEAD:
+      return [];
     case B.GLASS:
     case B.GLASS_PANE:
     case B.ICE:

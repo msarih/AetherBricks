@@ -176,6 +176,13 @@ for (const [source, stairs] of STAIRS_SOURCES) shaped(['#  ', '## ', '###'], { '
 // Blocs de construction et de décoration
 // ---------------------------------------------------------------------------
 shaped(['GSG', 'SGS', 'GSG'], { G: I.GUNPOWDER, S: B.SAND }, B.TNT);
+shaped(['R', 'S'], { R: I.REDSTONE, S: I.STICK }, B.REDSTONE_TORCH);
+shaped(['S', 'C'], { S: I.STICK, C: B.COBBLESTONE }, B.LEVER);
+shapeless([B.STONE], B.STONE_BUTTON);
+shaped(['SS'], { S: B.STONE }, B.STONE_PRESSURE_PLATE);
+shaped(['PPP', 'CIC', 'CRC'], { P: B.OAK_PLANKS, C: B.COBBLESTONE, I: I.IRON_INGOT, R: I.REDSTONE }, B.PISTON);
+shapeless([B.PISTON, B.VINE], B.STICKY_PISTON);
+shaped([' R ', 'RGR', ' R '], { R: I.REDSTONE, G: B.GLOWSTONE }, B.REDSTONE_LAMP);
 shaped(['##', '##'], { '#': B.SAND }, B.SANDSTONE);
 shaped(['##', '##'], { '#': I.BRICK }, B.BRICKS);
 shaped(['##', '##'], { '#': I.CLAY_BALL }, B.CLAY);

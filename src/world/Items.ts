@@ -100,7 +100,7 @@ const SIMPLE_ITEMS: Array<[id: number, name: TileName, label: string, category: 
   [I.DIAMOND, 'diamond', 'Diamant', 'materiaux'],
   [I.EMERALD, 'emerald', 'Émeraude', 'materiaux'],
   [I.LAPIS, 'lapis', 'Lapis-lazuli', 'materiaux'],
-  [I.REDSTONE, 'redstone', 'Poudre de redstone', 'materiaux'],
+  [I.REDSTONE, 'redstone', 'Poudre de redstone', 'materiaux', { places: B.REDSTONE_WIRE }],
   [I.FLINT, 'flint', 'Silex', 'materiaux'],
   [I.WHEAT_SEEDS, 'wheat_seeds', 'Graines de blé', 'materiaux', { places: B.WHEAT }],
   [I.WHEAT, 'wheat', 'Blé', 'materiaux'],

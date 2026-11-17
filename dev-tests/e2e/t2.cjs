@@ -982,6 +982,178 @@ async function useOnGround(page, x, z) {
     }
   });
 
+  await section('redstone', async () => {
+    try {
+      await chat(page, '/tp 46.5 4 50.5');
+      await ticks(page, 5);
+      // 1) Poussière (15 → 0) + levier + lampe + porte en fer + torche inverseuse
+      const r1 = await ev(page, async () => {
+        const { B } = await import('/src/world/Ids.ts');
+        const g = window.__game, w = g.world;
+        w.setBlock(46, 4, 48, B.LEVER, 0);
+        for (let i = 0; i < 17; i++) w.setBlock(47 + i, 4, 48, B.REDSTONE_WIRE, 0);
+        w.setBlock(48, 4, 47, B.REDSTONE_LAMP, 0);
+        w.setBlock(50, 4, 47, B.IRON_DOOR, 0, false);
+        w.setBlock(50, 5, 47, B.IRON_DOOR, 8);
+        w.setBlock(48, 4, 49, B.REDSTONE_WIRE, 0);
+        w.setBlock(49, 4, 49, B.STONE, 0);
+        w.setBlock(49, 4, 50, B.REDSTONE_TORCH, 1);
+        T.aim(46.5, 4.1, 48.5);
+        return {
+          lampBefore: w.getBlock(48, 4, 47) === B.REDSTONE_LAMP_LIT,
+          doorBefore: (w.getMeta(50, 4, 47) & 4) !== 0,
+        };
+      });
+      await rclick(page);
+      await ticks(page, 5);
+      const r2 = await ev(page, async () => {
+        const { B } = await import('/src/world/Ids.ts');
+        const g = window.__game, w = g.world;
+        return {
+          p0: w.getMeta(47, 4, 48),
+          p5: w.getMeta(52, 4, 48),
+          p14: w.getMeta(61, 4, 48),
+          p15: w.getMeta(62, 4, 48),
+          lampAfter: w.getBlock(48, 4, 47) === B.REDSTONE_LAMP_LIT,
+          doorAfter: (w.getMeta(50, 4, 47) & 4) !== 0,
+          torchOff: (w.getMeta(49, 4, 50) & 8) !== 0,
+        };
+      });
+      check('redstone : poussière (15 → 1 par bloc), levier, lampe, porte en fer et torche inverseuse',
+        !r1.lampBefore && !r1.doorBefore &&
+        r2.p0 === 15 && r2.p5 === 10 && r2.p14 === 1 && r2.p15 === 0 &&
+        r2.lampAfter && r2.doorAfter && r2.torchOff,
+        JSON.stringify({ r1, r2 }));
+
+      // Vérifie que la porte en fer ne s'ouvre pas à la main
+      const ironHand = await ev(page, async () => {
+        const { B } = await import('/src/world/Ids.ts');
+        const g = window.__game, w = g.world;
+        w.setBlock(52, 4, 51, B.IRON_DOOR, 0, false);
+        w.setBlock(52, 5, 51, B.IRON_DOOR, 8);
+        T.aim(52.5, 4.5, 51.2);
+        return (w.getMeta(52, 4, 51) & 4) !== 0;
+      });
+      await rclick(page);
+      const ironHandAfter = await ev(page, () => (window.__game.world.getMeta(52, 4, 51) & 4) !== 0);
+      check('redstone : la porte en fer ne s\'ouvre pas à la main', !ironHand && !ironHandAfter);
+
+      // 2) Bouton (retombe après 20 ticks) et plaque de pression
+      await ev(page, async () => {
+        const { B } = await import('/src/world/Ids.ts');
+        const g = window.__game, w = g.world;
+        w.setBlock(46, 4, 52, B.STONE_BUTTON, 0);
+        w.setBlock(47, 4, 52, B.REDSTONE_LAMP, 0);
+        T.aim(46.5, 4.05, 52.5);
+      });
+      await rclick(page);
+      await ticks(page, 2);
+      const btnOn = await ev(page, async () => {
+        const { B } = await import('/src/world/Ids.ts');
+        return window.__game.world.getBlock(47, 4, 52) === B.REDSTONE_LAMP_LIT;
+      });
+      await ticks(page, 22);
+      const btnOff = await ev(page, async () => {
+        const { B } = await import('/src/world/Ids.ts');
+        return window.__game.world.getBlock(47, 4, 52) === B.REDSTONE_LAMP;
+      });
+      check('redstone : bouton allume la lampe puis retombe après 20 ticks', btnOn && btnOff, `on=${btnOn} off=${btnOff}`);
+
+      await ev(page, async () => {
+        const { B } = await import('/src/world/Ids.ts');
+        const g = window.__game, w = g.world, p = g.player;
+        w.setBlock(48, 4, 54, B.STONE_PRESSURE_PLATE, 0);
+        w.setBlock(49, 4, 54, B.REDSTONE_LAMP, 0);
+        p.teleport(48.5, 4, 54.5);
+      });
+      await ticks(page, 2);
+      const plateOn = await ev(page, async () => {
+        const { B } = await import('/src/world/Ids.ts');
+        return window.__game.world.getBlock(49, 4, 54) === B.REDSTONE_LAMP_LIT;
+      });
+      await ev(page, () => window.__game.player.teleport(46.5, 4, 50.5));
+      await ticks(page, 14);
+      const plateOff = await ev(page, async () => {
+        const { B } = await import('/src/world/Ids.ts');
+        return window.__game.world.getBlock(49, 4, 54) === B.REDSTONE_LAMP;
+      });
+      check('redstone : plaque de pression s\'active sous le joueur puis se relâche', plateOn && plateOff, `on=${plateOn} off=${plateOff}`);
+
+      // 3) Piston, piston collant et TNT
+      const pistonRes = await ev(page, async () => {
+        const { B } = await import('/src/world/Ids.ts');
+        const g = window.__game, w = g.world;
+        w.setBlock(54, 4, 50, B.PISTON, 5);
+        w.setBlock(55, 4, 50, B.STONE, 0);
+        w.setBlock(54, 4, 51, B.LEVER, 0);
+        w.setMeta(54, 4, 51, 8, true);
+        const pushed = w.getBlock(55, 4, 50) === B.PISTON_HEAD && w.getBlock(56, 4, 50) === B.STONE;
+        w.setMeta(54, 4, 51, 0, true);
+        const normalLeft = w.getBlock(56, 4, 50) === B.STONE && w.getBlock(55, 4, 50) === B.AIR;
+
+        w.setBlock(54, 4, 52, B.STICKY_PISTON, 5);
+        w.setBlock(55, 4, 52, B.STONE, 0);
+        w.setBlock(54, 4, 53, B.LEVER, 0);
+        w.setMeta(54, 4, 53, 8, true);
+        const stickyPushed = w.getBlock(55, 4, 52) === B.PISTON_HEAD && w.getBlock(56, 4, 52) === B.STONE;
+        w.setMeta(54, 4, 53, 0, true);
+        const stickyPulled = w.getBlock(55, 4, 52) === B.STONE && w.getBlock(56, 4, 52) === B.AIR;
+        w.setMeta(54, 4, 51, 8, true);
+
+        w.setBlock(58, 4, 52, B.TNT, 0);
+        w.setBlock(58, 4, 53, B.REDSTONE_BLOCK, 0);
+        const tntPrimed = w.getBlock(58, 4, 52) === B.AIR && g.entities.some((e) => e.kind === 'tnt');
+        for (const e of g.entities) if (e.kind === 'tnt') e.dead = true;
+        return { pushed, normalLeft, stickyPushed, stickyPulled, tntPrimed };
+      });
+      check('redstone : piston pousse, piston collant pousse et ramène, TNT s\'allume',
+        pistonRes.pushed && pistonRes.normalLeft && pistonRes.stickyPushed && pistonRes.stickyPulled && pistonRes.tntPrimed,
+        JSON.stringify(pistonRes));
+
+      await ev(page, () => { const p = window.__game.player; p.teleport(45.5, 4, 51.5); T.aim(50.5, 4.3, 48); });
+      await ticks(page, 2);
+      await shot(page, '26b-redstone');
+
+      // 4) Mesure de performance sur grand circuit + borne de propagation
+      const bench = await ev(page, async () => {
+        const { B } = await import('/src/world/Ids.ts');
+        const { MAX_REDSTONE_UPDATES } = await import('/src/world/Redstone.ts');
+        const g = window.__game, w = g.world;
+        const measure = (fn) => {
+          const t0 = performance.now();
+          for (let i = 0; i < 40; i++) fn(i);
+          return (performance.now() - t0) / 40;
+        };
+        const baseMs = measure(() => g.tick());
+        for (let z = 70; z < 86; z++) {
+          for (let x = 70; x < 86; x++) {
+            w.setBlock(x, 4, z, (x + z) % 7 === 0 ? B.REDSTONE_LAMP : B.REDSTONE_WIRE, 0, false);
+          }
+        }
+        w.setBlock(69, 4, 70, B.LEVER, 0);
+        const circuitMs = measure((i) => {
+          if (i % 4 === 0) w.setMeta(69, 4, 70, (i & 4) ? 8 : 0, true);
+          g.tick();
+        });
+        for (let z = 70; z < 86; z++) for (let x = 69; x < 86; x++) w.setBlock(x, 4, z, B.AIR, 0, false);
+        return { baseMs, circuitMs, cap: MAX_REDSTONE_UPDATES };
+      });
+      console.log(`  perf redstone : base=${bench.baseMs.toFixed(3)} ms/tick, grand circuit=${bench.circuitMs.toFixed(3)} ms/tick (borne=${bench.cap})`);
+      check('redstone : propagation bornée et coût par tick maîtrisé', bench.cap === 512 && bench.circuitMs < 50, JSON.stringify(bench));
+    } finally {
+      await ev(page, async () => {
+        const g = window.__game, w = g.world;
+        for (let x = 45; x <= 64; x++) {
+          for (let z = 46; z <= 55; z++) {
+            w.setBlock(x, 4, z, 0, 0, false);
+            w.setBlock(x, 5, z, 0, 0, false);
+          }
+        }
+        for (const e of g.entities) if (e.kind === 'tnt') e.dead = true;
+      }).catch(() => undefined);
+    }
+  });
+
   await section('seau d\'eau', async () => {
     await chat(page, '/tp 50.5 4 50.5');
     await ticks(page, 5);

@@ -1682,3 +1682,74 @@ def('particle_rain', (p) => {
     for (let k = 0; k < len; k++) p.setWrap(x, y + k, k === len - 1 ? 0x9fc0ff : 0x5f8fe8, 170);
   }
 });
+
+// ---------------------------------------------------------------------------
+// Redstone
+// ---------------------------------------------------------------------------
+def('redstone_dust', (p) => {
+  for (let i = 0; i < 16; i++) {
+    p.set(7, i, 0xffffff);
+    p.set(8, i, 0xe8e8e8);
+    p.set(i, 7, 0xffffff);
+    p.set(i, 8, 0xe8e8e8);
+  }
+  p.rect(6, 6, 4, 4, 0xffffff);
+});
+
+def('redstone_torch_on', (p) => {
+  p.rect(7, 6, 2, 10, 0x7c552e);
+  p.rect(7, 8, 2, 8, 0x93693a);
+  p.rect(6, 4, 4, 4, 0xd81818);
+  p.rect(7, 5, 2, 2, 0xff9a6a);
+});
+
+def('redstone_torch_off', (p) => {
+  p.rect(7, 6, 2, 10, 0x7c552e);
+  p.rect(7, 8, 2, 8, 0x93693a);
+  p.rect(6, 4, 4, 4, 0x561010);
+  p.rect(7, 5, 2, 2, 0x7a1a1a);
+});
+
+def('piston_top', (p) => {
+  p.rough([0xa6834c, 0xb8945c, 0xc29e65], 4, 4, 0.4);
+  p.frame(0, 0, 16, 16, 0x7c5e31);
+  p.rect(0, 5, 16, 1, 0x7c5e31);
+  p.rect(0, 10, 16, 1, 0x7c5e31);
+});
+
+def('piston_top_sticky', (p) => {
+  p.rough([0xa6834c, 0xb8945c, 0xc29e65], 4, 4, 0.4);
+  p.frame(0, 0, 16, 16, 0x7c5e31);
+  p.rect(3, 3, 10, 10, 0x76b852);
+  p.rect(5, 5, 6, 6, 0x8cd464);
+});
+
+def('piston_side', (p) => {
+  p.rough([0x7a7a7a, 0x868686, 0x929292], 5, 5, 0.5);
+  p.rect(0, 0, 16, 4, 0xb28b52);
+  p.rect(0, 4, 16, 1, 0x4b4b4b);
+  p.frame(0, 4, 16, 12, 0x5d5d5d);
+});
+
+def('piston_bottom', (p) => {
+  p.rough([0x666666, 0x747474, 0x828282], 5, 5, 0.5);
+  p.frame(0, 0, 16, 16, 0x484848);
+  p.rect(5, 5, 6, 6, 0x555555);
+});
+
+def('piston_inner', (p) => {
+  p.rough([0x5a5a5a, 0x6a6a6a, 0x777777], 5, 5, 0.5);
+  p.rect(5, 5, 6, 6, 0x9c7b49);
+});
+
+def('redstone_lamp_off', (p) => {
+  p.rough([0x583c24, 0x69482c, 0x785434], 4, 4, 0.45);
+  p.frame(0, 0, 16, 16, 0x3b2615);
+  p.frame(2, 2, 12, 12, 0x49311d);
+});
+
+def('redstone_lamp_on', (p) => {
+  p.rough([0xd29c46, 0xe8b960, 0xf9db84, 0xfff0b2], 4, 4, 0.4);
+  p.frame(0, 0, 16, 16, 0x8d5b20);
+  p.frame(2, 2, 12, 12, 0xb87f32);
+});

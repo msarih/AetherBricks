@@ -489,7 +489,7 @@ export class Interaction {
     const h = this.hit;
     const { x, y, z, id, meta } = h;
 
-    if (id === B.OAK_DOOR || id === B.IRON_DOOR) {
+    if (id === B.OAK_DOOR) {
       const ly = meta & META_DOOR_UPPER ? y - 1 : y;
       const lower = w.getBlockAndMeta(x, ly, z);
       const upper = w.getBlockAndMeta(x, ly + 1, z);
@@ -497,6 +497,19 @@ export class Interaction {
       if ((lower & 255) === id) w.setMeta(x, ly, z, open ? (lower >> 8) | META_DOOR_OPEN : (lower >> 8) & ~META_DOOR_OPEN);
       if ((upper & 255) === id) w.setMeta(x, ly + 1, z, open ? (upper >> 8) | META_DOOR_OPEN : (upper >> 8) & ~META_DOOR_OPEN);
       g.sound(open ? 'door_open' : 'door_close', x + 0.5, ly + 1, z + 0.5, 0.8, 0.9 + g.rng() * 0.2);
+      return true;
+    }
+    if (id === B.LEVER) {
+      w.setMeta(x, y, z, meta ^ 8, true);
+      g.sound('door_open', x + 0.5, y + 0.5, z + 0.5, 0.5, meta & 8 ? 0.5 : 0.6);
+      return true;
+    }
+    if (id === B.STONE_BUTTON) {
+      if (!(meta & 8)) {
+        w.setMeta(x, y, z, meta | 8, true);
+        w.scheduleTick(x, y, z, 20);
+        g.sound('door_open', x + 0.5, y + 0.5, z + 0.5, 0.5, 0.6);
+      }
       return true;
     }
     if (id === B.TRAPDOOR || id === B.FENCE_GATE) {
@@ -827,7 +840,9 @@ export class Interaction {
         if (meta < 0) return false;
         break;
       }
-      case SHAPE.TORCH: {
+      case SHAPE.TORCH:
+      case SHAPE.LEVER:
+      case SHAPE.BUTTON: {
         meta = -1;
         if (side >= 0 && onto && canStay(w, x, y, z, id, side + 1)) meta = side + 1;
         else if (canStay(w, x, y, z, id, 0)) meta = 0;
@@ -844,7 +859,12 @@ export class Interaction {
         break;
       }
       default:
-        if (def.rot === ROT.AXIS) meta = face === FACE_UP || face === FACE_DOWN || !onto ? 0 : face === FACE_WEST || face === FACE_EAST ? 1 : 2;
+        if (id === B.PISTON || id === B.STICKY_PISTON) {
+          g.player.look(this.look);
+          if (this.look.y > 0.7) meta = 1;
+          else if (this.look.y < -0.7) meta = 0;
+          else meta = opposite(pf) + 2;
+        } else if (def.rot === ROT.AXIS) meta = face === FACE_UP || face === FACE_DOWN || !onto ? 0 : face === FACE_WEST || face === FACE_EAST ? 1 : 2;
         else if (def.rot === ROT.FACING) meta = opposite(pf);
         else if (isLeaves(id)) meta = 1;
         break;

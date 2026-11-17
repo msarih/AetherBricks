@@ -10,6 +10,7 @@ import { CHUNK_HEIGHT, chunkKey, type WorldType } from './Constants';
 import { mulberry32 } from './gen/Noise';
 import type { Chunk } from './Chunk';
 import { neighborChanged, randomTick, scheduledTick } from './Behavior';
+import { hasRedstoneNearby, isRedstoneBlock, updateRedstoneAround } from './Redstone';
 
 /** Donnée attachée à un bloc (coffre, fourneau, générateur de monstres). */
 export interface BlockEntity {
@@ -226,6 +227,9 @@ export class World {
     if (notify) {
       neighborChanged(this, x, y, z);
       this.notifyNeighbors(x, y, z);
+      if (isRedstoneBlock(old) || isRedstoneBlock(id) || hasRedstoneNearby(this, x, y, z)) {
+        updateRedstoneAround(this, x, y, z);
+      }
     }
     return true;
   }

@@ -13,7 +13,7 @@
  */
 import * as THREE from 'three';
 import type { Sfx, SfxName } from '../audio/Sfx';
-import type { DamageCause, Entity, GameApi } from '../entity/Entity';
+import { Living, type DamageCause, type Entity, type GameApi } from '../entity/Entity';
 import type { MobKind } from '../entity/MobModels';
 import { HOSTILE_KINDS, Monster, PASSIVE_KINDS, createMob, hatchEgg } from '../entity/Mobs';
 import { FallingBlock, ItemEntity, Thrown, Tnt } from '../entity/Objects';
@@ -41,7 +41,7 @@ import { makeStack } from '../world/ItemStack';
 import { newRayHit, raycast } from '../world/Raycast';
 import { formatKeyCode } from '../world/Storage';
 import type { Settings, Storage, WorldInfo } from '../world/Storage';
-import { World, type BlockEntity, type WorldEffect, type WorldHost } from '../world/World';
+import { World, posKey, posKeyX, posKeyY, posKeyZ, type BlockEntity, type WorldEffect, type WorldHost } from '../world/World';
 import { BIOMES } from '../world/gen/Biomes';
 import { WorldGen } from '../world/gen/WorldGen';
 import { blockEntityItems, tickBlockEntities } from './BlockEntities';
@@ -229,6 +229,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
   private fpsTime = 0;
   private disposed = false;
   private itemNames: Map<string, number> | null = null;
+  private readonly pressedPlates = new Map<number, number>();
 
   constructor(o: GameOptions) {
     this.renderer = o.renderer;
@@ -646,6 +647,30 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
         continue;
       }
       e.tick(this);
+      if (e instanceof Living && !e.dead) {
+        const bx = Math.floor(e.x);
+        const by = Math.floor(e.y + 0.05);
+        const bz = Math.floor(e.z);
+        const v = w.getBlockAndMeta(bx, by, bz);
+        if ((v & 255) === B.STONE_PRESSURE_PLATE) {
+          const pk = posKey(bx, by, bz);
+          this.pressedPlates.set(pk, w.age + 10);
+          if (((v >> 8) & 1) === 0) w.setMeta(bx, by, bz, 1, true);
+        }
+      }
+    }
+    if (this.pressedPlates.size > 0) {
+      for (const [pk, until] of this.pressedPlates) {
+        if (w.age >= until) {
+          this.pressedPlates.delete(pk);
+          const bx = posKeyX(pk);
+          const by = posKeyY(pk);
+          const bz = posKeyZ(pk);
+          if (w.getBlock(bx, by, bz) === B.STONE_PRESSURE_PLATE && w.getMeta(bx, by, bz) !== 0) {
+            w.setMeta(bx, by, bz, 0, true);
+          }
+        }
+      }
     }
     let n = 0;
     for (let i = 0; i < list.length; i++) {

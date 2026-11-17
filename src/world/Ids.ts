@@ -153,6 +153,16 @@ export const B = {
   IRON_DOOR: 147,
   ENCHANTING_TABLE: 148,
   ANVIL: 149,
+  REDSTONE_WIRE: 150,
+  REDSTONE_TORCH: 151,
+  LEVER: 152,
+  STONE_BUTTON: 153,
+  STONE_PRESSURE_PLATE: 154,
+  PISTON: 155,
+  STICKY_PISTON: 156,
+  PISTON_HEAD: 157,
+  REDSTONE_LAMP: 158,
+  REDSTONE_LAMP_LIT: 159,
 } as const;
 
 /** Nombre maximal d'identifiants de blocs (les objets commencent à 256). */
