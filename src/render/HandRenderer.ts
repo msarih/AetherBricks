@@ -491,7 +491,11 @@ export class HandRenderer {
     if (this.offShown) {
       this.offHolder.visible = true;
       const oc = this.offChain.identity();
-      oc.translate(-0.56, -0.52, -0.72);
+      if (state.useKind === 'block' && this.offTargetId === I.SHIELD && this.targetId !== I.SHIELD) {
+        oc.translate(-0.28, -0.32, -0.58).rotateY(22).rotateX(12);
+      } else {
+        oc.translate(-0.56, -0.52, -0.72);
+      }
       if (!this.offShown.model.isBlock) oc.scale(2).translate(0, 4 / 16, 2 / 16).rotateY(135).rotateZ(-25).scale(0.85);
       else oc.rotateY(45).scale(0.4);
       this.offShown.model.setLight(state.skyLight, state.blockLight);

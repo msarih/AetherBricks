@@ -13,6 +13,7 @@ import { Inventory } from '../game/Inventory';
 import { STAT, addStat, craftedKey, killedByKey, loadStats, type Stats } from '../game/Stats';
 import type { GameMode } from '../world/Constants';
 import { armorProtectionFactor } from '../world/Enchants';
+import { I } from '../world/Ids';
 import { getItem } from '../world/Items';
 import { makeStack, type ItemStack } from '../world/ItemStack';
 
@@ -26,7 +27,7 @@ export interface PlayerInput {
   sprint: boolean;
 }
 
-export type UseKind = 'none' | 'eat' | 'bow';
+export type UseKind = 'none' | 'eat' | 'bow' | 'block';
 
 const STAND_EYE = 1.62;
 const SNEAK_EYE = 1.54;
@@ -117,6 +118,11 @@ export class Player extends Living implements PlayerLike {
 
   get offhandItemId(): number {
     return this.inventory.offhandId;
+  }
+
+  /** Bouclier levé et actif (après 5 ticks de clic droit maintenu). */
+  get blocking(): boolean {
+    return this.useKind === 'block' && this.useTicks >= 5;
   }
 
   get creative(): boolean {
@@ -470,6 +476,17 @@ export class Player extends Living implements PlayerLike {
 
   hurt(game: GameApi, amount: number, cause: DamageCause, attacker: Entity | null = null): boolean {
     if (this.creative && cause !== 'void') return false;
+    if (this.blocking && (cause === 'attack' || cause === 'arrow' || cause === 'explosion')) {
+      const fromFront = attacker === null || (attacker.x - this.x) * -Math.sin(this.yaw) + (attacker.z - this.z) * -Math.cos(this.yaw) > 0;
+      if (fromFront) {
+        if (amount >= 3) {
+          const shieldHand = this.heldItemId === I.SHIELD ? 'main' : 'offhand';
+          this.damageHand(shieldHand, game, Math.floor(amount) + 1);
+        }
+        game.sound('attack_miss', this.x, this.y + 1, this.z, 0.8, 0.7);
+        return false;
+      }
+    }
     const ok = super.hurt(game, amount, cause, attacker);
     if (ok) {
       this.sleeping = false;

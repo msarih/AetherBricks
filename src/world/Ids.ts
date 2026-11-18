@@ -353,9 +353,10 @@ export const I = {
   BLAZE_POWDER: 397,
   /** Œil de l'Ender : lancé, il vole vers le fort ; posé sur un cadre, il ouvre le portail de l'End. */
   ENDER_EYE: 398,
+  SHIELD: 399,
 } as const;
 
-export const ITEM_ID_LIMIT = 400;
+export const ITEM_ID_LIMIT = 420;
 
 /** Noms techniques des 16 couleurs (ordre des laines et des colorants). */
 export const COLOR_NAMES = [

@@ -75,6 +75,7 @@ shaped(['#', '#'], { '#': PLANKS }, I.STICK, 4);
 shaped(['##', '##'], { '#': PLANKS }, B.CRAFTING_TABLE);
 shaped(['###', '# #', '###'], { '#': B.COBBLESTONE }, B.FURNACE);
 shaped(['###', '# #', '###'], { '#': PLANKS }, B.CHEST);
+shaped(['PFP', 'PPP', ' P '], { P: PLANKS, F: I.IRON_INGOT }, I.SHIELD);
 shaped(['C', '|'], { C: COALS, '|': I.STICK }, B.TORCH, 4);
 
 // ---------------------------------------------------------------------------

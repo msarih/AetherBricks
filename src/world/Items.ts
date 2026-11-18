@@ -106,6 +106,7 @@ const SIMPLE_ITEMS: Array<[id: number, name: TileName, label: string, category: 
   [I.ENDER_PEARL, 'ender_pearl', "Perle de l'Ender", 'materiaux', { stack: 16 }],
   [I.BLAZE_POWDER, 'blaze_powder', 'Poudre de blaze', 'materiaux'],
   [I.ENDER_EYE, 'ender_eye', "Œil de l'Ender", 'materiaux'],
+  [I.SHIELD, 'shield', 'Bouclier', 'combat', { stack: 1, durability: 336 }],
   [I.DIAMOND, 'diamond', 'Diamant', 'materiaux'],
   [I.EMERALD, 'emerald', 'Émeraude', 'materiaux'],
   [I.LAPIS, 'lapis', 'Lapis-lazuli', 'materiaux'],

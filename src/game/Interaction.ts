@@ -473,7 +473,7 @@ export class Interaction {
     p.damageHand(this.useHand, g);
   }
 
-  private startUse(kind: 'eat' | 'bow'): void {
+  private startUse(kind: 'eat' | 'bow' | 'block'): void {
     const p = this.game.player;
     p.useKind = kind;
     p.useTicks = 0;
@@ -870,6 +870,11 @@ export class Interaction {
       p.consumeHand(this.activeHand);
       this.swing();
       return true;
+    }
+
+    if (held === I.SHIELD) {
+      this.startUse('block');
+      return false;
     }
 
     if (item.food > 0 || held === I.MILK_BUCKET) {

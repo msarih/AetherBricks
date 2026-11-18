@@ -1944,3 +1944,27 @@ def(
     { k: 0x0c3a1e, d: 0x2a7a3c, b: 0x4aa858, h: 0x86d88a, w: 0xe0ffd8, p: 0x1c5a46 },
   ),
 );
+def(
+  'shield',
+  spr(
+    [
+      '..kkkkkkkkkkkk..',
+      '.kiiiiiiiiiiiik.',
+      '.kiwwwppppwwwik.',
+      '.kiwwppppppwwik.',
+      '.kiwppddddppwik.',
+      '.kipppddddpppik.',
+      '.kipppbbbbpppik.',
+      '.kipppbbbbpppik.',
+      '.kipppddddpppik.',
+      '..kippddddppik..',
+      '..kippppppppik..',
+      '...kippddppik...',
+      '....kippppki....',
+      '.....kippki.....',
+      '......kiik......',
+      '.......kk.......',
+    ],
+    { k: 0x2a1c0e, i: 0x9aa2aa, w: 0xd8dee4, p: 0xb08048, b: 0x8d6334, d: 0x684722 },
+  ),
+);
