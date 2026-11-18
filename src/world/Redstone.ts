@@ -18,6 +18,7 @@ import {
   isDoor,
 } from './Blocks';
 import { META_DOOR_OPEN, META_DOOR_UPPER } from './BlockModels';
+import { updatePoweredRail } from './Rails';
 import { posKey, posKeyX, posKeyY, posKeyZ, type World } from './World';
 
 /** Nombre maximal de nœuds redstone traités par vague de propagation. */
@@ -58,7 +59,9 @@ export function isRedstoneBlock(id: number): boolean {
     id === B.REDSTONE_LAMP_LIT ||
     id === B.REDSTONE_BLOCK ||
     id === B.IRON_DOOR ||
-    id === B.TNT
+    id === B.TNT ||
+    id === B.POWERED_RAIL ||
+    id === B.DETECTOR_RAIL
   );
 }
 
@@ -78,9 +81,10 @@ function isStronglyPoweredBlock(w: World, x: number, y: number, z: number): bool
   // Torche au sol juste dessous (y - 1, side = 0 = allumée au sol)
   const below = w.getBlockAndMeta(x, y - 1, z);
   if ((below & 255) === B.REDSTONE_TORCH && ((below >> 8) & 7) === 0) return true;
-  // Plaque de pression juste dessus
+  // Plaque de pression ou rail détecteur juste dessus
   const above = w.getBlockAndMeta(x, y + 1, z);
   if ((above & 255) === B.STONE_PRESSURE_PLATE && ((above >> 8) & 1) !== 0) return true;
+  if ((above & 255) === B.DETECTOR_RAIL && ((above >> 8) & 8) !== 0) return true;
   // Levier ou bouton au-dessus (side === 0)
   if (((above & 255) === B.LEVER || (above & 255) === B.STONE_BUTTON) && ((above >> 8) & 7) === 0 && ((above >> 8) & 8) !== 0) {
     return true;
@@ -120,6 +124,8 @@ function directSourcePower(w: World, nx: number, ny: number, nz: number, tx: num
       return meta & 8 ? 15 : 0;
     case B.STONE_PRESSURE_PLATE:
       return meta & 1 ? 15 : 0;
+    case B.DETECTOR_RAIL:
+      return meta & 8 ? 15 : 0;
     default:
       return 0;
   }
@@ -340,6 +346,10 @@ function updateConsumer(w: World, x: number, y: number, z: number): void {
   if (id === B.PISTON || id === B.STICKY_PISTON) {
     const powered = isBlockPowered(w, x, y, z);
     tryPistonMove(w, x, y, z, id, meta, powered);
+    return;
+  }
+  if (id === B.POWERED_RAIL) {
+    updatePoweredRail(w, x, y, z);
     return;
   }
   if (BLOCK_OPAQUE[id] === 1) {

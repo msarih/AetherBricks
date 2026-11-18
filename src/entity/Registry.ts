@@ -5,6 +5,7 @@ import type { Entity, EntityData } from './Entity';
 import { EndCrystal } from './EndMobs';
 import { loadMob } from './Mobs';
 import { Arrow, FallingBlock, Fireball, ItemEntity, Tnt } from './Objects';
+import { Boat, Minecart } from './Vehicles';
 
 function isEntityData(d: unknown): d is EntityData {
   if (typeof d !== 'object' || d === null) return false;
@@ -31,6 +32,10 @@ export function createEntity(data: unknown): Entity | null {
         return loadMob(data);
       case 'end_crystal':
         return EndCrystal.load(data);
+      case 'boat':
+        return Boat.load(data);
+      case 'minecart':
+        return Minecart.load(data);
       default:
         return null;
     }

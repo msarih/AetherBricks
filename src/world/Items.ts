@@ -113,6 +113,8 @@ const SIMPLE_ITEMS: Array<[id: number, name: TileName, label: string, category: 
   [I.GOLDEN_CARROT, 'golden_carrot', 'Carotte dorée', 'nourriture', food(6, 14.4)],
   [I.GLISTERING_MELON, 'glistering_melon', 'Pastèque scintillante', 'materiaux'],
   [I.GHAST_TEAR, 'ghast_tear', 'Larme de ghast', 'materiaux'],
+  [I.BOAT, 'boat', 'Bateau en chêne', 'utilitaire', { stack: 1 }],
+  [I.MINECART, 'minecart', 'Wagonnet', 'utilitaire', { stack: 1 }],
   [I.DIAMOND, 'diamond', 'Diamant', 'materiaux'],
   [I.EMERALD, 'emerald', 'Émeraude', 'materiaux'],
   [I.LAPIS, 'lapis', 'Lapis-lazuli', 'materiaux'],

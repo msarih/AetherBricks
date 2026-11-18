@@ -961,6 +961,65 @@ def('rail', (p) => {
   }
 });
 
+def('rail_curved', (p) => {
+  // virage sud (+y) <-> est (+x) dans le repère de la tuile (y=0 en bas -> Sud en +z)
+  const wood = 0x7a5a34;
+  for (const [x0, y0, x1, y1] of [
+    [2, 2, 13, 2],
+    [2, 6, 11, 5],
+    [4, 10, 10, 10],
+    [8, 12, 13, 12],
+  ] as const) {
+    for (let x = x0; x <= x1; x++) {
+      for (let y = y0; y <= y0 + 1; y++) p.set(x, y, shade(wood, y === y0 ? 1.05 : 0.78));
+    }
+  }
+  // File extérieure (relie x=3,y=0..11 à x=4..15,y=12) et file intérieure (relie x=12,y=0..3 à x=13..15,y=3)
+  for (let t = 0; t <= 12; t++) {
+    const rOuter = 12.5;
+    const ox = Math.round(15 - rOuter * Math.cos((t / 12) * (Math.PI / 2)));
+    const oy = Math.round(rOuter * Math.sin((t / 12) * (Math.PI / 2)));
+    if (ox >= 0 && ox < TS && oy >= 0 && oy < TS) p.set(ox, oy, 0xb8b8b8);
+    if (ox + 1 < TS && oy >= 0 && oy < TS) p.set(ox + 1, oy, 0x7c7c7c);
+  }
+  for (let t = 0; t <= 6; t++) {
+    const rInner = 3.5;
+    const ix = Math.round(15 - rInner * Math.cos((t / 6) * (Math.PI / 2)));
+    const iy = Math.round(rInner * Math.sin((t / 6) * (Math.PI / 2)));
+    if (ix >= 0 && ix < TS && iy >= 0 && iy < TS) p.set(ix, iy, 0xb8b8b8);
+    if (ix - 1 >= 0 && iy + 1 < TS) p.set(ix - 1, iy + 1, 0x7c7c7c);
+  }
+});
+
+function drawSpecialRail(p: Px, railA: number, railB: number, midColor: number, lit: boolean): void {
+  const wood = 0x7a5a34;
+  for (const y of [1, 5, 9, 13]) {
+    for (let x = 1; x < 15; x++) {
+      p.set(x, y, shade(wood, 1.05));
+      p.set(x, y + 1, shade(wood, 0.78));
+    }
+  }
+  for (let y = 0; y < TS; y++) {
+    for (const x of [3, 12]) {
+      p.set(x, y, railA);
+      p.set(x + (x === 3 ? 1 : -1), y, railB);
+    }
+    p.set(7, y, lit ? midColor : shade(midColor, 0.55));
+    p.set(8, y, lit ? shade(midColor, 1.15) : shade(midColor, 0.45));
+  }
+}
+
+def('rail_golden', (p) => drawSpecialRail(p, 0xd9b33a, 0x9c7b1e, 0x8a1c1c, false));
+def('rail_golden_powered', (p) => drawSpecialRail(p, 0xe8c547, 0xab8622, 0xff3b2f, true));
+def('rail_detector', (p) => {
+  drawSpecialRail(p, 0xb8b8b8, 0x7c7c7c, 0x781818, false);
+  for (let y = 5; y <= 10; y++) for (let x = 5; x <= 10; x++) p.set(x, y, 0x7f7f7f);
+});
+def('rail_detector_powered', (p) => {
+  drawSpecialRail(p, 0xb8b8b8, 0x7c7c7c, 0xff2b20, true);
+  for (let y = 5; y <= 10; y++) for (let x = 5; x <= 10; x++) p.set(x, y, x >= 7 && x <= 8 && y >= 7 && y <= 8 ? 0xff2b20 : 0x8f8f8f);
+});
+
 def('ladder', (p) => {
   const wood = 0x9a7a48;
   for (let y = 0; y < TS; y++) {

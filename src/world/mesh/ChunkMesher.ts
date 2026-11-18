@@ -1210,18 +1210,51 @@ function meshCell(id: number, meta: number): void {
     case SHAPE.RAIL: {
       noTint();
       flatLight(1);
-      const y = 1 / 16;
-      quad(0, y, 1, 1, y, 1, 1, y, 0, 0, y, 0);
-      uvRect(0, 0, 1, 1);
-      if (meta & 1) {
-        // rails est-ouest : un quart de tour
-        for (let k = 0; k < 4; k++) {
-          const t = UV[k * 2];
-          UV[k * 2] = UV[k * 2 + 1];
-          UV[k * 2 + 1] = 1 - t;
+      const y0 = 1 / 16;
+      const y1 = 1 + 1 / 16;
+      const shape = id === B.RAIL ? meta & 15 : meta & 7;
+      let tile = BLOCK_TILES[id * 6];
+      if (id === B.POWERED_RAIL) tile = meta & 8 ? T.rail_golden_powered : T.rail_golden;
+      else if (id === B.DETECTOR_RAIL) tile = meta & 8 ? T.rail_detector_powered : T.rail_detector;
+      else if (shape >= 6 && shape <= 9) tile = T.rail_curved;
+
+      const rotUV = (turns: number): void => {
+        for (let r = 0; r < turns; r++) {
+          for (let k = 0; k < 4; k++) {
+            const t = UV[k * 2];
+            UV[k * 2] = UV[k * 2 + 1];
+            UV[k * 2 + 1] = 1 - t;
+          }
         }
+      };
+
+      if (shape === 2) {
+        // montée est (+X)
+        quad(0, y0, 1, 1, y1, 1, 1, y1, 0, 0, y0, 0);
+        uvRect(0, 0, 1, 1);
+        rotUV(1);
+      } else if (shape === 3) {
+        // montée ouest (-X)
+        quad(0, y1, 1, 1, y0, 1, 1, y0, 0, 0, y1, 0);
+        uvRect(0, 0, 1, 1);
+        rotUV(1);
+      } else if (shape === 4) {
+        // montée nord (-Z)
+        quad(0, y0, 1, 1, y0, 1, 1, y1, 0, 0, y1, 0);
+        uvRect(0, 0, 1, 1);
+      } else if (shape === 5) {
+        // montée sud (+Z)
+        quad(0, y1, 1, 1, y1, 1, 1, y0, 0, 0, y0, 0);
+        uvRect(0, 0, 1, 1);
+      } else {
+        quad(0, y0, 1, 1, y0, 1, 1, y0, 0, 0, y0, 0);
+        uvRect(0, 0, 1, 1);
+        if (shape === 1) rotUV(1);
+        else if (shape === 7) rotUV(3); // S-W
+        else if (shape === 8) rotUV(2); // N-W
+        else if (shape === 9) rotUV(1); // N-E
       }
-      emit(opaquePass, BLOCK_TILES[id * 6], -1, NOMIP, true);
+      emit(opaquePass, tile, -1, NOMIP, true);
       return;
     }
     case SHAPE.VINE: {

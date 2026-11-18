@@ -1632,6 +1632,12 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
           }
         }
       },
+      hasEntityInBox: (x0, y0, z0, x1, y1, z1, kind) => {
+        for (const e of this.entitiesInBox(x0, y0, z0, x1, y1, z1, null)) {
+          if (!kind || e.kind === kind) return true;
+        }
+        return false;
+      },
     };
   }
 
@@ -1726,11 +1732,14 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
         continue;
       }
       if (!e.dead) {
-        const d = e.save();
-        if (d) out.push(d);
-        if (e.persistent) {
-          chunk.modified = true;
-          chunk.saveDirty = true;
+        const inVehicle = e instanceof Living && e.vehicle && (e.vehicle.kind === 'boat' || e.vehicle.kind === 'minecart');
+        if (!inVehicle) {
+          const d = e.save();
+          if (d) out.push(d);
+          if (e.persistent) {
+            chunk.modified = true;
+            chunk.saveDirty = true;
+          }
         }
       }
       if (remove) this.homes.delete(e);

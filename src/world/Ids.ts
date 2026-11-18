@@ -206,6 +206,8 @@ export const B = {
   CAULDRON: 193,
   CAKE: 194,
   BREWING_STAND: 195,
+  POWERED_RAIL: 196,
+  DETECTOR_RAIL: 197,
 } as const;
 
 /** Nombre maximal d'identifiants de blocs (les objets commencent à 256). */
@@ -362,6 +364,8 @@ export const I = {
   GOLDEN_CARROT: 402,
   GLISTERING_MELON: 403,
   GHAST_TEAR: 404,
+  BOAT: 405,
+  MINECART: 406,
 } as const;
 
 export const ITEM_ID_LIMIT = 420;

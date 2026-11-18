@@ -723,6 +723,10 @@ function visualKey(e: EntityView): string {
       return 'f';
     case 'fireball':
       return 'fb';
+    case 'boat':
+      return 'boat';
+    case 'minecart':
+      return 'minecart';
   }
 }
 
@@ -1615,6 +1619,97 @@ class BobberVisual implements Visual {
 // Afficheur
 // ---------------------------------------------------------------------------------------------
 
+export class BoatVisual implements Visual {
+  readonly root = new THREE.Group();
+  stamp = 0;
+  private readonly body = new THREE.Group();
+  private readonly matWood = new THREE.MeshBasicMaterial({ color: 0xb89056 });
+  private readonly matDark = new THREE.MeshBasicMaterial({ color: 0x8a6534 });
+  private readonly color = new THREE.Color();
+
+  constructor(readonly key: string) {
+    const floor = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.14, 1.5), this.matDark);
+    floor.position.y = 0.09;
+    const left = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.38, 1.5), this.matWood);
+    left.position.set(-0.55, 0.27, 0);
+    const right = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.38, 1.5), this.matWood);
+    right.position.set(0.55, 0.27, 0);
+    const front = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.38, 0.12), this.matWood);
+    front.position.set(0, 0.27, -0.72);
+    const back = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.38, 0.12), this.matWood);
+    back.position.set(0, 0.27, 0.72);
+    const oarL = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 0.9), this.matDark);
+    oarL.position.set(-0.68, 0.42, 0.1);
+    oarL.rotation.set(0.3, 0.35, 0);
+    const oarR = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 0.9), this.matDark);
+    oarR.position.set(0.68, 0.42, 0.1);
+    oarR.rotation.set(0.3, -0.35, 0);
+    this.body.add(floor, left, right, front, back, oarL, oarR);
+    this.root.add(this.body);
+  }
+
+  update(e: EntityView, alpha: number): void {
+    placeRoot(this.root, e, alpha);
+    this.body.rotation.y = lerpAngle(e.pYaw, e.yaw, alpha);
+    lightColor(e.skyLight, e.blockLight, worldUniforms.uSkyLight.value, this.color);
+    this.matWood.color.setHex(0xb89056).multiply(this.color);
+    this.matDark.color.setHex(0x8a6534).multiply(this.color);
+  }
+
+  dispose(): void {
+    this.body.traverse((o) => {
+      if (o instanceof THREE.Mesh) o.geometry.dispose();
+    });
+    this.matWood.dispose();
+    this.matDark.dispose();
+  }
+}
+
+class MinecartVisual implements Visual {
+  readonly root = new THREE.Group();
+  stamp = 0;
+  private readonly body = new THREE.Group();
+  private readonly matOuter = new THREE.MeshBasicMaterial({ color: 0x7b8089 });
+  private readonly matInner = new THREE.MeshBasicMaterial({ color: 0x454950 });
+  private readonly color = new THREE.Color();
+
+  constructor(readonly key: string) {
+    const floor = new THREE.Mesh(new THREE.BoxGeometry(0.86, 0.1, 1.06), this.matInner);
+    floor.position.y = 0.12;
+    const left = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.5, 1.06), this.matOuter);
+    left.position.set(-0.42, 0.37, 0);
+    const right = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.5, 1.06), this.matOuter);
+    right.position.set(0.42, 0.37, 0);
+    const front = new THREE.Mesh(new THREE.BoxGeometry(0.84, 0.5, 0.1), this.matOuter);
+    front.position.set(0, 0.37, -0.48);
+    const back = new THREE.Mesh(new THREE.BoxGeometry(0.84, 0.5, 0.1), this.matOuter);
+    back.position.set(0, 0.37, 0.48);
+    for (const [wx, wz] of [[-0.4, -0.35], [0.4, -0.35], [-0.4, 0.35], [0.4, 0.35]] as const) {
+      const wheel = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.16, 0.16), this.matInner);
+      wheel.position.set(wx, 0.08, wz);
+      this.body.add(wheel);
+    }
+    this.body.add(floor, left, right, front, back);
+    this.root.add(this.body);
+  }
+
+  update(e: EntityView, alpha: number): void {
+    placeRoot(this.root, e, alpha);
+    this.body.rotation.y = lerpAngle(e.pYaw, e.yaw, alpha);
+    lightColor(e.skyLight, e.blockLight, worldUniforms.uSkyLight.value, this.color);
+    this.matOuter.color.setHex(0x7b8089).multiply(this.color);
+    this.matInner.color.setHex(0x454950).multiply(this.color);
+  }
+
+  dispose(): void {
+    this.body.traverse((o) => {
+      if (o instanceof THREE.Mesh) o.geometry.dispose();
+    });
+    this.matOuter.dispose();
+    this.matInner.dispose();
+  }
+}
+
 export class EntityRenderer {
   private readonly root = new THREE.Group();
   private readonly visuals = new Map<number, Visual>();
@@ -1675,6 +1770,10 @@ export class EntityRenderer {
         return new BobberVisual(key, this.lineAnchor);
       case 'fireball':
         return new FireballVisual(key);
+      case 'boat':
+        return new BoatVisual(key);
+      case 'minecart':
+        return new MinecartVisual(key);
     }
   }
 

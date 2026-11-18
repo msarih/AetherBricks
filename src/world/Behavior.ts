@@ -28,6 +28,7 @@ import {
 } from './Blocks';
 import { fluidTick, fluidTickDelay, lavaMix } from './Fluids';
 import { portalCanStay } from './Portal';
+import { setDetectorRailActive, updatePoweredRail } from './Rails';
 import { isTorchSupportPowered, updateRedstoneAround } from './Redstone';
 import { growTree } from './Trees';
 import type { World } from './World';
@@ -131,6 +132,8 @@ export function canStay(w: World, x: number, y: number, z: number, id: number, m
     case B.REDSTONE_WIRE:
     case B.STONE_PRESSURE_PLATE:
     case B.RAIL:
+    case B.POWERED_RAIL:
+    case B.DETECTOR_RAIL:
     case B.SIGN:
     case B.CAKE:
       return topSolid(w, x, y - 1, z);
@@ -267,6 +270,10 @@ export function neighborChanged(w: World, x: number, y: number, z: number): void
       }
       return;
     }
+    case B.POWERED_RAIL:
+      if (!canStay(w, x, y, z, id, meta)) w.breakBlock(x, y, z, true);
+      else updatePoweredRail(w, x, y, z);
+      return;
     default:
       if (!canStay(w, x, y, z, id, meta)) w.breakBlock(x, y, z, true);
   }
@@ -414,6 +421,18 @@ function fireTick(w: World, x: number, y: number, z: number, meta: number): void
 
 export function scheduledTick(w: World, x: number, y: number, z: number, id: number, meta: number): void {
   if (id === B.AIR) return;
+  if (id === B.DETECTOR_RAIL && (meta & 8)) {
+    if (w.host.hasEntityInBox?.(x + 0.125, y, z + 0.125, x + 0.875, y + 1.0, z + 0.875, 'minecart')) {
+      w.scheduleTick(x, y, z, 20);
+    } else {
+      setDetectorRailActive(w, x, y, z, false);
+    }
+    return;
+  }
+  if (id === B.POWERED_RAIL) {
+    updatePoweredRail(w, x, y, z);
+    return;
+  }
   if (BLOCK_SHAPE[id] === SHAPE.FLUID) {
     fluidTick(w, x, y, z, id, meta);
     return;

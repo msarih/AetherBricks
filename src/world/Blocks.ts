@@ -571,6 +571,14 @@ reg(B.RAIL, 'rail', 'Rails', {
   tiles: 'rail', shape: SHAPE.RAIL, solid: false, opaque: false, hardness: 0.7, tool: 'pickaxe', sound: 'metal',
   needsSupport: true, itemTile: 'rail', category: 'decoration',
 });
+reg(B.POWERED_RAIL, 'powered_rail', 'Rail propulseur', {
+  tiles: 'rail_golden', shape: SHAPE.RAIL, solid: false, opaque: false, hardness: 0.7, tool: 'pickaxe', sound: 'metal',
+  needsSupport: true, itemTile: 'rail_golden', category: 'utilitaire',
+});
+reg(B.DETECTOR_RAIL, 'detector_rail', 'Rail détecteur', {
+  tiles: 'rail_detector', shape: SHAPE.RAIL, solid: false, opaque: false, hardness: 0.7, tool: 'pickaxe', sound: 'metal',
+  needsSupport: true, itemTile: 'rail_detector', category: 'utilitaire',
+});
 // Panneaux : posés par l'objet « Panneau » (sur un bloc : sur poteau ; contre un mur : mural)
 reg(B.SIGN, 'standing_sign', 'Panneau', {
   tiles: 'oak_planks', shape: SHAPE.SIGN, solid: false, opaque: false, hardness: 1, tool: 'axe',
