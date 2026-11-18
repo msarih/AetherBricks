@@ -1168,6 +1168,19 @@ function meshCell(id: number, meta: number): void {
       }
       return;
     }
+    case SHAPE.CAKE: {
+      noTint();
+      const bites = Math.min(6, meta & 7);
+      const x0 = (1 + bites * 2) / 16;
+      const a = 1 / 16;
+      const b = 15 / 16;
+      const h = 8 / 16;
+      for (let f = 0; f < 6; f++) {
+        const tile = f === FACE_WEST && bites > 0 ? T.cake_inner : BLOCK_TILES[id * 6 + f];
+        boxFace(opaquePass, f, x0, 0, a, b, h, b, tile, 0, false, NOMIP);
+      }
+      return;
+    }
     case SHAPE.SNOW_LAYER:
       meshLowBox(id, meta & 7, 0, ((meta & 7) + 1) / 8, BLOCK_TILES[id * 6]);
       return;

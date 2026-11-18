@@ -1622,6 +1622,32 @@ def('cauldron_side', (p) => {
 def('cauldron_bottom', (p) => {
   p.each(() => shade(0x2d2f34, 0.9 + p.rnd() * 0.15));
 });
+def('cake_top', (p) => {
+  p.each((x, y) => {
+    const berry = (x >= 3 && x <= 4 && y >= 4 && y <= 5) || (x >= 10 && x <= 11 && y >= 3 && y <= 4) || (x >= 6 && x <= 7 && y >= 10 && y <= 11) || (x >= 11 && x <= 12 && y >= 11 && y <= 12);
+    if (berry) return shade(0xd42c2c, 0.92 + p.rnd() * 0.14);
+    return shade(0xf5efe6, 0.95 + p.rnd() * 0.08);
+  });
+});
+def('cake_side', (p) => {
+  p.each((x, y) => {
+    const icing = y <= 3 || (y === 4 && (x % 3 === 0)) || (y === 5 && (x % 5 === 1));
+    if (icing) return shade(0xf5efe6, 0.95 + p.rnd() * 0.08);
+    if (y >= 14) return shade(0x9a5c28, 0.92 + p.rnd() * 0.12);
+    return shade(0xc68240, 0.92 + p.rnd() * 0.14);
+  });
+});
+def('cake_inner', (p) => {
+  p.each((x, y) => {
+    if (y <= 3) return shade(0xf5efe6, 0.95 + p.rnd() * 0.08);
+    if (y >= 7 && y <= 9) return shade(0xd42c2c, 0.92 + p.rnd() * 0.12);
+    if (y >= 14) return shade(0x9a5c28, 0.92 + p.rnd() * 0.12);
+    return shade(0xc68240, 0.92 + p.rnd() * 0.14);
+  });
+});
+def('cake_bottom', (p) => {
+  p.each(() => shade(0x9a5c28, 0.92 + p.rnd() * 0.14));
+});
 
 // ---------------------------------------------------------------------------
 // Fluides et feu (images animées)

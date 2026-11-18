@@ -132,6 +132,7 @@ export function canStay(w: World, x: number, y: number, z: number, id: number, m
     case B.STONE_PRESSURE_PLATE:
     case B.RAIL:
     case B.SIGN:
+    case B.CAKE:
       return topSolid(w, x, y - 1, z);
     case B.WALL_SIGN: {
       // méta = direction vers laquelle le panneau est tourné ; il tient au bloc derrière lui

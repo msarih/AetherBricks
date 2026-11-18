@@ -337,6 +337,11 @@ export function collisionBoxes(id: number, meta: number, nb: NeighborFn, out: nu
     case SHAPE.CAULDRON:
       for (let i = 0; i < CAULDRON_BOXES.length; i++) out.push(CAULDRON_BOXES[i]);
       return;
+    case SHAPE.CAKE: {
+      const bites = Math.min(6, meta & 7);
+      out.push(1 + bites * 2, 0, 1, 15, 8, 15);
+      return;
+    }
     default:
       out.push(0, 0, 0, 16, 16, 16);
   }

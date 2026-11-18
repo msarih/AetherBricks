@@ -204,6 +204,7 @@ export const B = {
   END_PORTAL: 191,
   DRAGON_EGG: 192,
   CAULDRON: 193,
+  CAKE: 194,
 } as const;
 
 /** Nombre maximal d'identifiants de blocs (les objets commencent à 256). */

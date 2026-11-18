@@ -48,6 +48,8 @@ export const SHAPE = {
   DRAGON_EGG: 32,
   /** Chaudron : cuve creuse en fer pouvant contenir 0 à 3 niveaux d'eau. */
   CAULDRON: 33,
+  /** Gâteau : posé sur un bloc, 7 parts (méta 0..6). */
+  CAKE: 34,
 } as const;
 
 export const TINT = { NONE: 0, GRASS: 1, FOLIAGE: 2, FIXED: 3 } as const;
@@ -550,6 +552,11 @@ reg(B.DRAGON_EGG, 'dragon_egg', 'Œuf de dragon', {
 reg(B.CAULDRON, 'cauldron', 'Chaudron', {
   tiles: { top: 'cauldron_top', bottom: 'cauldron_bottom', side: 'cauldron_side' },
   shape: SHAPE.CAULDRON, opaque: false, lightOpacity: 0, hardness: 2, ...rock, harvestTier: 1, sound: 'metal', category: 'utilitaire',
+});
+reg(B.CAKE, 'cake', 'Gâteau', {
+  tiles: { top: 'cake_top', bottom: 'cake_bottom', side: 'cake_side' },
+  shape: SHAPE.CAKE, opaque: false, lightOpacity: 0, hardness: 0.5, sound: 'cloth', needsSupport: true,
+  stack: 1, itemTile: 'cake_item', category: 'utilitaire',
 });
 reg(B.SOUL_SAND, 'soul_sand', 'Sable des âmes', { tiles: 'soul_sand', hardness: 0.5, tool: 'shovel', sound: 'sand', category: 'nature' });
 reg(B.NETHER_WART, 'nether_wart_crop', 'Verrues du Nether', { tiles: 'nether_wart_2', ...crop });

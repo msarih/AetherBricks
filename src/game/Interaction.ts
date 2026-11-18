@@ -558,6 +558,16 @@ export class Interaction {
     const h = this.hit;
     const { x, y, z, id, meta } = h;
 
+    if (id === B.CAKE) {
+      if (!this.freshClick || (!p.creative && p.hunger >= 20)) return false;
+      p.feed(2, 0.4);
+      g.sound('eat', x + 0.5, y + 0.5, z + 0.5, 0.7, 0.9 + g.rng() * 0.2);
+      const bites = meta & 7;
+      if (bites < 6) w.setMeta(x, y, z, bites + 1);
+      else w.setBlock(x, y, z, B.AIR, 0);
+      return true;
+    }
+
     if (id === B.OAK_DOOR) {
       const ly = meta & META_DOOR_UPPER ? y - 1 : y;
       const lower = w.getBlockAndMeta(x, ly, z);

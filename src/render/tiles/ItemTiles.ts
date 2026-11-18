@@ -2016,3 +2016,27 @@ def(
     { k: 0x3b4d5e, b: 0x8b5a2b, c: 0xbfe6f5, w: 0xeaf8ff, l: 0x4f90f0, d: 0x2d62c4 },
   ),
 );
+def(
+  'cake_item',
+  spr(
+    [
+      '................',
+      '................',
+      '................',
+      '.....kkkkkk.....',
+      '...kkwwwwwwkk...',
+      '..kwwrwwwwrwwk..',
+      '.kwwwwwwwwwwwwk.',
+      '.kwwwwwrwwwwwwk.',
+      '.kwwcwwwwwcwwwk.',
+      '.kccckccckcccck.',
+      '.kcccccccccccck.',
+      '.kccddddddddcck.',
+      '..kkddddddddkk..',
+      '....kkkkkkkk....',
+      '................',
+      '................',
+    ],
+    { k: 0x4a2810, w: 0xf7f2ea, r: 0xd92b2b, c: 0xc98340, d: 0x9c5e28 },
+  ),
+);

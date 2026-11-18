@@ -162,6 +162,7 @@ export function blockDrops(id: number, meta: number, tool: number, rng: () => nu
     case B.REDSTONE_LAMP_LIT:
       return one(B.REDSTONE_LAMP);
     case B.PISTON_HEAD:
+    case B.CAKE:
       return [];
     case B.GLASS:
     case B.GLASS_PANE:
