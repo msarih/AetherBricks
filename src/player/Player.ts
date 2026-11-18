@@ -64,8 +64,6 @@ export class Player extends Living implements PlayerLike {
   /** Utilisation d'un objet en cours (manger, bander l'arc) et sa durée en ticks. */
   useKind: UseKind = 'none';
   useTicks = 0;
-  /** Monture actuelle (cheval) : elle porte le joueur et obéit à ses commandes. */
-  vehicle: Entity | null = null;
   /** Couché dans un lit. */
   sleeping = false;
   sleepTicks = 0;

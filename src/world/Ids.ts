@@ -364,6 +364,8 @@ export const I = {
   GOLDEN_CARROT: 402,
   GLISTERING_MELON: 403,
   GHAST_TEAR: 404,
+  BOAT: 405,
+  MINECART: 406,
 } as const;
 
 export const ITEM_ID_LIMIT = 420;

@@ -206,6 +206,15 @@ export abstract class Mob extends Living {
     this.moveForward = 0;
     this.jumping = false;
     this.speed = this.walkSpeed;
+    if (this.vehicle && !this.vehicle.dead) {
+      if (this.inWater || this.inLava) this.jumping = false;
+      this.updateHead();
+      return;
+    }
+    if (this.vehicle?.dead) {
+      this.vehicle = null;
+      this.riding = false;
+    }
     this.behave(game);
     if (this.dead) return;
     this.tickLeash(game);

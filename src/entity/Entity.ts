@@ -330,6 +330,8 @@ export abstract class Living extends Entity {
   speed = 0.1;
   /** Accélération en l'air. */
   airAccel = 0.02;
+  /** Véhicule ou monture actuelle. */
+  vehicle: Entity | null = null;
   /** Vol libre sans gravité (joueur créatif). */
   flying = false;
   eyeHeight = 1.62;
@@ -556,6 +558,12 @@ export abstract class Living extends Entity {
   // ------------------------------------------------------------------ déplacement
 
   protected moveTick(game: GameApi): void {
+    if (this.vehicle) {
+      this.vx = this.vy = this.vz = 0;
+      this.fallDistance = 0;
+      this.onGround = false;
+      return;
+    }
     const w = game.world;
     if (this.jumpDelay > 0) this.jumpDelay--;
     if (this.jumping && !this.flying) {

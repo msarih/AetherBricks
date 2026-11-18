@@ -8,6 +8,7 @@ import { Living, type Entity, type GameApi } from '../entity/Entity';
 import { tryBuildGolem } from '../entity/Creatures';
 import { LEASH_BREAK, Mob, isLeashPost, notifyTamedWolves } from '../entity/Mobs';
 import { Arrow, EyeOfEnder, FishingBobber, Thrown, ThrownPearl, ThrownPotion } from '../entity/Objects';
+import { Boat, Minecart } from '../entity/Vehicles';
 import type { Input } from '../player/Input';
 import { attackDamage, type Player } from '../player/Player';
 import type { HandRenderer } from '../render/HandRenderer';
@@ -16,7 +17,7 @@ import type { UiApi } from '../ui/UiApi';
 import { applyBonemeal, canStay, fireCanStay, neighborChanged, topSolid } from '../world/Behavior';
 import { FRAME_EYE, tryOpenEndPortal } from '../world/EndPortal';
 import { tryIgnitePortal } from '../world/Portal';
-import { placeAndConnectRail } from '../world/Rails';
+import { isRail, placeAndConnectRail } from '../world/Rails';
 import { META_DOOR_HINGE_RIGHT, META_DOOR_OPEN, META_DOOR_UPPER, ccw, collisionBoxes, cw, opposite } from '../world/BlockModels';
 import {
   BLOCKS,
@@ -703,6 +704,47 @@ export class Interaction {
     const h = this.hit;
     const item = getItem(held);
 
+    if (held === I.MINECART && isRail(h.id)) {
+      const cart = new Minecart();
+      cart.setPosition(h.x + 0.5, h.y + 0.0625, h.z + 0.5);
+      cart.yaw = p.yaw;
+      g.spawn(cart);
+      p.consumeHand(this.activeHand);
+      g.blockSound('place', B.IRON_BLOCK, h.x + 0.5, h.y + 0.5, h.z + 0.5);
+      return true;
+    }
+
+    if (held === I.BOAT) {
+      const f = this.fluidHit;
+      p.look(this.look);
+      const l = this.look;
+      if (raycast(w, p.x, p.y + p.eyeHeight, p.z, l.x, l.y, l.z, this.reach(), f, false, true) && f.id === B.WATER) {
+        const boat = new Boat();
+        boat.setPosition(f.x + 0.5, f.y + 0.9, f.z + 0.5);
+        boat.yaw = p.yaw;
+        g.spawn(boat);
+        p.consumeHand(this.activeHand);
+        g.blockSound('place', B.OAK_PLANKS, f.x + 0.5, f.y + 0.9, f.z + 0.5);
+        return true;
+      }
+      const dx = h.face === FACE_EAST ? 1 : h.face === FACE_WEST ? -1 : 0;
+      const dy = h.face === FACE_UP ? 1 : h.face === FACE_DOWN ? -1 : 0;
+      const dz = h.face === FACE_SOUTH ? 1 : h.face === FACE_NORTH ? -1 : 0;
+      const ax = h.x + dx;
+      const ay = h.y + dy;
+      const az = h.z + dz;
+      if (this.replaceable(ax, ay, az)) {
+        const boat = new Boat();
+        boat.setPosition(ax + 0.5, ay + 0.05, az + 0.5);
+        boat.yaw = p.yaw;
+        g.spawn(boat);
+        p.consumeHand(this.activeHand);
+        g.blockSound('place', B.OAK_PLANKS, ax + 0.5, ay + 0.05, az + 0.5);
+        return true;
+      }
+      return false;
+    }
+
     if (held === I.BUCKET || held === I.WATER_BUCKET || held === I.LAVA_BUCKET) {
       if (h.id === B.CAULDRON) {
         if (held === I.WATER_BUCKET && (h.meta & 3) < 3) {
@@ -851,6 +893,20 @@ export class Interaction {
       const waterBottle = makeStack(I.POTION, 1, 0, undefined, 'water');
       if (p.inventory.add(waterBottle) > 0) p.inventory.drop(waterBottle);
       g.sound('bucket_fill', f.x + 0.5, f.y + 0.5, f.z + 0.5, 0.7, 1.1);
+      this.swing();
+      return true;
+    }
+
+    if (held === I.BOAT) {
+      const f = this.fluidHit;
+      if (!raycast(w, ex, ey, ez, l.x, l.y, l.z, this.reach(), f, false, true)) return false;
+      if (f.id !== B.WATER) return false;
+      const boat = new Boat();
+      boat.setPosition(f.x + 0.5, f.y + 0.9, f.z + 0.5);
+      boat.yaw = p.yaw;
+      g.spawn(boat);
+      p.consumeHand(this.activeHand);
+      g.blockSound('place', B.OAK_PLANKS, f.x + 0.5, f.y + 0.9, f.z + 0.5);
       this.swing();
       return true;
     }

@@ -2136,3 +2136,53 @@ def(
     { k: 0x2a2a2e, y: 0xf2b422, c: 0xbfe6f5, s: 0x7a7c82 },
   ),
 );
+
+def(
+  'boat',
+  spr(
+    [
+      '................',
+      '................',
+      '................',
+      '.......kk.......',
+      '......kwwk......',
+      '....kkwwwwkk....',
+      '..kkwwwwwwwwkk..',
+      '.kddwwwwwwwwddk.',
+      '.kddddddddddddk.',
+      '..kddddddddddk..',
+      '...kkkkkkkkkk...',
+      '................',
+      '.....k....k.....',
+      '....kwk..kwk....',
+      '....kdk..kdk....',
+      '................',
+    ],
+    { k: 0x422b14, w: 0xb89056, d: 0x8f6b3a },
+  ),
+);
+
+def(
+  'minecart',
+  spr(
+    [
+      '................',
+      '................',
+      '................',
+      '................',
+      '..kkkkkkkkkkkk..',
+      '.kssssssssssssk.',
+      '.kssddddddddssk.',
+      '.kssddddddddssk.',
+      '.kssssssssssssk.',
+      '.kssssssssssssk.',
+      '..kkkkkkkkkkkk..',
+      '...kssk..kssk...',
+      '...kkkk..kkkk...',
+      '................',
+      '................',
+      '................',
+    ],
+    { k: 0x26282e, s: 0x9aa0a8, d: 0x5c6068 },
+  ),
+);

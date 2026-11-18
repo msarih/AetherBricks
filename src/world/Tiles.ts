@@ -72,7 +72,7 @@ const BASE_TILES = [
   // --- L'End ---
   'end_stone', 'end_portal_frame_top', 'end_portal_frame_side', 'end_portal_eye', 'end_portal', 'dragon_egg',
   'blaze_powder', 'ender_eye', 'shield', 'glass_bottle', 'potion', 'cake_item',
-  'golden_carrot', 'glistering_melon', 'ghast_tear', 'brewing_stand_item',
+  'golden_carrot', 'glistering_melon', 'ghast_tear', 'brewing_stand_item', 'boat', 'minecart',
 ] as const;
 
 /** Images animées de la boussole et de l'horloge (aiguille, cadran), 32 chacune. */
