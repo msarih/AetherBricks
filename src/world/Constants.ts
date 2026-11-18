@@ -10,6 +10,22 @@ export const TICK_SECONDS = 1 / TICKS_PER_SECOND;
 /** Durée d'une journée complète en ticks (20 minutes réelles, comme Minecraft). */
 export const DAY_TICKS = 24000;
 
+/** Angle céleste (0..1, midi = 0, minuit = 0.5) selon la formule de Minecraft. */
+export function celestialAngle(timeOfDay: number): number {
+  let f = timeOfDay / DAY_TICKS - 0.25;
+  f -= Math.floor(f);
+  const eased = 0.5 - Math.cos(f * Math.PI) / 2;
+  return f + (eased - f) / 3;
+}
+
+/** Facteur de lumière du jour (0 la nuit, 1 en plein jour). */
+export function skyDayFactor(timeOfDay: number): number {
+  const angle = celestialAngle(timeOfDay);
+  const cosA = Math.cos(angle * Math.PI * 2);
+  const d = cosA * 2 + 0.5;
+  return d < 0 ? 0 : d > 1 ? 1 : d;
+}
+
 /** Clé numérique unique d'un chunk (utilisable comme clé de Map). */
 export function chunkKey(cx: number, cz: number): number {
   return (cx + 0x8000) * 0x10000 + (cz + 0x8000);

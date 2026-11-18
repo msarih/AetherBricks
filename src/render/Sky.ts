@@ -10,7 +10,7 @@
  * et le disque franchit l'horizon un peu après 12000 / un peu avant 0 (comme dans le jeu).
  */
 import * as THREE from 'three';
-import type { Dimension } from '../world/Constants';
+import { celestialAngle, type Dimension } from '../world/Constants';
 import { worldUniforms } from './ChunkMaterials';
 
 export interface SkyEnvironment {
@@ -132,13 +132,6 @@ function hashColumn(x: number, z: number, salt: number): number {
  * Angle céleste de Minecraft pour un tick de la journée : 0 = midi, 0.25 = coucher, 0.5 = minuit, 0.75 = lever.
  * Le tick 6000 donne exactement 0 (midi), le tick 18000 exactement 0.5 (minuit).
  */
-function celestialAngle(timeOfDay: number): number {
-  let f = timeOfDay / DAY_TICKS - 0.25;
-  f -= Math.floor(f);
-  const eased = 0.5 - Math.cos(f * Math.PI) / 2;
-  return f + (eased - f) / 3;
-}
-
 function pixelTexture(data: Uint8Array<ArrayBuffer>, width: number, height: number): THREE.DataTexture {
   const tex = new THREE.DataTexture(data, width, height, THREE.RGBAFormat, THREE.UnsignedByteType);
   tex.colorSpace = THREE.NoColorSpace;

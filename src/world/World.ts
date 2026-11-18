@@ -45,6 +45,12 @@ export interface WorldHost {
   pushEntities?(x0: number, y0: number, z0: number, x1: number, y1: number, z1: number, dx: number, dy: number, dz: number): void;
   /** Indique si au moins une entité vivante (optionnellement d'un type donné) croise la boîte. */
   hasEntityInBox?(x0: number, y0: number, z0: number, x1: number, y1: number, z1: number, kind?: string): boolean;
+  /** Prépare une entité de bloc (ex. tirage du butin d'un coffre avant lecture par un comparateur). */
+  prepareBlockEntity?(be: BlockEntity): void;
+  /** Déclenche un distributeur ou un dropper. */
+  dispense?(x: number, y: number, z: number, dropper: boolean): void;
+  /** Joue une note depuis un bloc musical. */
+  playNote?(x: number, y: number, z: number, instrument: string, note: number, pitch: number): void;
 }
 
 const NO_HOST: WorldHost = {
@@ -78,7 +84,19 @@ const MAX_SCHEDULED_PER_TICK = 3000;
 const RANDOM_TICK_RADIUS = 5;
 
 function hasBlockEntity(id: number): boolean {
-  return id === B.CHEST || id === B.FURNACE || id === B.FURNACE_LIT || id === B.BREWING_STAND || id === B.SPAWNER || id === B.SIGN || id === B.WALL_SIGN;
+  return (
+    id === B.CHEST ||
+    id === B.FURNACE ||
+    id === B.FURNACE_LIT ||
+    id === B.BREWING_STAND ||
+    id === B.SPAWNER ||
+    id === B.SIGN ||
+    id === B.WALL_SIGN ||
+    id === B.HOPPER ||
+    id === B.DISPENSER ||
+    id === B.DROPPER ||
+    id === B.DAYLIGHT_DETECTOR
+  );
 }
 
 export class World {

@@ -10,6 +10,7 @@ import {
   BLOCKS,
   BLOCK_OPAQUE,
   BLOCK_REPLACEABLE,
+  BLOCK_SOLID,
   FACING_DX,
   FACING_DZ,
   PISTON_DX,
@@ -17,7 +18,8 @@ import {
   PISTON_DZ,
   isDoor,
 } from './Blocks';
-import { META_DOOR_OPEN, META_DOOR_UPPER } from './BlockModels';
+import { META_DOOR_OPEN, META_DOOR_UPPER, ccw, cw, opposite } from './BlockModels';
+import { maxStack } from './Items';
 import { updatePoweredRail } from './Rails';
 import { posKey, posKeyX, posKeyY, posKeyZ, type World } from './World';
 
@@ -61,7 +63,14 @@ export function isRedstoneBlock(id: number): boolean {
     id === B.IRON_DOOR ||
     id === B.TNT ||
     id === B.POWERED_RAIL ||
-    id === B.DETECTOR_RAIL
+    id === B.DETECTOR_RAIL ||
+    id === B.REPEATER ||
+    id === B.COMPARATOR ||
+    id === B.HOPPER ||
+    id === B.DISPENSER ||
+    id === B.DROPPER ||
+    id === B.DAYLIGHT_DETECTOR ||
+    id === B.NOTE_BLOCK
   );
 }
 
@@ -75,31 +84,38 @@ export function hasRedstoneNearby(w: World, x: number, y: number, z: number): bo
   return false;
 }
 
-/** Indique si le bloc solide (x, y, z) est fortement alimenté par un composant attaché. */
-function isStronglyPoweredBlock(w: World, x: number, y: number, z: number): boolean {
-  if (BLOCK_OPAQUE[w.getBlock(x, y, z)] !== 1) return false;
+/** Puissance forte (0..15) reçue par le bloc solide (x, y, z) d'un composant attaché ou d'une diode. */
+function stronglyPoweredLevel(w: World, x: number, y: number, z: number): number {
+  if (BLOCK_OPAQUE[w.getBlock(x, y, z)] !== 1) return 0;
   // Torche au sol juste dessous (y - 1, side = 0 = allumée au sol)
   const below = w.getBlockAndMeta(x, y - 1, z);
-  if ((below & 255) === B.REDSTONE_TORCH && ((below >> 8) & 7) === 0) return true;
+  if ((below & 255) === B.REDSTONE_TORCH && ((below >> 8) & 7) === 0) return 15;
   // Plaque de pression ou rail détecteur juste dessus
   const above = w.getBlockAndMeta(x, y + 1, z);
-  if ((above & 255) === B.STONE_PRESSURE_PLATE && ((above >> 8) & 1) !== 0) return true;
-  if ((above & 255) === B.DETECTOR_RAIL && ((above >> 8) & 8) !== 0) return true;
+  if ((above & 255) === B.STONE_PRESSURE_PLATE && ((above >> 8) & 1) !== 0) return 15;
+  if ((above & 255) === B.DETECTOR_RAIL && ((above >> 8) & 8) !== 0) return 15;
   // Levier ou bouton au-dessus (side === 0)
   if (((above & 255) === B.LEVER || (above & 255) === B.STONE_BUTTON) && ((above >> 8) & 7) === 0 && ((above >> 8) & 8) !== 0) {
-    return true;
+    return 15;
   }
-  // Levier ou bouton mural attaché à l'une des 4 faces latérales
+  // Levier/bouton mural ou répéteur/comparateur pointant dans ce bloc
+  let best = 0;
   for (let f = 0; f < 4; f++) {
     const nx = x + FACING_DX[f];
     const nz = z + FACING_DZ[f];
     const nv = w.getBlockAndMeta(nx, y, nz);
     const nid = nv & 255;
-    if (nid !== B.LEVER && nid !== B.STONE_BUTTON) continue;
     const nm = nv >> 8;
-    if ((nm & 8) !== 0 && (nm & 7) === f + 1) return true;
+    if ((nid === B.LEVER || nid === B.STONE_BUTTON) && (nm & 8) !== 0 && (nm & 7) === f + 1) return 15;
+    // Un répéteur/comparateur à +FACING_DX[f] pointe vers (x,y,z) si sa direction est opposite(f)
+    const intoThis = opposite(f);
+    if (nid === B.REPEATER && (nm & 3) === intoThis && (nm & 16) !== 0) return 15;
+    if (nid === B.COMPARATOR && (nm & 3) === intoThis) {
+      const p = (nm >> 4) & 15;
+      if (p > best) best = p;
+    }
   }
-  return false;
+  return best;
 }
 
 /** Puissance directe fournie par (nx, ny, nz) vers un voisin (exclut la poudre). */
@@ -126,6 +142,16 @@ function directSourcePower(w: World, nx: number, ny: number, nz: number, tx: num
       return meta & 1 ? 15 : 0;
     case B.DETECTOR_RAIL:
       return meta & 8 ? 15 : 0;
+    case B.DAYLIGHT_DETECTOR:
+      return meta & 15;
+    case B.REPEATER: {
+      const f = meta & 3;
+      return tx === nx + FACING_DX[f] && ty === ny && tz === nz + FACING_DZ[f] && (meta & 16) !== 0 ? 15 : 0;
+    }
+    case B.COMPARATOR: {
+      const f = meta & 3;
+      return tx === nx + FACING_DX[f] && ty === ny && tz === nz + FACING_DZ[f] ? (meta >> 4) & 15 : 0;
+    }
     default:
       return 0;
   }
@@ -141,7 +167,8 @@ function computeWirePower(w: World, x: number, y: number, z: number): number {
     const nz = z + dz;
     const p = directSourcePower(w, nx, ny, nz, x, y, z);
     if (p > best) best = p;
-    if (best < 15 && isStronglyPoweredBlock(w, nx, ny, nz)) best = 15;
+    const sp = stronglyPoweredLevel(w, nx, ny, nz);
+    if (sp > best) best = sp;
     if (best === 15) return 15;
   }
   // Poudres voisines horizontales et en escalier
@@ -184,7 +211,7 @@ export function isBlockPowered(w: World, x: number, y: number, z: number): boole
     if (directSourcePower(w, nx, ny, nz, x, y, z) > 0) return true;
     const nv = w.getBlockAndMeta(nx, ny, nz);
     if ((nv & 255) === B.REDSTONE_WIRE && (nv >> 8) > 0) return true;
-    if (isStronglyPoweredBlock(w, nx, ny, nz)) return true;
+    if (stronglyPoweredLevel(w, nx, ny, nz) > 0) return true;
   }
   return false;
 }
@@ -350,6 +377,42 @@ function updateConsumer(w: World, x: number, y: number, z: number): void {
   }
   if (id === B.POWERED_RAIL) {
     updatePoweredRail(w, x, y, z);
+    return;
+  }
+  if (id === B.REPEATER) {
+    updateRepeaterState(w, x, y, z, meta);
+    return;
+  }
+  if (id === B.COMPARATOR) {
+    const next = computeComparatorOutput(w, x, y, z, meta & 3, (meta & 4) !== 0);
+    if (next !== ((meta >> 4) & 15)) w.scheduleTick(x, y, z, 1);
+    return;
+  }
+  if (id === B.HOPPER) {
+    const locked = isBlockPowered(w, x, y, z);
+    if (locked !== ((meta & 8) !== 0)) w.setMeta(x, y, z, (meta & 7) | (locked ? 8 : 0), false);
+    return;
+  }
+  if (id === B.DISPENSER || id === B.DROPPER) {
+    const powered = isBlockPowered(w, x, y, z);
+    const was = (meta & 8) !== 0;
+    if (powered && !was) {
+      w.setMeta(x, y, z, (meta & 7) | 8, false);
+      w.scheduleTick(x, y, z, 2);
+    } else if (!powered && was) {
+      w.setMeta(x, y, z, meta & 7, false);
+    }
+    return;
+  }
+  if (id === B.NOTE_BLOCK) {
+    const powered = isBlockPowered(w, x, y, z);
+    const was = (meta & 32) !== 0;
+    if (powered && !was) {
+      w.setMetaSilent(x, y, z, (meta & 31) | 32);
+      triggerNoteBlock(w, x, y, z, meta & 31);
+    } else if (!powered && was) {
+      w.setMetaSilent(x, y, z, meta & 31);
+    }
     return;
   }
   if (BLOCK_OPAQUE[id] === 1) {
@@ -539,4 +602,156 @@ export function tickRedstone(w: World): void {
     seen.add(k);
     updateRedstoneAround(w, posKeyX(k), posKeyY(k), posKeyZ(k));
   }
+}
+
+// ============================================================================ Redstone avancée
+
+function readDirectionalInput(w: World, ix: number, iy: number, iz: number, tx: number, ty: number, tz: number): number {
+  let best = directSourcePower(w, ix, iy, iz, tx, ty, tz);
+  const nv = w.getBlockAndMeta(ix, iy, iz);
+  if ((nv & 255) === B.REDSTONE_WIRE) {
+    const p = nv >> 8;
+    if (p > best) best = p;
+  }
+  const sp = stronglyPoweredLevel(w, ix, iy, iz);
+  return sp > best ? sp : best;
+}
+
+/** Répéteur verrouillé si un autre répéteur/comparateur allumé pointe sur l'un de ses deux côtés. */
+export function isRepeaterLocked(w: World, x: number, y: number, z: number, facing: number): boolean {
+  for (const side of [cw(facing), ccw(facing)]) {
+    const sx = x + FACING_DX[side];
+    const sz = z + FACING_DZ[side];
+    const v = w.getBlockAndMeta(sx, y, sz);
+    const id = v & 255;
+    const m = v >> 8;
+    const toward = opposite(side);
+    if (id === B.REPEATER && (m & 3) === toward && (m & 16) !== 0) return true;
+    if (id === B.COMPARATOR && (m & 3) === toward && ((m >> 4) & 15) > 0) return true;
+  }
+  return false;
+}
+
+export function isRepeaterBackPowered(w: World, x: number, y: number, z: number, facing: number): boolean {
+  const bx = x - FACING_DX[facing];
+  const bz = z - FACING_DZ[facing];
+  return readDirectionalInput(w, bx, y, bz, x, y, z) > 0;
+}
+
+export function updateRepeaterState(w: World, x: number, y: number, z: number, meta: number): void {
+  const facing = meta & 3;
+  const locked = isRepeaterLocked(w, x, y, z, facing);
+  const wasLocked = (meta & 32) !== 0;
+  let curMeta = meta;
+  if (locked !== wasLocked) {
+    curMeta = (meta & ~32) | (locked ? 32 : 0);
+    w.setMeta(x, y, z, curMeta, false);
+  }
+  if (locked) return;
+  const want = isRepeaterBackPowered(w, x, y, z, facing);
+  const isOn = (curMeta & 16) !== 0;
+  if (want !== isOn) w.scheduleTick(x, y, z, ((curMeta >> 2) & 3) + 1);
+}
+
+/** Niveau 0..15 issu d'un inventaire (coffre, entonnoir, distributeur, fourneau, alambic) ou bloc spécial. */
+export function containerSignalFromSlots(slots: ReadonlyArray<{ id: number; count: number } | null>): number {
+  if (slots.length === 0) return 0;
+  let fill = 0;
+  let nonEmpty = 0;
+  for (let i = 0; i < slots.length; i++) {
+    const s = slots[i];
+    if (!s || s.count <= 0 || s.id <= 0) continue;
+    fill += s.count / Math.min(64, maxStack(s.id));
+    nonEmpty++;
+  }
+  if (nonEmpty === 0) return 0;
+  return Math.min(15, Math.floor((fill / slots.length) * 14) + 1);
+}
+
+function blockContainerSignal(w: World, x: number, y: number, z: number): number {
+  const v = w.getBlockAndMeta(x, y, z);
+  const id = v & 255;
+  const meta = v >> 8;
+  if (id === B.CAULDRON) return Math.min(3, meta & 3);
+  if (id === B.END_PORTAL_FRAME) return meta & 4 ? 15 : 0;
+  if (
+    id !== B.CHEST &&
+    id !== B.HOPPER &&
+    id !== B.DISPENSER &&
+    id !== B.DROPPER &&
+    id !== B.FURNACE &&
+    id !== B.FURNACE_LIT &&
+    id !== B.BREWING_STAND
+  ) {
+    return -1;
+  }
+  const be = w.getBlockEntity(x, y, z);
+  if (!be) return 0;
+  w.host.prepareBlockEntity?.(be);
+  const items = (be as { items?: ReadonlyArray<{ id: number; count: number } | null> }).items;
+  return Array.isArray(items) ? containerSignalFromSlots(items) : 0;
+}
+
+export function computeComparatorOutput(w: World, x: number, y: number, z: number, facing: number, subtract: boolean): number {
+  const dx = FACING_DX[facing];
+  const dz = FACING_DZ[facing];
+  const bx = x - dx;
+  const bz = z - dz;
+  let back = readDirectionalInput(w, bx, y, bz, x, y, z);
+  const c1 = blockContainerSignal(w, bx, y, bz);
+  if (c1 >= 0) back = c1;
+  else if (BLOCK_OPAQUE[w.getBlock(bx, y, bz)] === 1) {
+    const c2 = blockContainerSignal(w, bx - dx, y, bz - dz);
+    if (c2 >= 0 && c2 > back) back = c2;
+  }
+
+  let side = 0;
+  for (const sDir of [cw(facing), ccw(facing)]) {
+    const sx = x + FACING_DX[sDir];
+    const sz = z + FACING_DZ[sDir];
+    const sv = w.getBlockAndMeta(sx, y, sz);
+    const sid = sv & 255;
+    const sm = sv >> 8;
+    const toward = opposite(sDir);
+    if (sid === B.REDSTONE_WIRE) {
+      if (sm > side) side = sm;
+    } else if (sid === B.REDSTONE_BLOCK) {
+      side = 15;
+    } else if (sid === B.REPEATER && (sm & 3) === toward && (sm & 16) !== 0) {
+      side = 15;
+    } else if (sid === B.COMPARATOR && (sm & 3) === toward) {
+      const sp = (sm >> 4) & 15;
+      if (sp > side) side = sp;
+    }
+  }
+
+  return subtract ? Math.max(0, back - side) : side > back ? 0 : back;
+}
+
+export function computeDaylightPower(w: World, x: number, y: number, z: number, inverted: boolean): number {
+  const rawSky = w.getSkyLight(x, y, z);
+  const darken = w.skyDarken >= 11 ? 15 : w.skyDarken;
+  const normal = Math.max(0, Math.min(15, Math.round((rawSky / 15) * (15 - darken))));
+  return inverted ? 15 - normal : normal;
+}
+
+export function noteInstrument(belowId: number): string {
+  if (belowId === B.GOLD_BLOCK) return 'cloche';
+  if (belowId === B.SAND || belowId === B.RED_SAND || belowId === B.GRAVEL || belowId === B.SOUL_SAND || belowId === B.CLAY) {
+    return 'flute';
+  }
+  const sound = BLOCKS[belowId]?.sound;
+  if (sound === 'glass') return 'clochette';
+  if (sound === 'wood') return 'basse';
+  if (sound === 'stone' || (sound === 'metal' && BLOCK_SOLID[belowId])) return 'grosse_caisse';
+  if (sound === 'cloth') return 'guitare';
+  return 'piano';
+}
+
+export function triggerNoteBlock(w: World, x: number, y: number, z: number, note: number): void {
+  if (w.getBlock(x, y + 1, z) !== B.AIR) return;
+  const n = Math.max(0, Math.min(24, note));
+  const inst = noteInstrument(w.getBlock(x, y - 1, z));
+  const pitch = Math.pow(2, (n - 12) / 12);
+  w.host.playNote?.(x, y, z, inst, n, pitch);
 }
