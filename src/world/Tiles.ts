@@ -39,6 +39,11 @@ const BASE_TILES = [
   'redstone_dust', 'redstone_torch_on', 'redstone_torch_off',
   'piston_top', 'piston_top_sticky', 'piston_side', 'piston_bottom', 'piston_inner',
   'redstone_lamp_off', 'redstone_lamp_on',
+  'repeater_off', 'repeater_on', 'comparator_off', 'comparator_on',
+  'hopper_top', 'hopper_outside', 'hopper_inside',
+  'dispenser_front', 'dropper_front',
+  'daylight_detector_top', 'daylight_detector_inverted_top', 'daylight_detector_side',
+  'noteblock',
   'nether_portal', 'nether_quartz_ore', 'nether_bricks', 'soul_sand', 'nether_wart_0', 'nether_wart_1', 'nether_wart_2',
   // --- Végétation ---
   'tall_grass', 'fern', 'dead_bush', 'dandelion', 'poppy', 'blue_orchid', 'allium', 'azure_bluet',

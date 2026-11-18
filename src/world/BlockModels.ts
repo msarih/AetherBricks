@@ -268,6 +268,19 @@ export function collisionBoxes(id: number, meta: number, nb: NeighborFn, out: nu
     case SHAPE.FIRE:
     case SHAPE.SIGN:
       return;
+    case SHAPE.BREWING_STAND:
+      out.push(1, 0, 1, 15, 2, 15, 7, 0, 7, 9, 14, 9);
+      return;
+    case SHAPE.REPEATER:
+    case SHAPE.COMPARATOR:
+      out.push(0, 0, 0, 16, 2, 16);
+      return;
+    case SHAPE.HOPPER:
+      out.push(0, 10, 0, 16, 16, 16, 4, 4, 4, 12, 10, 12, 6, 0, 6, 10, 4, 10);
+      return;
+    case SHAPE.DAYLIGHT_DETECTOR:
+      out.push(0, 0, 0, 16, 6, 16);
+      return;
     case SHAPE.CUBE:
       out.push(0, 0, 0, 16, 16, 16);
       return;
@@ -344,6 +357,16 @@ export function collisionBoxes(id: number, meta: number, nb: NeighborFn, out: nu
     }
     case SHAPE.BREWING_STAND:
       out.push(1, 0, 1, 15, 2, 15, 7, 0, 7, 9, 14, 9);
+      return;
+    case SHAPE.REPEATER:
+    case SHAPE.COMPARATOR:
+      out.push(0, 0, 0, 16, 2, 16);
+      return;
+    case SHAPE.HOPPER:
+      out.push(0, 10, 0, 16, 16, 16, 4, 4, 4, 12, 10, 12, 6, 0, 6, 10, 4, 10);
+      return;
+    case SHAPE.DAYLIGHT_DETECTOR:
+      out.push(0, 0, 0, 16, 6, 16);
       return;
     default:
       out.push(0, 0, 0, 16, 16, 16);
@@ -505,6 +528,19 @@ export function selectionBoxes(id: number, meta: number, nb: NeighborFn, out: nu
       // panneau mural : planche de 2/16 contre le mur, entre 4,5 et 12,5 de haut ; sur poteau : boîte centrale
       if (id === B.WALL_SIGN) edgeBox(meta & 3, 2, 4.5, 12.5, out);
       else out.push(4, 0, 4, 12, 16, 12);
+      return;
+    case SHAPE.BREWING_STAND:
+      out.push(1, 0, 1, 15, 2, 15, 7, 0, 7, 9, 14, 9);
+      return;
+    case SHAPE.REPEATER:
+    case SHAPE.COMPARATOR:
+      out.push(0, 0, 0, 16, 2, 16);
+      return;
+    case SHAPE.HOPPER:
+      out.push(0, 10, 0, 16, 16, 16, 4, 4, 4, 12, 10, 12, 6, 0, 6, 10, 4, 10);
+      return;
+    case SHAPE.DAYLIGHT_DETECTOR:
+      out.push(0, 0, 0, 16, 6, 16);
       return;
     case SHAPE.CUBE:
       out.push(0, 0, 0, 16, 16, 16);
