@@ -32,6 +32,12 @@ async function helpers(page) {
 }
 
 const calm = async (page) => {
+  // un joueur mort pendant une section ne doit pas fausser les suivantes
+  if (await ev(page, () => !window.__game.player.alive)) {
+    await page.waitForSelector('[data-mc="respawn"]:not([disabled])', { timeout: 10000 });
+    await click(page, 'respawn');
+    await ticks(page, 5);
+  }
   await ev(page, () => { M.clear(); M.home(); M.heal(); });
   await chat(page, '/time set day');
   await chat(page, '/clear');
@@ -297,6 +303,8 @@ async function reload(page) {
     check('poison : il s’arrête à un demi-cœur, sans tuer', end.alive && end.h === 1 && end.left === 0 && end.fx === '', JSON.stringify(end));
 
     // lenteur : mêmes 40 ticks de marche, moins de chemin
+    await calm(page);
+    await ev(page, () => M.mode('survival'));
     const walk = async (slow) => {
       await ev(page, (slow) => { M.home(); M.heal(); T.look(0, 0); window.__game.player.slowTicks = slow; }, slow);
       await ticks(page, 5);
