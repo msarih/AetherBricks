@@ -1726,12 +1726,14 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
         continue;
       }
       if (!e.dead) {
-        if (e instanceof Living && e.vehicle && (e.vehicle.kind === 'boat' || e.vehicle.kind === 'minecart')) continue;
-        const d = e.save();
-        if (d) out.push(d);
-        if (e.persistent) {
-          chunk.modified = true;
-          chunk.saveDirty = true;
+        const inVehicle = e instanceof Living && e.vehicle && (e.vehicle.kind === 'boat' || e.vehicle.kind === 'minecart');
+        if (!inVehicle) {
+          const d = e.save();
+          if (d) out.push(d);
+          if (e.persistent) {
+            chunk.modified = true;
+            chunk.saveDirty = true;
+          }
         }
       }
       if (remove) this.homes.delete(e);
