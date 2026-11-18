@@ -8,7 +8,7 @@ import { Living, num, round3, type DamageCause, type Entity, type GameApi, type 
 import { notifyTamedWolves } from '../entity/Mobs';
 import type { EntityKind } from '../entity/EntityView';
 import type { MobKind } from '../entity/MobModels';
-import { JUMP_VELOCITY, travel, updateMedium } from '../entity/Physics';
+import { JUMP_VELOCITY, isBoxFree, travel, updateMedium } from '../entity/Physics';
 import { Inventory } from '../game/Inventory';
 import { STAT, addStat, craftedKey, killedByKey, loadStats, type Stats } from '../game/Stats';
 import type { GameMode } from '../world/Constants';
@@ -63,6 +63,8 @@ export class Player extends Living implements PlayerLike {
   /** Utilisation d'un objet en cours (manger, bander l'arc) et sa durée en ticks. */
   useKind: UseKind = 'none';
   useTicks = 0;
+  /** Monture actuelle (cheval) : elle porte le joueur et obéit à ses commandes. */
+  vehicle: Entity | null = null;
   /** Couché dans un lit. */
   sleeping = false;
   sleepTicks = 0;
@@ -169,6 +171,45 @@ export class Player extends Living implements PlayerLike {
     }
   }
 
+  // ------------------------------------------------------------------ monture
+
+  mount(vehicle: Entity): boolean {
+    if (this.vehicle || !this.alive || this.sleeping) return false;
+    this.vehicle = vehicle;
+    this.riding = true;
+    this.sprinting = false;
+    this.flying = false;
+    this.stopUsing();
+    this.vx = this.vy = this.vz = 0;
+    return true;
+  }
+
+  dismount(game: GameApi): void {
+    const v = this.vehicle;
+    if (!v) return;
+    this.vehicle = null;
+    this.riding = false;
+    this.fallDistance = 0;
+    this.vx = this.vy = this.vz = 0;
+    // à gauche, à droite ou derrière la monture, là où la place est libre ; sinon sur place
+    const hw = this.width / 2;
+    const side = v.width / 2 + hw + 0.2;
+    const sx = Math.cos(v.yaw);
+    const sz = -Math.sin(v.yaw);
+    const spots: Array<[number, number]> = [[-sx * side, -sz * side], [sx * side, sz * side], [Math.sin(v.yaw) * side, Math.cos(v.yaw) * side]];
+    for (const [dx, dz] of spots) {
+      const x = v.x + dx;
+      const z = v.z + dz;
+      for (const y of [v.y, v.y + 1, v.y - 1]) {
+        if (!game.world.isSolid(Math.floor(x), Math.floor(y - 0.01), Math.floor(z))) continue;
+        if (!isBoxFree(game.world, x - hw, y, z - hw, x + hw, y + this.height, z + hw)) continue;
+        this.setPosition(x, y, z);
+        return;
+      }
+    }
+    this.setPosition(v.x, v.y + v.height, v.z);
+  }
+
   // ------------------------------------------------------------------ visée et commandes
 
   /** Tourne la vue (radians) : `dYaw` > 0 vers la gauche, `dPitch` > 0 vers le haut. */
@@ -252,6 +293,15 @@ export class Player extends Living implements PlayerLike {
       this.vx = this.vz = 0;
       return;
     }
+    if (this.vehicle) {
+      // en selle : les commandes vont à la monture ; s'accroupir fait descendre
+      this.moveForward = this.moveStrafe = 0;
+      this.jumping = false;
+      this.sneaking = false;
+      this.sprinting = false;
+      if (inp.sneak || this.vehicle.dead) this.dismount(_game);
+      return;
+    }
     let f = inp.forward;
     let s = inp.strafe;
     this.sneaking = inp.sneak && !this.flying;
@@ -282,6 +332,15 @@ export class Player extends Living implements PlayerLike {
   }
 
   protected moveTick(game: GameApi): void {
+    if (this.vehicle) {
+      // porté : la monture place le joueur après son propre déplacement (voir Horse.tick)
+      this.vx = this.vy = this.vz = 0;
+      this.fallDistance = 0;
+      this.onGround = false;
+      this.limbAmount *= 0.6;
+      this.bob *= 0.6;
+      return;
+    }
     super.moveTick(game);
     const dx = this.x - this.px;
     const dy = this.y - this.py;
@@ -379,7 +438,8 @@ export class Player extends Living implements PlayerLike {
     const ok = super.hurt(game, amount, cause, attacker);
     if (ok) {
       this.sleeping = false;
-      this.stopUsing();
+      // un mal qui ronge (poison, flétrissement, faim) n'empêche ni de manger ni de boire le lait qui le guérit
+      if (cause !== 'magic' && cause !== 'wither' && cause !== 'starve') this.stopUsing();
       if (attacker instanceof Living) notifyTamedWolves(game, attacker);
     }
     return ok;
@@ -418,6 +478,8 @@ export class Player extends Living implements PlayerLike {
     this.sprinting = false;
     this.flying = false;
     this.sleeping = false;
+    this.vehicle = null;
+    this.riding = false;
     this.stopUsing();
     for (const s of this.inventory.takeAll()) {
       const e = game.dropItem(this.x, this.y + 0.9, this.z, s.id, s.count, s.damage);
@@ -450,7 +512,9 @@ export class Player extends Living implements PlayerLike {
     this.exhaustion = 0;
     this.air = 300;
     this.fireTicks = 0;
-    this.witherTicks = 0;
+    this.clearEffects();
+    this.vehicle = null;
+    this.riding = false;
     this.deathTime = 0;
     this.hurtTime = 0;
     this.invulnerable = 60;
@@ -481,6 +545,7 @@ export class Player extends Living implements PlayerLike {
       exhaustion: round3(this.exhaustion),
       air: this.air,
       fire: this.fireTicks,
+      effects: [this.poisonTicks, this.slowTicks, this.weakTicks, this.witherTicks],
       fall: round3(this.fallDistance),
       xpLevel: this.xpLevel,
       xpProgress: round3(this.xpProgress),
@@ -505,6 +570,11 @@ export class Player extends Living implements PlayerLike {
     this.exhaustion = Math.max(0, num(d.exhaustion, 0));
     this.air = num(d.air, 300);
     this.fireTicks = num(d.fire, 0);
+    const fx = Array.isArray(d.effects) ? d.effects : [];
+    this.poisonTicks = Math.max(0, Math.floor(num(fx[0], 0)));
+    this.slowTicks = Math.max(0, Math.floor(num(fx[1], 0)));
+    this.weakTicks = Math.max(0, Math.floor(num(fx[2], 0)));
+    this.witherTicks = Math.max(0, Math.floor(num(fx[3], 0)));
     this.fallDistance = Math.max(0, num(d.fall, 0));
     this.xpLevel = Math.max(0, Math.floor(num(d.xpLevel, 0)));
     this.xpProgress = Math.max(0, Math.min(0.999, num(d.xpProgress, 0)));

@@ -32,6 +32,8 @@ export interface UiGame {
   readonly headInLava: boolean;
   /** Le joueur brûle (flammes en bas de l'écran). */
   readonly onFire: boolean;
+  /** Teinte des cœurs : empoisonné (verts), flétri (noirs), ou rien. */
+  readonly heartTint: '' | 'poison' | 'wither';
   /** Voile noir plein écran (0..1) : endormissement dans un lit. */
   readonly fade: number;
   /** Prochain objectif guidé (en survie), ou chaîne vide si tout est terminé. */
@@ -45,6 +47,8 @@ export interface UiGame {
   dynamicTile(itemId: number): number;
   /** Texte du panneau en (x, y, z), saisi dans l'écran ouvert par UiApi.openSignEditor() (4 lignes). */
   setSignText(x: number, y: number, z: number, lines: string[]): void;
+  /** Nom saisi dans l'écran ouvert par UiApi.openNameEditor() ; vide = saisie abandonnée. */
+  setMobName(id: number, name: string): void;
 
   /** Lignes de l'écran de débogage (F3) : colonne de gauche et colonne de droite. */
   debugLines(): { left: string[]; right: string[] };
@@ -152,6 +156,8 @@ export interface UiApi {
   openChat(initial?: string): void;
   /** Saisie du texte d'un panneau qui vient d'être posé (4 lignes de 15 caractères au plus). */
   openSignEditor(x: number, y: number, z: number, lines: readonly string[]): void;
+  /** Saisie du nom donné à la créature `id` avec une étiquette (le jeu continue pendant ce temps). */
+  openNameEditor(id: number, current: string, max: number): void;
   /** Écran d'échange avec un villageois (le jeu continue pendant ce temps). */
   openTrade(view: TradeView): void;
   /** Écran de mort. */

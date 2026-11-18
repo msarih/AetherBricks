@@ -40,6 +40,13 @@ export type MobKind =
   | 'villager'
   | 'blaze'
   | 'wither_skeleton'
+  | 'slime'
+  | 'enderman'
+  | 'witch'
+  | 'horse'
+  | 'squid'
+  | 'iron_golem'
+  | 'ocelot'
   | 'player';
 
 export interface ModelBox {
@@ -1144,6 +1151,337 @@ export function getWolfModel(tamed: boolean, angry: boolean, collarColor = 0xd83
   return model;
 }
 
+// ---------------------------------------------------------------------------------------------
+// Slime : un noyau vert sombre (yeux, bouche) dans une enveloppe translucide (partie « shell »)
+// ---------------------------------------------------------------------------------------------
+
+function buildSlime(): MobModel {
+  const pivot: Vec3 = [0, 4, 0];
+  const core = box('body', pivot, [-3, 1, -3], [6, 6, 6], [0, 16]);
+  const eyeR = box('body', pivot, [-3.25, 4, 1.5], [2, 2, 2], [32, 0]);
+  const eyeL = box('body', pivot, [1.25, 4, 1.5], [2, 2, 2], [32, 4]);
+  const mouth = box('body', pivot, [0, 2, 2.5], [1, 1, 1], [32, 8]);
+  const shell = box('shell', pivot, [-4, 0, -4], [8, 8, 8], [0, 0]);
+  const s = new Skin(64, 32, 0x51173);
+  s.box(core, 0x5a9a48, 0.05);
+  s.box(eyeR, 0x1c3a16, 0.02);
+  s.box(eyeL, 0x1c3a16, 0.02);
+  s.box(mouth, 0x1c3a16, 0.02);
+  s.box(shell, 0x8fd47a, 0.04);
+  for (const f of AROUND) {
+    const r = faceRect(shell, f);
+    s.fill(r, 0xa8e494, 0.04, 0, 0, 8, 1);
+    s.fill(r, 0x78c066, 0.04, 0, 7, 8, 1);
+  }
+  return finish('slime', s, [core, eyeR, eyeL, mouth, shell], 0.51, 0.51, 0.32);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Enderman : silhouette noire filiforme de trois blocs de haut, yeux violets
+// ---------------------------------------------------------------------------------------------
+
+function buildEnderman(): MobModel {
+  const head = box('head', [0, 42, 0], [-4, 42, -4], [8, 8, 8], [0, 0]);
+  const body = box('body', [0, 36, 0], [-4, 30, -2], [8, 12, 4], [32, 16]);
+  const armR = box('armR', [-5, 40, 0], [-6, 12, -1], [2, 30, 2], [56, 0]);
+  const armL = box('armL', [5, 40, 0], [4, 12, -1], [2, 30, 2], [56, 0]);
+  const legR = box('legR', [-2, 30, 0], [-3, 0, -1], [2, 30, 2], [56, 0]);
+  const legL = box('legL', [2, 30, 0], [1, 0, -1], [2, 30, 2], [56, 0]);
+  const s = new Skin(64, 32, 0xe7de3);
+  const black = 0x161616;
+  s.box(head, black, 0.12);
+  s.box(body, black, 0.12);
+  s.box(armR, 0x121212, 0.12);
+  s.stamp(faceRect(head, 'front'), ['PWP..PWP'], { P: 0xcc48f0, W: 0xf2c4ff }, 0, 4, 0);
+  return finish('enderman', s, [head, body, armR, armL, legR, legL], 0.6, 2.9, 2.55);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Sorcière : silhouette de villageois, robe sombre, chapeau pointu, verrue sur le nez
+// ---------------------------------------------------------------------------------------------
+
+function buildWitch(): MobModel {
+  const hp: Vec3 = [0, 24, 0];
+  const head = box('head', hp, [-4, 24, -4], [8, 10, 8], [0, 0]);
+  const nose = box('head', hp, [-1, 23, 4], [2, 4, 2], [24, 0]);
+  const wart = box('head', hp, [0, 24, 5.5], [1, 1, 1], [32, 0]);
+  const brim = box('head', hp, [-5, 33.5, -5], [10, 2, 10], [0, 64]);
+  const cone1 = box('head', hp, [-3.5, 35.5, -3.5], [7, 4, 7], [0, 76]);
+  const cone2 = box('head', hp, [-2, 39.5, -2.5], [4, 4, 4], [28, 76]);
+  const tip = box('head', hp, [-0.5, 43.5, -1.5], [1, 2, 1], [44, 76]);
+  const body = box('body', [0, 12, 0], [-4, 12, -3], [8, 12, 6], [16, 20]);
+  const skirt = box('body', [0, 12, 0], [-4, 2, -3], [8, 10, 6], [0, 38], 0.45);
+  const armR = box('arms', [0, 21, 0], [-8, 16, -2], [4, 8, 4], [44, 22]);
+  const armL = box('arms', [0, 21, 0], [4, 16, -2], [4, 8, 4], [44, 22]);
+  const armMid = box('arms', [0, 21, 0], [-4, 16, -2], [8, 4, 4], [40, 38]);
+  const legR = box('legR', [-2, 12, 0], [-4, 0, -2], [4, 12, 4], [0, 22]);
+  const legL = box('legL', [2, 12, 0], [0, 0, -2], [4, 12, 4], [0, 22]);
+  const s = new Skin(64, 96, 0x317c4);
+  const skin = 0xc49a82;
+  const robe = 0x3c2a52;
+  const trim = 0x271a38;
+  const hat = 0x1e1a24;
+  const pal: Palette = { S: skin, s: 0x9c7460, B: 0x2a2a2a, W: WHITE, G: 0x4a2a6a, M: 0x7a4a3c };
+  s.box(head, skin);
+  s.stamp(faceRect(head, 'front'), [
+    'SSSSSSSS',
+    'SSSSSSSS',
+    'SSSSSSSS',
+    'BBBBBBBB',
+    'SWGSSGWS',
+    'SSSssSSS',
+    'SSSssSSS',
+    'SSSssSSS',
+    'SSMMMMSS',
+    'SSSSSSSS',
+  ], pal);
+  s.box(nose, 0x9c7460);
+  s.box(wart, 0x5a8a3a, 0.02);
+  s.box(brim, hat);
+  s.box(cone1, hat);
+  s.band(cone1, 3, 1, 0x3e7a34);
+  s.box(cone2, hat);
+  s.box(tip, hat);
+  s.box(body, robe);
+  s.band(body, 0, 1, trim);
+  s.fill(faceRect(body, 'front'), 0x5a3e7a, GRAIN, 3, 1, 2, 11);
+  s.box(skirt, robe);
+  s.band(skirt, 9, 1, trim);
+  s.box(armR, robe);
+  s.box(armMid, robe);
+  s.fill(faceRect(armMid, 'front'), skin, GRAIN, 2, 1, 4, 2);
+  s.box(legR, trim);
+  s.band(legR, 9, 3, 0x2a2a2e);
+  return finish('witch', s, [head, nose, wart, brim, cone1, cone2, tip, body, skirt, armR, armL, armMid, legR, legL], 0.6, 1.95, 1.62);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Cheval (128×64) : sept robes, selle facultative
+// ---------------------------------------------------------------------------------------------
+
+/** Robe, crins et museau par variante : blanc, crème, alezan, bai, noir, gris, bai foncé. */
+const HORSE_COATS: ReadonlyArray<{ coat: number; mane: number; muzzle: number }> = [
+  { coat: 0xe6e2da, mane: 0xcfc8ba, muzzle: 0xb8a8a0 },
+  { coat: 0xc9a46c, mane: 0xeadfc4, muzzle: 0x9a7848 },
+  { coat: 0x8f4c2a, mane: 0x6a341a, muzzle: 0x5e2e16 },
+  { coat: 0x6c4426, mane: 0x1e1814, muzzle: 0x3c2414 },
+  { coat: 0x2c2826, mane: 0x141210, muzzle: 0x1c1816 },
+  { coat: 0x8e8e90, mane: 0x4c4c50, muzzle: 0x5c5c60 },
+  { coat: 0x432c1c, mane: 0x18120e, muzzle: 0x24160e },
+];
+
+export const HORSE_VARIANTS = HORSE_COATS.length;
+
+function buildHorse(variant: number, saddled: boolean): MobModel {
+  const hp: Vec3 = [0, 21, 9];
+  const head = box('head', hp, [-3, 28, 8], [6, 6, 6], [0, 0]);
+  const muzzle = box('head', hp, [-2, 28, 14], [4, 4, 5], [24, 0]);
+  const neck = box('head', hp, [-2, 18, 6], [4, 12, 6], [0, 12]);
+  const mane = box('head', hp, [-1, 19, 4], [2, 13, 2], [20, 12]);
+  const earR = box('head', hp, [-2.5, 34, 9], [1, 3, 1], [28, 12]);
+  const earL = box('head', hp, [1.5, 34, 9], [1, 3, 1], [28, 12]);
+  const body = box('body', [0, 17, 0], [-5, 12, -11], [10, 10, 22], [0, 30]);
+  const tail = box('tail', [0, 21, -11], [-1.5, 10, -14], [3, 11, 3], [32, 16]);
+  const leg0 = box('leg0', [-3, 12, 8], [-5, 0, 6], [4, 12, 4], [44, 0]);
+  const leg1 = box('leg1', [3, 12, 8], [1, 0, 6], [4, 12, 4], [44, 0]);
+  const leg2 = box('leg2', [-3, 12, -8], [-5, 0, -10], [4, 12, 4], [44, 0]);
+  const leg3 = box('leg3', [3, 12, -8], [1, 0, -10], [4, 12, 4], [44, 0]);
+  const boxes = [head, muzzle, neck, mane, earR, earL, body, tail, leg0, leg1, leg2, leg3];
+  const c = HORSE_COATS[variant] ?? HORSE_COATS[0];
+  const s = new Skin(128, 64, 0x4025e + variant);
+  const dark = shade(c.coat, 0.82);
+  s.box(head, c.coat);
+  s.stamp(faceRect(head, 'right'), ['......', '......', '....K.', '......'], { K: BLACK }, 0, 0, 0);
+  s.stamp(faceRect(head, 'left'), ['......', '......', '.K....', '......'], { K: BLACK }, 0, 0, 0);
+  s.fill(faceRect(head, 'top'), c.mane, GRAIN, 2, 0, 2, 4);
+  s.box(muzzle, c.muzzle);
+  s.stamp(faceRect(muzzle, 'front'), ['....', 'n..n', '....', '....'], { n: shade(c.muzzle, 0.6) }, 0, 0, 0);
+  s.box(neck, c.coat);
+  s.box(mane, c.mane);
+  s.box(earR, dark);
+  s.box(body, c.coat);
+  s.fill(faceRect(body, 'bottom'), dark);
+  s.blob(faceRect(body, 'right'), 6, 3, 5, 2, shade(c.coat, 1.07));
+  s.blob(faceRect(body, 'left'), 16, 3, 5, 2, shade(c.coat, 1.07));
+  s.box(tail, c.mane);
+  s.box(leg0, c.coat);
+  s.band(leg0, 7, 3, dark);
+  s.band(leg0, 10, 2, 0x2a2420);
+  s.fill(faceRect(leg0, 'bottom'), 0x2a2420);
+  if (saddled) {
+    const seat = box('body', [0, 17, 0], [-5, 22, -5], [10, 1, 9], [64, 0], 0.5);
+    const strapR = box('body', [0, 17, 0], [-5.6, 15, -1], [1, 7, 2], [64, 12]);
+    const strapL = box('body', [0, 17, 0], [4.6, 15, -1], [1, 7, 2], [64, 12]);
+    s.box(seat, 0x8a4a24);
+    s.fill(faceRect(seat, 'top'), 0xa85e2e);
+    s.fill(faceRect(seat, 'top'), 0x6e3818, GRAIN, 0, 0, 10, 1);
+    s.fill(faceRect(seat, 'top'), 0x6e3818, GRAIN, 0, 8, 10, 1);
+    s.box(strapR, 0x4a2c16);
+    s.band(strapR, 5, 2, 0xb4b4b8);
+    boxes.push(seat, strapR, strapL);
+  }
+  return finish('horse', s, boxes, 1.3964, 1.6, 1.52);
+}
+
+const horseCache = new Map<string, MobModel>();
+
+/** Modèle du cheval pour une robe (0..6), sellé ou non. */
+export function getHorseModel(variant: number, saddled: boolean): MobModel {
+  const v = variant >= 0 && variant < HORSE_COATS.length ? Math.floor(variant) : 0;
+  const key = `${v}:${saddled ? 1 : 0}`;
+  let model = horseCache.get(key);
+  if (!model) {
+    model = buildHorse(v, saddled);
+    horseCache.set(key, model);
+  }
+  return model;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Calamar : corps en ogive et huit tentacules (`tent0..7`)
+// ---------------------------------------------------------------------------------------------
+
+function buildSquid(): MobModel {
+  const body = box('body', [0, 18, 0], [-6, 10, -6], [12, 16, 12], [0, 0]);
+  const boxes: ModelBox[] = [body];
+  for (let i = 0; i < 8; i++) {
+    const a = (i * Math.PI) / 4;
+    const x = Math.cos(a) * 5;
+    const z = Math.sin(a) * 5;
+    boxes.push(box(`tent${i}`, [x, 10, z], [x - 1, 0, z - 1], [2, 10, 2], [48, 0]));
+  }
+  const s = new Skin(64, 32, 0x5c01d);
+  const blue = 0x2f4a66;
+  s.box(body, blue, 0.06);
+  s.fill(faceRect(body, 'top'), 0x3a5878, 0.06);
+  for (const f of AROUND) {
+    const r = faceRect(body, f);
+    s.fill(r, 0x263e58, 0.06, 0, 13, 12, 3);
+    s.fill(r, 0x3a5878, 0.06, 0, 0, 12, 2);
+  }
+  s.stamp(faceRect(body, 'front'), ['.WW......WW.', '.WK......KW.', '.WW......WW.'], { W: 0xe8eef2, K: BLACK }, 0, 8, 0);
+  s.box(boxes[1], 0x2a445e, 0.06);
+  s.band(boxes[1], 8, 2, 0x5a7896);
+  return finish('squid', s, boxes, 0.8, 0.8, 0.4);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Golem de fer (96×64)
+// ---------------------------------------------------------------------------------------------
+
+function buildIronGolem(): MobModel {
+  const hp: Vec3 = [0, 33, 0];
+  const head = box('head', hp, [-4, 33, -4], [8, 10, 8], [0, 0]);
+  const nose = box('head', hp, [-1, 32, 4], [2, 4, 2], [32, 0]);
+  const body = box('body', [0, 27, 0], [-9, 21, -5.5], [18, 12, 11], [0, 18]);
+  const waist = box('body', [0, 27, 0], [-4.5, 16, -3], [9, 5, 6], [0, 41]);
+  const armR = box('armR', [-11, 31, 0], [-13, 3, -3], [4, 30, 6], [60, 0]);
+  const armL = box('armL', [11, 31, 0], [9, 3, -3], [4, 30, 6], [60, 0]);
+  const legR = box('legR', [-4, 16, 0], [-7.5, 0, -2.5], [6, 16, 5], [32, 41]);
+  const legL = box('legL', [4, 16, 0], [1.5, 0, -2.5], [6, 16, 5], [32, 41]);
+  const s = new Skin(96, 64, 0x1206e);
+  const iron = 0xd8d0c4;
+  const seam = 0xa89e90;
+  const vine = 0x5a8a3c;
+  s.box(head, iron, 0.05);
+  s.stamp(faceRect(head, 'front'), [
+    'IIIIIIII',
+    'IIIIIIII',
+    'IIIIIIII',
+    'IssIIssI',
+    'IRRIIRRI',
+    'IIIIIIII',
+    'IIIIIIII',
+    'IIIIIIII',
+    'IssssssI',
+    'IIIIIIII',
+  ], { I: iron, s: seam, R: 0x9c1e1e });
+  s.box(nose, 0xc4b8a8, 0.05);
+  s.box(body, iron, 0.05);
+  s.band(body, 11, 1, seam);
+  const chest = faceRect(body, 'front');
+  s.fill(chest, seam, 0.05, 8, 0, 2, 12);
+  s.stamp(chest, ['v.........', 'vv........', '.v........', '.vv.......', '..v.......'], { v: vine }, 1, 2);
+  s.stamp(faceRect(body, 'back'), ['.....v', '....vv', '....v.', '...vv.'], { v: vine }, 10, 3);
+  s.box(waist, 0xb8ae9e, 0.05);
+  s.box(armR, iron, 0.05);
+  s.band(armR, 0, 2, seam);
+  s.band(armR, 14, 1, seam);
+  s.band(armR, 27, 3, 0xc0b6a6);
+  s.stamp(faceRect(armR, 'front'), ['.v..', 'vv..', 'v...'], { v: vine }, 0, 18);
+  s.box(legR, 0xc8beb0, 0.05);
+  s.band(legR, 13, 3, seam);
+  return finish('iron_golem', s, [head, nose, body, waist, armR, armL, legR, legL], 1.4, 2.7, 2.3);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Ocelot (variante 0) et chats apprivoisés (1 noir et blanc, 2 roux, 3 siamois)
+// ---------------------------------------------------------------------------------------------
+
+function buildOcelot(variant: number): MobModel {
+  const hp: Vec3 = [0, 9, 7];
+  const head = box('head', hp, [-2.5, 7, 7], [5, 4, 5], [40, 0]);
+  const nose = box('head', hp, [-1.5, 7, 12], [3, 2, 2], [40, 9]);
+  const earR = box('head', hp, [-2, 11, 9], [1, 1, 2], [52, 9]);
+  const earL = box('head', hp, [1, 11, 9], [1, 1, 2], [52, 9]);
+  const body = box('body', [0, 8, 0], [-2, 5, -8], [4, 6, 16], [0, 0]);
+  const tail = box('tail', [0, 10, -8], [-0.5, 9.5, -16], [1, 1, 8], [0, 22]);
+  const leg0 = box('leg0', [-1.1, 6, 5], [-2.1, 0, 4], [2, 6, 2], [40, 14]);
+  const leg1 = box('leg1', [1.1, 6, 5], [0.1, 0, 4], [2, 6, 2], [40, 14]);
+  const leg2 = box('leg2', [-1.1, 6, -6], [-2.1, 0, -7], [2, 6, 2], [40, 14]);
+  const leg3 = box('leg3', [1.1, 6, -6], [0.1, 0, -7], [2, 6, 2], [40, 14]);
+  const s = new Skin(64, 32, 0xca7 + variant);
+  const coats = [
+    { fur: 0xe2b23c, mark: 0x7a5418, belly: 0xf2e2b0, paw: 0xe2b23c, eye: 0x4a8a2a },
+    { fur: 0x1e1e20, mark: 0x141416, belly: 0xf0f0f0, paw: 0xf0f0f0, eye: 0xd8c020 },
+    { fur: 0xe08a2c, mark: 0xb4601a, belly: 0xf4dcb4, paw: 0xf4dcb4, eye: 0x4a8a2a },
+    { fur: 0xe8dcc4, mark: 0x5a4030, belly: 0xf4ecdc, paw: 0x5a4030, eye: 0x3a7ad0 },
+  ];
+  const c = coats[variant] ?? coats[0];
+  const pal: Palette = { F: c.fur, m: c.mark, b: c.belly, E: c.eye, K: BLACK, n: 0xd88a8a };
+  s.box(head, variant === 3 ? c.mark : c.fur);
+  s.stamp(faceRect(head, 'front'), variant === 3 ? ['FFFFF', 'EmmmE', 'mmmmm', 'mmmmm'] : ['FmFmF', 'EFFFE', 'FFFFF', 'FbbbF'], pal);
+  s.box(nose, variant === 3 ? c.mark : c.belly);
+  s.stamp(faceRect(nose, 'front'), ['.n.', '...'], pal);
+  s.box(earR, c.mark);
+  s.box(body, c.fur);
+  s.fill(faceRect(body, 'bottom'), c.belly);
+  if (variant === 0) {
+    // taches sombres de l'ocelot
+    for (const f of ['right', 'left', 'top'] as Face[]) {
+      const r = faceRect(body, f);
+      for (let i = 0; i < 9; i++) s.px(r.x + 1 + Math.floor(s.rng() * (r.w - 2)), r.y + 1 + Math.floor(s.rng() * (r.h - 2)), c.mark);
+    }
+  } else if (variant === 2) {
+    for (const f of ['right', 'left'] as Face[]) {
+      const r = faceRect(body, f);
+      for (let x = 2; x < 16; x += 3) s.fill(r, c.mark, GRAIN, x, 0, 1, 4);
+    }
+    const top = faceRect(body, 'top');
+    for (let y = 2; y < 16; y += 3) s.fill(top, c.mark, GRAIN, 0, y, 4, 1);
+  } else if (variant === 1) {
+    s.fill(faceRect(body, 'front'), c.belly);
+  }
+  s.box(tail, variant === 3 ? c.mark : c.fur);
+  if (variant === 0 || variant === 2) s.fill(faceRect(tail, 'top'), c.mark, GRAIN, 0, 0, 1, 3);
+  s.box(leg0, c.fur);
+  s.band(leg0, 4, 2, c.paw);
+  return finish('ocelot', s, [head, nose, earR, earL, body, tail, leg0, leg1, leg2, leg3], 0.6, 0.7, 0.55);
+}
+
+const ocelotCache = new Map<number, MobModel>();
+
+/** Modèle de l'ocelot (0) ou du chat apprivoisé (1..3). */
+export function getOcelotModel(variant: number): MobModel {
+  const v = variant >= 0 && variant <= 3 ? Math.floor(variant) : 0;
+  let model = ocelotCache.get(v);
+  if (!model) {
+    model = buildOcelot(v);
+    ocelotCache.set(v, model);
+  }
+  return model;
+}
+
 /** Modèle d'une créature, construit au premier appel puis mis en cache (ne pas modifier l'objet renvoyé). */
 export function getMobModel(kind: MobKind): MobModel {
   let model = modelCache.get(kind);
@@ -1193,6 +1531,27 @@ export function getMobModel(kind: MobKind): MobModel {
         break;
       case 'wither_skeleton':
         model = buildSkeleton(true);
+        break;
+      case 'slime':
+        model = buildSlime();
+        break;
+      case 'enderman':
+        model = buildEnderman();
+        break;
+      case 'witch':
+        model = buildWitch();
+        break;
+      case 'horse':
+        model = getHorseModel(0, false);
+        break;
+      case 'squid':
+        model = buildSquid();
+        break;
+      case 'iron_golem':
+        model = buildIronGolem();
+        break;
+      case 'ocelot':
+        model = getOcelotModel(0);
         break;
       default:
         model = buildPlayer();

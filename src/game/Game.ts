@@ -15,7 +15,8 @@ import * as THREE from 'three';
 import type { Sfx, SfxName } from '../audio/Sfx';
 import { Living, type DamageCause, type Entity, type GameApi } from '../entity/Entity';
 import type { MobKind } from '../entity/MobModels';
-import { HOSTILE_KINDS, Monster, NPC_KINDS, PASSIVE_KINDS, Villager, createMob, hatchEgg } from '../entity/Mobs';
+import { IronGolem } from '../entity/Creatures';
+import { HOSTILE_KINDS, Mob, Monster, NAME_MAX, NPC_KINDS, PASSIVE_KINDS, Villager, createMob, hatchEgg } from '../entity/Mobs';
 import { isProfession, type Offer } from '../entity/Trades';
 import { FallingBlock, ItemEntity, Thrown, Tnt } from '../entity/Objects';
 import { isBoxFree, pointInFluid } from '../entity/Physics';
@@ -124,6 +125,11 @@ const MOB_LABELS: Record<string, string> = {
   magma_cube: 'un cube de magma',
   blaze: 'un blaze',
   wither_skeleton: 'un squelette wither',
+  slime: 'un slime',
+  enderman: 'un enderman',
+  witch: 'une sorcière',
+  iron_golem: 'un golem de fer',
+  wolf: 'un loup',
 };
 
 function lerp(a: number, b: number, t: number): number {
@@ -165,6 +171,8 @@ function deathMessage(cause: DamageCause, by: Entity | null): string {
       return by ? `Vous avez été abattu par ${killer}` : 'Vous avez été abattu par une flèche';
     case 'wither':
       return 'Vous avez été flétri';
+    case 'magic':
+      return by ? `Vous avez été tué par la magie d'${killer}` : 'Vous avez été tué par magie';
     default:
       return 'Vous êtes mort';
   }
@@ -1276,6 +1284,26 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     this.input.unlock();
   }
 
+  /** Clic droit sur une créature avec une étiquette : saisie de son nom. */
+  openNameTag(mob: Entity): void {
+    this.interaction.reset();
+    this.ui.openNameEditor(mob.id, mob.customName, NAME_MAX);
+    this.input.unlock();
+  }
+
+  /** Le nom vient d'être validé : il est donné à la créature, et l'étiquette est consommée. */
+  setMobName(id: number, name: string): void {
+    const p = this.player;
+    const clean = name.replace(/\s+/g, ' ').trim().slice(0, NAME_MAX);
+    const mob = this.entities.find((e) => e.id === id);
+    if (clean === '' || !(mob instanceof Mob) || mob.dead || !mob.alive) return;
+    if (p.heldItemId !== I.NAME_TAG || mob.distanceSqTo(p) > 64) return;
+    if (mob.customName === clean) return;
+    mob.customName = clean;
+    p.consumeHeld(1);
+    this.sound('orb', mob.x, mob.y + mob.height, mob.z, 0.5, 1.4);
+  }
+
   setSignText(x: number, y: number, z: number, lines: string[]): void {
     const w = this.world;
     const id = w.getBlock(x, y, z);
@@ -1561,6 +1589,14 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
 
   /** Habitant posé par le générateur (villageois dans sa maison) : métier fixé, carrière tirée de sa position. */
   private spawnGenerated(s: GenSpawn): void {
+    if (s.kind === 'iron_golem') {
+      const golem = new IronGolem();
+      golem.setPosition(s.x, s.y, s.z);
+      golem.setRotation(0);
+      golem.setHome(s.x, s.z);
+      this.spawn(golem);
+      return;
+    }
     if (s.kind !== 'villager') return;
     const rng = mulberry32(hash2(Math.floor(s.x), Math.floor(s.z), (this.world.seed ^ 0x51a6e7) >>> 0));
     const v = new Villager(rng, isProfession(s.profession) ? s.profession : undefined);
@@ -1654,6 +1690,11 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
 
   get onFire(): boolean {
     return this.player.fireTicks > 0 && !this.player.creative;
+  }
+
+  get heartTint(): '' | 'poison' | 'wither' {
+    const p = this.player;
+    return p.witherTicks > 0 ? 'wither' : p.poisonTicks > 0 ? 'poison' : '';
   }
 
   get fade(): number {

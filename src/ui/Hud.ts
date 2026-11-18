@@ -35,6 +35,7 @@ export class Hud {
 
   private readonly stats: HTMLDivElement;
   private readonly hearts: HTMLDivElement[] = [];
+  private heartRow!: HTMLDivElement;
   private readonly foods: HTMLDivElement[] = [];
   private readonly armors: HTMLDivElement[] = [];
   private readonly bubbles: HTMLDivElement[] = [];
@@ -89,6 +90,7 @@ export class Hud {
     this.armorRow = el('div', 'mc-stat-row mc-row-armor', this.stats);
     this.airRow = el('div', 'mc-stat-row mc-row-air', this.stats);
     const heartRow = el('div', 'mc-stat-row mc-row-hearts', this.stats);
+    this.heartRow = heartRow;
     const foodRow = el('div', 'mc-stat-row mc-row-food', this.stats);
     for (let i = 0; i < 10; i++) {
       const heart = el('div', 'mc-ico mc-heart', heartRow);
@@ -248,6 +250,8 @@ export class Hud {
     const blink = g.hurtTime > 0 && Math.floor(g.hurtTime / 3) % 2 === 1;
     // À deux cœurs ou moins, les cœurs tremblent (nouveau tirage à chaque tick de 50 ms).
     const shaking = health <= 4;
+    const tint = g.heartTint;
+    if (this.changed('heartTint', tint)) this.heartRow.dataset.fx = tint;
     if (shaking) {
       this.jitterTimer -= dt;
       if (this.jitterTimer <= 0) {

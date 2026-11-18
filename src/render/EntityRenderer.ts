@@ -13,7 +13,7 @@ import * as THREE from 'three';
 import type { Atlas } from './Atlas';
 import { createModelMaterial, lightColor, passGeometry, worldUniforms } from './ChunkMaterials';
 import type { EntityView } from '../entity/EntityView';
-import { getMobModel, getSheepModel, getVillagerModel, getWolfModel, type MobKind, type MobModel } from '../entity/MobModels';
+import { getHorseModel, getMobModel, getOcelotModel, getSheepModel, getVillagerModel, getWolfModel, type MobKind, type MobModel } from '../entity/MobModels';
 import { BLOCKS, TINT } from '../world/Blocks';
 import { B, BLOCK_ID_LIMIT, I } from '../world/Ids';
 import { getItem } from '../world/Items';
@@ -476,6 +476,7 @@ uniform sampler2D map;
 uniform vec3 uColor;
 uniform vec4 uOverlay;
 uniform float uFlash;
+uniform float uAlpha;
 uniform vec3 uFogColor;
 uniform float uFogNear;
 uniform float uFogFar;
@@ -488,14 +489,14 @@ void main() {
   vec3 col = mix(c.rgb * vShade * uColor, uOverlay.rgb, uOverlay.a);
   col = mix(col, vec3(1.0), uFlash);
   float fog = clamp((vFogDepth - uFogNear) / (uFogFar - uFogNear), 0.0, 1.0);
-  gl_FragColor = vec4(mix(col, uFogColor, fog), 1.0);
+  gl_FragColor = vec4(mix(col, uFogColor, fog), uAlpha);
 }
 `;
 
 /**
  * Matériau d'une créature (une instance par entité). Uniformes propres :
  * `uColor` (éclairage × teinte), `uOverlay` (rgb + force : voile de couleur, ex. rouge de blessure),
- * `uFlash` (0..1, mélange vers le blanc),
+ * `uFlash` (0..1, mélange vers le blanc), `uAlpha` (opacité, utile si le matériau est déclaré transparent),
  * `uFlat` (1 = pas d'ombrage par face). Le brouillard suit `worldUniforms`.
  */
 export function createMobMaterial(texture: THREE.Texture, doubleSide = false): THREE.ShaderMaterial {
@@ -505,6 +506,7 @@ export function createMobMaterial(texture: THREE.Texture, doubleSide = false): T
       uColor: { value: new THREE.Color(1, 1, 1) },
       uOverlay: { value: new THREE.Vector4(1, 0, 0, 0) },
       uFlash: { value: 0 },
+      uAlpha: { value: 1 },
       uFlat: { value: 0 },
       uFogColor: worldUniforms.uFogColor,
       uFogNear: worldUniforms.uFogNear,
@@ -703,6 +705,8 @@ function visualKey(e: EntityView): string {
       if (e.mobKind === 'sheep') return `m:sheep:${e.woolColor}:${e.sheared ? 1 : 0}`;
       if (e.mobKind === 'wolf') return `m:wolf:${e.tamed ? 1 : 0}:${e.angry ? 1 : 0}:${e.collarColor & 0xffffff}`;
       if (e.mobKind === 'villager') return `m:villager:${e.variant}`;
+      if (e.mobKind === 'horse') return `m:horse:${e.variant}:${e.saddled ? 1 : 0}`;
+      if (e.mobKind === 'ocelot') return `m:ocelot:${e.variant}`;
       return `m:${e.mobKind}`;
     case 'item':
       return `i:${e.itemId}:${itemCopies(e.itemCount)}`;
@@ -744,6 +748,13 @@ const SHADOW_DIAMETER: Record<MobKind, number> = {
   villager: 0.95,
   blaze: 0.9,
   wither_skeleton: 1.1,
+  slime: 0.6,
+  enderman: 0.9,
+  witch: 0.95,
+  horse: 1.8,
+  squid: 0.9,
+  iron_golem: 1.7,
+  ocelot: 0.75,
   player: 0.95,
 };
 
@@ -751,6 +762,39 @@ const SHADOW_DIAMETER: Record<MobKind, number> = {
 const SPIDER_YAW = [-PI / 4, -PI / 8, PI / 8, PI / 4];
 const SPIDER_ROLL = [PI / 4, (PI / 4) * 0.74, (PI / 4) * 0.74, PI / 4];
 const SPIDER_PHASE = [(3 * PI) / 2, PI / 2, PI, 0];
+
+/** Hauteur d'une plaque de nom, en blocs, et hauteur en pixels de son image. */
+const NAME_HEIGHT = 0.28;
+const NAME_PX = 40;
+
+/** Plaque de nom (étiquette) : texte blanc sur fond sombre, toujours tournée vers la caméra. */
+function makeNamePlate(text: string): THREE.Sprite {
+  const canvas = document.createElement('canvas');
+  const font = "bold 26px Verdana, 'DejaVu Sans', sans-serif";
+  const probe = canvas.getContext('2d');
+  if (probe) probe.font = font;
+  const width = Math.ceil((probe ? probe.measureText(text).width : text.length * 16) + 20);
+  canvas.width = width;
+  canvas.height = NAME_PX;
+  const ctx = canvas.getContext('2d');
+  if (ctx) {
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+    ctx.fillRect(0, 0, width, NAME_PX);
+    ctx.font = font;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(text, width / 2, NAME_PX / 2 + 1);
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false, fog: false }));
+  sprite.scale.set((width / NAME_PX) * NAME_HEIGHT, NAME_HEIGHT, 1);
+  sprite.renderOrder = 10;
+  return sprite;
+}
+
+/** Nombre de segments de la corde d'une laisse. */
+const LEASH_SEGMENTS = 10;
 
 /** Créature ou joueur : un sous-maillage par partie animée, placé à son pivot. */
 class MobVisual implements Visual {
@@ -768,6 +812,15 @@ class MobVisual implements Visual {
   private heldGroup: THREE.Group | null = null;
   private flap = 0;
   private lastTime = -1;
+  /** Enveloppe translucide du slime (partage ses uniformes avec le matériau principal). */
+  private shell: THREE.ShaderMaterial | null = null;
+  private namePlate: THREE.Sprite | null = null;
+  private nameText = '';
+  private leash: THREE.Line | null = null;
+  /** Bloc porté par un enderman. */
+  private carried: ItemModel | null = null;
+  private carriedGroup: THREE.Group | null = null;
+  private carriedKey = 0;
 
   constructor(readonly key: string, private readonly atlas: Atlas, e: EntityView) {
     this.kind = e.mobKind;
@@ -777,12 +830,29 @@ class MobVisual implements Visual {
         ? getWolfModel(e.tamed, e.angry, e.collarColor)
         : e.mobKind === 'villager'
           ? getVillagerModel(e.variant)
-          : getMobModel(e.mobKind);
+          : e.mobKind === 'horse'
+            ? getHorseModel(e.variant, e.saddled)
+            : e.mobKind === 'ocelot'
+              ? getOcelotModel(e.variant)
+              : getMobModel(e.mobKind);
     const assets = getMobAssets(this.model);
     this.material = createMobMaterial(assets.texture);
     this.body.rotation.order = 'YXZ';
     for (const part of assets.parts) {
-      const mesh = new THREE.Mesh(part.geometry, this.material);
+      let material = this.material;
+      if (part.name === 'shell') {
+        // même éclairage et mêmes voiles que le reste du corps, mais en transparence
+        const shell = createMobMaterial(assets.texture);
+        shell.uniforms.uColor = this.material.uniforms.uColor;
+        shell.uniforms.uOverlay = this.material.uniforms.uOverlay;
+        shell.uniforms.uFlash = this.material.uniforms.uFlash;
+        shell.uniforms.uAlpha.value = 0.55;
+        shell.transparent = true;
+        shell.depthWrite = false;
+        this.shell = shell;
+        material = shell;
+      }
+      const mesh = new THREE.Mesh(part.geometry, material);
       mesh.position.copy(part.pivot);
       // Même ordre que Minecraft : rotation x, puis y, puis z
       mesh.rotation.order = 'ZYX';
@@ -934,11 +1004,82 @@ class MobVisual implements Visual {
         this.body.position.y += Math.sin(age * 0.15) * 0.06;
         break;
       case 'villager':
+      case 'witch':
         // bras croisés immobiles, jambes cachées sous la robe
         this.rot('arms', -0.75, 0, 0);
         this.rot('legR', walk * 0.5, 0, 0);
         this.rot('legL', -walk * 0.5, 0, 0);
         break;
+      case 'enderman':
+        this.animateBiped(e, walk * 0.6, age, headX, headY);
+        if (e.blockId !== 0) {
+          // il tient son bloc à bout de bras, devant lui
+          this.rot('armR', -0.5, 0, 0.05);
+          this.rot('armL', -0.5, 0, -0.05);
+        }
+        // provoqué, il ouvre la mâchoire : la tête se soulève
+        this.offset('head', 0, e.angry ? 3 : 0, 0);
+        break;
+      case 'iron_golem': {
+        const sw = Math.sin(clamp(e.swing, 0, 1) * PI);
+        const arm = sw > 0 ? -sw * 2 : walk * 0.35;
+        this.rot('armR', sw > 0 ? arm : -arm, 0, 0);
+        this.rot('armL', arm, 0, 0);
+        this.rot('legR', walk * 0.5, 0, 0);
+        this.rot('legL', -walk * 0.5, 0, 0);
+        break;
+      }
+      case 'horse':
+        this.rot('head', headX * 0.4, headY * 0.4, 0);
+        this.rot('leg0', -walk * 0.7, 0, 0);
+        this.rot('leg1', walk * 0.7, 0, 0);
+        this.rot('leg2', walk * 0.7, 0, 0);
+        this.rot('leg3', -walk * 0.7, 0, 0);
+        this.rot('tail', 0.15 + amount * 0.5, Math.sin(age * 0.12) * 0.12, 0);
+        break;
+      case 'ocelot':
+        if (e.sitting) {
+          this.offset('body', 0, -1.5, 0);
+          this.rot('body', 0.45, 0, 0);
+          this.rot('leg0', -0.2, 0, 0);
+          this.rot('leg1', -0.2, 0, 0);
+          this.rot('leg2', -1.25, 0, 0);
+          this.rot('leg3', -1.25, 0, 0);
+          this.offset('leg2', 0, -3, 3);
+          this.offset('leg3', 0, -3, 3);
+          this.offset('tail', 0, -5, 1);
+          this.rot('tail', 0.3, 0, 0);
+        } else {
+          this.offset('body', 0, 0, 0);
+          this.rot('body', 0, 0, 0);
+          this.rot('leg0', -walk, 0, 0);
+          this.rot('leg1', walk, 0, 0);
+          this.rot('leg2', walk, 0, 0);
+          this.rot('leg3', -walk, 0, 0);
+          this.offset('leg2', 0, 0, 0);
+          this.offset('leg3', 0, 0, 0);
+          this.offset('tail', 0, 0, 0);
+          this.rot('tail', -0.25 + Math.sin(age * 0.1) * 0.1, 0, 0);
+        }
+        break;
+      case 'squid': {
+        // les tentacules s'écartent et se referment en cadence
+        const open = 0.35 + Math.sin(age * 0.22) * 0.3;
+        for (let i = 0; i < 8; i++) {
+          const p = this.parts.get(`tent${i}`);
+          if (!p) continue;
+          const a = (i * PI) / 4;
+          p.rotation.set(-open * Math.sin(a), 0, open * Math.cos(a));
+        }
+        break;
+      }
+      case 'slime': {
+        const jumpVy = clamp(e.y - e.py, -0.3, 0.5);
+        const stretch = 1 + jumpVy * 0.5;
+        const squash = 1 / Math.sqrt(stretch);
+        this.body.scale.set(baseScale * squash, baseScale * stretch, baseScale * squash);
+        break;
+      }
       case 'ghast':
         for (let i = 0; i < 9; i++) {
           this.rot(`tent${i}`, Math.sin(age * 0.16 + i * 0.8) * 0.28, 0, 0);
@@ -956,6 +1097,83 @@ class MobVisual implements Visual {
 
     this.syncHeld(e);
     if (this.held) this.held.setLight(e.skyLight, e.blockLight);
+    if (this.kind === 'enderman') this.syncCarried(e);
+    this.syncName(e, baseScale);
+    this.syncLeash(e, alpha);
+  }
+
+  /** Bloc que l'enderman tient devant lui. */
+  private syncCarried(e: EntityView): void {
+    const key = e.blockId === 0 ? 0 : e.blockId * 16 + (e.blockMeta & 15) + 1;
+    if (key !== this.carriedKey) {
+      this.carriedKey = key;
+      if (this.carriedGroup) this.carriedGroup.removeFromParent();
+      if (this.carried) this.carried.dispose();
+      this.carried = null;
+      this.carriedGroup = null;
+      if (key !== 0) {
+        const model = ItemModel.forBlock(this.atlas, e.blockId, e.blockMeta);
+        const group = model.instance();
+        group.scale.setScalar(0.5);
+        group.position.set(0, 24 * PX, 9 * PX);
+        this.body.add(group);
+        this.carried = model;
+        this.carriedGroup = group;
+      }
+    }
+    if (this.carried) this.carried.setLight(e.skyLight, e.blockLight);
+  }
+
+  /** Plaque de nom au-dessus de la tête. */
+  private syncName(e: EntityView, scale: number): void {
+    if (e.customName !== this.nameText) {
+      this.nameText = e.customName;
+      this.disposeName();
+      if (e.customName !== '') {
+        this.namePlate = makeNamePlate(e.customName);
+        this.root.add(this.namePlate);
+      }
+    }
+    if (this.namePlate) this.namePlate.position.set(0, this.model.height * scale + 0.45, 0);
+  }
+
+  private disposeName(): void {
+    const n = this.namePlate;
+    if (!n) return;
+    n.removeFromParent();
+    n.material.map?.dispose();
+    n.material.dispose();
+    this.namePlate = null;
+  }
+
+  /** Corde de la laisse : du poitrail jusqu'à la main ou au poteau, avec un léger ventre. */
+  private syncLeash(e: EntityView, alpha: number): void {
+    if (!e.leashed) {
+      if (this.leash) this.leash.visible = false;
+      return;
+    }
+    let line = this.leash;
+    if (!line) {
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array((LEASH_SEGMENTS + 1) * 3), 3));
+      line = new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: 0x5a4020 }));
+      line.frustumCulled = false;
+      this.root.add(line);
+      this.leash = line;
+    }
+    line.visible = true;
+    const r = this.root.position;
+    const y0 = this.model.height * 0.6;
+    const dx = lerp(e.pLeashX, e.leashX, alpha) - r.x;
+    const dy = lerp(e.pLeashY, e.leashY, alpha) - r.y - y0;
+    const dz = lerp(e.pLeashZ, e.leashZ, alpha) - r.z;
+    const attr = line.geometry.attributes.position as THREE.BufferAttribute;
+    const sag = Math.min(0.6, Math.sqrt(dx * dx + dz * dz) * 0.08);
+    for (let i = 0; i <= LEASH_SEGMENTS; i++) {
+      const t = i / LEASH_SEGMENTS;
+      attr.setXYZ(i, dx * t, y0 + dy * t - Math.sin(t * PI) * sag, dz * t);
+    }
+    attr.needsUpdate = true;
   }
 
   private animateBiped(e: EntityView, walk: number, age: number, headX: number, headY: number): void {
@@ -1009,8 +1227,14 @@ class MobVisual implements Visual {
     }
     this.rot('armR', rax, ray, raz);
     this.rot('armL', lax, lay, laz);
-    this.rot('legR', walk, 0, 0);
-    this.rot('legL', -walk, 0, 0);
+    if (e.riding) {
+      // en selle : jambes repliées vers l'avant, de part et d'autre de la monture
+      this.rot('legR', -1.4137, PI / 10, 0.0785);
+      this.rot('legL', -1.4137, -PI / 10, -0.0785);
+    } else {
+      this.rot('legR', walk, 0, 0);
+      this.rot('legL', -walk, 0, 0);
+    }
 
     const body = this.parts.get('body');
     if (sneaking) {
@@ -1081,8 +1305,15 @@ class MobVisual implements Visual {
 
   dispose(): void {
     this.material.dispose();
+    if (this.shell) this.shell.dispose();
     this.shadow.dispose();
     if (this.held) this.held.dispose();
+    if (this.carried) this.carried.dispose();
+    this.disposeName();
+    if (this.leash) {
+      this.leash.geometry.dispose();
+      (this.leash.material as THREE.Material).dispose();
+    }
   }
 }
 

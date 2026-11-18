@@ -335,6 +335,15 @@ export const I = {
   NETHER_BRICK: 388,
   NETHER_WART: 389,
   BLAZE_ROD: 390,
+  SLIME_BALL: 391,
+  ENDER_PEARL: 392,
+  SADDLE: 393,
+  /** Laisse : attache un animal au joueur ou à une barrière. */
+  LEAD: 394,
+  /** Étiquette : donne un nom à une créature. */
+  NAME_TAG: 395,
+  /** Potion jetable de la sorcière (projectile ; pas encore utilisable par le joueur). */
+  SPLASH_POTION: 396,
 } as const;
 
 export const ITEM_ID_LIMIT = 400;

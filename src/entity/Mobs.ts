@@ -23,17 +23,29 @@ import { MAX_USES, PROFESSIONS, careerCount, careerLabel, isProfession, loadOffe
 import { findPath, type PathPoint } from './Pathfinder';
 import { isBoxFree } from './Physics';
 
-export const PASSIVE_KINDS: readonly MobKind[] = ['pig', 'cow', 'sheep', 'chicken', 'wolf'];
-export const HOSTILE_KINDS: readonly MobKind[] = ['zombie', 'skeleton', 'creeper', 'spider', 'zombie_pigman', 'ghast', 'magma_cube', 'blaze', 'wither_skeleton'];
-/** Habitants : ni animaux (pas de reproduction, pas de plafond) ni monstres. */
-export const NPC_KINDS: readonly MobKind[] = ['villager'];
+export const PASSIVE_KINDS: readonly MobKind[] = ['pig', 'cow', 'sheep', 'chicken', 'wolf', 'horse', 'ocelot'];
+export const HOSTILE_KINDS: readonly MobKind[] = ['zombie', 'skeleton', 'creeper', 'spider', 'zombie_pigman', 'ghast', 'magma_cube', 'blaze', 'wither_skeleton', 'slime', 'enderman', 'witch'];
+/** Ni animaux d'élevage (pas de reproduction, pas de plafond) ni monstres : habitants, golems, calamars. */
+export const NPC_KINDS: readonly MobKind[] = ['villager', 'iron_golem', 'squid'];
+
+/** Au-delà de cette longueur la laisse casse ; au-delà de LEASH_SLACK la créature suit, de LEASH_TAUT elle est tirée. */
+export const LEASH_BREAK = 10;
+const LEASH_SLACK = 4;
+const LEASH_TAUT = 6;
+/** Longueur maximale d'un nom donné par une étiquette. */
+export const NAME_MAX = 24;
+
+/** Une laisse peut-elle être nouée à ce bloc (barrière) ? */
+export function isLeashPost(id: number): boolean {
+  return id === B.OAK_FENCE || id === B.NETHER_BRICK_FENCE;
+}
 
 /** Rayon (en blocs) autour des parents ou de l'œuf dans lequel on compte les animaux. */
 export const ANIMAL_RADIUS = 32;
 /** Au-delà de ce nombre d'animaux dans le rayon ANIMAL_RADIUS, plus de naissance (reproduction, œuf cassé). */
 export const ANIMAL_CAP = 24;
 
-const TAU = Math.PI * 2;
+export const TAU = Math.PI * 2;
 /** Ticks d'amour après avoir été nourri. */
 const LOVE_TICKS = 600;
 /** Délai entre deux reproductions (5 minutes). */
@@ -54,23 +66,23 @@ const ARROW_SPEED = 1.6;
 
 const ray = newRayHit();
 
-function wrapAngle(a: number): number {
+export function wrapAngle(a: number): number {
   a = (a + Math.PI) % TAU;
   if (a < 0) a += TAU;
   return a - Math.PI;
 }
 
-function clamp(v: number, lo: number, hi: number): number {
+export function clamp(v: number, lo: number, hi: number): number {
   return v < lo ? lo : v > hi ? hi : v;
 }
 
 /** Entier aléatoire dans [lo, hi]. */
-function randInt(rng: () => number, lo: number, hi: number): number {
+export function randInt(rng: () => number, lo: number, hi: number): number {
   return lo + Math.floor(rng() * (hi - lo + 1));
 }
 
 /** Fait-il jour (le soleil brûle les morts-vivants, les araignées sont paisibles) ? */
-function isDay(game: GameApi): boolean {
+export function isDay(game: GameApi): boolean {
   const t = game.dayTime;
   return t < 12500 || t >= 23500;
 }
@@ -153,6 +165,14 @@ export abstract class Mob extends Living {
 
   private ambientDelay: number;
 
+  /** Entité portée (cavalier d'un cheval) : elle n'est jamais repoussée. */
+  passenger: Entity | null = null;
+  /** Laisse : tenue par une entité (le joueur) ou nouée à une barrière. */
+  leashHolder: Entity | null = null;
+  leashKnot: { x: number; y: number; z: number } | null = null;
+  /** Laisse tenue par le joueur au moment de la sauvegarde : à rattacher au premier tick. */
+  private leashRestore = false;
+
   constructor(kind: MobKind, health: number, walkSpeed: number) {
     super();
     this.mobKind = kind;
@@ -186,6 +206,7 @@ export abstract class Mob extends Living {
     this.speed = this.walkSpeed;
     this.behave(game);
     if (this.dead) return;
+    this.tickLeash(game);
     // nage : garder la tête hors de l'eau
     if (this.inWater || this.inLava) this.jumping = true;
     if (((this.age + this.id) & 3) === 0) this.pushApart(game);
@@ -428,7 +449,7 @@ export abstract class Mob extends Living {
     let px = 0;
     let pz = 0;
     for (const e of list) {
-      if (!(e instanceof Living) || !e.alive) continue;
+      if (!(e instanceof Living) || !e.alive || e === this.passenger) continue;
       let dx = this.x - e.x;
       let dz = this.z - e.z;
       let len = Math.sqrt(dx * dx + dz * dz);
@@ -497,6 +518,7 @@ export abstract class Mob extends Living {
       game.player.addStat('mob_kills');
       game.player.addStat(`killed:${this.mobKind}`);
     }
+    this.breakLeash(game, true);
     if (this.baby) return;
     this.dropLoot(game, this.fireTicks > 0 || cause === 'fire' || cause === 'lava', byPlayer);
     if (byPlayer) {
@@ -508,6 +530,140 @@ export abstract class Mob extends Living {
   /** Lâche `count` exemplaires d'un objet à mi-hauteur du corps. */
   protected drop(game: GameApi, id: number, count: number): void {
     if (count > 0) game.dropItem(this.x, this.y + this.height * 0.5, this.z, id, count);
+  }
+
+  // ------------------------------------------------------------------ laisse, nom
+
+  /** Peut-on lui passer une laisse ? (animaux, golems, calamars) */
+  get leashable(): boolean {
+    return false;
+  }
+
+  /** Une créature nommée, attachée ou apprivoisée survit au déchargement de son chunk. */
+  get persistent(): boolean {
+    return this.customName !== '' || this.tamed || this.leashHolder !== null || this.leashKnot !== null;
+  }
+
+  /**
+   * Clic droit du joueur, avant toute autre interaction : détache une créature attachée, ou lui
+   * passe la laisse tenue en main. Retourne true si la laisse a servi.
+   */
+  useLeash(game: GameApi, player: PlayerLike): boolean {
+    if (!this.alive) return false;
+    if (this.leashHolder || this.leashKnot) {
+      this.breakLeash(game, true);
+      return true;
+    }
+    if (player.heldItemId !== I.LEAD || !this.leashable) return false;
+    this.leashHolder = player;
+    player.consumeHeld(1);
+    game.sound('pop', this.x, this.y + this.height * 0.5, this.z, 0.5, 0.7);
+    return true;
+  }
+
+  /** Noue à la barrière (x, y, z) la laisse que tient `holder`. */
+  tieTo(x: number, y: number, z: number): void {
+    this.leashHolder = null;
+    this.leashKnot = { x, y, z };
+  }
+
+  /** Défait la laisse ; `drop` : elle tombe au sol. */
+  breakLeash(game: GameApi, drop: boolean): void {
+    if (!this.leashHolder && !this.leashKnot) return;
+    this.leashHolder = null;
+    this.leashKnot = null;
+    this.leashed = false;
+    if (drop) this.drop(game, I.LEAD, 1);
+    game.sound('pop', this.x, this.y + this.height * 0.5, this.z, 0.4, 1.4);
+  }
+
+  /** La corde : elle casse au-delà de 10 blocs, la créature suit dès 4 blocs et est tirée au-delà de 6. */
+  private tickLeash(game: GameApi): void {
+    if (this.leashRestore) {
+      this.leashRestore = false;
+      const p = game.player;
+      if (p.alive && this.distanceSqTo(p) < LEASH_BREAK * LEASH_BREAK) this.leashHolder = p;
+      else this.drop(game, I.LEAD, 1);
+    }
+    const h = this.leashHolder;
+    const k = this.leashKnot;
+    if (!h && !k) {
+      this.leashed = false;
+      return;
+    }
+    let tx: number;
+    let ty: number;
+    let tz: number;
+    let px: number;
+    let py: number;
+    let pz: number;
+    if (h) {
+      if (h.dead || (h instanceof Living && !h.alive)) {
+        this.breakLeash(game, true);
+        return;
+      }
+      const hand = h.height * 0.55;
+      tx = h.x;
+      ty = h.y + hand;
+      tz = h.z;
+      px = h.px;
+      py = h.py + hand;
+      pz = h.pz;
+    } else if (k) {
+      if (!isLeashPost(game.world.getBlock(k.x, k.y, k.z))) {
+        this.breakLeash(game, true);
+        return;
+      }
+      tx = px = k.x + 0.5;
+      ty = py = k.y + 0.7;
+      tz = pz = k.z + 0.5;
+    } else {
+      return;
+    }
+    const dx = tx - this.x;
+    const dy = ty - (this.y + this.height * 0.5);
+    const dz = tz - this.z;
+    const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    if (d > LEASH_BREAK) {
+      this.breakLeash(game, true);
+      return;
+    }
+    if (d > LEASH_SLACK) {
+      this.walkTo(game, tx, tz, 1.4, false);
+      if (d > LEASH_TAUT) {
+        const pull = Math.min(0.12, (d - LEASH_TAUT) * 0.05) / d;
+        this.vx += dx * pull;
+        this.vz += dz * pull;
+        if (dy > 1) this.vy += Math.min(0.1, dy * pull);
+      }
+    }
+    this.leashed = true;
+    this.pLeashX = px;
+    this.pLeashY = py;
+    this.pLeashZ = pz;
+    this.leashX = tx;
+    this.leashY = ty;
+    this.leashZ = tz;
+  }
+
+  /** Champs de sauvegarde communs à toutes les créatures. */
+  protected saveMob(): EntityData {
+    const d = this.saveBase('mob');
+    d.kind = this.mobKind;
+    d.health = this.health;
+    if (this.customName) d.name = this.customName;
+    const k = this.leashKnot;
+    if (k) d.leash = [k.x, k.y, k.z];
+    else if (this.leashHolder) d.leash = 'p';
+    return d;
+  }
+
+  /** Restaure le nom et la laisse. */
+  loadCommon(d: EntityData): void {
+    if (typeof d.name === 'string') this.customName = d.name.slice(0, NAME_MAX);
+    const l = d.leash;
+    if (l === 'p') this.leashRestore = true;
+    else if (Array.isArray(l) && l.length === 3 && l.every((v) => typeof v === 'number')) this.leashKnot = { x: l[0] as number, y: l[1] as number, z: l[2] as number };
   }
 
   /** État propre à l'espèce, ajouté à la sauvegarde. */
@@ -562,6 +718,17 @@ export abstract class Animal extends Mob {
     this.width = this.adultWidth * scale;
     this.height = this.adultHeight * scale;
     this.eyeHeight = this.adultEyeHeight * scale;
+  }
+
+  get leashable(): boolean {
+    return true;
+  }
+
+  /** Fait fuir l'animal loin de `from` pendant `ticks` ticks (ocelot farouche). */
+  protected startle(game: GameApi, from: Entity, ticks: number): void {
+    this.panicTicks = ticks;
+    this.fleeFrom = from;
+    this.pickFlee(game, from);
   }
 
   protected behave(game: GameApi): void {
@@ -734,9 +901,7 @@ export abstract class Animal extends Mob {
 
   save(): EntityData | null {
     if (this.health <= 0 || this.dead) return null;
-    const d = this.saveBase('mob');
-    d.kind = this.mobKind;
-    d.health = this.health;
+    const d = this.saveMob();
     d.breed = this.breedCooldown;
     if (this.growTicks > 0) d.grow = this.growTicks;
     this.saveExtra(d);
@@ -1192,6 +1357,8 @@ export abstract class Monster extends Mob {
 
   /** Disparition loin du joueur : toujours au-delà de 96 blocs, au hasard au-delà de 32 après 30 s sans le voir. */
   private checkDespawn(game: GameApi): boolean {
+    // une créature nommée ne disparaît jamais
+    if (this.customName !== '') return false;
     const dSq = this.distanceSqTo(game.player);
     this.unseenTicks++;
     if (dSq > 96 * 96 || (dSq > 32 * 32 && this.unseenTicks > 600 && game.rng() < 1 / 800)) {
@@ -1262,6 +1429,8 @@ export abstract class Monster extends Mob {
     if (t.y > this.y + this.height + 0.3 || t.y + t.height < this.y - 0.3) return false;
     this.attackCooldown = 20;
     this.swingArm();
+    // faiblesse : coups affaiblis de 2 cœurs
+    if (this.weakTicks > 0) damage = Math.max(0, damage - 4);
     t.hurt(game, damage, 'attack', this);
     return true;
   }
@@ -1281,9 +1450,7 @@ export abstract class Monster extends Mob {
 
   save(): EntityData | null {
     if (this.health <= 0 || this.dead) return null;
-    const d = this.saveBase('mob');
-    d.kind = this.mobKind;
-    d.health = this.health;
+    const d = this.saveMob();
     this.saveExtra(d);
     return d;
   }
@@ -1389,12 +1556,45 @@ export class Creeper extends Monster {
   /** Avancement de la mèche, 0..30. `fuse` (vue) en est la fraction 0..1. */
   fuseTicks = 0;
   private igniting = false;
+  /** Chat ou ocelot que le creeper fuit. */
+  private cat: Entity | null = null;
 
   constructor() {
     super('creeper', 20, 0.058);
   }
 
+  /** Chat ou ocelot à moins de 6 blocs : le creeper s'en écarte et n'explose pas. */
+  private fleeCat(game: GameApi): boolean {
+    if ((this.age + this.id) % 10 === 0) {
+      this.cat = null;
+      let best = 36;
+      for (const e of game.entitiesInBox(this.x - 6, this.y - 3, this.z - 6, this.x + 6, this.y + 5, this.z + 6, this)) {
+        if (e.mobKind !== 'ocelot' || e.kind !== 'mob' || e.dead) continue;
+        const d = this.distanceSqTo(e);
+        if (d < best) {
+          best = d;
+          this.cat = e;
+        }
+      }
+    }
+    const c = this.cat;
+    if (!c || c.dead || this.distanceSqTo(c) > 64) {
+      this.cat = null;
+      return false;
+    }
+    this.igniting = false;
+    if (this.fuseTicks > 0) this.fuseTicks--;
+    this.fuse = this.fuseTicks / FUSE_TICKS;
+    this.clearPath();
+    const dx = this.x - c.x;
+    const dz = this.z - c.z;
+    const d = Math.sqrt(dx * dx + dz * dz) || 1;
+    this.walkTo(game, this.x + (dx / d) * 6, this.z + (dz / d) * 6, 1.5, true);
+    return true;
+  }
+
   protected fight(game: GameApi, t: Living): void {
+    if (this.fleeCat(game)) return;
     const dSq = this.distanceSqTo(t);
     if (this.igniting) {
       // la mèche s'éteint si la cible s'éloigne à plus de 7 blocs ou sort de vue
@@ -1420,6 +1620,7 @@ export class Creeper extends Monster {
   }
 
   protected idle(game: GameApi): void {
+    if (this.fleeCat(game)) return;
     this.igniting = false;
     if (this.fuseTicks > 0) this.fuseTicks--;
     this.fuse = this.fuseTicks / FUSE_TICKS;
@@ -1921,7 +2122,7 @@ export class Villager extends Mob {
   }
 
   get persistent(): boolean {
-    return this.traded;
+    return this.traded || super.persistent;
   }
 
   setProfession(profession: Profession, rng: () => number): void {
@@ -2092,9 +2293,7 @@ export class Villager extends Mob {
 
   save(): EntityData | null {
     if (this.health <= 0 || this.dead) return null;
-    const d = this.saveBase('mob');
-    d.kind = this.mobKind;
-    d.health = this.health;
+    const d = this.saveMob();
     d.profession = this.profession;
     d.career = this.career;
     d.tier = this.tier;
@@ -2130,7 +2329,16 @@ export class Villager extends Mob {
  * Crée une créature du type donné (à placer avec setPosition puis à passer à game.spawn).
  * `rng` tire ce qui varie à la naissance (couleur de la laine, minuterie de ponte). Null pour 'player'.
  */
+/** Espèces définies dans d'autres modules (entity/Creatures) : elles s'inscrivent ici à leur chargement. */
+const FACTORIES = new Map<MobKind, (rng: () => number) => Mob>();
+
+export function registerMob(kind: MobKind, factory: (rng: () => number) => Mob): void {
+  FACTORIES.set(kind, factory);
+}
+
 export function createMob(kind: MobKind, rng: () => number = Math.random): Mob | null {
+  const factory = FACTORIES.get(kind);
+  if (factory) return factory(rng);
   switch (kind) {
     case 'pig':
       return new Pig();
@@ -2177,6 +2385,7 @@ export function loadMob(d: EntityData): Mob | null {
   m.loadBase(d);
   m.health = clamp(num(d.health, m.maxHealth), 1, m.maxHealth);
   m.loadExtra(d);
+  m.loadCommon(d);
   return m;
 }
 

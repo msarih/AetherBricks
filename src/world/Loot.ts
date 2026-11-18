@@ -32,7 +32,7 @@ const JUNK: readonly Entry[] = [
 
 const TABLES: Record<LootTable, readonly Pool[]> = {
   dungeon: [
-    { rolls: [1, 3], entries: [[I.GOLDEN_APPLE, 15, 1, 1], [I.BOOK, 20, 1, 3], [I.DIAMOND, 4, 1, 1], [I.EMERALD, 8, 1, 2]] },
+    { rolls: [1, 3], entries: [[I.SADDLE, 20, 1, 1], [I.GOLDEN_APPLE, 15, 1, 1], [I.NAME_TAG, 20, 1, 1], [I.BOOK, 20, 1, 3], [I.DIAMOND, 4, 1, 1], [I.EMERALD, 8, 1, 2]] },
     {
       rolls: [1, 4],
       entries: [
@@ -47,7 +47,7 @@ const TABLES: Record<LootTable, readonly Pool[]> = {
       rolls: [2, 4],
       entries: [
         [I.DIAMOND, 5, 1, 3], [I.IRON_INGOT, 15, 1, 5], [I.GOLD_INGOT, 15, 2, 7], [I.EMERALD, 15, 1, 3], [I.BONE, 25, 4, 6],
-        [I.SPIDER_EYE, 25, 1, 3], [I.ROTTEN_FLESH, 25, 3, 7], [I.GOLDEN_APPLE, 20, 1, 1], [I.BOOK, 20, 1, 2],
+        [I.SPIDER_EYE, 25, 1, 3], [I.ROTTEN_FLESH, 25, 3, 7], [I.SADDLE, 20, 1, 1], [I.GOLDEN_APPLE, 20, 1, 1], [I.BOOK, 20, 1, 2],
       ],
     },
     { rolls: [4, 4], entries: [...JUNK, [B.SAND, 10, 1, 8]] },
@@ -62,7 +62,7 @@ const TABLES: Record<LootTable, readonly Pool[]> = {
     },
   ],
   mineshaft: [
-    { rolls: [1, 1], entries: [[I.GOLDEN_APPLE, 20, 1, 1], [I.IRON_PICKAXE, 5, 1, 1], [I.BOOK, 10, 1, 1], [I.STICK, 5, 2, 4]] },
+    { rolls: [1, 1], entries: [[I.GOLDEN_APPLE, 20, 1, 1], [I.NAME_TAG, 30, 1, 1], [I.IRON_PICKAXE, 5, 1, 1], [I.BOOK, 10, 1, 1], [I.STICK, 5, 2, 4]] },
     {
       rolls: [2, 4],
       entries: [
@@ -78,7 +78,7 @@ const TABLES: Record<LootTable, readonly Pool[]> = {
       entries: [
         [I.DIAMOND, 3, 1, 3], [I.IRON_INGOT, 10, 1, 5], [I.GOLD_INGOT, 5, 1, 3], [I.BREAD, 15, 1, 3], [I.APPLE, 15, 1, 3],
         [I.IRON_PICKAXE, 5, 1, 1], [I.IRON_SWORD, 5, 1, 1], [I.IRON_CHESTPLATE, 5, 1, 1], [I.IRON_HELMET, 5, 1, 1],
-        [I.IRON_LEGGINGS, 5, 1, 1], [I.IRON_BOOTS, 5, 1, 1], [B.OBSIDIAN, 5, 3, 7], [B.OAK_SAPLING, 5, 3, 7],
+        [I.IRON_LEGGINGS, 5, 1, 1], [I.IRON_BOOTS, 5, 1, 1], [B.OBSIDIAN, 5, 3, 7], [B.OAK_SAPLING, 5, 3, 7], [I.SADDLE, 3, 1, 1],
       ],
     },
   ],
@@ -88,7 +88,7 @@ const TABLES: Record<LootTable, readonly Pool[]> = {
       entries: [
         [I.DIAMOND, 5, 1, 3], [I.IRON_INGOT, 5, 1, 5], [I.GOLD_INGOT, 15, 1, 3], [I.GOLDEN_SWORD, 5, 1, 1],
         [I.GOLDEN_CHESTPLATE, 5, 1, 1], [I.FLINT_AND_STEEL, 5, 1, 1], [B.OBSIDIAN, 2, 2, 4], [I.GOLD_NUGGET, 10, 2, 8],
-        [I.NETHER_WART, 5, 3, 7],
+        [I.NETHER_WART, 5, 3, 7], [I.SADDLE, 10, 1, 1],
       ],
     },
   ],

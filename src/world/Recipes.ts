@@ -189,6 +189,8 @@ shapeless([B.STONE], B.STONE_BUTTON);
 shaped(['SS'], { S: B.STONE }, B.STONE_PRESSURE_PLATE);
 shaped(['PPP', 'CIC', 'CRC'], { P: B.OAK_PLANKS, C: B.COBBLESTONE, I: I.IRON_INGOT, R: I.REDSTONE }, B.PISTON);
 shapeless([B.PISTON, B.VINE], B.STICKY_PISTON);
+shaped(['S', 'P'], { S: I.SLIME_BALL, P: B.PISTON }, B.STICKY_PISTON);
+shaped(['FF ', 'FS ', '  F'], { F: I.STRING, S: I.SLIME_BALL }, I.LEAD, 2);
 shaped([' R ', 'RGR', ' R '], { R: I.REDSTONE, G: B.GLOWSTONE }, B.REDSTONE_LAMP);
 shaped(['##', '##'], { '#': B.SAND }, B.SANDSTONE);
 shaped(['##', '##'], { '#': I.BRICK }, B.BRICKS);

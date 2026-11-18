@@ -20,7 +20,7 @@ export const FISHING_JUNK_CHANCE = 0.1;
 /** Objets sans valeur. */
 export const FISHING_JUNK: readonly number[] = [I.BOWL, I.STICK, I.STRING, I.BONE, I.LEATHER, I.ROTTEN_FLESH, I.LEATHER_BOOTS, B.LILY_PAD];
 /** Trouvailles (les outils remontent usés). */
-export const FISHING_TREASURE: readonly number[] = [I.BOW, I.FISHING_ROD, I.BOOK];
+export const FISHING_TREASURE: readonly number[] = [I.BOW, I.FISHING_ROD, I.BOOK, I.NAME_TAG, I.SADDLE];
 
 /** Tire au sort une prise. `rng` rend un nombre dans [0, 1[. */
 export function rollFishingCatch(rng: () => number): ItemStack {
