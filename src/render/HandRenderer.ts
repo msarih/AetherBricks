@@ -220,6 +220,7 @@ export class HandRenderer {
   private lagPitch = 0;
   private useTime = 0;
   private blockBlend = 0;
+  private offBlockBlend = 0;
 
   constructor(private readonly atlas: Atlas) {
     const assets = getMobAssets(getMobModel('player'));
@@ -345,13 +346,13 @@ export class HandRenderer {
   }
 
   /** Position de base d'un objet tenu, avec la rotation du coup (repère de la caméra, puis échelle 0,4). */
-  private transformItem(down: number, swing: number): void {
+  private transformItem(down: number, swing: number, block = 0): void {
     const f = Math.sin(swing * swing * Math.PI);
     const f1 = Math.sin(Math.sqrt(swing) * Math.PI);
     this.chain
-      .translate(0.56, -0.52, -0.72)
+      .translate(0.56 - 0.16 * block, -0.52 + 0.08 * block, -0.72)
       .translate(0, down * -0.6, 0)
-      .rotateY(45)
+      .rotateY(45 + 25 * block)
       .rotateY(f * -20)
       .rotateZ(f1 * -20)
       .rotateX(f1 * -80)
@@ -382,9 +383,12 @@ export class HandRenderer {
     this.lagYaw = clamp((this.lagYaw + state.yawDelta) * decay, -1.5, 1.5);
     this.lagPitch = clamp((this.lagPitch + state.pitchDelta) * decay, -1.5, 1.5);
 
-    const using = state.useProgress > 0 ? state.useKind : 'none';
+    const using = state.useProgress > 0 || state.useKind === 'block' ? state.useKind : 'none';
     this.useTime = using === 'none' ? 0 : this.useTime + dt;
-    this.blockBlend = clamp(this.blockBlend + (using === 'block' ? 1 : -1) * dt * 12, 0, 1);
+    const mainBlock = using === 'block' && this.shownId === I.SHIELD;
+    const offBlock = using === 'block' && this.offTargetId === I.SHIELD && this.targetId !== I.SHIELD;
+    this.blockBlend = clamp(this.blockBlend + (mainBlock ? 1 : -1) * dt * 12, 0, 1);
+    this.offBlockBlend = clamp(this.offBlockBlend + (offBlock ? 1 : -1) * dt * 12, 0, 1);
 
     const c = this.chain.identity();
     // Balancement de marche
@@ -464,18 +468,10 @@ export class HandRenderer {
         swing *= 1 - this.blockBlend;
         const r = Math.sin(Math.sqrt(swing) * Math.PI);
         c.translate(-0.4 * r, 0.2 * Math.sin(Math.sqrt(swing) * Math.PI * 2), -0.2 * Math.sin(swing * Math.PI));
-        this.transformItem(down, swing);
-        if (this.blockBlend > 0) {
-          // Parade à l'épée
-          const b = this.blockBlend;
-          c.translate(-0.5 * b, 0.2 * b, 0);
-          c.rotateY(30 * b);
-          c.rotateX(-80 * b);
-          c.rotateY(60 * b);
-        }
+        this.transformItem(down, swing, this.blockBlend);
       }
       // Présentation : un bloc est un cube de 0,4 vu de trois quarts ; un objet plat est tourné de profil et incliné
-      if (!shown.model.isBlock) c.scale(2).translate(0, 4 / 16, 2 / 16).rotateY(-135).rotateZ(25).scale(0.85);
+      if (!shown.model.isBlock) c.scale(2).translate(0, 4 / 16, 2 / 16).rotateY(-135).rotateZ(25 - 15 * this.blockBlend).scale(0.85);
       shown.model.setLight(state.skyLight, state.blockLight);
       display = shown.group;
     }
@@ -491,13 +487,18 @@ export class HandRenderer {
     if (this.offShown) {
       this.offHolder.visible = true;
       const oc = this.offChain.identity();
-      if (state.useKind === 'block' && this.offTargetId === I.SHIELD && this.targetId !== I.SHIELD) {
-        oc.translate(-0.34, -0.44, -0.68).rotateY(18).rotateX(8);
-      } else {
-        oc.translate(-0.56, -0.52, -0.72);
+      oc.translate(Math.sin(phase) * bob * 0.5, -Math.abs(Math.cos(phase) * bob), 0);
+      oc.rotateZ(Math.sin(phase) * bob * 3);
+      oc.rotateX(Math.abs(Math.cos(phase - 0.2) * bob) * 5);
+      oc.rotateX(-this.lagPitch * 0.1 * RAD_TO_DEG);
+      oc.rotateY(-this.lagYaw * 0.1 * RAD_TO_DEG);
+      const ob = this.offBlockBlend;
+      oc.translate(-0.56 + 0.16 * ob, -0.52 + 0.08 * ob, -0.72)
+        .rotateY(-45 - 25 * ob)
+        .scale(0.4);
+      if (!this.offShown.model.isBlock) {
+        oc.scale(2).translate(0, 4 / 16, 2 / 16).rotateY(135).rotateZ(-25 + 15 * ob).scale(0.85);
       }
-      if (!this.offShown.model.isBlock) oc.scale(2).translate(0, 4 / 16, 2 / 16).rotateY(135).rotateZ(-25).scale(0.85);
-      else oc.rotateY(45).scale(0.4);
       this.offShown.model.setLight(state.skyLight, state.blockLight);
       this.offHolder.matrix.copy(oc.matrix);
       this.offHolder.matrixWorldNeedsUpdate = true;

@@ -1240,7 +1240,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     hs.blockLight = p.blockLight;
     hs.useKind = p.useKind;
     hs.fishing = this.interaction.fishing;
-    hs.useProgress = p.useKind === 'eat' ? Math.min(1, p.useTicks / 32) : p.useKind === 'bow' ? Math.min(1, p.useTicks / 20) : 0;
+    hs.useProgress = p.useKind === 'eat' ? Math.min(1, p.useTicks / 32) : p.useKind === 'bow' ? Math.min(1, p.useTicks / 20) : p.useKind === 'block' ? Math.min(1, p.useTicks / 5) : 0;
     hs.yawDelta = yaw - this.lastYaw;
     hs.pitchDelta = pitch - this.lastPitch;
     hs.pitch = pitch;
