@@ -51,6 +51,8 @@ export interface WorldHost {
   dispense?(x: number, y: number, z: number, dropper: boolean): void;
   /** Joue une note depuis un bloc musical. */
   playNote?(x: number, y: number, z: number, instrument: string, note: number, pitch: number): void;
+  /** Aspire un objet posé sur un entonnoir ; retourne true si au moins un exemplaire a été pris. */
+  pullItemForHopper?(x: number, y: number, z: number, accept: (stack: { id: number; count: number; damage: number; enchants?: Record<string, number>; potion?: string }) => boolean): boolean;
 }
 
 const NO_HOST: WorldHost = {

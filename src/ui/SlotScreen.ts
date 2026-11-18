@@ -138,6 +138,12 @@ export class SlotScreen implements Screen {
       case 'chest':
         this.buildChest();
         break;
+      case 'hopper':
+        this.buildHopper();
+        break;
+      case 'dispenser':
+        this.buildDispenser();
+        break;
       case 'creative':
         this.buildCreative();
         break;
@@ -541,6 +547,23 @@ export class SlotScreen implements Screen {
     this.grid('container', 27, 9, 8, 18);
     this.label('Inventaire', 8, 74);
     this.playerSlots(8, 85, 143);
+  }
+
+  private buildHopper(): void {
+    this.size(176, 133);
+    this.label(this.menu.title, 8, 6);
+    this.grid('container', 5, 5, 44, 20);
+    this.label('Inventaire', 8, 39);
+    this.playerSlots(8, 51, 109);
+  }
+
+  private buildDispenser(): void {
+    this.size(176, 166);
+    const title = this.label(this.menu.title, 0, 6);
+    title.classList.add('mc-label-center');
+    this.grid('container', 9, 3, 62, 17);
+    this.label('Inventaire', 8, 72);
+    this.playerSlots(8, 84, 142);
   }
 
   private buildCreative(): void {
