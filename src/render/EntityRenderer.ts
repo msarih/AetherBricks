@@ -1095,16 +1095,17 @@ class MobVisual implements Visual {
           this.parts.get(`tail${i}`)?.scale.setScalar(1 - i * 0.05);
         }
         // battement : l'aile monte et descend, le bout d'aile suit avec retard, accroché au bout du premier os
-        const beat = (Math.sin(age * 0.25) * 0.55 + 0.1) * amount + (1 - amount) * 0.3;
-        const tip = (Math.sin(age * 0.25 - 1) * 0.6 - 0.15) * amount - (1 - amount) * 0.9;
+        // (le bout d'aile reste à peu près à plat quand l'aile est haute et se rabat quand elle descend)
+        const beat = (Math.sin(age * 0.25) * 0.5 + 0.05) * amount + (1 - amount) * 0.3;
+        const tipAngle = (beat * 0.4 - 0.35 + Math.sin(age * 0.25 - 1.2) * 0.5) * amount - (1 - amount) * 0.6;
         const reach = DRAGON_WING_SPAN * (Math.cos(beat) - 1);
         const lift = DRAGON_WING_SPAN * Math.sin(beat);
         this.parts.get('wingL')?.rotation.set(0, 0, beat);
         this.parts.get('wingR')?.rotation.set(0, 0, -beat);
         this.offset('tipL', reach, lift, 0);
         this.offset('tipR', -reach, lift, 0);
-        this.parts.get('tipL')?.rotation.set(0, 0, beat + tip);
-        this.parts.get('tipR')?.rotation.set(0, 0, -beat - tip);
+        this.parts.get('tipL')?.rotation.set(0, 0, tipAngle);
+        this.parts.get('tipR')?.rotation.set(0, 0, -tipAngle);
         // agonie : il blanchit en se désagrégeant
         if (e.deathTime > 0) flash = clamp(e.deathTime / 200, 0, 1) * 0.85;
         break;

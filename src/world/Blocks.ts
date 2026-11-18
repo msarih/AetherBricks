@@ -543,7 +543,7 @@ reg(B.END_PORTAL, 'end_portal', "Portail de l'End", {
 });
 reg(B.DRAGON_EGG, 'dragon_egg', 'Œuf de dragon', {
   tiles: 'dragon_egg', shape: SHAPE.DRAGON_EGG, opaque: false, lightOpacity: 0, emit: 1, hardness: 3, blastResistance: 45,
-  category: 'decoration',
+  ...rock, category: 'decoration',
 });
 reg(B.SOUL_SAND, 'soul_sand', 'Sable des âmes', { tiles: 'soul_sand', hardness: 0.5, tool: 'shovel', sound: 'sand', category: 'nature' });
 reg(B.NETHER_WART, 'nether_wart_crop', 'Verrues du Nether', { tiles: 'nether_wart_2', ...crop });
