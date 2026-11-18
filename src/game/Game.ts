@@ -1900,6 +1900,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
   /** Remet le joueur sur pied à l'endroit donné et lui rend la main. */
   private revive(spot: { x: number; y: number; z: number }): void {
     this.player.respawn(spot.x, spot.y, spot.z);
+    if (this.deathShown && this.ui.modal) this.ui.closeScreen();
     this.deathShown = false;
     this.needSettle = true;
     this.interaction.reset();
