@@ -174,7 +174,7 @@ const SIMPLE_ITEMS: Array<[id: number, name: TileName, label: string, category: 
   [I.SADDLE, 'saddle', 'Selle', 'outils', { stack: 1 }],
   [I.LEAD, 'lead', 'Laisse', 'outils'],
   [I.NAME_TAG, 'name_tag', 'Étiquette', 'outils'],
-  [I.SPLASH_POTION, 'splash_potion', 'Potion jetable', 'aucune', { stack: 1 }],
+  [I.SPLASH_POTION, 'splash_potion', 'Potion jetable', 'combat', { stack: 1 }],
   [I.BUCKET, 'bucket', 'Seau', 'outils', { stack: 16 }],
   [I.WATER_BUCKET, 'water_bucket', "Seau d'eau", 'outils', { stack: 1 }],
   [I.LAVA_BUCKET, 'lava_bucket', 'Seau de lave', 'outils', { stack: 1 }],

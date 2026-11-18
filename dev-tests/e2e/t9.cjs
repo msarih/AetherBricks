@@ -104,15 +104,35 @@ async function reload(page) {
     const cobblePlaced = await ev(page, () => ({ ok: T.block(10, 4, 12) === B.COBBLESTONE, bloc: T.block(10, 4, 12) }));
     check('seconde main : la main principale reste prioritaire au clic droit', cobblePlaced.ok, `bloc=${cobblePlaced.bloc}`);
 
-    // Tombe à la mort comme le reste de l'inventaire
+    // Tombe à la mort comme le reste de l'inventaire, en conservant sorte de potion et enchantements
     const droppedOnDeath = await ev(page, () => {
       const g = window.__game, p = g.player;
+      for (const e of g.entities) if (e.kind === 'item') e.dead = true;
+      p.inventory.clear();
       p.inventory.offhand[0] = makeStack(I.SHIELD, 1);
+      p.inventory.slots[0] = makeStack(I.POTION, 1, 0, undefined, 'healing');
+      p.inventory.slots[1] = makeStack(I.SPLASH_POTION, 1, 0, undefined, 'speed');
+      p.inventory.slots[2] = makeStack(I.DIAMOND_SWORD, 1, 0, { sharpness: 3 });
       p.hurt(g, 100, 'void');
-      const items = g.entities.filter((e) => e.kind === 'item' && !e.dead).map((e) => e.itemId);
-      return { dead: !p.alive, offAfter: p.offhandItemId, hasShieldDrop: items.includes(I.SHIELD) };
+      const ground = g.entities.filter((e) => e.kind === 'item' && !e.dead).map((e) => ({
+        id: e.stack.id,
+        potion: e.stack.potion ?? null,
+        sharpness: e.stack.enchants?.sharpness ?? 0,
+      }));
+      return {
+        dead: !p.alive,
+        offAfter: p.offhandItemId,
+        hasShieldDrop: ground.some((x) => x.id === I.SHIELD),
+        hasHealingPotion: ground.some((x) => x.id === I.POTION && x.potion === 'healing'),
+        hasSpeedSplash: ground.some((x) => x.id === I.SPLASH_POTION && x.potion === 'speed'),
+        hasEnchantedSword: ground.some((x) => x.id === I.DIAMOND_SWORD && x.sharpness === 3),
+        ground,
+      };
     });
     check('seconde main : l\'objet en seconde main tombe à la mort', droppedOnDeath.dead && droppedOnDeath.offAfter === 0 && droppedOnDeath.hasShieldDrop, JSON.stringify(droppedOnDeath));
+    check('mort du joueur : une potion garde sa sorte et un objet enchanté garde ses enchantements au sol',
+      droppedOnDeath.hasHealingPotion && droppedOnDeath.hasSpeedSplash && droppedOnDeath.hasEnchantedSword,
+      JSON.stringify(droppedOnDeath.ground));
     await page.waitForSelector('[data-mc="respawn"]:not([disabled])', { timeout: 15000 });
     await click(page, 'respawn');
     await ticks(page, 5);
@@ -152,8 +172,43 @@ async function reload(page) {
       const t6 = { useKind: p.useKind, blocking: p.blocking };
       return { t4, t6 };
     });
-    await ticks(page, 2);
+    await ticks(page, 4);
     await page.screenshot({ path: 'dev-tests/e2e/shots/t9-bouclier-1p.png' });
+
+    // Vérification géométrique de la projection à l'écran : le bouclier levé est à gauche et laisse le centre (0,0) dégagé
+    const screenProj = await ev(page, () => {
+      const g = window.__game;
+      const cam = g.hand.camera;
+      cam.updateMatrixWorld(true);
+      cam.updateProjectionMatrix();
+      const mat = g.hand.offHolder.matrix;
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      for (const lx of [-0.5, 0.5]) {
+        for (const ly of [-0.5, 0.5]) {
+          for (const lz of [-0.05, 0.05]) {
+            const pt = cam.position.clone().set(lx, ly, lz).applyMatrix4(mat).project(cam);
+            if (pt.x < minX) minX = pt.x;
+            if (pt.x > maxX) maxX = pt.x;
+            if (pt.y < minY) minY = pt.y;
+            if (pt.y > maxY) maxY = pt.y;
+          }
+        }
+      }
+      const center = cam.position.clone().set(0, 0, 0).applyMatrix4(mat).project(cam);
+      return {
+        centerX: +center.x.toFixed(3),
+        centerY: +center.y.toFixed(3),
+        minX: +minX.toFixed(3),
+        maxX: +maxX.toFixed(3),
+        minY: +minY.toFixed(3),
+        maxY: +maxY.toFixed(3),
+        centerClear: maxX < -0.1 && maxY < 0.65 && center.x > -0.9 && center.x < -0.3 && center.y > -0.9 && center.y < -0.1,
+      };
+    });
+    check('seconde main à l\'écran : le bouclier levé reste à gauche et laisse le centre de l\'image visible',
+      screenProj.centerClear,
+      JSON.stringify(screenProj));
+
     await page.keyboard.press('F5');
     await page.keyboard.press('F5');
     await ticks(page, 2);
@@ -202,6 +257,30 @@ async function reload(page) {
       !t4.blocking && t6.blocking && shieldResult.blockedFront && shieldResult.dmgAfter5 === 6 &&
       shieldResult.arrowBlocked && shieldResult.hitBack && shieldResult.bypassed,
       JSON.stringify(shieldResult));
+
+    // Bouclier en main principale + casse à bout d'usure
+    const mainHandAndBreak = await ev(page, async () => {
+      const { createMob } = await import('/src/entity/Mobs.ts');
+      const g = window.__game, p = g.player;
+      M.heal();
+      p.inventory.clear();
+      p.inventory.slots[0] = makeStack(I.SHIELD, 1, 333);
+      p.inventory.selected = 0;
+      p.yaw = 0; p.pitch = 0;
+      g.input.buttons[2] = true;
+      for (let i = 0; i < 6; i++) g.tick();
+      const blockingMain = p.blocking;
+      const z = createMob('zombie');
+      z.setPosition(p.x, p.y, p.z - 2);
+      const blocked = !p.hurt(g, 5, 'attack', z);
+      const broken = p.inventory.slots[0] === null;
+      g.input.buttons[2] = false;
+      p.stopUsing();
+      return { blockingMain, blocked, broken };
+    });
+    check('bouclier : fonctionne en main principale et casse à bout d\'usure',
+      mainHandAndBreak.blockingMain && mainHandAndBreak.blocked && mainHandAndBreak.broken,
+      JSON.stringify(mainHandAndBreak));
     await ev(page, () => M.heal());
   });
 
@@ -421,24 +500,38 @@ async function reload(page) {
       recipesAndDrop.stand && recipesAndDrop.gCarrot && recipesAndDrop.gMelon && recipesAndDrop.hasTear,
       JSON.stringify(recipesAndDrop));
 
-    // Pose alambic, ouverture, distillation 400 ticks (water -> awkward -> speed -> speed_2 + splash)
+    // Pose alambic, ouverture, maj-clic depuis l'inventaire, distillation 400 ticks (water -> awkward -> speed -> speed_2 + splash)
     await ev(page, () => {
       const g = window.__game, w = g.world, p = g.player;
       w.setBlock(50, 4, 50, B.BREWING_STAND, 0);
+      p.inventory.clear();
+      p.inventory.slots[0] = makeStack(I.POTION, 1, 0, undefined, 'water');
+      p.inventory.slots[1] = makeStack(I.POTION, 1, 0, undefined, 'water');
+      p.inventory.slots[2] = makeStack(I.NETHER_WART, 1);
+      p.inventory.slots[3] = makeStack(I.BLAZE_POWDER, 1);
+      p.inventory.selected = 5;
       p.teleport(50.5, 4, 52.5);
       T.aim(50.5, 4.5, 50.5);
     });
     await ticks(page, 2);
     await rclick(page);
     await page.waitForSelector('[data-mc="menu-brewing"]', { timeout: 5000 });
-    await ev(page, () => {
-      const m = window.__game.ui.screen?.menu;
-      if (!m) return;
-      m.stand.items[0] = makeStack(I.POTION, 1, 0, undefined, 'water');
-      m.stand.items[3] = makeStack(I.NETHER_WART, 1);
-      m.stand.items[4] = makeStack(I.BLAZE_POWDER, 1);
-      for (let i = 0; i < 200; i++) window.__game.tick();
+    const shiftFill = await ev(page, () => {
+      const g = window.__game, m = g.ui.screen?.menu;
+      if (!m) return { ok: false };
+      const inv = [...m.group('hotbar'), ...m.group('main')];
+      for (const id of [I.POTION, I.POTION, I.NETHER_WART, I.BLAZE_POWDER]) {
+        const src = inv.find((s) => s.stack && s.stack.id === id);
+        if (src) m.click(m.slots.indexOf(src), 0, true);
+      }
+      const b0 = m.stand.items[0]?.potion === 'water';
+      const b1 = m.stand.items[1]?.potion === 'water';
+      const ing = m.stand.items[3]?.id === I.NETHER_WART;
+      const fuelSlot = m.stand.items[4]?.id === I.BLAZE_POWDER;
+      for (let i = 0; i < 200; i++) g.tick();
+      return { ok: b0 && b1 && ing && fuelSlot, b0, b1, ing, fuelSlot };
     });
+    check('alambic : l\'écran se remplit au maj-clic depuis l\'inventaire', shiftFill.ok, JSON.stringify(shiftFill));
     await ticks(page, 2);
     await page.screenshot({ path: 'dev-tests/e2e/shots/t9-alambic-ecran.png' });
 
@@ -474,6 +567,143 @@ async function reload(page) {
     check('alambic : distillation en 400 ticks (carburant 20), chaîne complète + variantes + splash',
       brewChain.awkwardPotion === 'awkward' && brewChain.fuelAfter1 === 19 && brewChain.allVariants,
       JSON.stringify(brewChain));
+
+    // Casse de l'alambic à la pioche (rend le bloc + les potions avec leur sorte, et retire l'entité de bloc) + casse d'un coffre avec potion
+    const breakContainers = await ev(page, async () => {
+      const { getBrewingStand, getChest } = await import('/src/game/BlockEntities.ts');
+      const g = window.__game, w = g.world, p = g.player;
+      for (const e of g.entities) if (e.kind === 'item') e.dead = true;
+      const b = getBrewingStand(w, 50, 4, 50);
+      b.items = [makeStack(I.POTION, 1, 0, undefined, 'strength'), null, null, null, null];
+      p.inventory.clear();
+      p.inventory.slots[0] = makeStack(I.DIAMOND_PICKAXE, 1);
+      p.inventory.selected = 0;
+      p.teleport(50.5, 4, 52.2);
+      T.aim(50.5, 4.3, 50.5);
+      g.input.buttons[0] = true;
+      for (let i = 0; i < 40 && w.getBlock(50, 4, 50) !== B.AIR; i++) g.tick();
+      g.input.buttons[0] = false;
+      const standDrops = g.entities.filter((e) => e.kind === 'item' && !e.dead).map((e) => ({ id: e.stack.id, potion: e.stack.potion ?? null }));
+      const standBeAfter = w.getBlockEntity(50, 4, 50) ?? null;
+
+      for (const e of g.entities) if (e.kind === 'item') e.dead = true;
+      w.setBlock(52, 4, 50, B.CHEST, 0);
+      getChest(w, 52, 4, 50).items[0] = makeStack(I.POTION, 1, 0, undefined, 'regeneration');
+      w.breakBlock(52, 4, 50, true);
+      const chestDrops = g.entities.filter((e) => e.kind === 'item' && !e.dead).map((e) => ({ id: e.stack.id, potion: e.stack.potion ?? null }));
+      return {
+        standBroken: w.getBlock(50, 4, 50) === B.AIR,
+        hasStandBlock: standDrops.some((d) => d.id === B.BREWING_STAND),
+        hasStrengthPotion: standDrops.some((d) => d.id === I.POTION && d.potion === 'strength'),
+        noStandEntityLeft: standBeAfter === null,
+        hasRegenFromChest: chestDrops.some((d) => d.id === I.POTION && d.potion === 'regeneration'),
+        standDrops,
+        chestDrops,
+      };
+    });
+    check('alambic : cassé à la pioche, rend l\'alambic et son contenu (potion avec sa sorte) et retire son entité de bloc',
+      breakContainers.standBroken && breakContainers.hasStandBlock && breakContainers.hasStrengthPotion && breakContainers.noStandEntityLeft,
+      JSON.stringify(breakContainers));
+    check('coffre : une potion garde sa sorte après la casse d\'un coffre',
+      breakContainers.hasRegenFromChest,
+      JSON.stringify(breakContainers.chestDrops));
+
+    // Soin (même faim pleine), lait qui dissipe tous les effets, rapidité (+20 % distance) et force (+3 par niveau)
+    const effectsGameplay = await ev(page, async () => {
+      const { createMob } = await import('/src/entity/Mobs.ts');
+      const g = window.__game, p = g.player;
+      M.heal();
+      p.teleport(55.5, 4, 55.5);
+      p.inventory.clear();
+      p.inventory.slots[0] = makeStack(I.POTION, 1, 0, undefined, 'healing');
+      p.inventory.selected = 0;
+      p.health = 10;
+      p.hunger = 20;
+      g.input.buttons[2] = true;
+      for (let i = 0; i < 35; i++) g.tick();
+      g.input.buttons[2] = false;
+      p.stopUsing();
+      const healthAfterHeal = p.health;
+      const bottleAfterHeal = p.heldItemId === I.GLASS_BOTTLE;
+
+      p.addEffect('strength', 2000, 2);
+      p.addEffect('night_vision', 2000, 1);
+      p.addEffect('speed', 2000, 1);
+      p.inventory.slots[0] = makeStack(I.MILK_BUCKET, 1);
+      g.input.buttons[2] = true;
+      for (let i = 0; i < 35; i++) g.tick();
+      g.input.buttons[2] = false;
+      p.stopUsing();
+      const effectsAfterMilk = p.effects.size;
+      const bucketAfterMilk = p.heldItemId === I.BUCKET;
+
+      p.inventory.clear();
+      p.inventory.slots[0] = makeStack(I.DIAMOND_SWORD, 1);
+      p.inventory.selected = 0;
+      const hitZombie = () => {
+        const z = createMob('zombie');
+        z.setPosition(p.x, p.y, p.z - 2);
+        g.spawn(z);
+        const hp0 = z.health;
+        g.interaction.attack(z);
+        const dmg = hp0 - z.health;
+        z.dead = true;
+        return dmg;
+      };
+      const dmgBase = hitZombie();
+      p.attackCooldown = 0;
+      for (let i = 0; i < 25; i++) g.tick();
+      p.addEffect('strength', 2000, 2);
+      const dmgStr2 = hitZombie();
+      p.clearEffects();
+      return { healthAfterHeal, bottleAfterHeal, effectsAfterMilk, bucketAfterMilk, dmgBase, dmgStr2 };
+    });
+    check('potions : la potion de soin rend de la vie (même faim pleine) et le lait retire tous les effets',
+      effectsGameplay.healthAfterHeal === 14 && effectsGameplay.bottleAfterHeal &&
+      effectsGameplay.effectsAfterMilk === 0 && effectsGameplay.bucketAfterMilk,
+      JSON.stringify(effectsGameplay));
+
+    const walkDist = async () => {
+      await ev(page, () => {
+        const p = window.__game.player;
+        p.teleport(40.5, 4, 80.5);
+        p.yaw = 0; p.pitch = 0; p.vx = 0; p.vz = 0;
+      });
+      await ticks(page, 4);
+      const z0 = await ev(page, () => window.__game.player.z);
+      await page.keyboard.down('KeyW');
+      await ticks(page, 40);
+      await page.keyboard.up('KeyW');
+      const z1 = await ev(page, () => window.__game.player.z);
+      return +(z0 - z1).toFixed(2);
+    };
+    await ev(page, () => M.heal());
+    const distNoSpeed = await walkDist();
+    await ev(page, () => window.__game.player.addEffect('speed', 2000, 1));
+    const distWithSpeed = await walkDist();
+    await ev(page, () => M.heal());
+    check('potions : la rapidité allonge la distance parcourue et la force augmente les dégâts d\'un coup',
+      distWithSpeed > distNoSpeed * 1.12 && effectsGameplay.dmgStr2 === effectsGameplay.dmgBase + 6,
+      JSON.stringify({ distNoSpeed, distWithSpeed, dmgBase: effectsGameplay.dmgBase, dmgStr2: effectsGameplay.dmgStr2 }));
+
+    // /give potion <sorte>, /give splash_potion <sorte> et potions dans la palette créative
+    const giveAndCreative = await ev(page, async () => {
+      const { CREATIVE_TABS } = await import('/src/world/Items.ts');
+      const { POTION_KEYS, SPLASH_POTION_KEYS } = await import('/src/world/Potions.ts');
+      const g = window.__game, p = g.player;
+      p.inventory.clear();
+      g.chat('/give potion soin');
+      g.chat('/give splash_potion vision_nocturne');
+      const gotHeal = p.inventory.slots.some((s) => s?.id === I.POTION && s.potion === 'healing');
+      const gotSplashNV = p.inventory.slots.some((s) => s?.id === I.SPLASH_POTION && s.potion === 'night_vision');
+      const allStacks = CREATIVE_TABS.flatMap((t) => t.stacks);
+      const hasAllDrinkable = POTION_KEYS.every((k) => allStacks.some((s) => s.id === I.POTION && s.potion === k));
+      const hasAllSplash = SPLASH_POTION_KEYS.every((k) => allStacks.some((s) => s.id === I.SPLASH_POTION && s.potion === k));
+      return { gotHeal, gotSplashNV, hasAllDrinkable, hasAllSplash };
+    });
+    check('commandes et créatif : /give potion <sorte>, /give splash_potion <sorte> et toutes les potions dans la palette créative',
+      giveAndCreative.gotHeal && giveAndCreative.gotSplashNV && giveAndCreative.hasAllDrinkable && giveAndCreative.hasAllSplash,
+      JSON.stringify(giveAndCreative));
 
     // Boire potion en 32 ticks -> rend fiole vide + HUD effets + vision nocturne dans une grotte noire
     await ev(page, () => {
