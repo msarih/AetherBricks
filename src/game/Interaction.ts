@@ -6,6 +6,7 @@
  */
 import { Living, type Entity, type GameApi } from '../entity/Entity';
 import { tryBuildGolem } from '../entity/Creatures';
+import { ItemFrame, Painting, hangingFits } from '../entity/Hanging';
 import { LEASH_BREAK, Mob, isLeashPost, notifyTamedWolves } from '../entity/Mobs';
 import { Arrow, EyeOfEnder, FishingBobber, Thrown, ThrownPearl, ThrownPotion } from '../entity/Objects';
 import { Boat, Minecart } from '../entity/Vehicles';
@@ -171,8 +172,13 @@ export class Interaction {
     for (const e of g.entities) {
       // sa propre monture ne gêne pas la visée
       if (e === p || e === p.vehicle || e.dead || !e.pickable) continue;
-      const hw = e.width / 2 + 0.1;
-      const d = rayBoxDistance(ex, ey, ez, l.x, l.y, l.z, e.x - hw, e.y - 0.1, e.z - hw, e.x + hw, e.y + e.height + 0.1, e.z + hw, best);
+      let d: number;
+      if (e.pickBounds(this.boxes)) {
+        d = rayBoxDistance(ex, ey, ez, l.x, l.y, l.z, this.boxes[0], this.boxes[1], this.boxes[2], this.boxes[3], this.boxes[4], this.boxes[5], best);
+      } else {
+        const hw = e.width / 2 + 0.1;
+        d = rayBoxDistance(ex, ey, ez, l.x, l.y, l.z, e.x - hw, e.y - 0.1, e.z - hw, e.x + hw, e.y + e.height + 0.1, e.z + hw, best);
+      }
       if (d >= 0 && d <= best) {
         best = d;
         found = e;
@@ -884,6 +890,7 @@ export class Interaction {
     }
 
     if (held === I.SIGN) return this.placeSign();
+    if (held === I.PAINTING || held === I.ITEM_FRAME) return this.placeHanging(held === I.ITEM_FRAME);
     if (item.places >= 0) return this.place(item.places, item.placeMeta);
     return false;
   }
@@ -1309,6 +1316,28 @@ export class Interaction {
     return true;
   }
 
+  private placeHanging(isFrame: boolean): boolean {
+    const g = this.game;
+    const h = this.hit;
+    const side = faceFacing(h.face);
+    if (side < 0 || BLOCK_REPLACEABLE[h.id] === 1) return false;
+    const ax = h.x + FACE_DX[h.face];
+    const ay = h.y + FACE_DY[h.face];
+    const az = h.z + FACE_DZ[h.face];
+    let entity: Painting | ItemFrame | null;
+    if (isFrame) {
+      if (!hangingFits(g.world, g.entities, ax, ay, az, side, 1, 1)) return false;
+      entity = new ItemFrame(ax, ay, az, side);
+    } else {
+      entity = Painting.tryCreate(g.world, g.entities, ax, ay, az, side, g.rng);
+      if (!entity) return false;
+    }
+    g.spawn(entity);
+    g.blockSound('place', B.OAK_PLANKS, ax + 0.5, ay + 0.5, az + 0.5);
+    g.player.consumeHand(this.activeHand);
+    return true;
+  }
+
   private placeDoor(x: number, y: number, z: number, id: number, pf: number, wood = 0): boolean {
     const w = this.game.world;
     if (!this.replaceable(x, y + 1, z) || !topSolid(w, x, y - 1, z)) return false;
@@ -1352,21 +1381,29 @@ export class Interaction {
 
   /** Clic milieu : sélectionne dans la barre le bloc visé (en créatif, le fait apparaître). */
   pickBlock(): void {
-    if (!this.hasBlock || this.entity) return;
     const p = this.game.player;
     const inv = p.inventory;
-    let id = this.hit.id;
-    const hmeta = this.hit.meta;
-    if (id === B.WHEAT) id = I.WHEAT_SEEDS;
-    else if (id === B.CARROTS) id = I.CARROT;
-    else if (id === B.POTATOES) id = I.POTATO;
-    else if (id === B.FURNACE_LIT) id = B.FURNACE;
-    else if (id === B.STAINED_GLASS) id = I.WHITE_STAINED_GLASS + (hmeta & 15);
-    else if (id === B.CARPET) id = I.WHITE_CARPET + (hmeta & 15);
-    else if (id === B.OAK_DOOR) id = woodDoorItem((hmeta >> 5) & 7);
-    else if (id === B.OAK_FENCE) id = woodFenceItem(hmeta & 7);
-    else if (id === B.FENCE_GATE) id = woodFenceGateItem((hmeta >> 3) & 7);
-    else if (!BLOCKS[id].hasItem) return;
+    let id = 0;
+    if (this.entity) {
+      if (this.entity instanceof Painting) id = I.PAINTING;
+      else if (this.entity instanceof ItemFrame) id = this.entity.itemId > 0 ? this.entity.itemId : I.ITEM_FRAME;
+      else return;
+    } else if (this.hasBlock) {
+      id = this.hit.id;
+      const hmeta = this.hit.meta;
+      if (id === B.WHEAT) id = I.WHEAT_SEEDS;
+      else if (id === B.CARROTS) id = I.CARROT;
+      else if (id === B.POTATOES) id = I.POTATO;
+      else if (id === B.FURNACE_LIT) id = B.FURNACE;
+      else if (id === B.STAINED_GLASS) id = I.WHITE_STAINED_GLASS + (hmeta & 15);
+      else if (id === B.CARPET) id = I.WHITE_CARPET + (hmeta & 15);
+      else if (id === B.OAK_DOOR) id = woodDoorItem((hmeta >> 5) & 7);
+      else if (id === B.OAK_FENCE) id = woodFenceItem(hmeta & 7);
+      else if (id === B.FENCE_GATE) id = woodFenceGateItem((hmeta >> 3) & 7);
+      else if (!BLOCKS[id].hasItem) return;
+    } else {
+      return;
+    }
 
     const inBar = inv.find(id, 0, HOTBAR_SIZE);
     if (inBar >= 0) {

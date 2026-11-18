@@ -5,7 +5,19 @@
  */
 import type { MobKind } from './MobModels';
 
-export type EntityKind = 'mob' | 'player' | 'item' | 'falling_block' | 'arrow' | 'tnt' | 'bobber' | 'fireball' | 'boat' | 'minecart';
+export type EntityKind =
+  | 'mob'
+  | 'player'
+  | 'item'
+  | 'falling_block'
+  | 'arrow'
+  | 'tnt'
+  | 'bobber'
+  | 'fireball'
+  | 'boat'
+  | 'minecart'
+  | 'painting'
+  | 'item_frame';
 
 export interface EntityView {
   /** Identifiant unique, stable pendant toute la vie de l'entité. */

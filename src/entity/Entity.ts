@@ -229,6 +229,11 @@ export abstract class Entity extends Body implements EntityView {
     return false;
   }
 
+  /** Boîte de visée personnalisée [x0, y0, z0, x1, y1, z1] (tableaux, cadres) ; false = boîte symétrique. */
+  pickBounds(_out: number[]): boolean {
+    return false;
+  }
+
   distanceSqTo(e: Body): number {
     const dx = e.x - this.x;
     const dy = e.y - this.y;
@@ -715,6 +720,7 @@ export interface PlayerLike extends Living {
   readonly targetable: boolean;
   /** Identifiant de l'objet tenu en main (0 = main vide). */
   readonly heldItemId: number;
+  readonly inventory?: { readonly held: ItemStack | null };
   /** Commandes du tick : elles dirigent aussi la monture. */
   readonly input: { forward: number; strafe: number; jump: boolean; sneak: boolean };
   /** Monture actuelle (cheval), ou null. */

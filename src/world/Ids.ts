@@ -437,6 +437,10 @@ export const I = {
   JUNGLE_FENCE_GATE: 451,
   ACACIA_FENCE_GATE: 452,
   DARK_OAK_FENCE_GATE: 453,
+
+  /** Tableau et cadre à accrocher au mur. */
+  PAINTING: 454,
+  ITEM_FRAME: 455,
 } as const;
 
 export const ITEM_ID_LIMIT = 470;

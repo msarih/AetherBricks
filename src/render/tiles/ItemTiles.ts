@@ -2211,3 +2211,69 @@ def(
     { k: 0x26282e, s: 0x9aa0a8, d: 0x5c6068 },
   ),
 );
+
+def(
+  'painting',
+  spr(
+    [
+      '................',
+      '.kkkkkkkkkkkkkk.',
+      '.khhhhhhhhhhhbk.',
+      '.khbbbbbbbbbbdk.',
+      '.khbssssssssbdk.',
+      '.khbsyyyysssbdk.',
+      '.khbsssggsssbdk.',
+      '.khbsggmmggsbdk.',
+      '.khbgggmmgggbdk.',
+      '.khbggggggggbdk.',
+      '.khbddddddddbdk.',
+      '.khbbbbbbbbbbdk.',
+      '.kbdddddddddddk.',
+      '.kkkkkkkkkkkkkk.',
+      '................',
+      '................',
+    ],
+    {
+      k: 0x3b2410,
+      h: 0x8e6437,
+      b: 0x734e27,
+      d: 0x523418,
+      s: 0x7ab4e0,
+      y: 0xf4cf48,
+      g: 0x458b3a,
+      m: 0x7c5a38,
+    },
+  ),
+);
+
+def(
+  'item_frame',
+  spr(
+    [
+      '................',
+      '.kkkkkkkkkkkkkk.',
+      '.khhhhhhhhhhhbk.',
+      '.khbbbbbbbbbbdk.',
+      '.khbllllllllbdk.',
+      '.khblooooooobdk.',
+      '.khblooooooobdk.',
+      '.khblooooooobdk.',
+      '.khblooooooobdk.',
+      '.khblooooooobdk.',
+      '.khblooooooobdk.',
+      '.khbllllllllbdk.',
+      '.kbdddddddddddk.',
+      '.kkkkkkkkkkkkkk.',
+      '................',
+      '................',
+    ],
+    {
+      k: 0x3b2410,
+      h: 0xd4b678,
+      b: 0xb69354,
+      d: 0x876733,
+      l: 0x995736,
+      o: 0xb46841,
+    },
+  ),
+);

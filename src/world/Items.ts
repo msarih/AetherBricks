@@ -175,6 +175,8 @@ const SIMPLE_ITEMS: Array<[id: number, name: TileName, label: string, category: 
   [I.MAP, 'map', 'Carte vierge', 'outils'],
   [I.FILLED_MAP, 'filled_map', 'Carte', 'aucune'],
   [I.SIGN, 'sign', 'Panneau', 'decoration', { stack: 16 }],
+  [I.PAINTING, 'painting', 'Tableau', 'decoration'],
+  [I.ITEM_FRAME, 'item_frame', 'Cadre', 'decoration'],
   [I.SADDLE, 'saddle', 'Selle', 'outils', { stack: 1 }],
   [I.LEAD, 'lead', 'Laisse', 'outils'],
   [I.NAME_TAG, 'name_tag', 'Étiquette', 'outils'],

@@ -132,6 +132,8 @@ shaped([' # ', '#R#', ' # '], { '#': I.IRON_INGOT, R: I.REDSTONE }, I.COMPASS);
 shaped([' # ', '#R#', ' # '], { '#': I.GOLD_INGOT, R: I.REDSTONE }, I.CLOCK);
 shaped(['PPP', 'PCP', 'PPP'], { P: I.PAPER, C: I.COMPASS }, I.MAP);
 shaped(['###', '###', ' | '], { '#': PLANKS, '|': I.STICK }, I.SIGN, 3);
+shaped(['|||', '|W|', '|||'], { '|': I.STICK, W: WOOLS }, I.PAINTING);
+shaped(['|||', '|L|', '|||'], { '|': I.STICK, L: I.LEATHER }, I.ITEM_FRAME);
 shaped([' #', '# '], { '#': I.IRON_INGOT }, I.SHEARS);
 shapeless([I.IRON_INGOT, I.FLINT], I.FLINT_AND_STEEL);
 shaped(['# #', ' # '], { '#': I.IRON_INGOT }, I.BUCKET);
