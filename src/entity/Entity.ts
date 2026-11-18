@@ -86,6 +86,8 @@ export interface GameApi {
   itemParticles(x: number, y: number, z: number, itemId: number, count?: number): void;
   /** Lâche un objet au sol avec une petite impulsion aléatoire. Retourne l'entité créée. */
   dropItem(x: number, y: number, z: number, id: number, count: number, damage?: number): Entity;
+  /** Lâche une pile complète au sol (clone avec enchantements et variante de potion). Retourne l'entité créée. */
+  dropStack?(x: number, y: number, z: number, stack: ItemStack): Entity;
   /** La colonne (x, z) est-elle dans un lieu généré de ce type (« fortress »…) ? Absent hors du jeu complet. */
   inStructure?(kind: string, x: number, z: number): boolean;
   /** Ouvre l'écran d'échange d'un villageois (absent hors du jeu complet). */

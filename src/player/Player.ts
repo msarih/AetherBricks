@@ -534,7 +534,7 @@ export class Player extends Living implements PlayerLike {
     this.riding = false;
     this.stopUsing();
     for (const s of this.inventory.takeAll()) {
-      const e = game.dropItem(this.x, this.y + 0.9, this.z, s.id, s.count, s.damage);
+      const e = game.dropStack ? game.dropStack(this.x, this.y + 0.9, this.z, s) : game.dropItem(this.x, this.y + 0.9, this.z, s.id, s.count, s.damage);
       e.vx = (game.rng() - 0.5) * 0.5;
       e.vy = 0.2 + game.rng() * 0.2;
       e.vz = (game.rng() - 0.5) * 0.5;

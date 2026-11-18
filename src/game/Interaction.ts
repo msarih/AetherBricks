@@ -723,7 +723,7 @@ export class Interaction {
       w.setMeta(h.x, h.y, h.z, (h.meta & 3) - 1);
       p.consumeHand(this.activeHand);
       const waterBottle = makeStack(I.POTION, 1, 0, undefined, 'water');
-      if (p.inventory.add(waterBottle) > 0) g.dropItem(p.x, p.y + 0.5, p.z, I.POTION, 1);
+      if (p.inventory.add(waterBottle) > 0) p.inventory.drop(waterBottle);
       g.sound('bucket_fill', h.x + 0.5, h.y + 0.5, h.z + 0.5, 0.7, 1.1);
       return true;
     }
@@ -848,7 +848,7 @@ export class Interaction {
       if (f.id !== B.WATER) return false;
       p.consumeHand(this.activeHand);
       const waterBottle = makeStack(I.POTION, 1, 0, undefined, 'water');
-      if (p.inventory.add(waterBottle) > 0) g.dropItem(p.x, p.y + 0.5, p.z, I.POTION, 1);
+      if (p.inventory.add(waterBottle) > 0) p.inventory.drop(waterBottle);
       g.sound('bucket_fill', f.x + 0.5, f.y + 0.5, f.z + 0.5, 0.7, 1.1);
       this.swing();
       return true;

@@ -42,7 +42,7 @@ import { ChunkManager, type ChunkHooks } from '../world/ChunkManager';
 import { CHUNK_HEIGHT, DAY_TICKS, TICKS_PER_SECOND, chunkKey, type Dimension, type GameMode } from '../world/Constants';
 import { B, I } from '../world/Ids';
 import { ITEMS, getItem, itemLabel } from '../world/Items';
-import { makeStack } from '../world/ItemStack';
+import { cloneStack, makeStack, type ItemStack } from '../world/ItemStack';
 import { dialTile } from '../world/Tiles';
 import { buildEndPlatform } from '../world/EndPortal';
 import { findOrCreatePortal } from '../world/Portal';
@@ -368,7 +368,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     this.entities.push(player);
     player.sfx = (name, volume, pitch) => this.sfx.play(name, { volume, pitch });
     player.inventory.drop = (stack) => {
-      const e = new ItemEntity(stack);
+      const e = new ItemEntity(cloneStack(stack)!);
       const v = this.lookDir;
       player.look(v);
       e.setPosition(player.x, player.y + player.eyeHeight - 0.3, player.z);
@@ -1433,7 +1433,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
           if (o.buy2 !== 0) inv.remove(o.buy2, o.buy2Count);
         }
         const stack = makeStack(o.sell, o.sellCount, 0, o.enchants);
-        if (inv.add(stack) > 0) this.dropItem(p.x, p.y + 1, p.z, stack.id, stack.count, stack.damage);
+        if (inv.add(stack) > 0) this.dropStack(p.x, p.y + 1, p.z, stack);
         v.completeTrade(this, index);
         this.sfx.play('pop', { volume: 0.5, pitch: 0.9 + Math.random() * 0.3 });
         p.addStat(STAT.TRADES);
@@ -1566,14 +1566,18 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     this.fx.tileBurst(x, y, z, particleTile(block, 0), particleTint(this, Math.floor(x), Math.floor(z), block), count, 2);
   }
 
-  dropItem(x: number, y: number, z: number, id: number, count: number, damage = 0): Entity {
-    const e = new ItemEntity(makeStack(id, count, damage));
+  dropStack(x: number, y: number, z: number, stack: ItemStack): Entity {
+    const e = new ItemEntity(cloneStack(stack)!);
     e.setPosition(x, y, z);
     e.vx = (this.rng() - 0.5) * 0.1;
     e.vy = 0.2;
     e.vz = (this.rng() - 0.5) * 0.1;
     this.spawn(e);
     return e;
+  }
+
+  dropItem(x: number, y: number, z: number, id: number, count: number, damage = 0): Entity {
+    return this.dropStack(x, y, z, makeStack(id, count, damage));
   }
 
   explode(x: number, y: number, z: number, power: number, fire: boolean, source: Entity | null): void {
@@ -1618,7 +1622,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       effect: (kind, x, y, z, a, b) => this.worldEffect(kind, x, y, z, a ?? 0, b ?? 0),
       blockEntityRemoved: (be: BlockEntity) => {
         resolveLoot(be, this.world.seed);
-        for (const s of blockEntityItems(be)) this.dropItem(be.x + 0.5, be.y + 0.3, be.z + 0.5, s.id, s.count, s.damage);
+        for (const s of blockEntityItems(be)) this.dropStack(be.x + 0.5, be.y + 0.3, be.z + 0.5, s);
       },
       pushEntities: (x0, y0, z0, x1, y1, z1, dx, dy, dz) => {
         for (const e of this.entitiesInBox(x0, y0, z0, x1, y1, z1, null)) {
