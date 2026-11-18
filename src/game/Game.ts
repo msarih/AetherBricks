@@ -1632,6 +1632,12 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
           }
         }
       },
+      hasEntityInBox: (x0, y0, z0, x1, y1, z1, kind) => {
+        for (const e of this.entitiesInBox(x0, y0, z0, x1, y1, z1, null)) {
+          if (!kind || e.kind === kind) return true;
+        }
+        return false;
+      },
     };
   }
 

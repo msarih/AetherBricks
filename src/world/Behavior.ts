@@ -422,7 +422,11 @@ function fireTick(w: World, x: number, y: number, z: number, meta: number): void
 export function scheduledTick(w: World, x: number, y: number, z: number, id: number, meta: number): void {
   if (id === B.AIR) return;
   if (id === B.DETECTOR_RAIL && (meta & 8)) {
-    setDetectorRailActive(w, x, y, z, false);
+    if (w.host.hasEntityInBox?.(x + 0.125, y, z + 0.125, x + 0.875, y + 1.0, z + 0.875, 'minecart')) {
+      w.scheduleTick(x, y, z, 20);
+    } else {
+      setDetectorRailActive(w, x, y, z, false);
+    }
     return;
   }
   if (id === B.POWERED_RAIL) {

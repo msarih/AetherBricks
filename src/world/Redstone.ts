@@ -18,6 +18,7 @@ import {
   isDoor,
 } from './Blocks';
 import { META_DOOR_OPEN, META_DOOR_UPPER } from './BlockModels';
+import { updatePoweredRail } from './Rails';
 import { posKey, posKeyX, posKeyY, posKeyZ, type World } from './World';
 
 /** Nombre maximal de nœuds redstone traités par vague de propagation. */
@@ -348,53 +349,7 @@ function updateConsumer(w: World, x: number, y: number, z: number): void {
     return;
   }
   if (id === B.POWERED_RAIL) {
-    const shape = meta & 7;
-    const dx = shape === 1 || shape === 2 || shape === 3 ? 1 : 0;
-    const dz = 1 - dx;
-    let powered = isBlockPowered(w, x, y, z);
-    for (const sign of [1, -1]) {
-      if (powered) break;
-      let cx = x;
-      let cy = y;
-      let cz = z;
-      for (let dist = 1; dist <= 8 && !powered; dist++) {
-        cx += dx * sign;
-        cz += dz * sign;
-        let fy = -1;
-        for (const oy of [0, 1, -1]) {
-          if (w.getBlock(cx, cy + oy, cz) === B.POWERED_RAIL) {
-            fy = cy + oy;
-            break;
-          }
-        }
-        if (fy < 0) break;
-        cy = fy;
-        if (isBlockPowered(w, cx, cy, cz)) powered = true;
-      }
-    }
-    const next = shape | (powered ? 8 : 0);
-    if (next !== meta) {
-      w.setMeta(x, y, z, next, false);
-      for (const sign of [1, -1]) {
-        let cx = x;
-        let cy = y;
-        let cz = z;
-        for (let dist = 1; dist <= 8; dist++) {
-          cx += dx * sign;
-          cz += dz * sign;
-          let fy = -1;
-          for (const oy of [0, 1, -1]) {
-            if (w.getBlock(cx, cy + oy, cz) === B.POWERED_RAIL) {
-              fy = cy + oy;
-              break;
-            }
-          }
-          if (fy < 0) break;
-          cy = fy;
-          w.scheduleTick(cx, cy, cz, 1);
-        }
-      }
-    }
+    updatePoweredRail(w, x, y, z);
     return;
   }
   if (BLOCK_OPAQUE[id] === 1) {

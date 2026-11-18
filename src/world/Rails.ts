@@ -81,8 +81,7 @@ function railStep(shape: number): [number, number, number, number] {
   return [0, 1, 0, -1];
 }
 
-function isPoweredRailActive(w: World, x: number, y: number, z: number, shape: number): boolean {
-  if (isBlockPowered(w, x, y, z)) return true;
+function walkPoweredChain(w: World, x: number, y: number, z: number, shape: number, visit: (cx: number, cy: number, cz: number, meta: number) => boolean): boolean {
   const [dx, dz] = railStep(shape);
   for (const sign of [1, -1]) {
     let cx = x;
@@ -92,22 +91,29 @@ function isPoweredRailActive(w: World, x: number, y: number, z: number, shape: n
       cx += dx * sign;
       cz += dz * sign;
       let foundY = -1;
+      let foundMeta = 0;
       for (const oy of [0, 1, -1]) {
         if (w.getBlock(cx, cy + oy, cz) === B.POWERED_RAIL) {
-          const ns = railShape(B.POWERED_RAIL, w.getMeta(cx, cy + oy, cz));
-          const [ndx, ndz] = railStep(ns);
+          const m = w.getMeta(cx, cy + oy, cz);
+          const [ndx, ndz] = railStep(railShape(B.POWERED_RAIL, m));
           if (ndx === dx && ndz === dz) {
             foundY = cy + oy;
+            foundMeta = m;
             break;
           }
         }
       }
       if (foundY < 0) break;
       cy = foundY;
-      if (isBlockPowered(w, cx, cy, cz)) return true;
+      if (visit(cx, cy, cz, foundMeta)) return true;
     }
   }
   return false;
+}
+
+function isPoweredRailActive(w: World, x: number, y: number, z: number, shape: number): boolean {
+  if (isBlockPowered(w, x, y, z)) return true;
+  return walkPoweredChain(w, x, y, z, shape, (cx, cy, cz) => isBlockPowered(w, cx, cy, cz));
 }
 
 /** Met à jour la forme d'un rail voisin quand un nouveau rail vient d'être posé. */
@@ -153,29 +159,12 @@ export function updatePoweredRail(w: World, x: number, y: number, z: number): vo
 
 function updatePoweredRailChain(w: World, x: number, y: number, z: number): void {
   const shape = railShape(B.POWERED_RAIL, w.getMeta(x, y, z));
-  const [dx, dz] = railStep(shape);
-  for (const sign of [1, -1]) {
-    let cx = x;
-    let cy = y;
-    let cz = z;
-    for (let dist = 1; dist <= 8; dist++) {
-      cx += dx * sign;
-      cz += dz * sign;
-      let foundY = -1;
-      for (const oy of [0, 1, -1]) {
-        if (w.getBlock(cx, cy + oy, cz) === B.POWERED_RAIL) {
-          foundY = cy + oy;
-          break;
-        }
-      }
-      if (foundY < 0) break;
-      cy = foundY;
-      const oldMeta = w.getMeta(cx, cy, cz);
-      const ns = railShape(B.POWERED_RAIL, oldMeta);
-      const nextMeta = ns | (isPoweredRailActive(w, cx, cy, cz, ns) ? 8 : 0);
-      if (nextMeta !== oldMeta) w.setMeta(cx, cy, cz, nextMeta, false);
-    }
-  }
+  walkPoweredChain(w, x, y, z, shape, (cx, cy, cz, oldMeta) => {
+    const ns = railShape(B.POWERED_RAIL, oldMeta);
+    const nextMeta = ns | (isPoweredRailActive(w, cx, cy, cz, ns) ? 8 : 0);
+    if (nextMeta !== oldMeta) w.setMeta(cx, cy, cz, nextMeta, false);
+    return false;
+  });
 }
 
 /** Active ou désactive un rail détecteur et propage la redstone autour. */
