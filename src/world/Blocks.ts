@@ -52,6 +52,14 @@ export const SHAPE = {
   CAKE: 34,
   /** Alambic : socle et tige porte-fioles. */
   BREWING_STAND: 35,
+  /** Répéteur de redstone : dalle 2/16 orientée avec torches et verrou éventuel. */
+  REPEATER: 36,
+  /** Comparateur de redstone : dalle 2/16 orientée avec trois torches. */
+  COMPARATOR: 37,
+  /** Entonnoir : cuve et cône de transfert. */
+  HOPPER: 38,
+  /** Capteur de lumière du jour : dalle 6/16. */
+  DAYLIGHT_DETECTOR: 39,
 } as const;
 
 export const TINT = { NONE: 0, GRASS: 1, FOLIAGE: 2, FIXED: 3 } as const;
@@ -588,6 +596,34 @@ reg(B.WALL_SIGN, 'wall_sign', 'Panneau mural', {
   tiles: 'oak_planks', shape: SHAPE.SIGN, solid: false, opaque: false, hardness: 1, tool: 'axe',
   sound: 'wood', needsSupport: true, hasItem: false, category: 'aucune',
 });
+reg(B.REPEATER, 'repeater', 'Répéteur', {
+  tiles: { top: 'repeater_off', bottom: 'smooth_stone', side: 'smooth_stone' }, shape: SHAPE.REPEATER,
+  opaque: false, hardness: 0, sound: 'stone', needsSupport: true, itemTile: 'repeater_off', category: 'utilitaire',
+});
+reg(B.COMPARATOR, 'comparator', 'Comparateur', {
+  tiles: { top: 'comparator_off', bottom: 'smooth_stone', side: 'smooth_stone' }, shape: SHAPE.COMPARATOR,
+  opaque: false, hardness: 0, sound: 'stone', needsSupport: true, itemTile: 'comparator_off', category: 'utilitaire',
+});
+reg(B.HOPPER, 'hopper', 'Entonnoir', {
+  tiles: { top: 'hopper_top', bottom: 'hopper_outside', side: 'hopper_outside' }, shape: SHAPE.HOPPER,
+  opaque: false, hardness: 3, blastResistance: 24, tool: 'pickaxe', harvestTier: 1, sound: 'metal',
+  itemTile: 'hopper_outside', category: 'utilitaire',
+});
+reg(B.DISPENSER, 'dispenser', 'Distributeur', {
+  tiles: { top: 'furnace_top', bottom: 'furnace_top', side: 'furnace_side', front: 'dispenser_front' },
+  hardness: 3.5, blastResistance: 17.5, tool: 'pickaxe', harvestTier: 1, category: 'utilitaire',
+});
+reg(B.DROPPER, 'dropper', 'Dropper', {
+  tiles: { top: 'furnace_top', bottom: 'furnace_top', side: 'furnace_side', front: 'dropper_front' },
+  hardness: 3.5, blastResistance: 17.5, tool: 'pickaxe', harvestTier: 1, category: 'utilitaire',
+});
+reg(B.DAYLIGHT_DETECTOR, 'daylight_detector', 'Capteur de lumière du jour', {
+  tiles: { top: 'daylight_detector_top', bottom: 'oak_planks', side: 'daylight_detector_side' },
+  shape: SHAPE.DAYLIGHT_DETECTOR, opaque: false, hardness: 0.2, tool: 'axe', sound: 'wood', category: 'utilitaire',
+});
+reg(B.NOTE_BLOCK, 'noteblock', 'Bloc musical', {
+  tiles: 'noteblock', hardness: 0.8, tool: 'axe', sound: 'wood', flammable: 5, category: 'utilitaire',
+});
 
 // Identifiants non attribués : on les fait pointer vers un bloc de secours pour éviter tout crash
 for (let id = 0; id < BLOCK_ID_LIMIT; id++) {
@@ -667,6 +703,11 @@ export function faceTile(id: number, meta: number, face: number): number {
     }
     if (face === PISTON_OPPOSITE_FACES[f]) return T.piston_bottom;
     return T.piston_side;
+  }
+  if (id === B.DISPENSER || id === B.DROPPER) {
+    const f = Math.min(5, meta & 7);
+    if (face === PISTON_FACES[f]) return d.frontTile;
+    return face <= FACE_DOWN ? T.furnace_top : T.furnace_side;
   }
   if (d.rot === ROT.NONE) {
     if (id === B.FARMLAND && face === FACE_UP) return meta > 0 ? T.farmland_wet : T.farmland_dry;

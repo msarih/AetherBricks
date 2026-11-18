@@ -4,14 +4,19 @@
  * Elles sont créées paresseusement, à la première ouverture du bloc.
  */
 import { B, I } from '../world/Ids';
+import { PISTON_DX, PISTON_DY, PISTON_DZ } from '../world/Blocks';
 import { maxStack } from '../world/Items';
-import { makeStack, sanitizeEnchants, type ItemStack, type Slot } from '../world/ItemStack';
+import { canMerge, cloneStackWithCount, makeStack, sanitizeEnchants, type ItemStack, type Slot } from '../world/ItemStack';
 import { generateLoot, isLootTable } from '../world/Loot';
 import { brewResult, canBrewBottles } from '../world/Potions';
 import { fuelTicks, smeltingResult } from '../world/Recipes';
+import { computeDaylightPower, updateRedstoneAround } from '../world/Redstone';
 import type { BlockEntity, World } from '../world/World';
 
 export const CHEST_SIZE = 27;
+export const HOPPER_SIZE = 5;
+export const DISPENSER_SIZE = 9;
+export const HOPPER_COOLDOWN = 8;
 export const FURNACE_COOK_TICKS = 200;
 
 export interface ChestEntity extends BlockEntity {
@@ -243,6 +248,193 @@ function tickBrewingStand(w: World, b: BrewingStandEntity): void {
   if (dirty) w.markBlockEntityDirty(b);
 }
 
+export interface HopperEntity extends BlockEntity {
+  type: 'hopper';
+  items: Slot[];
+  cooldown: number;
+}
+
+export interface DispenserEntity extends BlockEntity {
+  type: 'dispenser' | 'dropper';
+  items: Slot[];
+}
+
+export interface DaylightEntity extends BlockEntity {
+  type: 'daylight';
+}
+
+export function getHopper(w: World, x: number, y: number, z: number): HopperEntity {
+  const be = w.getBlockEntity(x, y, z) as (BlockEntity & Partial<HopperEntity>) | undefined;
+  if (be && be.type === 'hopper') {
+    const h = be as HopperEntity;
+    if (!Array.isArray(h.items) || h.items.length !== HOPPER_SIZE) h.items = fixSlots(be.items, HOPPER_SIZE);
+    h.cooldown = typeof h.cooldown === 'number' && Number.isFinite(h.cooldown) ? Math.max(0, h.cooldown) : 0;
+    return h;
+  }
+  const h: HopperEntity = { type: 'hopper', x, y, z, items: new Array<Slot>(HOPPER_SIZE).fill(null), cooldown: 0 };
+  w.setBlockEntity(h);
+  return h;
+}
+
+export function getDispenser(w: World, x: number, y: number, z: number, kind: 'dispenser' | 'dropper'): DispenserEntity {
+  const be = w.getBlockEntity(x, y, z) as (BlockEntity & Partial<DispenserEntity>) | undefined;
+  if (be && (be.type === 'dispenser' || be.type === 'dropper')) {
+    const d = be as DispenserEntity;
+    d.type = kind;
+    if (!Array.isArray(d.items) || d.items.length !== DISPENSER_SIZE) d.items = fixSlots(be.items, DISPENSER_SIZE);
+    return d;
+  }
+  const d: DispenserEntity = { type: kind, x, y, z, items: new Array<Slot>(DISPENSER_SIZE).fill(null) };
+  w.setBlockEntity(d);
+  return d;
+}
+
+export function getDaylight(w: World, x: number, y: number, z: number): DaylightEntity {
+  const be = w.getBlockEntity(x, y, z);
+  if (be && be.type === 'daylight') return be as DaylightEntity;
+  const d: DaylightEntity = { type: 'daylight', x, y, z };
+  w.setBlockEntity(d);
+  return d;
+}
+
+function targetSlotsForInsert(dstId: number, dstLen: number, stack: ItemStack, fromDir: number): number[] {
+  if (dstId === B.FURNACE || dstId === B.FURNACE_LIT) {
+    if (fromDir === 1) return [0];
+    if (fuelTicks(stack.id) > 0 || stack.id === I.BUCKET) return [1];
+    return [];
+  }
+  if (dstId === B.BREWING_STAND) {
+    if (fromDir === 1) return [3];
+    return [0, 1, 2, 4];
+  }
+  const out: number[] = [];
+  for (let i = 0; i < dstLen; i++) out.push(i);
+  return out;
+}
+
+/** Tente d'insérer 1 exemplaire de `stack` dans le conteneur en (tx, ty, tz) ; décrémente `stack.count`. */
+export function insertOneIntoContainer(w: World, tx: number, ty: number, tz: number, stack: ItemStack, fromDir: number): boolean {
+  const dstId = w.getBlock(tx, ty, tz);
+  let dstBe: BlockEntity | null = null;
+  let dstSlots: Slot[] | null = null;
+  if (dstId === B.CHEST) { const c = getChest(w, tx, ty, tz); dstBe = c; dstSlots = c.items; }
+  else if (dstId === B.HOPPER) { const h = getHopper(w, tx, ty, tz); dstBe = h; dstSlots = h.items; }
+  else if (dstId === B.DISPENSER) { const d = getDispenser(w, tx, ty, tz, 'dispenser'); dstBe = d; dstSlots = d.items; }
+  else if (dstId === B.DROPPER) { const d = getDispenser(w, tx, ty, tz, 'dropper'); dstBe = d; dstSlots = d.items; }
+  else if (dstId === B.FURNACE || dstId === B.FURNACE_LIT) { const f = getFurnace(w, tx, ty, tz); dstBe = f; dstSlots = f.items; }
+  else if (dstId === B.BREWING_STAND) { const b = getBrewingStand(w, tx, ty, tz); dstBe = b; dstSlots = b.items; }
+  if (!dstBe || !dstSlots) return false;
+
+  const indices = targetSlotsForInsert(dstId, dstSlots.length, stack, fromDir);
+  if (indices.length === 0) return false;
+  const max = maxStack(stack.id);
+
+  for (const idx of indices) {
+    const s = dstSlots[idx];
+    if (s && canMerge(s, stack) && s.count < max) {
+      s.count++;
+      stack.count--;
+      w.markBlockEntityDirty(dstBe);
+      updateRedstoneAround(w, tx, ty, tz);
+      return true;
+    }
+  }
+  for (const idx of indices) {
+    if (!dstSlots[idx]) {
+      dstSlots[idx] = cloneStackWithCount(stack, 1);
+      stack.count--;
+      w.markBlockEntityDirty(dstBe);
+      updateRedstoneAround(w, tx, ty, tz);
+      return true;
+    }
+  }
+  return false;
+}
+
+function sourceContainer(w: World, sx: number, sy: number, sz: number): { be: BlockEntity; slots: Slot[]; indices: number[] } | null {
+  const id = w.getBlock(sx, sy, sz);
+  if (id === B.CHEST) { const c = getChest(w, sx, sy, sz); return { be: c, slots: c.items, indices: c.items.map((_, i) => i) }; }
+  if (id === B.HOPPER) { const h = getHopper(w, sx, sy, sz); return { be: h, slots: h.items, indices: h.items.map((_, i) => i) }; }
+  if (id === B.DISPENSER) { const d = getDispenser(w, sx, sy, sz, 'dispenser'); return { be: d, slots: d.items, indices: d.items.map((_, i) => i) }; }
+  if (id === B.DROPPER) { const d = getDispenser(w, sx, sy, sz, 'dropper'); return { be: d, slots: d.items, indices: d.items.map((_, i) => i) }; }
+  if (id === B.FURNACE || id === B.FURNACE_LIT) {
+    const f = getFurnace(w, sx, sy, sz);
+    const idx = [2];
+    if (f.items[1]?.id === I.BUCKET) idx.push(1);
+    return { be: f, slots: f.items, indices: idx };
+  }
+  if (id === B.BREWING_STAND) { const b = getBrewingStand(w, sx, sy, sz); return { be: b, slots: b.items, indices: [0, 1, 2] }; }
+  return null;
+}
+
+function tickHopper(w: World, h: HopperEntity): void {
+  if (h.cooldown > 0) h.cooldown--;
+  if (h.cooldown > 0) return;
+  const v = w.getBlockAndMeta(h.x, h.y, h.z);
+  if ((v & 255) !== B.HOPPER) return;
+  const meta = v >> 8;
+  if (meta & 8) return; // verrouillé par signal de redstone
+
+  let moved = false;
+  const dir = Math.min(5, Math.max(1, meta & 7));
+  const tx = h.x + PISTON_DX[dir];
+  const ty = h.y + PISTON_DY[dir];
+  const tz = h.z + PISTON_DZ[dir];
+
+  // 1. Pousser 1 objet vers le conteneur visé
+  for (let i = 0; i < h.items.length; i++) {
+    const s = h.items[i];
+    if (!s || s.count <= 0) continue;
+    if (insertOneIntoContainer(w, tx, ty, tz, s, dir)) {
+      if (s.count <= 0) h.items[i] = null;
+      moved = true;
+      break;
+    }
+  }
+
+  // 2. Aspirer 1 objet depuis le conteneur au-dessus (ou objet au sol au-dessus)
+  const src = sourceContainer(w, h.x, h.y + 1, h.z);
+  if (src) {
+    for (const i of src.indices) {
+      const s = src.slots[i];
+      if (!s || s.count <= 0) continue;
+      if (insertOneIntoContainer(w, h.x, h.y, h.z, s, 1)) {
+        if (s.count <= 0) src.slots[i] = null;
+        w.markBlockEntityDirty(src.be);
+        updateRedstoneAround(w, h.x, h.y + 1, h.z);
+        moved = true;
+        break;
+      }
+    }
+  } else if (w.host.pullItemForHopper) {
+    const picked = w.host.pullItemForHopper(h.x, h.y, h.z, (raw) => {
+      const tmp = makeStack(raw.id, 1, raw.damage, sanitizeEnchants(raw.enchants), raw.potion);
+      if (!insertOneIntoContainer(w, h.x, h.y, h.z, tmp, 1)) return false;
+      raw.count--;
+      return true;
+    });
+    if (picked) moved = true;
+  }
+
+  if (moved) {
+    h.cooldown = HOPPER_COOLDOWN;
+    w.markBlockEntityDirty(h);
+    updateRedstoneAround(w, h.x, h.y, h.z);
+  }
+}
+
+function tickDaylight(w: World, d: DaylightEntity): void {
+  const v = w.getBlockAndMeta(d.x, d.y, d.z);
+  if ((v & 255) !== B.DAYLIGHT_DETECTOR) return;
+  const meta = v >> 8;
+  const next = computeDaylightPower(w, d.x, d.y, d.z, (meta & 16) !== 0);
+  if (next !== (meta & 15)) {
+    w.setMeta(d.x, d.y, d.z, (meta & 16) | next, false);
+    w.notifyNeighbors(d.x, d.y, d.z);
+    updateRedstoneAround(w, d.x, d.y, d.z);
+  }
+}
+
 /** Avance toutes les entités de bloc actives du monde. */
 export function tickBlockEntities(w: World): void {
   for (const be of w.blockEntities.values()) {
@@ -253,6 +445,10 @@ export function tickBlockEntities(w: World): void {
     } else if (be.type === 'brewing') {
       const b = be as BrewingStandEntity;
       if (b.brewTime > 0 || (b.items && (b.items[3] || b.items[4]))) tickBrewingStand(w, b);
+    } else if (be.type === 'hopper') {
+      tickHopper(w, be as HopperEntity);
+    } else if (be.type === 'daylight') {
+      tickDaylight(w, be as DaylightEntity);
     }
   }
 }

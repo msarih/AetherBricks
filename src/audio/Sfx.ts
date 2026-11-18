@@ -17,7 +17,8 @@ export type SfxName =
   | 'click' | 'pop' | 'hurt' | 'death' | 'eat' | 'burp' | 'drink' | 'explode' | 'fuse' | 'bow' | 'arrow_hit'
   | 'splash' | 'swim' | 'door_open' | 'door_close' | 'chest_open' | 'chest_close' | 'fall_small' | 'fall_big'
   | 'tool_break' | 'levelup' | 'fizz' | 'fire' | 'ignite' | 'attack' | 'attack_crit' | 'attack_miss' | 'bucket_fill' | 'bucket_empty'
-  | 'pig' | 'cow' | 'sheep' | 'chicken' | 'zombie' | 'skeleton' | 'spider' | 'creeper_hurt' | 'mob_hurt' | 'egg' | 'shear' | 'thunder' | 'orb';
+  | 'pig' | 'cow' | 'sheep' | 'chicken' | 'zombie' | 'skeleton' | 'spider' | 'creeper_hurt' | 'mob_hurt' | 'egg' | 'shear' | 'thunder' | 'orb'
+  | 'note_piano' | 'note_grosse_caisse' | 'note_basse' | 'note_flute' | 'note_clochette' | 'note_cloche' | 'note_guitare';
 
 export interface SfxOptions {
   volume?: number;
@@ -591,6 +592,36 @@ const SOUNDS: Record<SfxName, (v: Voice) => void> = {
     v.tone(0, 0.28, 0.3, 'sine', f);
     v.tone(0, 0.2, 0.1, 'sine', f * 2);
     v.tone(0.05, 0.3, 0.2, 'sine', f * 1.5);
+  },
+  note_piano: (v) => {
+    v.tone(0, 0.32, 0.42, 'sine', 370);
+    v.tone(0, 0.24, 0.14, 'triangle', 740);
+  },
+  note_grosse_caisse: (v) => {
+    v.tone(0, 0.18, 0.55, 'sine', 120, 45);
+    v.noise(0, 0.05, 0.25, 'lowpass', 180, 0.8);
+  },
+  note_basse: (v) => {
+    v.tone(0, 0.28, 0.45, 'triangle', 185);
+    v.tone(0, 0.22, 0.15, 'sawtooth', 185, 185, { filter: ['lowpass', 480, 1] });
+  },
+  note_flute: (v) => {
+    v.tone(0, 0.36, 0.38, 'sine', 370, 370, { attack: 0.03, vib: [5, 0.012] });
+    v.noise(0, 0.2, 0.08, 'bandpass', 740, 2, { attack: 0.02 });
+  },
+  note_clochette: (v) => {
+    v.tone(0, 0.28, 0.3, 'sine', 740);
+    v.tone(0, 0.22, 0.18, 'sine', 1480);
+    v.noise(0, 0.02, 0.12, 'highpass', 3200, 0.7);
+  },
+  note_cloche: (v) => {
+    v.tone(0, 0.5, 0.35, 'sine', 587);
+    v.tone(0, 0.42, 0.18, 'sine', 1175);
+    v.tone(0, 0.3, 0.1, 'sine', 1760);
+  },
+  note_guitare: (v) => {
+    v.tone(0, 0.28, 0.35, 'sawtooth', 277, 277, { filter: ['lowpass', 900, 1.2] });
+    v.tone(0, 0.24, 0.18, 'triangle', 554);
   },
 };
 

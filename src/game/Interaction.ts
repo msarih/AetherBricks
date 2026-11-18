@@ -18,6 +18,14 @@ import { applyBonemeal, canStay, fireCanStay, neighborChanged, topSolid } from '
 import { FRAME_EYE, tryOpenEndPortal } from '../world/EndPortal';
 import { tryIgnitePortal } from '../world/Portal';
 import { isRail, placeAndConnectRail } from '../world/Rails';
+import {
+  computeComparatorOutput,
+  computeDaylightPower,
+  isBlockPowered,
+  triggerNoteBlock,
+  updateRedstoneAround,
+  updateRepeaterState,
+} from '../world/Redstone';
 import { META_DOOR_HINGE_RIGHT, META_DOOR_OPEN, META_DOOR_UPPER, ccw, collisionBoxes, cw, opposite } from '../world/BlockModels';
 import {
   BLOCKS,
@@ -43,8 +51,8 @@ import type { BlockEntity } from '../world/World';
 import { getItem, isTool } from '../world/Items';
 import { cloneStackWithCount, makeStack } from '../world/ItemStack';
 import { newRayHit, rayBoxDistance, raycast } from '../world/Raycast';
-import { getBrewingStand, getChest, getFurnace } from './BlockEntities';
-import { AnvilMenu, BrewingMenu, ChestMenu, CraftingMenu, EnchantMenu, FurnaceMenu, HOTBAR_SIZE, type Menu, type XpHost } from './Inventory';
+import { getBrewingStand, getChest, getDaylight, getDispenser, getFurnace, getHopper } from './BlockEntities';
+import { AnvilMenu, BrewingMenu, ChestMenu, CraftingMenu, DispenserMenu, EnchantMenu, FurnaceMenu, HOTBAR_SIZE, HopperMenu, type Menu, type XpHost } from './Inventory';
 import { applyPotionVariant } from '../world/Potions';
 
 /** Ce dont l'interaction a besoin, en plus du contrat des entités. Implémenté par Game. */
@@ -615,8 +623,48 @@ export class Interaction {
     }
     if (id === B.CHEST) {
       const chest = getChest(w, x, y, z);
-      g.openMenu(new ChestMenu(p.inventory, chest, () => w.markBlockEntityDirty(chest)));
+      g.openMenu(new ChestMenu(p.inventory, chest, () => { w.markBlockEntityDirty(chest); updateRedstoneAround(w, x, y, z); }));
       g.sound('chest_open', x + 0.5, y + 0.5, z + 0.5, 0.6, 0.9 + g.rng() * 0.2);
+      return true;
+    }
+    if (id === B.HOPPER) {
+      const hopper = getHopper(w, x, y, z);
+      g.openMenu(new HopperMenu(p.inventory, hopper, () => { w.markBlockEntityDirty(hopper); updateRedstoneAround(w, x, y, z); }));
+      return true;
+    }
+    if (id === B.DISPENSER || id === B.DROPPER) {
+      const disp = getDispenser(w, x, y, z, id === B.DROPPER ? 'dropper' : 'dispenser');
+      g.openMenu(new DispenserMenu(p.inventory, disp, () => { w.markBlockEntityDirty(disp); updateRedstoneAround(w, x, y, z); }));
+      return true;
+    }
+    if (id === B.REPEATER) {
+      const nextDelay = (((meta >> 2) & 3) + 1) & 3;
+      w.setMeta(x, y, z, (meta & ~12) | (nextDelay << 2), false);
+      g.sound('click', x + 0.5, y + 0.5, z + 0.5, 0.5, 0.7);
+      return true;
+    }
+    if (id === B.COMPARATOR) {
+      const nextMode = meta ^ 4;
+      const out = computeComparatorOutput(w, x, y, z, nextMode & 3, (nextMode & 4) !== 0);
+      w.setMeta(x, y, z, (nextMode & 15) | (out << 4), false);
+      w.notifyNeighbors(x, y, z);
+      updateRedstoneAround(w, x, y, z);
+      g.sound('click', x + 0.5, y + 0.5, z + 0.5, 0.5, (nextMode & 4) ? 0.55 : 0.5);
+      return true;
+    }
+    if (id === B.DAYLIGHT_DETECTOR) {
+      const inverted = (meta & 16) === 0;
+      const power = computeDaylightPower(w, x, y, z, inverted);
+      w.setMeta(x, y, z, (inverted ? 16 : 0) | power, false);
+      w.notifyNeighbors(x, y, z);
+      updateRedstoneAround(w, x, y, z);
+      g.sound('click', x + 0.5, y + 0.5, z + 0.5, 0.5, inverted ? 0.6 : 0.5);
+      return true;
+    }
+    if (id === B.NOTE_BLOCK) {
+      const nextNote = ((meta & 31) + 1) % 25;
+      w.setMetaSilent(x, y, z, nextNote | (meta & 32));
+      triggerNoteBlock(w, x, y, z, nextNote);
       return true;
     }
     if (id === B.CRAFTING_TABLE) {
@@ -625,12 +673,12 @@ export class Interaction {
     }
     if (id === B.FURNACE || id === B.FURNACE_LIT) {
       const furnace = getFurnace(w, x, y, z);
-      g.openMenu(new FurnaceMenu(p.inventory, furnace, () => w.markBlockEntityDirty(furnace)));
+      g.openMenu(new FurnaceMenu(p.inventory, furnace, () => { w.markBlockEntityDirty(furnace); updateRedstoneAround(w, x, y, z); }));
       return true;
     }
     if (id === B.BREWING_STAND) {
       const stand = getBrewingStand(w, x, y, z);
-      g.openMenu(new BrewingMenu(p.inventory, stand, () => w.markBlockEntityDirty(stand)));
+      g.openMenu(new BrewingMenu(p.inventory, stand, () => { w.markBlockEntityDirty(stand); updateRedstoneAround(w, x, y, z); }));
       return true;
     }
     if (id === B.ENCHANTING_TABLE) {
@@ -1049,8 +1097,31 @@ export class Interaction {
 
   private placed(x: number, y: number, z: number, id: number): boolean {
     const g = this.game;
+    const w = g.world;
     // un générateur posé à la main produit des cochons, comme dans Minecraft
-    if (id === B.SPAWNER) g.world.setBlockEntity({ type: 'spawner', x, y, z, mob: 'pig', delay: 20 } as BlockEntity);
+    if (id === B.SPAWNER) w.setBlockEntity({ type: 'spawner', x, y, z, mob: 'pig', delay: 20 } as BlockEntity);
+    else if (id === B.HOPPER) {
+      getHopper(w, x, y, z);
+      if (isBlockPowered(w, x, y, z)) w.setMeta(x, y, z, w.getMeta(x, y, z) | 8, false);
+    } else if (id === B.DISPENSER || id === B.DROPPER) {
+      getDispenser(w, x, y, z, id === B.DROPPER ? 'dropper' : 'dispenser');
+    } else if (id === B.DAYLIGHT_DETECTOR) {
+      getDaylight(w, x, y, z);
+      const pwr = computeDaylightPower(w, x, y, z, false);
+      w.setMeta(x, y, z, pwr, false);
+      w.notifyNeighbors(x, y, z);
+      updateRedstoneAround(w, x, y, z);
+    } else if (id === B.REPEATER) {
+      updateRepeaterState(w, x, y, z, w.getMeta(x, y, z));
+    } else if (id === B.COMPARATOR) {
+      const m = w.getMeta(x, y, z);
+      const out = computeComparatorOutput(w, x, y, z, m & 3, false);
+      if (out > 0) {
+        w.setMeta(x, y, z, (m & 15) | (out << 4), false);
+        w.notifyNeighbors(x, y, z);
+        updateRedstoneAround(w, x, y, z);
+      }
+    }
     g.blockSound('place', id, x + 0.5, y + 0.5, z + 0.5);
     g.player.consumeHand(this.activeHand);
     // une citrouille posée sur quatre blocs de fer en T : un golem de fer
@@ -1167,11 +1238,15 @@ export class Interaction {
         break;
       }
       default:
-        if (id === B.PISTON || id === B.STICKY_PISTON) {
+        if (id === B.PISTON || id === B.STICKY_PISTON || id === B.DISPENSER || id === B.DROPPER) {
           g.player.look(this.look);
           if (this.look.y > 0.7) meta = 1;
           else if (this.look.y < -0.7) meta = 0;
           else meta = opposite(pf) + 2;
+        } else if (id === B.HOPPER) {
+          meta = !onto || side < 0 ? 1 : opposite(side) + 2;
+        } else if (id === B.REPEATER || id === B.COMPARATOR) {
+          meta = pf;
         } else if (def.rot === ROT.AXIS) meta = face === FACE_UP || face === FACE_DOWN || !onto ? 0 : face === FACE_WEST || face === FACE_EAST ? 1 : 2;
         else if (def.rot === ROT.FACING) meta = opposite(pf);
         else if (isLeaves(id)) meta = 1;

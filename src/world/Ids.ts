@@ -208,6 +208,13 @@ export const B = {
   BREWING_STAND: 195,
   POWERED_RAIL: 196,
   DETECTOR_RAIL: 197,
+  REPEATER: 198,
+  COMPARATOR: 199,
+  HOPPER: 200,
+  DISPENSER: 201,
+  DROPPER: 202,
+  DAYLIGHT_DETECTOR: 203,
+  NOTE_BLOCK: 204,
 } as const;
 
 /** Nombre maximal d'identifiants de blocs (les objets commencent à 256). */

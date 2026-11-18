@@ -1187,6 +1187,89 @@ function meshCell(id: number, meta: number): void {
       for (let f = 0; f < 6; f++) boxFace(opaquePass, f, 7 / 16, 2 / 16, 7 / 16, 9 / 16, 14 / 16, 9 / 16, T.brewing_stand_rod, 0, false, NOMIP);
       return;
     }
+    case SHAPE.REPEATER:
+    case SHAPE.COMPARATOR: {
+      noTint();
+      const comp = BLOCK_SHAPE[id] === SHAPE.COMPARATOR;
+      const facing = meta & 3;
+      const dx = FACING_DX[facing];
+      const dz = FACING_DZ[facing];
+      const on = comp ? ((meta >> 4) & 15) > 0 : (meta & 16) !== 0;
+      const slabTile = comp ? (on ? T.comparator_on : T.comparator_off) : (on ? T.repeater_on : T.repeater_off);
+      for (let f = 0; f < 6; f++) {
+        const tile = f === FACE_UP ? slabTile : T.smooth_stone;
+        const rot = f === FACE_UP ? facing & 3 : 0;
+        boxFace(opaquePass, f, 0, 0, 0, 1, 2 / 16, 1, tile, rot, false, NOMIP);
+      }
+      const torchBox = (fwd: number, sideOff: number, h: number, lit: boolean) => {
+        const sx = -dz;
+        const sz = dx;
+        const cx = 0.5 + dx * fwd + sx * sideOff;
+        const cz = 0.5 + dz * fwd + sz * sideOff;
+        const tile = lit ? T.redstone_torch_on : T.redstone_torch_off;
+        for (let f = 0; f < 6; f++) {
+          boxFace(opaquePass, f, cx - 1 / 16, 2 / 16, cz - 1 / 16, cx + 1 / 16, (2 + h) / 16, cz + 1 / 16, tile, 0, false, NOMIP);
+        }
+      };
+      if (comp) {
+        torchBox(-0.28, -0.25, 4, on);
+        torchBox(-0.28, 0.25, 4, on);
+        torchBox(0.32, 0, 4, (meta & 4) !== 0);
+      } else {
+        const delay = (meta >> 2) & 3;
+        torchBox(0.32, 0, 4, on);
+        if (meta & 32) {
+          // Barre de verrouillage en bedrock
+          const sx = -dz;
+          const sz = dx;
+          const fwd = 0.05 - delay * 0.12;
+          const x0 = Math.min(0.5 + dx * (fwd - 0.06) - sx * 0.38, 0.5 + dx * (fwd + 0.06) + sx * 0.38);
+          const x1 = Math.max(0.5 + dx * (fwd - 0.06) - sx * 0.38, 0.5 + dx * (fwd + 0.06) + sx * 0.38);
+          const z0 = Math.min(0.5 + dz * (fwd - 0.06) - sz * 0.38, 0.5 + dz * (fwd + 0.06) + sz * 0.38);
+          const z1 = Math.max(0.5 + dz * (fwd - 0.06) - sz * 0.38, 0.5 + dz * (fwd + 0.06) + sz * 0.38);
+          for (let f = 0; f < 6; f++) boxFace(opaquePass, f, x0, 2 / 16, z0, x1, 4 / 16, z1, T.bedrock, 0, false, NOMIP);
+        } else {
+          torchBox(0.05 - delay * 0.12, 0, 4, on);
+        }
+      }
+      return;
+    }
+    case SHAPE.HOPPER: {
+      noTint();
+      // Cuve haute (parois + fond sombre intérieur)
+      const walls: Array<[number, number, number, number, number, number]> = [
+        [0, 10, 0, 2, 16, 16],
+        [14, 10, 0, 16, 16, 16],
+        [2, 10, 0, 14, 16, 2],
+        [2, 10, 14, 14, 16, 16],
+        [2, 10, 2, 14, 11, 14],
+      ];
+      for (const [x0, y0, z0, x1, y1, z1] of walls) {
+        for (let f = 0; f < 6; f++) {
+          const tile = y1 === 11 && f === FACE_UP ? T.hopper_inside : y1 === 16 && f === FACE_UP ? T.hopper_top : T.hopper_outside;
+          boxFace(opaquePass, f, x0 / 16, y0 / 16, z0 / 16, x1 / 16, y1 / 16, z1 / 16, tile, 0, false, NOMIP);
+        }
+      }
+      // Cône intermédiaire et bec de sortie
+      for (let f = 0; f < 6; f++) boxFace(opaquePass, f, 4 / 16, 4 / 16, 4 / 16, 12 / 16, 10 / 16, 12 / 16, T.hopper_outside, 0, false, NOMIP);
+      const dir = meta & 7;
+      let sx0 = 6, sy0 = 0, sz0 = 6, sx1 = 10, sy1 = 4, sz1 = 10;
+      if (dir === 2) { sx0 = 6; sy0 = 4; sz0 = 12; sx1 = 10; sy1 = 8; sz1 = 16; }
+      else if (dir === 3) { sx0 = 0; sy0 = 4; sz0 = 6; sx1 = 4; sy1 = 8; sz1 = 10; }
+      else if (dir === 4) { sx0 = 6; sy0 = 4; sz0 = 0; sx1 = 10; sy1 = 8; sz1 = 4; }
+      else if (dir === 5) { sx0 = 12; sy0 = 4; sz0 = 6; sx1 = 16; sy1 = 8; sz1 = 10; }
+      for (let f = 0; f < 6; f++) boxFace(opaquePass, f, sx0 / 16, sy0 / 16, sz0 / 16, sx1 / 16, sy1 / 16, sz1 / 16, T.hopper_outside, 0, false, NOMIP);
+      return;
+    }
+    case SHAPE.DAYLIGHT_DETECTOR: {
+      noTint();
+      const topTile = meta & 16 ? T.daylight_detector_inverted_top : T.daylight_detector_top;
+      for (let f = 0; f < 6; f++) {
+        const tile = f === FACE_UP ? topTile : f === FACE_DOWN ? T.oak_planks : T.daylight_detector_side;
+        boxFace(opaquePass, f, 0, 0, 0, 1, 6 / 16, 1, tile, 0, false, NOMIP);
+      }
+      return;
+    }
     case SHAPE.SNOW_LAYER:
       meshLowBox(id, meta & 7, 0, ((meta & 7) + 1) / 8, BLOCK_TILES[id * 6]);
       return;

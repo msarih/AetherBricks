@@ -29,7 +29,13 @@ import {
 import { fluidTick, fluidTickDelay, lavaMix } from './Fluids';
 import { portalCanStay } from './Portal';
 import { setDetectorRailActive, updatePoweredRail } from './Rails';
-import { isTorchSupportPowered, updateRedstoneAround } from './Redstone';
+import {
+  computeComparatorOutput,
+  isRepeaterBackPowered,
+  isRepeaterLocked,
+  isTorchSupportPowered,
+  updateRedstoneAround,
+} from './Redstone';
 import { growTree } from './Trees';
 import type { World } from './World';
 
@@ -136,6 +142,8 @@ export function canStay(w: World, x: number, y: number, z: number, id: number, m
     case B.DETECTOR_RAIL:
     case B.SIGN:
     case B.CAKE:
+    case B.REPEATER:
+    case B.COMPARATOR:
       return topSolid(w, x, y - 1, z);
     case B.WALL_SIGN: {
       // méta = direction vers laquelle le panneau est tourné ; il tient au bloc derrière lui
@@ -431,6 +439,44 @@ export function scheduledTick(w: World, x: number, y: number, z: number, id: num
   }
   if (id === B.POWERED_RAIL) {
     updatePoweredRail(w, x, y, z);
+    return;
+  }
+  if (id === B.REPEATER) {
+    const facing = meta & 3;
+    const locked = isRepeaterLocked(w, x, y, z, facing);
+    const delay = ((meta >> 2) & 3) + 1;
+    if (locked) {
+      if (!(meta & 32)) w.setMeta(x, y, z, meta | 32, false);
+      return;
+    }
+    const base = meta & ~32;
+    const isOn = (base & 16) !== 0;
+    const backOn = isRepeaterBackPowered(w, x, y, z, facing);
+    if (!isOn) {
+      w.setMeta(x, y, z, base | 16, false);
+      w.notifyNeighbors(x, y, z);
+      updateRedstoneAround(w, x, y, z);
+      if (!backOn) w.scheduleTick(x, y, z, delay);
+    } else if (!backOn) {
+      w.setMeta(x, y, z, base & ~16, false);
+      w.notifyNeighbors(x, y, z);
+      updateRedstoneAround(w, x, y, z);
+    } else if (base !== meta) {
+      w.setMeta(x, y, z, base, false);
+    }
+    return;
+  }
+  if (id === B.COMPARATOR) {
+    const next = computeComparatorOutput(w, x, y, z, meta & 3, (meta & 4) !== 0);
+    if (next !== ((meta >> 4) & 15)) {
+      w.setMeta(x, y, z, (meta & 15) | (next << 4), false);
+      w.notifyNeighbors(x, y, z);
+      updateRedstoneAround(w, x, y, z);
+    }
+    return;
+  }
+  if (id === B.DISPENSER || id === B.DROPPER) {
+    w.host.dispense?.(x, y, z, id === B.DROPPER);
     return;
   }
   if (BLOCK_SHAPE[id] === SHAPE.FLUID) {

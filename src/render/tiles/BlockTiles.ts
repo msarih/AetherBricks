@@ -1946,6 +1946,89 @@ def('redstone_lamp_on', (p) => {
   p.frame(2, 2, 12, 12, 0xb87f32);
 });
 
+function diodeTop(p: Px, on: boolean, comparator: boolean): void {
+  p.rough([0x8b8b8b, 0x959595, 0x9f9f9f], 4, 4, 0.35);
+  p.frame(0, 0, 16, 16, 0x5c5c5c);
+  const trace = on ? 0xff2b20 : 0x5f110d;
+  if (comparator) {
+    // plaque quartz au centre + piste d'entrée/sortie
+    p.rect(5, 5, 6, 6, 0xe8e2d8);
+    p.frame(4, 4, 8, 8, 0xb8b0a4);
+    p.rect(7, 1, 2, 3, trace);
+    p.rect(7, 12, 2, 3, trace);
+  } else {
+    p.rect(7, 1, 2, 14, trace);
+    p.rect(6, 3, 4, 1, trace);
+  }
+}
+
+def('repeater_off', (p) => diodeTop(p, false, false));
+def('repeater_on', (p) => diodeTop(p, true, false));
+def('comparator_off', (p) => diodeTop(p, false, true));
+def('comparator_on', (p) => diodeTop(p, true, true));
+
+def('hopper_outside', (p) => {
+  p.rough([0x454545, 0x4e4e4e, 0x575757], 4, 4, 0.4);
+  p.frame(0, 0, 16, 16, 0x2b2b2b);
+});
+
+def('hopper_inside', (p) => {
+  p.rough([0x282828, 0x303030, 0x373737], 4, 4, 0.35);
+  p.frame(0, 0, 16, 16, 0x1c1c1c);
+});
+
+def('hopper_top', (p) => {
+  p.rough([0x4c4c4c, 0x565656, 0x5f5f5f], 4, 4, 0.4);
+  p.frame(0, 0, 16, 16, 0x2b2b2b);
+  p.rect(2, 2, 12, 12, 0x222222);
+  p.frame(2, 2, 12, 12, 0x383838);
+});
+
+def('dispenser_front', (p) => {
+  furnaceBody(p);
+  p.rect(5, 4, 6, 5, 0x1a1a1a);
+  p.rect(6, 5, 4, 3, 0x0c0c0c);
+  p.frame(4, 3, 8, 7, 0x464646);
+  p.rect(7, 10, 2, 2, 0x1a1a1a);
+});
+
+def('dropper_front', (p) => {
+  furnaceBody(p);
+  p.rect(5, 5, 6, 4, 0x1a1a1a);
+  p.rect(6, 9, 4, 2, 0x1a1a1a);
+  p.frame(4, 4, 8, 8, 0x464646);
+});
+
+function daylightTop(inverted: boolean): Painter {
+  return (p) => {
+    p.rough([0x6d512e, 0x7a5c36, 0x87673e], 4, 4, 0.4);
+    p.frame(0, 0, 16, 16, 0x4a351d);
+    const cell = inverted ? [0x8bc2d4, 0x9fd2e2, 0x76adbf] : [0x586b8d, 0x677ba0, 0x7a90b6];
+    for (let y = 2; y < 14; y++) {
+      for (let x = 2; x < 14; x++) {
+        p.set(x, y, (x === 7 || x === 8 || y === 7 || y === 8) ? 0x3e4756 : p.pick(cell));
+      }
+    }
+  };
+}
+
+def('daylight_detector_top', daylightTop(false));
+def('daylight_detector_inverted_top', daylightTop(true));
+def('daylight_detector_side', (p) => {
+  planks(WOODS.oak.planks)(p);
+  p.rect(0, 10, 16, 6, 0x7b7b7b);
+  p.frame(0, 10, 16, 6, 0x4c4c4c);
+});
+
+def('noteblock', (p) => {
+  p.rough([0x5c3620, 0x6b4027, 0x7a4a2e], 4, 4, 0.45);
+  p.frame(0, 0, 16, 16, 0x3c2112);
+  p.frame(1, 1, 14, 14, 0x4a2a18);
+  // motif note / grille au centre
+  p.rect(5, 5, 6, 6, 0x2b170c);
+  p.rect(7, 6, 2, 4, 0x8f5938);
+});
+
 def('nether_portal', (p) => {
   for (let y = 0; y < TS; y++) {
     for (let x = 0; x < TS; x++) {

@@ -9,7 +9,16 @@ import { addToSlots, canMerge, cloneStack, cloneStackWithCount, loadSlots, makeS
 import { canEnchantItem, computeAnvilResult, enchantLevel, hasEnchants, rollEnchantOffers, type EnchantOffer } from '../world/Enchants';
 import { mulberry32 } from '../world/gen/Noise';
 import { RECIPES, fuelTicks, ingredientAccepts, matchRecipe, recipeFitsGrid, smeltingResult, type Ingredient, type Recipe } from '../world/Recipes';
-import { BREW_FUEL_MAX, BREW_TICKS, FURNACE_COOK_TICKS, type BrewingStandEntity, type ChestEntity, type FurnaceEntity } from './BlockEntities';
+import {
+  BREW_FUEL_MAX,
+  BREW_TICKS,
+  FURNACE_COOK_TICKS,
+  type BrewingStandEntity,
+  type ChestEntity,
+  type DispenserEntity,
+  type FurnaceEntity,
+  type HopperEntity,
+} from './BlockEntities';
 
 export const HOTBAR_SIZE = 9;
 export const INVENTORY_SIZE = 36;
@@ -222,7 +231,7 @@ export class Inventory {
 // ============================================================================================ menus
 
 export type SlotGroup = 'hotbar' | 'main' | 'armor' | 'offhand' | 'craft' | 'result' | 'container' | 'input' | 'fuel' | 'output' | 'bottle';
-export type MenuType = 'inventory' | 'crafting' | 'chest' | 'furnace' | 'brewing' | 'enchant' | 'anvil' | 'creative';
+export type MenuType = 'inventory' | 'crafting' | 'chest' | 'furnace' | 'brewing' | 'enchant' | 'anvil' | 'creative' | 'hopper' | 'dispenser';
 
 /** Une case d'un menu : vue sur un élément d'un tableau de piles. */
 export class MenuSlot {
@@ -779,6 +788,57 @@ export class ChestMenu extends Menu {
   ) {
     super(inv);
     for (let i = 0; i < chest.items.length; i++) this.addSlot('container', i, chest.items, i);
+    this.addPlayerSlots();
+  }
+
+  protected changed(): void {
+    this.onChange();
+  }
+
+  protected quickMove(slot: MenuSlot): void {
+    if (slot.group === 'container') this.transfer(slot, this.group('hotbar', 'main').reverse());
+    else this.transfer(slot, this.group('container'));
+  }
+}
+
+/** Entonnoir : 5 cases. */
+export class HopperMenu extends Menu {
+  readonly type: MenuType = 'hopper';
+  readonly title = 'Entonnoir';
+
+  constructor(
+    inv: Inventory,
+    readonly hopper: HopperEntity,
+    private readonly onChange: () => void,
+  ) {
+    super(inv);
+    for (let i = 0; i < hopper.items.length; i++) this.addSlot('container', i, hopper.items, i);
+    this.addPlayerSlots();
+  }
+
+  protected changed(): void {
+    this.onChange();
+  }
+
+  protected quickMove(slot: MenuSlot): void {
+    if (slot.group === 'container') this.transfer(slot, this.group('hotbar', 'main').reverse());
+    else this.transfer(slot, this.group('container'));
+  }
+}
+
+/** Distributeur ou dropper : 9 cases. */
+export class DispenserMenu extends Menu {
+  readonly type: MenuType = 'dispenser';
+  readonly title: string;
+
+  constructor(
+    inv: Inventory,
+    readonly dispenser: DispenserEntity,
+    private readonly onChange: () => void,
+  ) {
+    super(inv);
+    this.title = dispenser.type === 'dropper' ? 'Dropper' : 'Distributeur';
+    for (let i = 0; i < dispenser.items.length; i++) this.addSlot('container', i, dispenser.items, i);
     this.addPlayerSlots();
   }
 
