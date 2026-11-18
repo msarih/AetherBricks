@@ -366,6 +366,31 @@ export const I = {
 
 export const ITEM_ID_LIMIT = 420;
 
+export const POTION_KEYS: readonly string[] = [
+  'water',
+  'awkward',
+  'healing',
+  'healing_2',
+  'speed',
+  'speed_long',
+  'speed_2',
+  'night_vision',
+  'night_vision_long',
+  'strength',
+  'strength_long',
+  'strength_2',
+  'fire_resistance',
+  'fire_resistance_long',
+  'poison',
+  'poison_long',
+  'poison_2',
+  'regeneration',
+  'regeneration_long',
+  'regeneration_2',
+];
+
+export const SPLASH_POTION_KEYS: readonly string[] = POTION_KEYS.filter((k) => k !== 'water' && k !== 'awkward');
+
 /** Noms techniques des 16 couleurs (ordre des laines et des colorants). */
 export const COLOR_NAMES = [
   'white', 'orange', 'magenta', 'light_blue', 'yellow', 'lime', 'pink', 'gray',

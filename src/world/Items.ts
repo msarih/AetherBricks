@@ -3,10 +3,9 @@
  * Les valeurs (durabilité, dégâts, faim, armure) suivent Minecraft Java 1.12.
  * Module pur (pas de DOM ni de Three.js) : partagé avec les workers.
  */
-import { B, BLOCK_ID_LIMIT, COLOR_NAMES, I, ITEM_ID_LIMIT } from './Ids';
+import { B, BLOCK_ID_LIMIT, COLOR_NAMES, I, ITEM_ID_LIMIT, POTION_KEYS, SPLASH_POTION_KEYS } from './Ids';
 import { BLOCKS, type ToolKind } from './Blocks';
 import type { ItemStack } from './ItemStack';
-import { POTION_KEYS, SPLASH_POTION_KEYS } from './Potions';
 import { ARMOR_KINDS, ARMOR_MATERIALS, T, TOOL_KINDS, TOOL_MATERIALS, type TileName } from './Tiles';
 
 export type ItemCategory =
