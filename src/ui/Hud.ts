@@ -4,7 +4,9 @@
  * `update()` est appelée à chaque image : le DOM n'est modifié que lorsqu'une valeur change.
  */
 import { HOTBAR_SIZE } from '../game/Inventory';
+import { I } from '../world/Ids';
 import { itemLabel } from '../world/Items';
+import { potionLabel } from '../world/Potions';
 import { T } from '../world/Tiles';
 import { ItemView, el, u } from './dom';
 import type { UiGame, UiHost } from './UiApi';
@@ -327,8 +329,9 @@ export class Hud {
     if (this.changed('offhandOn', off !== null)) this.offhandBox.style.display = off !== null ? 'block' : '';
     const held = inv.slots[selected];
     const id = held ? held.id : 0;
-    if (this.changed('held', selected * 4096 + id)) {
-      this.heldName.textContent = id ? itemLabel(id) : '';
+    const heldKey = `${selected}:${id}:${held?.potion ?? ''}`;
+    if (this.changed('held', heldKey)) {
+      this.heldName.textContent = id ? (held?.potion ? potionLabel(held.potion, id === I.SPLASH_POTION) : itemLabel(id)) : '';
       this.heldTimer = id ? 2 : 0;
     }
     if (this.heldTimer > 0 || this.memo.get('heldOp') !== 0) {

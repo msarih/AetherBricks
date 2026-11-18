@@ -9,7 +9,7 @@ import { addToSlots, canMerge, cloneStack, cloneStackWithCount, loadSlots, maxDa
 import { canEnchantItem, computeAnvilResult, enchantLevel, hasEnchants, rollEnchantOffers, type EnchantOffer } from '../world/Enchants';
 import { mulberry32 } from '../world/gen/Noise';
 import { RECIPES, fuelTicks, ingredientAccepts, matchRecipe, recipeFitsGrid, smeltingResult, type Ingredient, type Recipe } from '../world/Recipes';
-import { FURNACE_COOK_TICKS, type ChestEntity, type FurnaceEntity } from './BlockEntities';
+import { BREW_FUEL_MAX, BREW_TICKS, FURNACE_COOK_TICKS, type BrewingStandEntity, type ChestEntity, type FurnaceEntity } from './BlockEntities';
 
 export const HOTBAR_SIZE = 9;
 export const INVENTORY_SIZE = 36;
@@ -221,8 +221,8 @@ export class Inventory {
 
 // ============================================================================================ menus
 
-export type SlotGroup = 'hotbar' | 'main' | 'armor' | 'offhand' | 'craft' | 'result' | 'container' | 'input' | 'fuel' | 'output';
-export type MenuType = 'inventory' | 'crafting' | 'chest' | 'furnace' | 'enchant' | 'anvil' | 'creative';
+export type SlotGroup = 'hotbar' | 'main' | 'armor' | 'offhand' | 'craft' | 'result' | 'container' | 'input' | 'fuel' | 'output' | 'bottle';
+export type MenuType = 'inventory' | 'crafting' | 'chest' | 'furnace' | 'brewing' | 'enchant' | 'anvil' | 'creative';
 
 /** Une case d'un menu : vue sur un élément d'un tableau de piles. */
 export class MenuSlot {
@@ -834,6 +834,53 @@ export class FurnaceMenu extends Menu {
     if (smeltingResult(s.id) && this.transfer(slot, this.group('input'))) return;
     if (fuelTicks(s.id) > 0 && this.transfer(slot, this.group('fuel'))) return;
     this.transfer(slot, this.group(slot.group === 'main' ? 'hotbar' : 'main'));
+  }
+}
+
+/** Alambic : 3 fioles/potions, 1 ingrédient, 1 carburant (poudre de blaze). */
+export class BrewingMenu extends Menu {
+  readonly type: MenuType = 'brewing';
+  readonly title = 'Alambic';
+
+  constructor(
+    inv: Inventory,
+    readonly stand: BrewingStandEntity,
+    private readonly onChange: () => void,
+  ) {
+    super(inv);
+    for (let i = 0; i < 3; i++) {
+      this.addSlot('bottle', i, stand.items, i, false, (s) => s.id === I.POTION || s.id === I.SPLASH_POTION, 1);
+    }
+    this.addSlot('input', 0, stand.items, 3);
+    this.addSlot('fuel', 0, stand.items, 4, false, (s) => s.id === I.BLAZE_POWDER);
+    this.addPlayerSlots();
+  }
+
+  get brewProgress(): number {
+    return this.stand.brewTime > 0 ? Math.min(1, this.stand.brewTime / BREW_TICKS) : 0;
+  }
+
+  get fuelProgress(): number {
+    return this.stand.fuel > 0 ? Math.min(1, this.stand.fuel / BREW_FUEL_MAX) : 0;
+  }
+
+  protected changed(): void {
+    this.onChange();
+  }
+
+  protected quickMove(slot: MenuSlot): void {
+    const s = slot.stack;
+    if (!s) return;
+    if (slot.group === 'bottle' || slot.group === 'input' || slot.group === 'fuel') {
+      this.transfer(slot, this.group('main', 'hotbar'));
+      return;
+    }
+    if (s.id === I.POTION || s.id === I.SPLASH_POTION) {
+      if (this.transfer(slot, this.group('bottle'))) return;
+    } else if (s.id === I.BLAZE_POWDER && this.transfer(slot, this.group('fuel'))) {
+      return;
+    }
+    this.transfer(slot, this.group('input'));
   }
 }
 

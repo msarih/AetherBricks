@@ -50,6 +50,8 @@ export const SHAPE = {
   CAULDRON: 33,
   /** Gâteau : posé sur un bloc, 7 parts (méta 0..6). */
   CAKE: 34,
+  /** Alambic : socle et tige porte-fioles. */
+  BREWING_STAND: 35,
 } as const;
 
 export const TINT = { NONE: 0, GRASS: 1, FOLIAGE: 2, FIXED: 3 } as const;
@@ -557,6 +559,11 @@ reg(B.CAKE, 'cake', 'Gâteau', {
   tiles: { top: 'cake_top', bottom: 'cake_bottom', side: 'cake_side' },
   shape: SHAPE.CAKE, opaque: false, lightOpacity: 0, hardness: 0.5, sound: 'cloth', needsSupport: true,
   stack: 1, itemTile: 'cake_item', category: 'utilitaire',
+});
+reg(B.BREWING_STAND, 'brewing_stand', 'Alambic', {
+  tiles: { top: 'brewing_stand_rod', bottom: 'brewing_stand_base', side: 'brewing_stand_base' },
+  shape: SHAPE.BREWING_STAND, opaque: false, lightOpacity: 0, emit: 1, hardness: 0.5, ...rock,
+  itemTile: 'brewing_stand_item', category: 'utilitaire',
 });
 reg(B.SOUL_SAND, 'soul_sand', 'Sable des âmes', { tiles: 'soul_sand', hardness: 0.5, tool: 'shovel', sound: 'sand', category: 'nature' });
 reg(B.NETHER_WART, 'nether_wart_crop', 'Verrues du Nether', { tiles: 'nether_wart_2', ...crop });

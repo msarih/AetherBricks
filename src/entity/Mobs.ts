@@ -1833,6 +1833,7 @@ export class Ghast extends Monster {
 
   protected dropLoot(game: GameApi): void {
     this.drop(game, I.GUNPOWDER, randInt(game.rng, 1, 2));
+    this.drop(game, I.GHAST_TEAR, 1);
   }
 }
 

@@ -1181,6 +1181,12 @@ function meshCell(id: number, meta: number): void {
       }
       return;
     }
+    case SHAPE.BREWING_STAND: {
+      noTint();
+      for (let f = 0; f < 6; f++) boxFace(opaquePass, f, 1 / 16, 0, 1 / 16, 15 / 16, 2 / 16, 15 / 16, T.brewing_stand_base, 0, false, NOMIP);
+      for (let f = 0; f < 6; f++) boxFace(opaquePass, f, 7 / 16, 2 / 16, 7 / 16, 9 / 16, 14 / 16, 9 / 16, T.brewing_stand_rod, 0, false, NOMIP);
+      return;
+    }
     case SHAPE.SNOW_LAYER:
       meshLowBox(id, meta & 7, 0, ((meta & 7) + 1) / 8, BLOCK_TILES[id * 6]);
       return;

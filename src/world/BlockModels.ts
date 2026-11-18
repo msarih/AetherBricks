@@ -342,6 +342,9 @@ export function collisionBoxes(id: number, meta: number, nb: NeighborFn, out: nu
       out.push(1 + bites * 2, 0, 1, 15, 8, 15);
       return;
     }
+    case SHAPE.BREWING_STAND:
+      out.push(1, 0, 1, 15, 2, 15, 7, 0, 7, 9, 14, 9);
+      return;
     default:
       out.push(0, 0, 0, 16, 16, 16);
   }

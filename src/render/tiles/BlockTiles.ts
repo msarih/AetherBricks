@@ -1648,6 +1648,12 @@ def('cake_inner', (p) => {
 def('cake_bottom', (p) => {
   p.each(() => shade(0x9a5c28, 0.92 + p.rnd() * 0.14));
 });
+def('brewing_stand_base', (p) => {
+  p.each(() => shade(0x6c6e72, 0.88 + p.rnd() * 0.22));
+});
+def('brewing_stand_rod', (p) => {
+  p.each((x) => shade(x >= 6 && x <= 9 ? 0xf2b422 : 0xc87414, 0.92 + p.rnd() * 0.14));
+});
 
 // ---------------------------------------------------------------------------
 // Fluides et feu (images animées)

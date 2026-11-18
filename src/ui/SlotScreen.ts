@@ -4,7 +4,7 @@
  * pile du curseur qui suit la souris, infobulle, et tous les gestes : clic gauche / droit,
  * maj-clic, double clic, glisser sur plusieurs cases, touches 1 à 9, lâcher, clic hors fenêtre.
  */
-import type { AnvilMenu, CreativeMenu, EnchantMenu, FurnaceMenu, Menu, SlotGroup } from '../game/Inventory';
+import type { AnvilMenu, BrewingMenu, CreativeMenu, EnchantMenu, FurnaceMenu, Menu, SlotGroup } from '../game/Inventory';
 import type { ItemStack, Slot } from '../world/ItemStack';
 import { CREATIVE_TABS, ITEMS, itemLabel } from '../world/Items';
 import { B, I } from '../world/Ids';
@@ -82,9 +82,11 @@ export class SlotScreen implements Screen {
   private lastTime = 0;
   private doubleClick = false;
 
-  // fourneau
+  // fourneau & alambic
   private flameOn: HTMLDivElement | null = null;
   private arrowOn: HTMLDivElement | null = null;
+  private brewFuelOn: HTMLDivElement | null = null;
+  private brewBarOn: HTMLDivElement | null = null;
   private burn = -1;
   private cook = -1;
 
@@ -122,6 +124,9 @@ export class SlotScreen implements Screen {
         break;
       case 'furnace':
         this.buildFurnace();
+        break;
+      case 'brewing':
+        this.buildBrewing();
         break;
       case 'enchant':
         this.buildEnchant();
@@ -462,6 +467,25 @@ export class SlotScreen implements Screen {
     place(arrow, 79, 34);
     this.arrowOn = el('div', 'mc-arrow-on', arrow);
     this.slot('output', 0, 116, 35, true);
+    this.label('Inventaire', 8, 72);
+    this.playerSlots(8, 84, 142);
+  }
+
+  private buildBrewing(): void {
+    this.size(176, 166);
+    const title = this.label(this.menu.title, 0, 6);
+    title.classList.add('mc-label-center');
+    this.slot('fuel', 0, 17, 17);
+    const fuelBar = el('div', 'mc-brew-fuel', this.win);
+    place(fuelBar, 60, 44, 18, 4);
+    this.brewFuelOn = el('div', 'mc-brew-fuel-on', fuelBar);
+    this.slot('input', 0, 79, 17);
+    const arrow = el('div', 'mc-brew-bar', this.win);
+    place(arrow, 97, 16, 9, 28);
+    this.brewBarOn = el('div', 'mc-brew-bar-on', arrow);
+    this.slot('bottle', 0, 56, 51);
+    this.slot('bottle', 1, 79, 58);
+    this.slot('bottle', 2, 102, 51);
     this.label('Inventaire', 8, 72);
     this.playerSlots(8, 84, 142);
   }
@@ -967,6 +991,18 @@ export class SlotScreen implements Screen {
       if (cook !== this.cook && this.arrowOn) {
         this.cook = cook;
         this.arrowOn.style.width = u(cook);
+      }
+    } else if (menu.type === 'brewing') {
+      const b = menu as BrewingMenu;
+      const fuelW = Math.round(Math.max(0, Math.min(1, b.fuelProgress)) * 18);
+      if (fuelW !== this.burn && this.brewFuelOn) {
+        this.burn = fuelW;
+        this.brewFuelOn.style.width = u(fuelW);
+      }
+      const brewH = Math.round(Math.max(0, Math.min(1, b.brewProgress)) * 28);
+      if (brewH !== this.cook && this.brewBarOn) {
+        this.cook = brewH;
+        this.brewBarOn.style.height = u(brewH);
       }
     } else if (menu.type === 'enchant') {
       const em = menu as EnchantMenu;

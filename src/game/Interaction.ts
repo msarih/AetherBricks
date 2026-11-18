@@ -7,7 +7,7 @@
 import { Living, type Entity, type GameApi } from '../entity/Entity';
 import { tryBuildGolem } from '../entity/Creatures';
 import { LEASH_BREAK, Mob, isLeashPost, notifyTamedWolves } from '../entity/Mobs';
-import { Arrow, EyeOfEnder, FishingBobber, Thrown, ThrownPearl } from '../entity/Objects';
+import { Arrow, EyeOfEnder, FishingBobber, Thrown, ThrownPearl, ThrownPotion } from '../entity/Objects';
 import type { Input } from '../player/Input';
 import { attackDamage, type Player } from '../player/Player';
 import type { HandRenderer } from '../render/HandRenderer';
@@ -41,8 +41,9 @@ import type { BlockEntity } from '../world/World';
 import { getItem, isTool } from '../world/Items';
 import { cloneStackWithCount, makeStack } from '../world/ItemStack';
 import { newRayHit, rayBoxDistance, raycast } from '../world/Raycast';
-import { getChest, getFurnace } from './BlockEntities';
-import { AnvilMenu, ChestMenu, CraftingMenu, EnchantMenu, FurnaceMenu, HOTBAR_SIZE, type Menu, type XpHost } from './Inventory';
+import { getBrewingStand, getChest, getFurnace } from './BlockEntities';
+import { AnvilMenu, BrewingMenu, ChestMenu, CraftingMenu, EnchantMenu, FurnaceMenu, HOTBAR_SIZE, type Menu, type XpHost } from './Inventory';
+import { applyPotionVariant } from '../world/Potions';
 
 /** Ce dont l'interaction a besoin, en plus du contrat des entités. Implémenté par Game. */
 export interface InteractionHost extends GameApi {
@@ -425,7 +426,7 @@ export class Interaction {
     p.useTicks++;
     if (p.useKind !== 'eat') return;
 
-    const drink = held === I.MILK_BUCKET;
+    const drink = held === I.MILK_BUCKET || held === I.POTION;
     if (p.useTicks % 4 === 0) {
       const l = this.look;
       p.look(l);
@@ -437,16 +438,22 @@ export class Interaction {
     }
     if (p.useTicks >= EAT_TICKS) {
       const item = getItem(held);
-      p.feed(item.food, item.saturation);
-      g.sound('burp', p.x, p.y + p.eyeHeight, p.z, 0.5, 0.9 + g.rng() * 0.2);
-      if (held === I.GOLDEN_APPLE) p.heal(4);
-      if (held === I.MUSHROOM_STEW) p.replaceHand(this.useHand, I.BOWL);
-      else if (drink) {
-        // le lait dissipe poison, lenteur, faiblesse et flétrissement
-        p.fireTicks = 0;
-        p.clearEffects();
-        p.replaceHand(this.useHand, I.BUCKET);
-      } else p.consumeHand(this.useHand);
+      if (held === I.POTION) {
+        const stack = this.useHand === 'offhand' ? p.inventory.offhandItem : p.inventory.held;
+        if (stack?.potion) applyPotionVariant(p, stack.potion, 1, p);
+        p.replaceHand(this.useHand, I.GLASS_BOTTLE);
+      } else {
+        p.feed(item.food, item.saturation);
+        g.sound('burp', p.x, p.y + p.eyeHeight, p.z, 0.5, 0.9 + g.rng() * 0.2);
+        if (held === I.GOLDEN_APPLE) p.heal(4);
+        if (held === I.MUSHROOM_STEW) p.replaceHand(this.useHand, I.BOWL);
+        else if (held === I.MILK_BUCKET) {
+          // le lait dissipe tous les effets
+          p.fireTicks = 0;
+          p.clearEffects();
+          p.replaceHand(this.useHand, I.BUCKET);
+        } else p.consumeHand(this.useHand);
+      }
       p.stopUsing();
       this.useDelay = USE_DELAY;
     }
@@ -617,6 +624,11 @@ export class Interaction {
     if (id === B.FURNACE || id === B.FURNACE_LIT) {
       const furnace = getFurnace(w, x, y, z);
       g.openMenu(new FurnaceMenu(p.inventory, furnace, () => w.markBlockEntityDirty(furnace)));
+      return true;
+    }
+    if (id === B.BREWING_STAND) {
+      const stand = getBrewingStand(w, x, y, z);
+      g.openMenu(new BrewingMenu(p.inventory, stand, () => w.markBlockEntityDirty(stand)));
       return true;
     }
     if (id === B.ENCHANTING_TABLE) {
@@ -930,6 +942,24 @@ export class Interaction {
 
     if (held === I.SHIELD) {
       this.startUse('block');
+      return false;
+    }
+
+    if (held === I.SPLASH_POTION) {
+      if (!this.freshClick) return false;
+      const stack = this.activeHand === 'offhand' ? p.inventory.offhandItem : p.inventory.held;
+      const t = new ThrownPotion(stack?.potion ?? 'poison');
+      t.owner = p;
+      t.shoot(ex + l.x * 0.3, ey - 0.1, ez + l.z * 0.3, l.x, l.y, l.z, 0.6);
+      g.spawn(t);
+      g.sound('bow', ex, ey, ez, 0.5, 0.6 + g.rng() * 0.2);
+      p.consumeHand(this.activeHand);
+      this.swing();
+      return true;
+    }
+
+    if (held === I.POTION) {
+      this.startUse('eat');
       return false;
     }
 

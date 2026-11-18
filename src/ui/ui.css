@@ -193,6 +193,28 @@
   text-shadow: 1px 1px 0 #000;
 }
 
+.mc-brew-fuel {
+  background: #404040;
+  overflow: hidden;
+}
+
+.mc-brew-fuel-on {
+  height: 100%;
+  width: 0;
+  background: #f5a623;
+}
+
+.mc-brew-bar {
+  background: #8b8b8b;
+  overflow: hidden;
+}
+
+.mc-brew-bar-on {
+  width: 100%;
+  height: 0;
+  background: #f0f0f0;
+}
+
 .mc-stats {
   position: absolute;
   left: 0;
