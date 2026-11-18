@@ -9,8 +9,8 @@ import type { EntityKind } from './EntityView';
 import { loadMob } from './Mobs';
 import { move } from './Physics';
 
-const BOAT_SEAT = 0.22;
-const MINECART_SEAT = 0.25;
+const BOAT_SEAT = -0.08;
+const MINECART_SEAT = -0.05;
 const MAX_CART_SPEED = 0.4;
 const MAX_BOAT_SPEED = 0.42;
 
@@ -185,6 +185,7 @@ export class Boat extends Entity {
       if (this.y < targetY) this.vy = Math.min(0.08, (targetY - this.y) * 0.5);
       else this.vy = Math.max(-0.04, (targetY - this.y) * 0.3);
     } else {
+      this.stepHeight = 0;
       this.vy -= 0.04;
     }
 
@@ -207,6 +208,7 @@ export class Boat extends Entity {
     }
     if (this.onGround && this.vy < 0) this.vy = 0;
 
+    this.updateLight(w);
     if (this.rider) syncPassenger(this, this.rider, BOAT_SEAT);
     if (this.y < -64) this.dead = true;
   }
@@ -348,6 +350,7 @@ export class Minecart extends Entity {
     const railId = v & 255;
 
     if (isRail(railId)) {
+      this.stepHeight = 1;
       const meta = v >> 8;
       const shape = railShape(railId, meta);
       this.fallDistance = 0;
@@ -463,6 +466,7 @@ export class Minecart extends Entity {
         this.vz *= k;
       }
 
+      this.onGround = true;
       move(w, this, this.vx, 0, this.vz);
       this.vy = 0;
       // Ajuste y si on vient de passer sur une pente
@@ -483,6 +487,7 @@ export class Minecart extends Entity {
         this.yaw = Math.atan2(-this.vx, -this.vz);
       }
     } else {
+      this.stepHeight = 0;
       this.vy -= 0.04;
       const drag = this.onGround ? 0.5 : 0.95;
       this.vx *= drag;
@@ -491,6 +496,7 @@ export class Minecart extends Entity {
       if (this.onGround && this.vy < 0) this.vy = 0;
     }
 
+    this.updateLight(w);
     if (this.rider) syncPassenger(this, this.rider, MINECART_SEAT);
     if (this.y < -64) this.dead = true;
   }

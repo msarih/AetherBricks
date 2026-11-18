@@ -69,6 +69,8 @@ function runScript(scriptPath) {
     await runScript(path.join(__dirname, 't8.cjs'));
     console.log('\n=== Exécution de t9.cjs (Équipement : seconde main, bouclier, chaudron, gâteau, alambic, potions) ===');
     await runScript(path.join(__dirname, 't9.cjs'));
+    console.log('\n=== Exécution de t10.cjs (Transport : bateau, rails, propulseur, détecteur, wagonnet) ===');
+    await runScript(path.join(__dirname, 't10.cjs'));
     console.log('\nTous les tests E2E sont passés avec succès.');
   } catch (err) {
     console.error('\nÉchec des tests E2E :', err.message);
