@@ -306,6 +306,11 @@ class Village implements Structure {
       BUILDERS[b.type](p, this.mat, b.seed);
     }
     for (const l of this.lamps) this.buildLamp(c, l);
+    // le gardien du village : un golem de fer sur le chemin, à quelques pas du puits
+    const gx = this.x;
+    const gz = this.z + 6;
+    const gy = groundY(c, gx, gz);
+    if (gy >= 1 && c.get(gx, gy, gz) !== B.WATER && c.get(gx, gy, gz) !== B.LAVA) c.spawn({ kind: 'iron_golem', x: gx + 0.5, y: gy + 1, z: gz + 0.5 });
   }
 
   private pathCell(c: GenCanvas, x: number, z: number): void {

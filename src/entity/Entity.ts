@@ -26,6 +26,7 @@ export type DamageCause =
   | 'attack'
   | 'arrow'
   | 'wither'
+  | 'magic'
   | 'generic';
 
 /** Donnée sérialisable d'une entité (JSON pur). `type` désigne la classe à recréer. */
@@ -69,6 +70,8 @@ export interface GameApi {
   inStructure?(kind: string, x: number, z: number): boolean;
   /** Ouvre l'écran d'échange d'un villageois (absent hors du jeu complet). */
   openTrade?(villager: Entity): void;
+  /** Ouvre la saisie du nom d'une créature (étiquette) ; absent hors du jeu complet. */
+  openNameTag?(mob: Entity): void;
   /** Explosion : détruit des blocs, blesse et repousse les entités. */
   explode(x: number, y: number, z: number, power: number, fire: boolean, source: Entity | null): void;
   /** Entités dont la boîte coupe la boîte donnée. */
@@ -116,6 +119,20 @@ export abstract class Entity extends Body implements EntityView {
   mobScale = 1;
   sneaking = false;
   hidden = false;
+  /** Nom donné par une étiquette (vide = aucun) : affiché au-dessus de la créature. */
+  customName = '';
+  /** Tenue en laisse : la corde va jusqu'au point (leashX, leashY, leashZ). */
+  leashed = false;
+  pLeashX = 0;
+  pLeashY = 0;
+  pLeashZ = 0;
+  leashX = 0;
+  leashY = 0;
+  leashZ = 0;
+  /** Assis sur une monture (joueur à cheval). */
+  riding = false;
+  /** Cheval sellé. */
+  saddled = false;
 
   /** À retirer du monde à la fin du tick. */
   dead = false;
@@ -292,6 +309,12 @@ export abstract class Living extends Entity {
 
   /** Flétrissement (coup d'un squelette wither) : ticks restants ; un demi-cœur toutes les 2 secondes. */
   witherTicks = 0;
+  /** Poison (potion de sorcière) : un demi-cœur toutes les 1,25 s, sans jamais tuer. */
+  poisonTicks = 0;
+  /** Lenteur : marche 15 % plus lente. */
+  slowTicks = 0;
+  /** Faiblesse : coups portés affaiblis de 2 cœurs. */
+  weakTicks = 0;
 
   /** Dernier agresseur et âge (en ticks) du dernier coup reçu de lui. */
   attacker: Entity | null = null;
@@ -342,6 +365,12 @@ export abstract class Living extends Entity {
       if (this.witherTicks % 40 === 0) this.hurt(game, 1, 'wither', null);
       if (this.health <= 0) return;
     }
+    if (this.poisonTicks > 0) {
+      this.poisonTicks--;
+      if (this.poisonTicks % 25 === 0 && this.health > 1) this.hurt(game, 1, 'magic', null);
+    }
+    if (this.slowTicks > 0) this.slowTicks--;
+    if (this.weakTicks > 0) this.weakTicks--;
     if (this.swingTicks >= 0) {
       this.swingTicks++;
       if (this.swingTicks >= 6) {
@@ -433,7 +462,7 @@ export abstract class Living extends Entity {
 
     travel(w, this, this.moveStrafe * 0.98, this.moveForward * 0.98, {
       yaw: this.yaw,
-      speed: this.speed,
+      speed: this.slowTicks > 0 ? this.speed * 0.85 : this.speed,
       airAccel: this.airAccel,
       sneaking: this.sneaking,
       flying: this.flying,
@@ -523,6 +552,11 @@ export abstract class Living extends Entity {
     this.health = Math.min(this.maxHealth, this.health + amount);
   }
 
+  /** Dissipe poison, lenteur, faiblesse et flétrissement (lait, réapparition). */
+  clearEffects(): void {
+    this.poisonTicks = this.slowTicks = this.weakTicks = this.witherTicks = 0;
+  }
+
   protected hurtSound(): SfxName | null {
     return 'mob_hurt';
   }
@@ -558,6 +592,14 @@ export interface PlayerLike extends Living {
   readonly targetable: boolean;
   /** Identifiant de l'objet tenu en main (0 = main vide). */
   readonly heldItemId: number;
+  /** Commandes du tick : elles dirigent aussi la monture. */
+  readonly input: { forward: number; strafe: number; jump: boolean; sneak: boolean };
+  /** Monture actuelle (cheval), ou null. */
+  vehicle: Entity | null;
+  /** Monte sur l'entité ; false si le joueur est déjà en selle. */
+  mount(vehicle: Entity): boolean;
+  /** Descend de sa monture, à côté d'elle si la place est libre. */
+  dismount(game: GameApi): void;
   /** Range la pile dans l'inventaire ; retourne la quantité qui n'a pas pu l'être. */
   collect(stack: ItemStack): number;
   /** Consomme `count` exemplaires de l'objet tenu (sans effet en créatif). */

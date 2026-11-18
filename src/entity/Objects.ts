@@ -418,6 +418,8 @@ export class Thrown extends Entity {
   owner: Entity | null = null;
   /** Appelé quand un œuf se brise (apparition éventuelle d'un poussin) : branché par le jeu. */
   static onEggBreak: ((game: GameApi, x: number, y: number, z: number) => void) | null = null;
+  /** Chute par tick (une potion tombe plus vite qu'un œuf). */
+  protected gravity = 0.03;
 
   constructor(itemId: number) {
     super();
@@ -454,18 +456,8 @@ export class Thrown extends Entity {
         const x = this.x + dx * d;
         const y = oy + dy * d;
         const z = this.z + dz * d;
-        if (target instanceof Living) {
-          // aucun dégât, mais un recul et l'éclair rouge
-          const cause: DamageCause = 'generic';
-          if (!target.hurt(game, 0.001, cause, this.owner)) target.knockback(dx, dz, 0.3);
-        }
         this.dead = true;
-        if (this.itemId === I.EGG) {
-          game.itemParticles(x, y, z, I.EGG, 8);
-          Thrown.onEggBreak?.(game, x, y, z);
-        } else {
-          game.particles('snow', x, y, z, 8, 0.1);
-        }
+        this.impact(game, x, y, z, target instanceof Living ? target : null, dx, dz);
         return;
       }
       this.x += this.vx;
@@ -475,8 +467,71 @@ export class Thrown extends Entity {
     this.vx *= 0.99;
     this.vy *= 0.99;
     this.vz *= 0.99;
-    this.vy -= 0.03;
+    this.vy -= this.gravity;
     if (this.y < -64 || this.age > 600) this.dead = true;
+  }
+
+  /** Le projectile se brise en (x, y, z), sur `target` s'il a touché un être vivant. */
+  protected impact(game: GameApi, x: number, y: number, z: number, target: Living | null, dx: number, dz: number): void {
+    if (target) {
+      // aucun dégât, mais un recul et l'éclair rouge
+      const cause: DamageCause = 'generic';
+      if (!target.hurt(game, 0.001, cause, this.owner)) target.knockback(dx, dz, 0.3);
+    }
+    if (this.itemId === I.EGG) {
+      game.itemParticles(x, y, z, I.EGG, 8);
+      Thrown.onEggBreak?.(game, x, y, z);
+    } else {
+      game.particles('snow', x, y, z, 8, 0.1);
+    }
+  }
+}
+
+export type PotionEffect = 'harm' | 'poison' | 'slow' | 'weak';
+
+/** Rayon d'action d'une potion jetable, en blocs. */
+const SPLASH_RADIUS = 4;
+
+/**
+ * Potion jetable (sorcière) : en se brisant, elle touche tous les êtres vivants à moins de
+ * 4 blocs, d'autant plus fort qu'ils sont près. Les sorcières y sont insensibles.
+ */
+export class ThrownPotion extends Thrown {
+  constructor(readonly effect: PotionEffect) {
+    super(I.SPLASH_POTION);
+    this.gravity = 0.05;
+  }
+
+  protected override impact(game: GameApi, x: number, y: number, z: number, target: Living | null): void {
+    game.blockSound('break', B.GLASS, x, y, z);
+    game.particles('splash', x, y, z, 24, 0.8);
+    game.particles(this.effect === 'harm' ? 'crit' : 'slime', x, y + 0.2, z, 12, 1.2);
+    const r = SPLASH_RADIUS;
+    for (const e of game.entitiesInBox(x - r, y - 2, z - r, x + r, y + 2, z + r, null)) {
+      if (!(e instanceof Living) || !e.alive || e.mobKind === 'witch') continue;
+      const d = Math.sqrt(e.distanceSq(x, y - e.height * 0.5, z));
+      if (e !== target && d >= r) continue;
+      applyPotion(game, e, this.effect, e === target ? 1 : 1 - d / r, this.owner);
+    }
+  }
+}
+
+/** Applique l'effet d'une potion à un être vivant, avec une force de 0 à 1. */
+export function applyPotion(game: GameApi, e: Living, effect: PotionEffect, strength: number, source: Entity | null): void {
+  if (strength <= 0) return;
+  switch (effect) {
+    case 'harm':
+      e.hurt(game, Math.max(1, Math.round(6 * strength)), 'magic', source);
+      break;
+    case 'poison':
+      e.poisonTicks = Math.max(e.poisonTicks, Math.round(900 * strength));
+      break;
+    case 'slow':
+      e.slowTicks = Math.max(e.slowTicks, Math.round(1800 * strength));
+      break;
+    default:
+      e.weakTicks = Math.max(e.weakTicks, Math.round(1800 * strength));
+      break;
   }
 }
 

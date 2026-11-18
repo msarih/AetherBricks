@@ -63,6 +63,8 @@ function runScript(scriptPath) {
     await runScript(path.join(__dirname, 't5.cjs'));
     console.log('\n=== Exécution de t6.cjs (Forteresse du Nether : blaze, squelette wither, verrues) ===');
     await runScript(path.join(__dirname, 't6.cjs'));
+    console.log('\n=== Exécution de t7.cjs (Créatures : slime, enderman, sorcière, cheval, calamar, golem, chat, laisse, étiquette) ===');
+    await runScript(path.join(__dirname, 't7.cjs'));
     console.log('\nTous les tests E2E sont passés avec succès.');
   } catch (err) {
     console.error('\nÉchec des tests E2E :', err.message);

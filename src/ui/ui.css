@@ -199,6 +199,9 @@
 .mc-heart[data-s='b1'] { background-image: var(--spr-heart-b1); }
 .mc-heart[data-s='b2'] { background-image: var(--spr-heart-b2); }
 .mc-heart[data-s='x'] { display: none; }
+/* Cœurs verts sous poison, noirs sous flétrissement */
+.mc-row-hearts[data-fx='poison'] .mc-heart { filter: hue-rotate(80deg) saturate(0.85) brightness(0.9); }
+.mc-row-hearts[data-fx='wither'] .mc-heart { filter: grayscale(1) brightness(0.35); }
 .mc-food[data-s='0'] { background-image: var(--spr-food-0); }
 .mc-food[data-s='1'] { background-image: var(--spr-food-1); }
 .mc-food[data-s='2'] { background-image: var(--spr-food-2); }

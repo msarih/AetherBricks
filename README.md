@@ -19,7 +19,15 @@ npm run build    # version de production dans dist/
 - **Survie** : santé, faim, air sous l'eau, dégâts de chute, mort et réapparition, lit pour passer la nuit et fixer son point d'apparition.
 - **Blocs et objets** : casser et poser, outils et vitesses de minage, butins, eau et lave qui s'écoulent, TNT, portes, échelles, cultures, coffres, établi et fourneau.
 - **Inventaire et fabrication** : inventaire à la souris, grille 2×2, établi 3×3, cuisson au fourneau, inventaire créatif avec recherche.
-- **Créatures** : vaches, cochons, moutons, poules ; zombies, squelettes, creepers et araignées la nuit.
+- **Créatures** : vaches, cochons, moutons, poules et loups ; zombies, squelettes, creepers et araignées la nuit ; dans le Nether, cochons-zombies, ghasts, cubes de magma, blazes et squelettes wither. S'y ajoutent :
+  - le **slime**, dans les marais la nuit et en profondeur : tué, un gros se divise en plus petits, qui lâchent des boules de slime (piston collant, laisse) ;
+  - l'**enderman** : paisible tant qu'on ne le regarde pas dans les yeux, il se téléporte, craint l'eau, esquive les flèches et déplace des blocs ; il lâche des perles de l'Ender ;
+  - la **sorcière**, qui jette des potions : poison (cœurs verts, ne tue pas), lenteur, faiblesse, dégâts. Un seau de lait dissipe tout ;
+  - le **cheval**, en troupeaux dans les plaines et la savane. On l'apprivoise en le montant à mains nues (il désarçonne plusieurs fois ; sucre, blé et pommes aident). Une fois apprivoisé, un clic droit avec une selle le selle : il va alors où l'on regarde, `Espace` le fait sauter, `Maj` fait descendre. Vie, vitesse et détente varient d'un cheval à l'autre ;
+  - le **calamar**, en mer et en rivière, qui lâche de l'encre (colorant noir) ;
+  - le **golem de fer** : chaque village a le sien, qui s'en prend aux monstres. On en construit un avec quatre blocs de fer en T et une citrouille posée dessus ;
+  - l'**ocelot** des jungles : farouche, il s'approche si l'on tient du poisson cru, et peut s'apprivoiser en chat. Le chat suit son maître, s'assoit d'un clic droit, et les creepers l'évitent ;
+  - la **laisse** (4 ficelles + 1 boule de slime) : clic droit sur un animal pour le promener, puis sur une barrière pour l'y attacher ; un clic droit sur l'animal le détache. L'**étiquette** donne un nom à une créature (clic droit, puis saisie du nom) : il s'affiche au-dessus d'elle et elle ne disparaît plus. Selle et étiquette se trouvent dans les coffres et à la pêche.
 - **Pêche** : canne à pêche (3 bâtons + 2 ficelles) ; un clic droit lance la ligne, un second la remonte. Quand le flotteur s'enfonce, un poisson mord : poisson cru (à cuire au fourneau), parfois un objet sans valeur ou une trouvaille.
 - **S'y retrouver** : la boussole (4 lingots de fer + 1 redstone) pointe vers le point d'apparition du monde ; l'horloge (4 lingots d'or + 1 redstone) montre le soleil ou la lune ; la carte vierge (8 papiers + 1 boussole) devient, d'un clic droit, la carte de la zone de 128 × 128 blocs où l'on se tient, et se dessine tant qu'on la tient en main ; les panneaux (6 planches + 1 bâton) portent 4 lignes de texte. Le menu de pause donne les statistiques du joueur (distances, blocs minés, objets fabriqués, créatures vaincues).
 - **Lieux à découvrir** (dans les mondes créés à partir de cette version ; les mondes plus anciens gardent leur terrain tel quel) :
@@ -48,7 +56,7 @@ Les touches sont repérées par leur position sur le clavier : sur un clavier QW
 | **Maj** | S'accroupir (descendre en vol) |
 | **Ctrl** | Courir |
 | **Clic gauche** | Casser, attaquer |
-| **Clic droit** | Poser, utiliser, manger |
+| **Clic droit** | Poser, utiliser, manger ; monter à cheval, nourrir, attacher |
 | **Clic milieu** | Choisir le bloc visé |
 | **Molette, 1 à 9** | Changer de case |
 | **E** | Inventaire |
@@ -72,6 +80,7 @@ Les touches sont repérées par leur position sur le clavier : sur un clavier QW
 
 - Pas d'End ni de multijoueur.
 - Lieux à découvrir : uniquement dans les mondes créés à partir de cette version. Écarts avec Minecraft : l'échange avec un villageois se fait en cliquant sur une offre (pas de cases à remplir) ; les zombies n'attaquent pas les villageois ; le temple de la jungle n'a pas de piège à flèches ; dans les mines, les coffres sont posés au sol et les cages donnent des araignées ordinaires ; les rails sont un décor (pas de wagonnet) ; la forteresse a un plan plus simple, sans escaliers.
+- Créatures, écarts avec Minecraft : l'étiquette se remplit au moment de l'utiliser (pas d'enclume) ; la selle se pose d'un clic droit (le cheval n'a pas d'inventaire) et le saut ne se dose pas ; pas d'âne, de mule ni d'armure de cheval ; pas de cabane de sorcière dans les marais (elle apparaît dans le noir, rarement) ; les slimes ne dépendent pas de la lune ; la sorcière ne lâche pas de fiole ; la perle de l'Ender ne se lance pas encore ; les nouvelles créatures n'ont pas de cri propre.
 - La boussole indique le point d'apparition du monde, pas le lit ; les cartes ne s'agrandissent pas et restent vierges dans le Nether.
 - Testé sur Chrome uniquement.
 

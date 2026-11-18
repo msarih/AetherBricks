@@ -66,6 +66,7 @@ const BASE_TILES = [
   'mushroom_stew', 'bowl', 'fishing_rod', 'fishing_rod_cast', 'raw_fish', 'cooked_fish',
   'door_item', 'iron_door_item', 'bed_item', 'sugar_cane_item',
   'map', 'filled_map', 'sign', 'nether_brick', 'nether_wart', 'blaze_rod',
+  'slime_ball', 'ender_pearl', 'saddle', 'lead', 'name_tag', 'splash_potion',
 ] as const;
 
 /** Images animées de la boussole et de l'horloge (aiguille, cadran), 32 chacune. */

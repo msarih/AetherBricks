@@ -17,7 +17,7 @@ import type { Menu } from '../game/Inventory';
 import { T } from '../world/Tiles';
 import { Hud } from './Hud';
 import type { Screen, TitlePage, UiContext } from './Screen';
-import { ChatScreen, DeathScreen, LoadingScreen, OptionsScreen, PauseScreen, SignScreen } from './Screens';
+import { ChatScreen, DeathScreen, LoadingScreen, NameScreen, OptionsScreen, PauseScreen, SignScreen } from './Screens';
 import { StatsScreen } from './StatsScreen';
 import { SlotScreen } from './SlotScreen';
 import { installSprites } from './Sprites';
@@ -134,6 +134,10 @@ export class GameUi implements UiApi {
 
   openSignEditor(x: number, y: number, z: number, lines: readonly string[]): void {
     this.setScreen(new SignScreen(this.ctx, x, y, z, lines));
+  }
+
+  openNameEditor(id: number, current: string, max: number): void {
+    this.setScreen(new NameScreen(this.ctx, id, current, max));
   }
 
   openTrade(view: TradeView): void {

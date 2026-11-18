@@ -56,7 +56,7 @@ export interface EntityView {
   /** 'item' : identifiant de l'objet (bloc < 256 → mini-bloc, sinon icône plate) et quantité. Aussi : objet tenu par un 'mob' ou 'player' (0 = rien). */
   itemId: number;
   itemCount: number;
-  /** 'falling_block' et 'tnt' : bloc et méta à afficher. */
+  /** 'falling_block' et 'tnt' : bloc et méta à afficher. Enderman : bloc porté entre ses bras (0 = aucun). */
   blockId: number;
   blockMeta: number;
   /** 'tnt' : ticks restants avant l'explosion. Creeper : gonflement 0..1. */
@@ -69,8 +69,22 @@ export interface EntityView {
   angry: boolean;
   sitting: boolean;
   collarColor: number;
-  /** Villageois : métier (0..4), qui fixe la couleur de sa robe. */
+  /** Villageois : métier (0..4). Cheval : robe (0..6). Ocelot : 0 sauvage, 1..3 chat apprivoisé. */
   variant: number;
+  /** Nom donné par une étiquette (vide = aucun), affiché au-dessus de la tête. */
+  customName: string;
+  /** En laisse : la corde relie la créature au point (leashX, leashY, leashZ), précédent et courant. */
+  leashed: boolean;
+  pLeashX: number;
+  pLeashY: number;
+  pLeashZ: number;
+  leashX: number;
+  leashY: number;
+  leashZ: number;
+  /** Assis sur une monture : jambes repliées vers l'avant. */
+  riding: boolean;
+  /** Cheval : porte une selle. */
+  saddled: boolean;
   /** Petit animal (taille réduite, tête plus grande). */
   baby: boolean;
   /** Facteur d'échelle du modèle (ex. cube de magma selon sa taille). */

@@ -5,7 +5,8 @@
  * `tick()` tourne à 20 ticks par seconde (logique) ; `frame()` à chaque image (contour du bloc visé).
  */
 import { Living, type Entity, type GameApi } from '../entity/Entity';
-import { notifyTamedWolves } from '../entity/Mobs';
+import { tryBuildGolem } from '../entity/Creatures';
+import { LEASH_BREAK, Mob, isLeashPost, notifyTamedWolves } from '../entity/Mobs';
 import { Arrow, FishingBobber, Thrown } from '../entity/Objects';
 import type { Input } from '../player/Input';
 import { attackDamage, type Player } from '../player/Player';
@@ -145,7 +146,8 @@ export class Interaction {
     best = Math.min(best, p.creative ? ENTITY_REACH_CREATIVE : ENTITY_REACH_SURVIVAL);
     let found: Entity | null = null;
     for (const e of g.entities) {
-      if (e === p || e.dead || !e.pickable) continue;
+      // sa propre monture ne gêne pas la visée
+      if (e === p || e === p.vehicle || e.dead || !e.pickable) continue;
       const hw = e.width / 2 + 0.1;
       const d = rayBoxDistance(ex, ey, ez, l.x, l.y, l.z, e.x - hw, e.y - 0.1, e.z - hw, e.x + hw, e.y + e.height + 0.1, e.z + hw, best);
       if (d >= 0 && d <= best) {
@@ -372,6 +374,8 @@ export class Interaction {
     if (sharp > 0) damage += 0.5 * sharp + 0.5;
     const crit = p.fallDistance > 0 && !p.onGround && !p.inWater && !p.onLadder && !p.flying;
     if (crit) damage *= 1.5;
+    // faiblesse (potion de sorcière) : coups affaiblis de 2 cœurs
+    if (p.weakTicks > 0) damage = Math.max(0, damage - 4);
     const ok = e.hurt(g, damage, 'attack', p);
     if (ok) p.addStat('damage_dealt', damage);
     const ey = e.y + e.height * 0.6;
@@ -426,7 +430,9 @@ export class Interaction {
       if (held === I.GOLDEN_APPLE) p.heal(4);
       if (held === I.MUSHROOM_STEW) p.replaceHeld(I.BOWL);
       else if (drink) {
+        // le lait dissipe poison, lenteur, faiblesse et flétrissement
         p.fireTicks = 0;
+        p.clearEffects();
         p.replaceHeld(I.BUCKET);
       } else p.consumeHeld();
       p.stopUsing();
@@ -472,11 +478,28 @@ export class Interaction {
     const held = p.heldItemId;
 
     if (this.entity) {
-      if (this.entity.interact(g, p)) {
+      const e = this.entity;
+      if (e instanceof Mob && this.freshClick) {
+        // laisse : détacher une créature attachée, ou lui passer la laisse tenue en main
+        if (e.useLeash(g, p)) {
+          this.swing();
+          return true;
+        }
+        if (held === I.NAME_TAG && e.alive && g.openNameTag) {
+          g.openNameTag(e);
+          this.swing();
+          return true;
+        }
+      }
+      if (e.interact(g, p)) {
         this.swing();
         return true;
       }
     } else if (this.hasBlock) {
+      if (this.freshClick && isLeashPost(this.hit.id) && this.tieLeashes()) {
+        this.swing();
+        return true;
+      }
       if ((!p.input.sneak || held === 0) && this.activate()) {
         this.swing();
         return true;
@@ -487,6 +510,22 @@ export class Interaction {
       }
     }
     return held !== 0 && this.useInAir(held);
+  }
+
+  /** Noue à la barrière visée les laisses que tient le joueur. Retourne false s'il n'en tient aucune. */
+  private tieLeashes(): boolean {
+    const g = this.game;
+    const p = g.player;
+    const h = this.hit;
+    let tied = false;
+    for (const e of g.entities) {
+      if (!(e instanceof Mob) || e.leashHolder !== p) continue;
+      if (e.distanceSq(h.x + 0.5, h.y + 0.5, h.z + 0.5) > LEASH_BREAK * LEASH_BREAK) continue;
+      e.tieTo(h.x, h.y, h.z);
+      tied = true;
+    }
+    if (tied) g.blockSound('place', h.id, h.x + 0.5, h.y + 0.5, h.z + 0.5);
+    return tied;
   }
 
   /** Active le bloc visé (porte, coffre, établi…). */
@@ -789,6 +828,8 @@ export class Interaction {
     if (id === B.SPAWNER) g.world.setBlockEntity({ type: 'spawner', x, y, z, mob: 'pig', delay: 20 } as BlockEntity);
     g.blockSound('place', id, x + 0.5, y + 0.5, z + 0.5);
     g.player.consumeHeld();
+    // une citrouille posée sur quatre blocs de fer en T : un golem de fer
+    if (id === B.PUMPKIN || id === B.JACK_O_LANTERN) tryBuildGolem(g, x, y, z);
     return true;
   }
 

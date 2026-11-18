@@ -3,7 +3,7 @@
  */
 import { BLOCK_OPAQUE, BLOCK_SHAPE, BLOCK_SOLID, SHAPE } from '../world/Blocks';
 import type { Chunk } from '../world/Chunk';
-import { CHUNK_HEIGHT } from '../world/Constants';
+import { CHUNK_HEIGHT, SEA_LEVEL } from '../world/Constants';
 import { B } from '../world/Ids';
 import type { World } from '../world/World';
 import { BIOME, isWaterBiome } from '../world/gen/Biomes';
@@ -12,7 +12,8 @@ import { hash2, mulberry32 } from '../world/gen/Noise';
 import type { GameApi } from './Entity';
 import { getMobModel } from './MobModels';
 import type { MobKind } from './MobModels';
-import { ANIMAL_CAP, ANIMAL_RADIUS, HOSTILE_KINDS, MagmaCube, PASSIVE_KINDS, createMob } from './Mobs';
+import { Slime, isSlimeChunk } from './Creatures';
+import { ANIMAL_CAP, ANIMAL_RADIUS, HOSTILE_KINDS, MagmaCube, PASSIVE_KINDS, createMob, isDay } from './Mobs';
 import { isBoxFree } from './Physics';
 
 export { ANIMAL_CAP, ANIMAL_RADIUS };
@@ -36,8 +37,24 @@ const MAX_LIGHT = 7;
 
 const TAU = Math.PI * 2;
 
-/** Espèces de monstres de la surface, pondérées. */
-const MONSTER_TABLE: readonly MobKind[] = ['zombie', 'zombie', 'zombie', 'skeleton', 'skeleton', 'skeleton', 'creeper', 'creeper', 'spider', 'spider'];
+/** Espèces de monstres de la surface et leur poids (Minecraft : l'enderman et la sorcière sont rares). */
+const MONSTER_TABLE: ReadonlyArray<readonly [MobKind, number]> = [
+  ['zombie', 100], ['skeleton', 100], ['creeper', 100], ['spider', 100], ['enderman', 10], ['witch', 5],
+];
+const MONSTER_TOTAL = MONSTER_TABLE.reduce((n, e) => n + e[1], 0);
+
+function pickMonster(rng: () => number): MobKind {
+  let r = rng() * MONSTER_TOTAL;
+  for (const [kind, weight] of MONSTER_TABLE) {
+    r -= weight;
+    if (r < 0) return kind;
+  }
+  return 'zombie';
+}
+
+/** Nombre maximal de calamars chargés à la fois, et profondeur de leur zone d'apparition sous le niveau de la mer. */
+const SQUID_CAP = 5;
+const SQUID_DEPTH = 16;
 
 /** Espèces du Nether, pondérées (cochon-zombie majoritaire, cube de magma moins fréquent, ghast rare). */
 const NETHER_TABLE: readonly MobKind[] = [
@@ -63,9 +80,11 @@ export function fortressGuard(below: number, rng: () => number): MobKind | null 
 }
 
 const FARM: readonly MobKind[] = ['cow', 'sheep', 'pig', 'chicken'];
+/** Plaines et savane : les chevaux y vivent en troupeaux. */
+const PLAINS: readonly MobKind[] = ['cow', 'sheep', 'pig', 'chicken', 'horse'];
 const FOREST: readonly MobKind[] = ['cow', 'sheep', 'pig', 'chicken', 'wolf'];
 const COLD: readonly MobKind[] = ['sheep', 'sheep', 'cow', 'pig', 'chicken', 'wolf'];
-const JUNGLE: readonly MobKind[] = ['chicken', 'chicken', 'pig', 'cow'];
+const JUNGLE: readonly MobKind[] = ['chicken', 'chicken', 'pig', 'cow', 'ocelot', 'ocelot'];
 const SWAMP: readonly MobKind[] = ['pig', 'pig', 'cow', 'chicken'];
 const HILLS: readonly MobKind[] = ['sheep', 'sheep', 'cow'];
 
@@ -94,6 +113,9 @@ function animalsOf(biome: number): readonly MobKind[] | null {
     case BIOME.MOUNTAINS:
     case BIOME.SNOWY_MOUNTAINS:
       return HILLS;
+    case BIOME.PLAINS:
+    case BIOME.SAVANNA:
+      return PLAINS;
     default:
       return FARM;
   }
@@ -192,8 +214,38 @@ export class Spawner {
       this.tickNether(game, count, cap);
       return;
     }
+    this.tickSquids(game);
     if (count >= cap) return;
     this.tickOverworld(game, count, cap);
+  }
+
+  /** Calamars : ils apparaissent dans l'eau, loin du joueur, jusqu'à 16 blocs sous le niveau de la mer. */
+  private tickSquids(game: GameApi): void {
+    let squids = 0;
+    for (const e of game.entities) if (e.kind === 'mob' && !e.dead && e.mobKind === 'squid') squids++;
+    if (squids >= SQUID_CAP) return;
+    const w = game.world;
+    const p = game.player;
+    const rng = game.rng;
+    const a = rng() * TAU;
+    const dist = MIN_DISTANCE + rng() * (MAX_DISTANCE - MIN_DISTANCE);
+    const x = Math.floor(p.x + Math.cos(a) * dist);
+    const z = Math.floor(p.z + Math.sin(a) * dist);
+    const chunk = w.chunkAt(x, z);
+    if (!chunk || !chunk.meshed) return;
+    const y = SEA_LEVEL - 1 - Math.floor(rng() * SQUID_DEPTH);
+    const size = 1 + Math.floor(rng() * 3);
+    for (let i = 0; i < size && squids < SQUID_CAP; i++) {
+      const sx = x + (i === 0 ? 0 : Math.floor(rng() * 5) - 2);
+      const sz = z + (i === 0 ? 0 : Math.floor(rng() * 5) - 2);
+      if (!w.isLoaded(sx, sz) || w.getBlock(sx, y, sz) !== B.WATER || w.getBlock(sx, y + 1, sz) !== B.WATER) continue;
+      const squid = createMob('squid', rng);
+      if (!squid) return;
+      squid.setPosition(sx + 0.5, y + 0.1, sz + 0.5);
+      squid.setRotation(rng() * TAU);
+      game.spawn(squid);
+      squids++;
+    }
   }
 
   private tickOverworld(game: GameApi, count: number, cap: number): void {
@@ -214,8 +266,15 @@ export class Spawner {
       const y = this.findFloor(w, x, Math.min(from, CHUNK_HEIGHT - 3), z, 12);
       if (y < 0) continue;
 
-      const kind = MONSTER_TABLE[Math.floor(rng() * MONSTER_TABLE.length)];
-      const size = 1 + Math.floor(rng() * 3);
+      let kind = pickMonster(rng);
+      // slimes : en profondeur dans un chunk sur dix, ou la nuit dans les marais
+      // (pas en monde plat : tout son sol est sous y = 40, il serait envahi en plein jour)
+      if (y < 40 && w.worldType !== 'flat' && isSlimeChunk(w.seed, x >> 4, z >> 4)) {
+        if (rng() < 0.5) kind = 'slime';
+      } else if (y >= 50 && y <= 70 && w.biomeAt(x, z) === BIOME.SWAMP && !isDay(game) && rng() < 0.35) {
+        kind = 'slime';
+      }
+      const size = kind === 'enderman' || kind === 'witch' ? 1 : 1 + Math.floor(rng() * 3);
       for (let i = 0; i < size && count < cap; i++) {
         let sx = x;
         let sy = y;
@@ -229,6 +288,13 @@ export class Spawner {
         if (!this.canSpawnMonster(game, kind, sx, sy, sz)) continue;
         const mob = createMob(kind, rng);
         if (!mob) break;
+        if (mob instanceof Slime) {
+          const r = rng();
+          mob.setSize(r < 0.34 ? 4 : r < 0.67 ? 2 : 1);
+          // un gros slime a besoin de place
+          const hw = mob.width / 2;
+          if (!isBoxFree(w, sx + 0.5 - hw, sy, sz + 0.5 - hw, sx + 0.5 + hw, sy + mob.height, sz + 0.5 + hw)) continue;
+        }
         mob.setPosition(sx + 0.5, sy, sz + 0.5);
         mob.setRotation(rng() * TAU);
         game.spawn(mob);
@@ -403,7 +469,8 @@ export class Spawner {
     const below = w.getBlock(x, y - 1, z);
     if (BLOCK_OPAQUE[below] !== 1 || BLOCK_SHAPE[below] !== SHAPE.CUBE) return false;
     if (!isOpenCell(w.getBlock(x, y, z)) || !isOpenCell(w.getBlock(x, y + 1, z))) return false;
-    if (w.getLight(x, y, z) > MAX_LIGHT) return false;
+    // les slimes des profondeurs apparaissent même en pleine lumière
+    if (w.getLight(x, y, z) > MAX_LIGHT && !(kind === 'slime' && y < 40)) return false;
 
     const p = game.player;
     const dx = x + 0.5 - p.x;

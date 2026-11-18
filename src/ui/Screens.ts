@@ -12,6 +12,71 @@ export function sized<E extends HTMLElement>(e: E, w: number): E {
   return e;
 }
 
+// ------------------------------------------------------------------------------------- étiquette
+
+/**
+ * Saisie du nom donné à une créature avec une étiquette : une ligne, Entrée ou « Terminé »
+ * pour valider, Échap pour abandonner (l'étiquette n'est alors pas consommée).
+ * Le jeu continue pendant la saisie.
+ */
+export class NameScreen implements Screen {
+  readonly el: HTMLDivElement;
+  readonly pausing = false;
+  private readonly input: HTMLInputElement;
+
+  constructor(private readonly ctx: UiContext, private readonly id: number, current: string, max: number) {
+    const host = ctx.host;
+    this.el = el('div', 'mc-screen mc-screen-dim mc-menu');
+    this.el.dataset.mc = 'name';
+    el('div', 'mc-title', this.el, 'Donner un nom');
+    el('div', 'mc-gap', this.el);
+    const board = el('div', 'mc-sign-board', this.el);
+    this.input = el('input', 'mc-sign-line', board);
+    this.input.type = 'text';
+    this.input.maxLength = max;
+    this.input.spellcheck = false;
+    this.input.autocomplete = 'off';
+    this.input.value = current;
+    this.input.dataset.mc = 'name-line';
+    el('div', 'mc-gap', this.el);
+    sized(button(host, 'Terminé', () => this.finish(true), 'name-done', this.el), 200);
+    this.el.addEventListener('mousedown', (e) => {
+      if (!(e.target instanceof HTMLInputElement) && !(e.target instanceof HTMLButtonElement)) e.preventDefault();
+    });
+  }
+
+  opened(): void {
+    this.input.focus();
+    this.input.select();
+  }
+
+  key(e: KeyboardEvent): boolean {
+    switch (e.code) {
+      case 'Escape':
+        e.preventDefault();
+        if (!e.repeat) this.finish(false);
+        return true;
+      case 'Enter':
+      case 'NumpadEnter':
+        if (e.isComposing) return false;
+        e.preventDefault();
+        if (!e.repeat) this.finish(true);
+        return true;
+      default:
+        if (document.activeElement !== this.input) this.input.focus();
+        return false;
+    }
+  }
+
+  private finish(apply: boolean): void {
+    const name = apply ? this.input.value.trim() : '';
+    this.ctx.closeScreen();
+    const game = this.ctx.host.game;
+    if (name !== '') game?.setMobName(this.id, name);
+    game?.resume();
+  }
+}
+
 // ------------------------------------------------------------------------------------- panneau
 
 /** Lignes d'un panneau (voir game/BlockEntities : SIGN_LINES, SIGN_LINE_MAX). */

@@ -47,6 +47,13 @@ export const MOB_NAMES: Record<MobKind, string> = {
   villager: 'Villageois',
   blaze: 'Blaze',
   wither_skeleton: 'Squelette wither',
+  slime: 'Slime',
+  enderman: 'Enderman',
+  witch: 'Sorcière',
+  horse: 'Cheval',
+  squid: 'Calamar',
+  iron_golem: 'Golem de fer',
+  ocelot: 'Ocelot',
   player: 'Joueur',
 };
 
