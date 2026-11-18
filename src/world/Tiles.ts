@@ -35,6 +35,7 @@ const BASE_TILES = [
   'bed_head_top', 'bed_foot_top', 'bed_head_side', 'bed_foot_side', 'bed_head_end', 'bed_foot_end',
   'oak_door_top', 'oak_door_bottom', 'iron_door_top', 'iron_door_bottom', 'trapdoor', 'ladder', 'torch',
   'glass_pane_top', 'iron_bars', 'spawner', 'rail',
+  'rail_curved', 'rail_golden', 'rail_golden_powered', 'rail_detector', 'rail_detector_powered',
   'redstone_dust', 'redstone_torch_on', 'redstone_torch_off',
   'piston_top', 'piston_top_sticky', 'piston_side', 'piston_bottom', 'piston_inner',
   'redstone_lamp_off', 'redstone_lamp_on',

@@ -16,6 +16,7 @@ import type { UiApi } from '../ui/UiApi';
 import { applyBonemeal, canStay, fireCanStay, neighborChanged, topSolid } from '../world/Behavior';
 import { FRAME_EYE, tryOpenEndPortal } from '../world/EndPortal';
 import { tryIgnitePortal } from '../world/Portal';
+import { placeAndConnectRail } from '../world/Rails';
 import { META_DOOR_HINGE_RIGHT, META_DOOR_OPEN, META_DOOR_UPPER, ccw, collisionBoxes, cw, opposite } from '../world/BlockModels';
 import {
   BLOCKS,
@@ -1100,9 +1101,10 @@ export class Interaction {
         meta = pf;
         break;
       case SHAPE.RAIL:
-        // dans l'axe du regard : 0 nord-sud, 1 est-ouest
-        meta = pf & 1;
-        break;
+        // Raccordement automatique des rails (droite, virage, montée)
+        placeAndConnectRail(w, x, y, z, id, pf & 1);
+        this.notifyAround(x, y, z);
+        return this.placed(x, y, z, id);
       case SHAPE.VINE: {
         if (side < 0 || !onto) return false;
         meta = 1 << opposite(side);

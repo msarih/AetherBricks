@@ -206,6 +206,8 @@ export const B = {
   CAULDRON: 193,
   CAKE: 194,
   BREWING_STAND: 195,
+  POWERED_RAIL: 196,
+  DETECTOR_RAIL: 197,
 } as const;
 
 /** Nombre maximal d'identifiants de blocs (les objets commencent à 256). */

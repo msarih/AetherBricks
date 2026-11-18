@@ -58,7 +58,9 @@ export function isRedstoneBlock(id: number): boolean {
     id === B.REDSTONE_LAMP_LIT ||
     id === B.REDSTONE_BLOCK ||
     id === B.IRON_DOOR ||
-    id === B.TNT
+    id === B.TNT ||
+    id === B.POWERED_RAIL ||
+    id === B.DETECTOR_RAIL
   );
 }
 
@@ -78,9 +80,10 @@ function isStronglyPoweredBlock(w: World, x: number, y: number, z: number): bool
   // Torche au sol juste dessous (y - 1, side = 0 = allumée au sol)
   const below = w.getBlockAndMeta(x, y - 1, z);
   if ((below & 255) === B.REDSTONE_TORCH && ((below >> 8) & 7) === 0) return true;
-  // Plaque de pression juste dessus
+  // Plaque de pression ou rail détecteur juste dessus
   const above = w.getBlockAndMeta(x, y + 1, z);
   if ((above & 255) === B.STONE_PRESSURE_PLATE && ((above >> 8) & 1) !== 0) return true;
+  if ((above & 255) === B.DETECTOR_RAIL && ((above >> 8) & 8) !== 0) return true;
   // Levier ou bouton au-dessus (side === 0)
   if (((above & 255) === B.LEVER || (above & 255) === B.STONE_BUTTON) && ((above >> 8) & 7) === 0 && ((above >> 8) & 8) !== 0) {
     return true;
@@ -120,6 +123,8 @@ function directSourcePower(w: World, nx: number, ny: number, nz: number, tx: num
       return meta & 8 ? 15 : 0;
     case B.STONE_PRESSURE_PLATE:
       return meta & 1 ? 15 : 0;
+    case B.DETECTOR_RAIL:
+      return meta & 8 ? 15 : 0;
     default:
       return 0;
   }
@@ -340,6 +345,56 @@ function updateConsumer(w: World, x: number, y: number, z: number): void {
   if (id === B.PISTON || id === B.STICKY_PISTON) {
     const powered = isBlockPowered(w, x, y, z);
     tryPistonMove(w, x, y, z, id, meta, powered);
+    return;
+  }
+  if (id === B.POWERED_RAIL) {
+    const shape = meta & 7;
+    const dx = shape === 1 || shape === 2 || shape === 3 ? 1 : 0;
+    const dz = 1 - dx;
+    let powered = isBlockPowered(w, x, y, z);
+    for (const sign of [1, -1]) {
+      if (powered) break;
+      let cx = x;
+      let cy = y;
+      let cz = z;
+      for (let dist = 1; dist <= 8 && !powered; dist++) {
+        cx += dx * sign;
+        cz += dz * sign;
+        let fy = -1;
+        for (const oy of [0, 1, -1]) {
+          if (w.getBlock(cx, cy + oy, cz) === B.POWERED_RAIL) {
+            fy = cy + oy;
+            break;
+          }
+        }
+        if (fy < 0) break;
+        cy = fy;
+        if (isBlockPowered(w, cx, cy, cz)) powered = true;
+      }
+    }
+    const next = shape | (powered ? 8 : 0);
+    if (next !== meta) {
+      w.setMeta(x, y, z, next, false);
+      for (const sign of [1, -1]) {
+        let cx = x;
+        let cy = y;
+        let cz = z;
+        for (let dist = 1; dist <= 8; dist++) {
+          cx += dx * sign;
+          cz += dz * sign;
+          let fy = -1;
+          for (const oy of [0, 1, -1]) {
+            if (w.getBlock(cx, cy + oy, cz) === B.POWERED_RAIL) {
+              fy = cy + oy;
+              break;
+            }
+          }
+          if (fy < 0) break;
+          cy = fy;
+          w.scheduleTick(cx, cy, cz, 1);
+        }
+      }
+    }
     return;
   }
   if (BLOCK_OPAQUE[id] === 1) {
