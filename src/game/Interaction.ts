@@ -35,6 +35,7 @@ import { CHUNK_HEIGHT, FACE_DOWN, FACE_DX, FACE_DY, FACE_DZ, FACE_EAST, FACE_NOR
 import { blockDrops, canHarvest, miningSpeed, type Drop } from '../world/Drops';
 import { enchantLevel } from '../world/Enchants';
 import { B, I } from '../world/Ids';
+import type { BlockEntity } from '../world/World';
 import { getItem, isTool } from '../world/Items';
 import { cloneStackWithCount, makeStack } from '../world/ItemStack';
 import { newRayHit, rayBoxDistance, raycast } from '../world/Raycast';
@@ -623,6 +624,15 @@ export class Interaction {
       return true;
     }
 
+    if (item.tool === 'shovel') {
+      // la pelle tasse l'herbe en chemin de terre, comme dans Minecraft
+      if (h.id !== B.GRASS || h.face === FACE_DOWN || w.getBlock(h.x, h.y + 1, h.z) !== B.AIR) return false;
+      w.setBlock(h.x, h.y, h.z, B.GRASS_PATH, 0);
+      g.blockSound('place', B.GRASS, h.x + 0.5, h.y + 1, h.z + 0.5);
+      p.damageHeld(g);
+      return true;
+    }
+
     if (item.tool === 'hoe') {
       if ((h.id !== B.GRASS && h.id !== B.DIRT) || h.face === FACE_DOWN || w.getBlock(h.x, h.y + 1, h.z) !== B.AIR) return false;
       w.setBlock(h.x, h.y, h.z, B.FARMLAND, 0);
@@ -775,6 +785,8 @@ export class Interaction {
 
   private placed(x: number, y: number, z: number, id: number): boolean {
     const g = this.game;
+    // un générateur posé à la main produit des cochons, comme dans Minecraft
+    if (id === B.SPAWNER) g.world.setBlockEntity({ type: 'spawner', x, y, z, mob: 'pig', delay: 20 } as BlockEntity);
     g.blockSound('place', id, x + 0.5, y + 0.5, z + 0.5);
     g.player.consumeHeld();
     return true;
@@ -877,6 +889,10 @@ export class Interaction {
       }
       case SHAPE.FENCE_GATE:
         meta = pf;
+        break;
+      case SHAPE.RAIL:
+        // dans l'axe du regard : 0 nord-sud, 1 est-ouest
+        meta = pf & 1;
         break;
       case SHAPE.VINE: {
         if (side < 0 || !onto) return false;

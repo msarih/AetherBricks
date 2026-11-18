@@ -24,6 +24,8 @@ export interface WorldInfo {
   seed: number;
   worldType: WorldType;
   gameMode: GameMode;
+  /** Version du générateur à la création du monde (absente = 1). Voir GEN_VERSION. */
+  genVersion?: number;
   /** Date.now() à la création. */
   createdAt: number;
   lastPlayed: number;

@@ -38,6 +38,8 @@ export const SHAPE = {
   PORTAL: 27,
   /** Panneau : rien dans le maillage des chunks, dessiné à part avec son texte (render/SignRenderer). */
   SIGN: 28,
+  /** Rail : plan posé au sol, tourné selon la méta. */
+  RAIL: 29,
 } as const;
 
 export const TINT = { NONE: 0, GRASS: 1, FOLIAGE: 2, FIXED: 3 } as const;
@@ -187,6 +189,12 @@ reg(B.AIR, 'air', 'Air', {
   tiles: 'stone', shape: SHAPE.NONE, solid: false, opaque: false, hardness: 0, replaceable: true, hasItem: false, category: 'aucune',
 });
 
+/** Couleurs accordées au féminin (« terre cuite blanche »). */
+const COLOR_LABELS_FEM = [
+  'blanche', 'orange', 'magenta', 'bleu clair', 'jaune', 'vert clair', 'rose', 'grise',
+  'gris clair', 'cyan', 'violette', 'bleue', 'marron', 'verte', 'rouge', 'noire',
+];
+
 // --- Terrain ---
 const rock = { tool: 'pickaxe' as const, harvestTier: 1, sound: 'stone' as const };
 reg(B.STONE, 'stone', 'Pierre', { tiles: 'stone', hardness: 1.5, blastResistance: 30, ...rock });
@@ -200,6 +208,13 @@ reg(B.BEDROCK, 'bedrock', 'Bedrock', { tiles: 'bedrock', hardness: -1, blastResi
 reg(B.SAND, 'sand', 'Sable', { tiles: 'sand', hardness: 0.5, tool: 'shovel', sound: 'sand', gravity: true, category: 'nature' });
 reg(B.GRAVEL, 'gravel', 'Gravier', { tiles: 'gravel', hardness: 0.6, tool: 'shovel', sound: 'gravel', gravity: true, category: 'nature' });
 reg(B.CLAY, 'clay', "Bloc d'argile", { tiles: 'clay', hardness: 0.6, tool: 'shovel', sound: 'gravel', category: 'nature' });
+reg(B.RED_SAND, 'red_sand', 'Sable rouge', { tiles: 'red_sand', hardness: 0.5, tool: 'shovel', sound: 'sand', gravity: true, category: 'nature' });
+reg(B.TERRACOTTA, 'terracotta', 'Terre cuite', { tiles: 'terracotta', hardness: 1.25, blastResistance: 21, ...rock, category: 'nature' });
+COLOR_NAMES.forEach((c, i) => {
+  reg(B.TERRACOTTA_WHITE + i, `${c}_terracotta`, `Terre cuite ${COLOR_LABELS_FEM[i]}`, {
+    tiles: `terracotta_${c}`, hardness: 1.25, blastResistance: 21, ...rock, category: 'decoration',
+  });
+});
 reg(B.SANDSTONE, 'sandstone', 'Grès', {
   tiles: { top: 'sandstone_top', bottom: 'sandstone_bottom', side: 'sandstone_side' }, hardness: 0.8, ...rock,
 });
@@ -425,6 +440,10 @@ reg(B.FARMLAND, 'farmland', 'Terre labourée', {
   tiles: { top: 'farmland_dry', bottom: 'dirt', side: 'dirt' }, shape: SHAPE.FARMLAND, opaque: false, lightOpacity: 15, hardness: 0.6,
   tool: 'shovel', sound: 'gravel', randomTicks: true, hasItem: false, category: 'aucune',
 });
+reg(B.GRASS_PATH, 'grass_path', 'Chemin de terre', {
+  tiles: { top: 'grass_path_top', bottom: 'dirt', side: 'grass_path_side' }, shape: SHAPE.FARMLAND, opaque: false, lightOpacity: 15,
+  hardness: 0.65, tool: 'shovel', sound: 'grass', category: 'nature',
+});
 reg(B.LILY_PAD, 'lily_pad', 'Nénuphar', {
   tiles: 'lily_pad', shape: SHAPE.LILY_PAD, solid: true, opaque: false, hardness: 0, sound: 'grass', itemTile: 'lily_pad', category: 'nature',
 });
@@ -503,6 +522,16 @@ reg(B.NETHER_PORTAL, 'nether_portal', 'Portail du Nether', {
 reg(B.NETHER_QUARTZ_ORE, 'nether_quartz_ore', 'Minerai de quartz du Nether', {
   tiles: 'nether_quartz_ore', hardness: 3, tool: 'pickaxe', harvestTier: 1, sound: 'stone', category: 'nature',
 });
+reg(B.NETHER_BRICKS, 'nether_bricks', 'Briques du Nether', { tiles: 'nether_bricks', hardness: 2, blastResistance: 30, ...rock });
+reg(B.NETHER_BRICK_FENCE, 'nether_brick_fence', 'Barrière en briques du Nether', {
+  tiles: 'nether_bricks', shape: SHAPE.FENCE, opaque: false, hardness: 2, blastResistance: 30, ...rock, category: 'decoration',
+});
+reg(B.SOUL_SAND, 'soul_sand', 'Sable des âmes', { tiles: 'soul_sand', hardness: 0.5, tool: 'shovel', sound: 'sand', category: 'nature' });
+reg(B.NETHER_WART, 'nether_wart_crop', 'Verrues du Nether', { tiles: 'nether_wart_2', ...crop });
+reg(B.RAIL, 'rail', 'Rails', {
+  tiles: 'rail', shape: SHAPE.RAIL, solid: false, opaque: false, hardness: 0.7, tool: 'pickaxe', sound: 'metal',
+  needsSupport: true, itemTile: 'rail', category: 'decoration',
+});
 // Panneaux : posés par l'objet « Panneau » (sur un bloc : sur poteau ; contre un mur : mural)
 reg(B.SIGN, 'standing_sign', 'Panneau', {
   tiles: 'oak_planks', shape: SHAPE.SIGN, solid: false, opaque: false, hardness: 1, tool: 'axe',
@@ -561,6 +590,9 @@ export function isFluid(id: number): boolean {
 }
 export function isSapling(id: number): boolean {
   return id >= B.OAK_SAPLING && id <= B.ACACIA_SAPLING;
+}
+export function isTerracotta(id: number): boolean {
+  return id >= B.TERRACOTTA && id <= B.TERRACOTTA_BLACK;
 }
 export function isWool(id: number): boolean {
   return id >= B.WOOL_WHITE && id <= B.WOOL_BLACK;

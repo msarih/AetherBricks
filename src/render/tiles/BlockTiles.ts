@@ -393,6 +393,26 @@ def('ice', (p) => {
   }
 });
 
+def('red_sand', (p) => {
+  p.rough([0xa9551f, 0xb45d23, 0xbe6626, 0xc66d2b, 0xcf7732], 6, 6, 0.8);
+  p.speckle(0x9a4a1a, 0.03);
+});
+
+/** Terre cuite : aplat mat, à peine marbré (teintes de Minecraft 1.12). */
+const TERRACOTTA_HEX = [
+  0xd1b1a1, 0xa05325, 0x95576c, 0x706c8a, 0xba8524, 0x677534, 0xa04d4e, 0x392a23,
+  0x876a61, 0x565b5b, 0x764556, 0x4a3b5b, 0x4d3223, 0x4c532a, 0x8e3c2e, 0x251610,
+];
+function terracotta(base: Color): Painter {
+  return (p) => {
+    const f = p.field(4, 4);
+    const g = p.field(9, 9);
+    p.each((x, y) => shade(base, 0.95 + f(x, y) * 0.07 + g(x, y) * 0.04));
+  };
+}
+def('terracotta', terracotta(0x985e43));
+COLOR_NAMES.forEach((name, i) => def(`terracotta_${name}`, terracotta(TERRACOTTA_HEX[i])));
+
 def('sand', (p) => {
   p.rough(SAND, 6, 6, 0.8);
   p.speckle(0xc4b77d, 0.03);
@@ -885,6 +905,59 @@ def('trapdoor', (p) => {
   for (const [px, py] of [[3, 3], [9, 3], [3, 9], [9, 9]] as Array<[number, number]>) {
     p.frame(px - 1, py - 1, 6, 6, 0x5b4023);
     for (let y = py; y < py + 4; y++) for (let x = px; x < px + 4; x++) p.clear(x, y);
+  }
+});
+
+def('nether_bricks', (p) => {
+  const brick = 0x2f171b;
+  const f = p.field(4, 4);
+  p.each((x, y) => {
+    const row = y >> 2;
+    const off = row % 2 === 0 ? 0 : 4;
+    if ((y & 3) === 3 || ((x + off) & 7) === 7) return 0x180a0c;
+    return shade(brick, 0.9 + f(x, y) * 0.22);
+  });
+});
+def('soul_sand', (p) => {
+  p.rough([0x3f2f26, 0x48372c, 0x524034, 0x5a473a], 5, 5, 0.75);
+  // visages devinés dans le sable : deux creux sombres et une bouche
+  for (const [ox, oy] of [[2, 3], [9, 9]]) {
+    p.set(ox, oy, 0x2a1d17);
+    p.set(ox + 3, oy, 0x2a1d17);
+    for (let x = ox; x <= ox + 3; x++) p.set(x, oy + 2, 0x2f211a);
+  }
+});
+for (const [name, h] of [['nether_wart_0', 4], ['nether_wart_1', 8], ['nether_wart_2', 12]] as Array<[TileName, number]>) {
+  def(name, (p) => {
+    for (const cx of [3, 8, 12]) {
+      const top = 16 - h + (cx === 8 ? 0 : 2);
+      for (let y = top; y < 16; y++) {
+        p.set(cx, y, y === top ? 0xc0282c : 0x8a1418);
+        if (y > top + 1 && h > 4) p.set(cx + (y % 2 === 0 ? 1 : -1), y, 0x6e0e12);
+      }
+      if (h >= 12) {
+        p.set(cx - 1, top, 0xd84448);
+        p.set(cx + 1, top, 0xd84448);
+        p.set(cx, top - 1, 0xd84448);
+      }
+    }
+  });
+}
+
+def('rail', (p) => {
+  // traverses de bois, puis les deux files de rail
+  const wood = 0x7a5a34;
+  for (const y of [1, 5, 9, 13]) {
+    for (let x = 1; x < 15; x++) {
+      p.set(x, y, shade(wood, 1.05));
+      p.set(x, y + 1, shade(wood, 0.78));
+    }
+  }
+  for (let y = 0; y < TS; y++) {
+    for (const x of [3, 12]) {
+      p.set(x, y, 0xb8b8b8);
+      p.set(x + (x === 3 ? 1 : -1), y, 0x7c7c7c);
+    }
   }
 });
 
@@ -1428,6 +1501,17 @@ function farmland(wet: boolean): Painter {
     }
   };
 }
+const PATH = [0x8a7a44, 0x978649, 0xa29252, 0xad9d5c];
+def('grass_path_top', (p) => {
+  p.rough(PATH, 5, 5, 0.6);
+});
+def('grass_path_side', (p) => {
+  dirtBase(p);
+  for (let x = 0; x < TS; x++) {
+    p.set(x, 0, p.pick(PATH));
+    p.set(x, 1, shade(p.pick(PATH), 0.86));
+  }
+});
 def('farmland_dry', farmland(false));
 def('farmland_wet', farmland(true));
 

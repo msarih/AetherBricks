@@ -5,19 +5,36 @@
 import { CHUNK_AREA, CHUNK_HEIGHT, CHUNK_SIZE, CHUNK_VOLUME } from '../Constants';
 import { B } from '../Ids';
 import { Simplex, mulberry32, rand2, rand3 } from './Noise';
+import './Fortress';
+import { GenCanvas } from './GenCanvas';
+import { structuresNear, type TerrainInfo } from './Structures';
 import type { GeneratedChunk } from './WorldGen';
 
 const NETHER_LAVA_LEVEL = 31;
 
-export class NetherGen {
+export class NetherGen implements TerrainInfo {
   private readonly noise: Simplex;
   private readonly detail: Simplex;
   readonly seed: number;
 
-  constructor(seed: number) {
+  /** Forteresses : générateur en version 2. */
+  readonly features: boolean;
+  private readonly canvas = new GenCanvas();
+
+  constructor(seed: number, genVersion = 1) {
     this.seed = seed >>> 0;
+    this.features = genVersion >= 2;
     this.noise = new Simplex(this.seed ^ 0x4e455448);
     this.detail = new Simplex(this.seed ^ 0x9e3779b9);
+  }
+
+  /** Le Nether n'a ni relief de surface ni biomes : les forteresses n'en ont pas besoin. */
+  terrainTop(): number {
+    return 0;
+  }
+
+  biomeAt(): number {
+    return 0;
   }
 
   generateChunk(cx: number, cz: number): GeneratedChunk {
@@ -98,6 +115,13 @@ export class NetherGen {
       }
     }
 
-    return { cx, cz, blocks, meta, biomes, heightmap, tints };
+    // forteresses : la part de chacune qui traverse ce chunk
+    if (this.features) {
+      const c = this.canvas;
+      c.begin(cx, cz, blocks, meta);
+      for (const s of structuresNear(this, ['fortress'], cx, cz, 0)) s.build(c);
+      return { cx, cz, blocks, meta, biomes, heightmap, tints, blockEntities: c.blockEntities, spawns: c.spawns };
+    }
+    return { cx, cz, blocks, meta, biomes, heightmap, tints, blockEntities: [], spawns: [] };
   }
 }

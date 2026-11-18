@@ -120,6 +120,7 @@ export function blockDrops(id: number, meta: number, tool: number, rng: () => nu
       return one(B.COBBLESTONE);
     case B.GRASS:
     case B.FARMLAND:
+    case B.GRASS_PATH:
       return one(B.DIRT);
     case B.GRAVEL: {
       const flintChance = fortune <= 0 ? 0.1 : fortune === 1 ? 0.14 : fortune === 2 ? 0.25 : 1;
@@ -199,6 +200,9 @@ export function blockDrops(id: number, meta: number, tool: number, rng: () => nu
       return one(I.CARROT, (meta & 7) < 7 ? 1 : randInt(rng, 1, 4 + fortune));
     case B.POTATOES:
       return one(I.POTATO, (meta & 7) < 7 ? 1 : randInt(rng, 1, 4 + fortune));
+
+    case B.NETHER_WART:
+      return one(I.NETHER_WART, (meta & 3) < 3 ? 1 : randInt(rng, 2, 4 + fortune));
 
     // --- Blocs fabriqués ---
     case B.GLOWSTONE:

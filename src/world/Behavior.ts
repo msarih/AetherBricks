@@ -24,6 +24,7 @@ import {
   PISTON_DX,
   PISTON_DY,
   PISTON_DZ,
+  isTerracotta,
 } from './Blocks';
 import { fluidTick, fluidTickDelay, lavaMix } from './Fluids';
 import { portalCanStay } from './Portal';
@@ -50,7 +51,7 @@ export function topSolid(w: World, x: number, y: number, z: number): boolean {
   const meta = v >> 8;
   if (isSlab(id)) return meta >= 1;
   if (isStairs(id)) return (meta & 4) !== 0;
-  return shape === SHAPE.FENCE || id === B.FARMLAND;
+  return shape === SHAPE.FENCE || id === B.FARMLAND || id === B.GRASS_PATH;
 }
 
 /** Le bloc offre-t-il des faces latérales pleines (torche murale, échelle) ? */
@@ -103,20 +104,22 @@ export function canStay(w: World, x: number, y: number, z: number, id: number, m
     case B.FERN:
       return isSoil(below);
     case B.DEAD_BUSH:
-      return below === B.SAND || isSoil(below) || below === B.CLAY || below === B.GRAVEL;
+      return below === B.SAND || below === B.RED_SAND || isTerracotta(below) || isSoil(below) || below === B.CLAY || below === B.GRAVEL;
     case B.BROWN_MUSHROOM:
     case B.RED_MUSHROOM:
       return BLOCK_OPAQUE[below] === 1;
     case B.SUGAR_CANE:
       if (below === B.SUGAR_CANE) return true;
-      return (below === B.GRASS || below === B.DIRT || below === B.SAND) && waterBeside(w, x, y - 1, z);
+      return (below === B.GRASS || below === B.DIRT || below === B.SAND || below === B.RED_SAND) && waterBeside(w, x, y - 1, z);
     case B.CACTUS:
-      if (below !== B.CACTUS && below !== B.SAND) return false;
+      if (below !== B.CACTUS && below !== B.SAND && below !== B.RED_SAND) return false;
       return !w.isSolid(x - 1, y, z) && !w.isSolid(x + 1, y, z) && !w.isSolid(x, y, z - 1) && !w.isSolid(x, y, z + 1);
     case B.WHEAT:
     case B.CARROTS:
     case B.POTATOES:
       return below === B.FARMLAND;
+    case B.NETHER_WART:
+      return below === B.SOUL_SAND;
     case B.TORCH:
     case B.REDSTONE_TORCH:
     case B.REDSTONE_TORCH_OFF: {
@@ -127,6 +130,7 @@ export function canStay(w: World, x: number, y: number, z: number, id: number, m
     }
     case B.REDSTONE_WIRE:
     case B.STONE_PRESSURE_PLATE:
+    case B.RAIL:
     case B.SIGN:
       return topSolid(w, x, y - 1, z);
     case B.WALL_SIGN: {
@@ -545,6 +549,10 @@ export function randomTick(w: World, x: number, y: number, z: number, id: number
       if (rng() < (wet ? 0.5 : 0.17)) w.setBlock(x, y, z, id, stage + 1, false);
       return;
     }
+    case B.NETHER_WART:
+      // pousse dans le noir comme en pleine lumière, sans eau : un stade sur dix ticks aléatoires
+      if ((meta & 3) < 3 && rng() < 0.1) w.setBlock(x, y, z, id, (meta & 3) + 1, false);
+      return;
     case B.FARMLAND: {
       if (waterNearFarmland(w, x, y, z) || rainedOn(w, x, y + 1, z)) {
         if (meta !== 7) w.setBlock(x, y, z, id, 7, false);

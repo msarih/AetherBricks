@@ -69,6 +69,8 @@ export interface EntityView {
   angry: boolean;
   sitting: boolean;
   collarColor: number;
+  /** Villageois : métier (0..4), qui fixe la couleur de sa robe. */
+  variant: number;
   /** Petit animal (taille réduite, tête plus grande). */
   baby: boolean;
   /** Facteur d'échelle du modèle (ex. cube de magma selon sa taille). */

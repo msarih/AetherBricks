@@ -10,7 +10,18 @@ import { CHUNK_AREA, CHUNK_HEIGHT, CHUNK_SIZE, CHUNK_VOLUME, SEA_LEVEL, type Wor
 import { B } from '../Ids';
 import { foliageColor, grassColor } from '../Blocks';
 import { BIOME, BIOMES, TREE, isWaterBiome } from './Biomes';
+import { placeDungeon } from './Dungeon';
+import './Mineshaft';
+import './Temples';
+import './Village';
+import { GenCanvas, type GenBlockEntity, type GenSpawn } from './GenCanvas';
 import { Simplex, clamp, hash2, hash3, lerp, mulberry32, rand2, rand3, smoothstep } from './Noise';
+import { structuresNear, type Structure, type StructureKind, type TerrainInfo } from './Structures';
+
+export type { GenBlockEntity, GenSpawn };
+
+/** Lieux de l'Overworld. */
+const OVERWORLD_STRUCTURES: readonly StructureKind[] = ['village', 'desert_temple', 'jungle_temple', 'mineshaft'];
 
 /** Marge de colonnes dont on calcule les paramètres autour du chunk. */
 const PAD = 5;
@@ -88,6 +99,8 @@ export interface ColumnSample {
   swamp: number;
   /** Facteur « montagne » (0..1). */
   mount: number;
+  /** Facteur « badlands » (0..1) : plateaux de terre cuite, générateur en version 2 seulement. */
+  bad: number;
   /** Hauteur nominale du sol (flottante). */
   height: number;
   /** Amplitude du bruit 3D ajouté au relief. */
@@ -96,7 +109,7 @@ export interface ColumnSample {
 }
 
 export function newColumnSample(): ColumnSample {
-  return { cont: 0, ero: 0, ridge: 0, temp: 0, humid: 0, river: 0, swamp: 0, mount: 0, height: 0, amp: 0, biome: 0 };
+  return { cont: 0, ero: 0, ridge: 0, temp: 0, humid: 0, river: 0, swamp: 0, mount: 0, bad: 0, height: 0, amp: 0, biome: 0 };
 }
 
 export interface GeneratedChunk {
@@ -110,11 +123,22 @@ export interface GeneratedChunk {
   heightmap: Uint8Array;
   /** Par colonne : couleur de l'herbe, du feuillage et de l'eau (9 octets RVB). */
   tints: Uint8Array;
+  /** Entités de bloc posées par le générateur (coffres à butin, générateurs de monstres). */
+  blockEntities: GenBlockEntity[];
+  /** Créatures à faire apparaître avec le chunk (villageois). */
+  spawns: GenSpawn[];
 }
 
-export class WorldGen {
+export class WorldGen implements TerrainInfo {
   readonly seed: number;
   readonly type: WorldType;
+  /** Lieux à découvrir (donjons, villages…) : générateur en version 2, hors monde plat. */
+  readonly features: boolean;
+  private readonly canvas = new GenCanvas();
+  /** Lieux dont l'emprise touche le chunk en cours ou son anneau. */
+  private structures: Structure[] = [];
+  private readonly topSample = newColumnSample();
+  private readonly topLat = new Float32Array(8);
 
   private nCont: Simplex;
   private nEro: Simplex;
@@ -165,10 +189,15 @@ export class WorldGen {
   private sFillDepth = 0;
   private sUnder = 0;
   private sUnderDepth = 0;
+  /** Badlands : le remplissage suit les strates de terre cuite. */
+  private sBand = false;
+  /** Strates des badlands : couleur de terre cuite pour chaque altitude (cycle de 64). */
+  private readonly bands = new Uint8Array(64);
 
-  constructor(seed: number, type: WorldType = 'default') {
+  constructor(seed: number, type: WorldType = 'default', genVersion = 1) {
     this.seed = seed >>> 0;
     this.type = type;
+    this.features = genVersion >= 2 && type !== 'flat';
     const rng = mulberry32(this.seed ^ 0x5eed1234);
     const next = (): number => (rng() * 4294967296) >>> 0;
     this.nCont = new Simplex(next());
@@ -190,6 +219,43 @@ export class WorldGen {
     this.sTree = next();
     this.sPlant = next();
     this.sSurface = next();
+    this.buildBands();
+  }
+
+  /**
+   * Strates des badlands (Minecraft, « generateBands ») : terre cuite brute, rayée d'orange,
+   * avec des bancs jaunes, bruns et rouges et quelques filets blancs bordés de gris clair.
+   * Tirage à part : il ne décale pas les autres tirages du générateur.
+   */
+  private buildBands(): void {
+    const rng = mulberry32((this.seed ^ 0xba5d1a9d) >>> 0);
+    const int = (n: number): number => Math.floor(rng() * n);
+    const bands = this.bands;
+    bands.fill(B.TERRACOTTA);
+    for (let i = int(5) + 1; i < 64; i += int(5) + 2) bands[i] = B.TERRACOTTA_ORANGE;
+    const streaks = (block: number, count: number, minLen: number, lenVar: number): void => {
+      for (let n = 0; n < count; n++) {
+        const start = int(64);
+        const len = minLen + int(lenVar);
+        for (let k = 0; k < len && start + k < 64; k++) bands[start + k] = block;
+      }
+    };
+    streaks(B.TERRACOTTA_YELLOW, 2 + int(4), 1, 3);
+    streaks(B.TERRACOTTA_BROWN, 2 + int(4), 2, 3);
+    streaks(B.TERRACOTTA_RED, 2 + int(4), 1, 3);
+    for (let n = 3 + int(3), at = 0; n > 0; n--) {
+      at += 4 + int(16);
+      if (at >= 63) break;
+      bands[at] = B.TERRACOTTA_WHITE;
+      if (at > 1 && rng() < 0.5) bands[at - 1] = B.TERRACOTTA_LIGHT_GRAY;
+      if (rng() < 0.5) bands[at + 1] = B.TERRACOTTA_LIGHT_GRAY;
+    }
+  }
+
+  /** Terre cuite de la strate qui passe en (x, y, z) : les strates ondulent un peu d'une colonne à l'autre. */
+  private band(y: number, x: number, z: number): number {
+    const off = Math.round(this.nPatch.noise2(x / 64 + 11.1, z / 64 - 7.3) * 2);
+    return this.bands[(y + off + 64) & 63];
   }
 
   // ------------------------------------------------------------------ colonnes
@@ -205,6 +271,7 @@ export class WorldGen {
       out.river = 0;
       out.swamp = 0;
       out.mount = 0;
+      out.bad = 0;
       out.height = 4;
       out.amp = 0;
       out.biome = BIOME.PLAINS;
@@ -226,6 +293,18 @@ export class WorldGen {
     h += this.nHill.fbm2(x / 110, z / 110, 4) * hillAmp;
     h += this.nDetail.noise2(x / 21, z / 21) * 0.8;
     h += mount * (15 + 41 * ridge * ridge);
+
+    // badlands : chaud et très sec ; le relief y forme deux étages de plateaux aux bords abrupts
+    let bad = 0;
+    if (this.features) {
+      bad = smoothstep(0.72, 0.8, temp) * smoothstep(0.34, 0.24, humid) * land * (1 - mount);
+      // les plateaux ne s'élèvent qu'une fois dans le biome (bad > 0,5) : la lisière reste au niveau du désert
+      const rise = smoothstep(0.5, 0.72, bad);
+      if (rise > 0) {
+        const mesa = this.nPatch.fbm2(x / 95 + 31.3, z / 95 - 17.7, 3);
+        h += rise * (smoothstep(-0.02, 0.05, mesa) * 14 + smoothstep(0.22, 0.28, mesa) * 11);
+      }
+    }
 
     const swamp =
       smoothstep(0.56, 0.68, humid) * smoothstep(0.4, 0.5, temp) * smoothstep(0.84, 0.74, temp) *
@@ -254,6 +333,7 @@ export class WorldGen {
     out.river = river;
     out.swamp = swamp;
     out.mount = mount;
+    out.bad = bad;
     out.height = h;
     out.amp = (1.2 + mount * 9 + rough * land * 2.5) * (1 - 0.7 * river) * (1 - 0.8 * swamp);
     out.biome = pickBiome(out);
@@ -298,9 +378,10 @@ export class WorldGen {
     const biomes = new Uint8Array(CHUNK_AREA);
     const heightmap = new Uint8Array(CHUNK_AREA);
     const tints = new Uint8Array(CHUNK_AREA * 9);
-    const out: GeneratedChunk = { cx, cz, blocks, meta, biomes, heightmap, tints };
+    const out: GeneratedChunk = { cx, cz, blocks, meta, biomes, heightmap, tints, blockEntities: [], spawns: [] };
     this.blocks = blocks;
     this.meta = meta;
+    this.structures = [];
 
     if (this.type === 'flat') {
       this.generateFlat(out);
@@ -344,14 +425,16 @@ export class WorldGen {
       }
     }
 
-    // 4. minerais, 5. arbres, 6. plantes, 7. neige et glace
+    // 4. minerais, 5. arbres, 6. plantes, 7. lieux à découvrir, 8. neige et glace
     this.placeVeins(cx, cz);
     this.placeEmeralds(cx, cz);
+    if (this.features) this.structures = structuresNear(this, OVERWORLD_STRUCTURES, cx, cz, RING);
     this.placeTrees(bx, bz);
     this.placePlants(bx, bz);
+    if (this.features) this.placeStructures(cx, cz, out);
     this.placeSnow();
 
-    // 8. biomes, teintes, carte des hauteurs
+    // 9. biomes, teintes, carte des hauteurs
     for (let lz = 0; lz < CHUNK_SIZE; lz++) {
       for (let lx = 0; lx < CHUNK_SIZE; lx++) {
         const i = (lz << 4) | lx;
@@ -392,6 +475,80 @@ export class WorldGen {
     }
     computeHeightmap(blocks, heightmap);
     return out;
+  }
+
+  // ------------------------------------------------------------------ lieux à découvrir
+
+  /** Donjon éventuel du chunk, puis part des grandes constructions qui le traversent. */
+  private placeStructures(cx: number, cz: number, out: GeneratedChunk): void {
+    const c = this.canvas;
+    c.begin(cx, cz, this.blocks, this.meta);
+    let minTop = CHUNK_HEIGHT;
+    for (let lz = 0; lz < CHUNK_SIZE; lz++) {
+      for (let lx = 0; lx < CHUNK_SIZE; lx++) {
+        const top = this.ringTop[(lz + RING) * RW + lx + RING];
+        if (top < minTop) minTop = top;
+      }
+    }
+    placeDungeon(c, this.seed, cx, cz, Math.min(minTop - 10, 56));
+    for (const s of this.structures) {
+      if (c.touches(s.x0, s.z0, s.x1, s.z1)) s.build(c);
+    }
+    out.blockEntities = c.blockEntities;
+    out.spawns = c.spawns;
+  }
+
+  private inSurfaceStructure(x: number, z: number): boolean {
+    for (const s of this.structures) {
+      if (!s.surface || x < s.x0 - 1 || x > s.x1 + 1 || z < s.z0 - 1 || z > s.z1 + 1) continue;
+      if (!s.covers || s.covers(x, z)) return true;
+    }
+    return false;
+  }
+
+  biomeAt(x: number, z: number): number {
+    return this.sampleColumn(x, z, this.topSample).biome;
+  }
+
+  /**
+   * Hauteur du plus haut bloc de terrain plein de la colonne, calculée sans générer le chunk :
+   * même formule que `buildColumn` (relief nominal + bruit 3D interpolé sur le treillis),
+   * avant grottes, arbres et eau. Sert à poser les constructions au niveau du sol.
+   */
+  terrainTop(x: number, z: number): number {
+    const s = this.sampleColumn(x, z, this.topSample);
+    if (this.type === 'flat') return 3;
+    const h = s.height;
+    const amp = s.amp;
+    const yHi = Math.min(CHUNK_HEIGHT - 5, Math.floor(h + amp) + 1);
+    const yLo = Math.max(0, Math.floor(h - amp) - 1);
+    const x0 = Math.floor(x / LAT_STEP) * LAT_STEP;
+    const z0 = Math.floor(z / LAT_STEP) * LAT_STEP;
+    const fx = (x - x0) / LAT_STEP;
+    const fz = (z - z0) / LAT_STEP;
+    const lat = this.topLat;
+    let loaded = -1;
+    // valeur du champ « relief » au point (x, ly × 4, z) : interpolation des 4 colonnes du treillis
+    const field = (ly: number): number => {
+      const wy = ly * LAT_STEP;
+      // le treillis du générateur est en simple précision : même arrondi ici
+      const a = Math.fround(this.nTerrain.fbm3(x0 / 48, wy / 34, z0 / 48, 3));
+      const b = Math.fround(this.nTerrain.fbm3((x0 + LAT_STEP) / 48, wy / 34, z0 / 48, 3));
+      const c = Math.fround(this.nTerrain.fbm3(x0 / 48, wy / 34, (z0 + LAT_STEP) / 48, 3));
+      const d = Math.fround(this.nTerrain.fbm3((x0 + LAT_STEP) / 48, wy / 34, (z0 + LAT_STEP) / 48, 3));
+      return a * (1 - fx) * (1 - fz) + b * fx * (1 - fz) + c * (1 - fx) * fz + d * fx * fz;
+    };
+    for (let y = yHi; y > yLo; y--) {
+      const ly = y >> 2;
+      if (ly !== loaded) {
+        lat[0] = field(ly);
+        lat[1] = field(ly + 1);
+        loaded = ly;
+      }
+      const n = lat[0] + (lat[1] - lat[0]) * ((y & 3) * 0.25);
+      if (h - y + n * amp > 0) return y;
+    }
+    return yLo;
   }
 
   private generateFlat(out: GeneratedChunk): void {
@@ -518,9 +675,11 @@ export class WorldGen {
       if (run === 0) {
         this.surfaceRule(biome, y, above === B.WATER, slope, temp, patch, hsh);
         if (this.sTop) col[y] = this.sTop;
+        else if (this.sBand) col[y] = this.band(y, wx, wz);
         run = 1;
       } else if (run <= this.sFillDepth) {
-        if (this.sFill) col[y] = this.sFill;
+        if (this.sBand) col[y] = this.band(y, wx, wz);
+        else if (this.sFill) col[y] = this.sFill;
         run++;
       } else if (run <= this.sFillDepth + this.sUnderDepth) {
         if (this.sUnder) col[y] = this.sUnder;
@@ -589,6 +748,7 @@ export class WorldGen {
     this.sFillDepth = 3 + (hsh & 1);
     this.sUnder = 0;
     this.sUnderDepth = 0;
+    this.sBand = false;
     if (underwater) {
       let b: number;
       if (y < 48) b = B.GRAVEL;
@@ -627,6 +787,13 @@ export class WorldGen {
         break;
       case BIOME.STONY_SHORE:
         this.sTop = 0;
+        this.sFill = 0;
+        return;
+      case BIOME.BADLANDS:
+        // strates de terre cuite sur 18 blocs ; des nappes de sable rouge sur les replats
+        this.sBand = true;
+        this.sFillDepth = 18;
+        this.sTop = slope < 1 && patch > -0.1 ? B.RED_SAND : 0;
         this.sFill = 0;
         return;
       case BIOME.MOUNTAINS:
@@ -767,6 +934,7 @@ export class WorldGen {
         const lz = wz - bz;
         const def = BIOMES[this.pBiome[(lz + PAD) * PW + lx + PAD]];
         if (def.treeDensity <= 0) continue;
+        if (this.inSurfaceStructure(wx, wz)) continue;
         if (((hsh >>> 8) & 0xffff) / 65536 >= def.treeDensity) continue;
 
         const rng = mulberry32(hash2(wx, wz, this.sTree ^ 0x7ee5));
@@ -785,7 +953,7 @@ export class WorldGen {
         const ground = this.ringTopBlock[ri];
         if (top < SEA_LEVEL || top > CHUNK_HEIGHT - 34) continue;
         if (kind === TREE.CACTUS) {
-          if (ground === B.SAND) this.cactus(lx, top + 1, lz, rng);
+          if (ground === B.SAND || ground === B.RED_SAND) this.cactus(lx, top + 1, lz, rng);
           continue;
         }
         if (ground !== B.GRASS && ground !== B.DIRT) continue;
@@ -1055,8 +1223,12 @@ export class WorldGen {
           }
         }
 
-        if (ground === B.SAND) {
-          if (biome === BIOME.DESERT && r < 0.008) blocks[above] = B.DEAD_BUSH;
+        if (ground === B.SAND || ground === B.RED_SAND) {
+          if ((biome === BIOME.DESERT || biome === BIOME.BADLANDS) && r < 0.008) blocks[above] = B.DEAD_BUSH;
+          continue;
+        }
+        if (ground >= B.TERRACOTTA && ground <= B.TERRACOTTA_BLACK) {
+          if (r < 0.004) blocks[above] = B.DEAD_BUSH;
           continue;
         }
         if (ground !== B.GRASS) continue;
@@ -1135,6 +1307,7 @@ function pickBiome(c: ColumnSample): number {
     if (c.ero < -0.45) return BIOME.STONY_SHORE;
     return cold ? BIOME.SNOWY_BEACH : BIOME.BEACH;
   }
+  if (c.bad > 0.5) return BIOME.BADLANDS;
   if (mount > 0.42) return temp < 0.32 ? BIOME.SNOWY_MOUNTAINS : BIOME.MOUNTAINS;
   if (cold) return humid > 0.5 ? BIOME.SNOWY_TAIGA : BIOME.SNOWY_PLAINS;
   if (temp < 0.4) return humid > 0.42 ? BIOME.TAIGA : BIOME.PLAINS;

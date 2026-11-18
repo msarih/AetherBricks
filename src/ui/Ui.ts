@@ -22,7 +22,8 @@ import { StatsScreen } from './StatsScreen';
 import { SlotScreen } from './SlotScreen';
 import { installSprites } from './Sprites';
 import { TitleMenu } from './TitleMenu';
-import type { UiApi, UiHost } from './UiApi';
+import { TradeScreen } from './TradeScreen';
+import type { TradeView, UiApi, UiHost } from './UiApi';
 import './ui.css';
 
 /** Durée pendant laquelle une erreur signalée reste à afficher sur le prochain menu principal (ms). */
@@ -133,6 +134,10 @@ export class GameUi implements UiApi {
 
   openSignEditor(x: number, y: number, z: number, lines: readonly string[]): void {
     this.setScreen(new SignScreen(this.ctx, x, y, z, lines));
+  }
+
+  openTrade(view: TradeView): void {
+    this.setScreen(new TradeScreen(this.ctx, view));
   }
 
   showDeath(message: string): void {

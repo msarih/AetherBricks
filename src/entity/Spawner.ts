@@ -7,6 +7,7 @@ import { CHUNK_HEIGHT } from '../world/Constants';
 import { B } from '../world/Ids';
 import type { World } from '../world/World';
 import { BIOME, isWaterBiome } from '../world/gen/Biomes';
+import { FORTRESS_FLOOR_Y } from '../world/gen/Fortress';
 import { hash2, mulberry32 } from '../world/gen/Noise';
 import type { GameApi } from './Entity';
 import { getMobModel } from './MobModels';
@@ -47,6 +48,20 @@ const NETHER_TABLE: readonly MobKind[] = [
   'ghast',
 ];
 
+/** Gardiens d'une forteresse du Nether, pondérés (Minecraft : wither 8, blaze 10 ; ici le blaze vient surtout des cages). */
+const FORTRESS_TABLE: readonly MobKind[] = [
+  'wither_skeleton', 'wither_skeleton', 'wither_skeleton', 'wither_skeleton', 'wither_skeleton',
+  'blaze', 'blaze', 'zombie_pigman', 'zombie_pigman', 'magma_cube',
+];
+
+/** Nombre maximal de gardiens (squelettes wither et blazes) chargés à la fois, en plus du plafond ordinaire. */
+const FORTRESS_GUARD_CAP = 8;
+
+/** Gardien qui apparaît sur ce sol du Nether : seulement sur les briques d'une forteresse (null ailleurs). */
+export function fortressGuard(below: number, rng: () => number): MobKind | null {
+  return below === B.NETHER_BRICKS ? FORTRESS_TABLE[Math.floor(rng() * FORTRESS_TABLE.length)] : null;
+}
+
 const FARM: readonly MobKind[] = ['cow', 'sheep', 'pig', 'chicken'];
 const FOREST: readonly MobKind[] = ['cow', 'sheep', 'pig', 'chicken', 'wolf'];
 const COLD: readonly MobKind[] = ['sheep', 'sheep', 'cow', 'pig', 'chicken', 'wolf'];
@@ -59,6 +74,7 @@ function animalsOf(biome: number): readonly MobKind[] | null {
   if (isWaterBiome(biome)) return null;
   switch (biome) {
     case BIOME.DESERT:
+    case BIOME.BADLANDS:
     case BIOME.BEACH:
     case BIOME.SNOWY_BEACH:
     case BIOME.STONY_SHORE:
@@ -171,11 +187,12 @@ export class Spawner {
     const cap = MONSTER_CAPS[difficulty];
     if (cap <= 0) return;
     const count = this.countMonsters(game);
-    if (count >= cap) return;
     if (game.dimension === 'nether') {
+      // même au plafond, les gardiens des forteresses gardent leur propre quota
       this.tickNether(game, count, cap);
       return;
     }
+    if (count >= cap) return;
     this.tickOverworld(game, count, cap);
   }
 
@@ -224,11 +241,33 @@ export class Spawner {
     const w = game.world;
     const p = game.player;
     const rng = game.rng;
-    for (let pack = 0; pack < PACKS_PER_CYCLE && count < cap; pack++) {
+    let guards = 0;
+    for (const e of game.entities) if (e.kind === 'mob' && !e.dead && (e.mobKind === 'wither_skeleton' || e.mobKind === 'blaze')) guards++;
+    for (let pack = 0; pack < PACKS_PER_CYCLE; pack++) {
       const a = rng() * TAU;
       const dist = MIN_DISTANCE + rng() * (MAX_DISTANCE - MIN_DISTANCE);
       const x = Math.floor(p.x + Math.cos(a) * dist);
       const z = Math.floor(p.z + Math.sin(a) * dist);
+
+      // Forteresse : une colonne qui croise ses briques est d'abord offerte à ses gardiens
+      // (surtout des squelettes wither), dans la limite de leur quota. Comme dans Minecraft, il faut
+      // être dans la forteresse : des briques posées ailleurs par le joueur n'attirent personne.
+      if (guards < FORTRESS_GUARD_CAP) {
+        const fy = this.findFloor(w, x, FORTRESS_FLOOR_Y + 8, z, 10);
+        const inside = fy >= 0 && game.inStructure?.('fortress', x, z) === true;
+        const guardKind = inside ? fortressGuard(w.getBlock(x, fy - 1, z), rng) : null;
+        if (guardKind && this.canSpawnNetherGround(game, guardKind, x, fy, z)) {
+          const guard = createMob(guardKind, rng);
+          if (guard) {
+            guard.setPosition(x + 0.5, guardKind === 'blaze' ? fy + 0.6 : fy, z + 0.5);
+            guard.setRotation(rng() * TAU);
+            game.spawn(guard);
+            guards++;
+            continue;
+          }
+        }
+      }
+      if (count >= cap) continue;
       const kind = NETHER_TABLE[Math.floor(rng() * NETHER_TABLE.length)];
 
       if (kind === 'ghast') {
@@ -246,6 +285,8 @@ export class Spawner {
       const startY = 8 + Math.floor(rng() * 112);
       const y = this.findFloor(w, x, startY, z, 24);
       if (y < 0 || w.getBlock(x, y - 1, z) === B.BEDROCK) continue;
+      // la faune ordinaire n'apparaît pas sur les briques d'une forteresse : elles sont à ses gardiens
+      if (w.getBlock(x, y - 1, z) === B.NETHER_BRICKS) continue;
       const size = kind === 'zombie_pigman' ? 1 + Math.floor(rng() * 3) : 1;
       for (let i = 0; i < size && count < cap; i++) {
         let sx = x;

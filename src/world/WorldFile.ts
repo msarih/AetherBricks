@@ -14,7 +14,7 @@
  * Module pur (aucun accès au DOM) : la lecture valide tout ce qu'elle reçoit, un fichier
  * abîmé ou étranger donne une erreur au libellé clair et n'écrit rien de partiel.
  */
-import { CHUNK_AREA, CHUNK_VOLUME, type GameMode, type WorldType } from './Constants';
+import { CHUNK_AREA, CHUNK_VOLUME, GEN_VERSION, type GameMode, type WorldType } from './Constants';
 import { createWorldId, netherStorageId, rleDecode, rleEncode, type SavedChunk, type Storage, type WorldInfo } from './Storage';
 
 export const WORLD_FILE_EXTENSION = '.aetherworld';
@@ -162,6 +162,10 @@ function readInfo(raw: unknown, now: number): WorldInfo {
     state: isRecord(raw.state) ? raw.state : null,
   };
   if (typeof raw.thumbnail === 'string' && raw.thumbnail.startsWith('data:image/')) info.thumbnail = raw.thumbnail;
+  // le monde importé garde son générateur d'origine (au plus celui que ce jeu connaît)
+  if (typeof raw.genVersion === 'number' && Number.isInteger(raw.genVersion) && raw.genVersion >= 1) {
+    info.genVersion = Math.min(raw.genVersion, GEN_VERSION);
+  }
   return info;
 }
 

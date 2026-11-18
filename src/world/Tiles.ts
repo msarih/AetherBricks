@@ -13,7 +13,7 @@ const BASE_TILES = [
   // --- Terrain ---
   'stone', 'granite', 'diorite', 'andesite', 'cobblestone', 'mossy_cobblestone', 'bedrock', 'dirt',
   'grass_top', 'grass_side', 'grass_side_overlay', 'grass_side_snowed', 'snow', 'ice', 'sand', 'gravel',
-  'clay', 'sandstone_top', 'sandstone_side', 'sandstone_bottom', 'obsidian', 'glowstone', 'netherrack', 'sponge',
+  'clay', 'red_sand', 'terracotta', 'sandstone_top', 'sandstone_side', 'sandstone_bottom', 'obsidian', 'glowstone', 'netherrack', 'sponge',
   // --- Minerais ---
   'coal_ore', 'iron_ore', 'gold_ore', 'diamond_ore', 'redstone_ore', 'lapis_ore', 'emerald_ore',
   'coal_block', 'iron_block', 'gold_block', 'diamond_block', 'lapis_block', 'emerald_block', 'redstone_block',
@@ -33,11 +33,11 @@ const BASE_TILES = [
   'anvil_top', 'anvil_side',
   'bed_head_top', 'bed_foot_top', 'bed_head_side', 'bed_foot_side', 'bed_head_end', 'bed_foot_end',
   'oak_door_top', 'oak_door_bottom', 'iron_door_top', 'iron_door_bottom', 'trapdoor', 'ladder', 'torch',
-  'glass_pane_top', 'iron_bars', 'spawner',
+  'glass_pane_top', 'iron_bars', 'spawner', 'rail',
   'redstone_dust', 'redstone_torch_on', 'redstone_torch_off',
   'piston_top', 'piston_top_sticky', 'piston_side', 'piston_bottom', 'piston_inner',
   'redstone_lamp_off', 'redstone_lamp_on',
-  'nether_portal', 'nether_quartz_ore',
+  'nether_portal', 'nether_quartz_ore', 'nether_bricks', 'soul_sand', 'nether_wart_0', 'nether_wart_1', 'nether_wart_2',
   // --- Végétation ---
   'tall_grass', 'fern', 'dead_bush', 'dandelion', 'poppy', 'blue_orchid', 'allium', 'azure_bluet',
   'red_tulip', 'orange_tulip', 'white_tulip', 'pink_tulip', 'oxeye_daisy', 'cornflower',
@@ -45,7 +45,7 @@ const BASE_TILES = [
   'pumpkin_side', 'pumpkin_top', 'pumpkin_face', 'jack_o_lantern', 'melon_side', 'melon_top',
   'wheat_0', 'wheat_1', 'wheat_2', 'wheat_3', 'wheat_4', 'wheat_5', 'wheat_6', 'wheat_7',
   'carrots_0', 'carrots_1', 'carrots_2', 'carrots_3', 'potatoes_0', 'potatoes_1', 'potatoes_2', 'potatoes_3',
-  'farmland_dry', 'farmland_wet', 'lily_pad', 'vine', 'cobweb', 'hay_side', 'hay_top',
+  'farmland_dry', 'farmland_wet', 'grass_path_top', 'grass_path_side', 'lily_pad', 'vine', 'cobweb', 'hay_side', 'hay_top',
   // --- Fluides et feu (animés) ---
   'water', 'lava', 'fire',
   // --- Fissures de minage ---
@@ -65,7 +65,7 @@ const BASE_TILES = [
   'carrot', 'potato', 'baked_potato', 'glowstone_dust', 'quartz', 'cookie', 'pumpkin_pie',
   'mushroom_stew', 'bowl', 'fishing_rod', 'fishing_rod_cast', 'raw_fish', 'cooked_fish',
   'door_item', 'iron_door_item', 'bed_item', 'sugar_cane_item',
-  'map', 'filled_map', 'sign',
+  'map', 'filled_map', 'sign', 'nether_brick', 'nether_wart', 'blaze_rod',
 ] as const;
 
 /** Images animées de la boussole et de l'horloge (aiguille, cadran), 32 chacune. */
@@ -78,11 +78,12 @@ const FRAME_IDS = [
 type BaseTile = (typeof BASE_TILES)[number];
 type WoolTile = `wool_${(typeof COLOR_NAMES)[number]}`;
 type DyeTile = `dye_${(typeof COLOR_NAMES)[number]}`;
+type TerracottaTile = `terracotta_${(typeof COLOR_NAMES)[number]}`;
 type ToolTile = `${(typeof TOOL_MATERIALS)[number]}_${(typeof TOOL_KINDS)[number]}`;
 type ArmorTile = `${(typeof ARMOR_MATERIALS)[number]}_${(typeof ARMOR_KINDS)[number]}`;
 type DialTile = `${'compass' | 'clock'}_${(typeof FRAME_IDS)[number]}`;
 
-export type TileName = BaseTile | WoolTile | DyeTile | ToolTile | ArmorTile | DialTile;
+export type TileName = BaseTile | WoolTile | DyeTile | TerracottaTile | ToolTile | ArmorTile | DialTile;
 
 function buildTileNames(): TileName[] {
   const names: TileName[] = [...BASE_TILES];
@@ -92,6 +93,8 @@ function buildTileNames(): TileName[] {
   for (const m of ARMOR_MATERIALS) for (const k of ARMOR_KINDS) names.push(`${m}_${k}`);
   for (const f of FRAME_IDS) names.push(`compass_${f}`);
   for (const f of FRAME_IDS) names.push(`clock_${f}`);
+  // ajoutées en fin de liste : les couches existantes gardent leur index
+  for (const c of COLOR_NAMES) names.push(`terracotta_${c}`);
   return names;
 }
 

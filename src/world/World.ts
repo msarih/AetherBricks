@@ -87,6 +87,8 @@ export class World {
   host: WorldHost = NO_HOST;
   readonly seed: number;
   readonly worldType: WorldType;
+  /** Version du générateur de ce monde (voir GEN_VERSION). */
+  readonly genVersion: number;
   readonly rng: () => number;
 
   /** Âge du monde en ticks. */
@@ -109,9 +111,10 @@ export class World {
   private readonly nb: NeighborFn = (dx, dy, dz) => this.getBlockAndMeta(this.nbX + dx, this.nbY + dy, this.nbZ + dz);
   private readonly tmp: number[] = [];
 
-  constructor(seed = (Math.random() * 0xffffffff) >>> 0, worldType: WorldType = 'default') {
+  constructor(seed = (Math.random() * 0xffffffff) >>> 0, worldType: WorldType = 'default', genVersion = 1) {
     this.seed = seed >>> 0;
     this.worldType = worldType;
+    this.genVersion = genVersion;
     this.rng = mulberry32(this.seed);
   }
 
@@ -437,8 +440,13 @@ export class World {
     return this.blockEntities.get(posKey(x, y, z));
   }
 
-  setBlockEntity(be: BlockEntity): void {
+  /**
+   * Attache une entité de bloc. `generated` : elle vient du générateur (coffre d'un donjon…) ;
+   * le chunk reste « non modifié » puisqu'il la retrouvera à l'identique en étant régénéré.
+   */
+  setBlockEntity(be: BlockEntity, generated = false): void {
     this.blockEntities.set(posKey(be.x, be.y, be.z), be);
+    if (generated) return;
     const c = this.chunkAt(be.x, be.z);
     if (c) {
       c.modified = true;

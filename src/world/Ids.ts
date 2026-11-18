@@ -169,6 +169,34 @@ export const B = {
   /** Panneau sur poteau (méta : orientation 0..15, par seizièmes de tour) et panneau mural (méta : direction de sa face 0..3). */
   SIGN: 163,
   WALL_SIGN: 164,
+  /** Chemin de terre des villages (15/16 de haut, comme la terre labourée). */
+  GRASS_PATH: 165,
+  RED_SAND: 166,
+  /** Terre cuite brute, puis les 16 terres cuites colorées dans l'ordre des laines. */
+  TERRACOTTA: 167,
+  TERRACOTTA_WHITE: 168,
+  TERRACOTTA_ORANGE: 169,
+  TERRACOTTA_MAGENTA: 170,
+  TERRACOTTA_LIGHT_BLUE: 171,
+  TERRACOTTA_YELLOW: 172,
+  TERRACOTTA_LIME: 173,
+  TERRACOTTA_PINK: 174,
+  TERRACOTTA_GRAY: 175,
+  TERRACOTTA_LIGHT_GRAY: 176,
+  TERRACOTTA_CYAN: 177,
+  TERRACOTTA_PURPLE: 178,
+  TERRACOTTA_BLUE: 179,
+  TERRACOTTA_BROWN: 180,
+  TERRACOTTA_GREEN: 181,
+  TERRACOTTA_RED: 182,
+  TERRACOTTA_BLACK: 183,
+  /** Rail droit (méta 0 : nord-sud, 1 : est-ouest). Décor des mines abandonnées pour l'instant. */
+  RAIL: 184,
+  NETHER_BRICKS: 185,
+  NETHER_BRICK_FENCE: 186,
+  SOUL_SAND: 187,
+  /** Verrue du Nether (méta : croissance 0..3), sur le sable des âmes. */
+  NETHER_WART: 188,
 } as const;
 
 /** Nombre maximal d'identifiants de blocs (les objets commencent à 256). */
@@ -304,6 +332,9 @@ export const I = {
 
   FILLED_MAP: 386,
   SIGN: 387,
+  NETHER_BRICK: 388,
+  NETHER_WART: 389,
+  BLAZE_ROD: 390,
 } as const;
 
 export const ITEM_ID_LIMIT = 400;

@@ -4,12 +4,12 @@
  * Messages reçus : { type: 'init', seed, worldType } puis { type: 'gen', cx, cz }.
  * Message émis : { type: 'chunk', cx, cz, blocks, meta, biomes, heightmap, tints } (tampons transférés).
  */
-import { WorldGen } from './WorldGen';
+import { WorldGen, type GenBlockEntity, type GenSpawn } from './WorldGen';
 import { NetherGen } from './NetherGen';
 import type { Dimension, WorldType } from '../Constants';
 
 export type GenRequest =
-  | { type: 'init'; seed: number; worldType: WorldType; dimension?: Dimension }
+  | { type: 'init'; seed: number; worldType: WorldType; dimension?: Dimension; genVersion?: number }
   | { type: 'gen'; cx: number; cz: number; epoch?: number };
 
 export interface GenResponse {
@@ -22,6 +22,10 @@ export interface GenResponse {
   biomes: Uint8Array;
   heightmap: Uint8Array;
   tints: Uint8Array;
+  /** Entités de bloc posées par le générateur (coffres à butin, générateurs de monstres). */
+  blockEntities: GenBlockEntity[];
+  /** Créatures à faire apparaître avec le chunk (villageois). */
+  spawns: GenSpawn[];
 }
 
 const ctx = self as unknown as {
@@ -34,7 +38,8 @@ let gen: WorldGen | NetherGen | null = null;
 ctx.onmessage = (e: MessageEvent) => {
   const m = e.data as GenRequest;
   if (m.type === 'init') {
-    gen = m.dimension === 'nether' ? new NetherGen(m.seed) : new WorldGen(m.seed, m.worldType);
+    const version = m.genVersion ?? 1;
+    gen = m.dimension === 'nether' ? new NetherGen(m.seed, version) : new WorldGen(m.seed, m.worldType, version);
     return;
   }
   if (!gen) return;
@@ -49,6 +54,8 @@ ctx.onmessage = (e: MessageEvent) => {
     biomes: c.biomes,
     heightmap: c.heightmap,
     tints: c.tints,
+    blockEntities: c.blockEntities,
+    spawns: c.spawns,
   };
   ctx.postMessage(out, [c.blocks.buffer, c.meta.buffer, c.biomes.buffer, c.heightmap.buffer, c.tints.buffer]);
 };

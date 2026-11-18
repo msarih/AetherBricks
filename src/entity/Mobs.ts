@@ -8,7 +8,7 @@
  * Conventions : lacet 0 = regarde vers -z, avant = (-sin lacet, 0, -cos lacet) ; 20 ticks par seconde.
  */
 import type { SfxName } from '../audio/Sfx';
-import { BLOCK_SOLID } from '../world/Blocks';
+import { BLOCK_SOLID, isDoor } from '../world/Blocks';
 import { B, COLOR_HEX, I } from '../world/Ids';
 import { getItem } from '../world/Items';
 import { newRayHit, raycast } from '../world/Raycast';
@@ -19,11 +19,14 @@ import type { EntityKind } from './EntityView';
 import { getMobModel } from './MobModels';
 import type { MobKind } from './MobModels';
 import { Arrow, Fireball } from './Objects';
+import { MAX_USES, PROFESSIONS, careerCount, careerLabel, isProfession, loadOffers, offersForTier, tierCount, type Offer, type Profession } from './Trades';
 import { findPath, type PathPoint } from './Pathfinder';
 import { isBoxFree } from './Physics';
 
 export const PASSIVE_KINDS: readonly MobKind[] = ['pig', 'cow', 'sheep', 'chicken', 'wolf'];
-export const HOSTILE_KINDS: readonly MobKind[] = ['zombie', 'skeleton', 'creeper', 'spider', 'zombie_pigman', 'ghast', 'magma_cube'];
+export const HOSTILE_KINDS: readonly MobKind[] = ['zombie', 'skeleton', 'creeper', 'spider', 'zombie_pigman', 'ghast', 'magma_cube', 'blaze', 'wither_skeleton'];
+/** Habitants : ni animaux (pas de reproduction, pas de plafond) ni monstres. */
+export const NPC_KINDS: readonly MobKind[] = ['villager'];
 
 /** Rayon (en blocs) autour des parents ou de l'œuf dans lequel on compte les animaux. */
 export const ANIMAL_RADIUS = 32;
@@ -139,6 +142,8 @@ export abstract class Mob extends Living {
   private detourStreak = 0;
   /** Grimpe aux murs : buter contre un obstacle n'est pas être bloquée. */
   protected climbs = false;
+  /** Sait ouvrir les portes : la recherche de chemin les traverse (villageois). */
+  protected opensDoors = false;
   /** Chemin calculé par A* vers la cible (uniquement hors errance). */
   private path: PathPoint[] | null = null;
   private pathIndex = 0;
@@ -220,7 +225,7 @@ export abstract class Mob extends Living {
       this.lastPathTick = this.age;
       this.pathGoalX = gx;
       this.pathGoalZ = gz;
-      this.path = findPath(game.world, this.x, this.y, this.z, tx, ty, tz, this.height, careful);
+      this.path = findPath(game.world, this.x, this.y, this.z, tx, ty, tz, this.height, careful, this.opensDoors);
       this.pathIndex = 0;
     }
     if (this.path && this.pathIndex < this.path.length) {
@@ -1713,6 +1718,411 @@ export class MagmaCube extends Monster {
 }
 
 // =============================================================================================
+// Forteresse du Nether : blaze et squelette wither
+// =============================================================================================
+
+/** Ticks de charge avant une salve, intervalle entre deux boules, repos après la salve. */
+const BLAZE_CHARGE = 60;
+const BLAZE_BURST_GAP = 6;
+const BLAZE_REST = 100;
+
+/**
+ * Blaze : flotte près du sol, se tient à distance et tire des salves de trois petites boules
+ * de feu ; au contact, il frappe. Insensible au feu, il lâche parfois un bâton de blaze.
+ */
+export class Blaze extends Monster {
+  /** > 0 : charge en cours ; à 0, la salve part. */
+  private charge = BLAZE_CHARGE;
+  private burst = 0;
+  private burstGap = 0;
+  private driftX = 0;
+  private driftZ = 0;
+  private driftTicks = 0;
+
+  constructor() {
+    super('blaze', 20, 0.05);
+    this.fireImmune = true;
+    this.flying = true;
+  }
+
+  protected override followRange(): number {
+    return 32;
+  }
+
+  protected override loseRange(): number {
+    return 48;
+  }
+
+  /** Reste à un bloc environ au-dessus du sol : descend s'il n'y a rien dessous, remonte s'il frôle le sol. */
+  private hover(game: GameApi, wantY: number): void {
+    const w = game.world;
+    const bx = Math.floor(this.x);
+    const bz = Math.floor(this.z);
+    let ground = Math.floor(this.y);
+    for (let i = 0; i < 6 && ground > 1 && !w.isSolid(bx, ground - 1, bz); i++) ground--;
+    const target = Math.max(wantY, ground + 0.6);
+    this.vy += clamp((target - this.y) * 0.03, -0.04, 0.05);
+    this.vy *= 0.85;
+  }
+
+  protected override idle(game: GameApi): void {
+    if (--this.driftTicks <= 0) {
+      this.driftTicks = 60 + Math.floor(game.rng() * 80);
+      this.driftX = this.x + (game.rng() - 0.5) * 10;
+      this.driftZ = this.z + (game.rng() - 0.5) * 10;
+    }
+    const dx = this.driftX - this.x;
+    const dz = this.driftZ - this.z;
+    if (dx * dx + dz * dz > 1) {
+      this.face(this.driftX, this.driftZ);
+      this.moveForward = 0.4;
+    }
+    this.hover(game, 0);
+    this.charge = BLAZE_CHARGE;
+    this.burst = 0;
+  }
+
+  protected fight(game: GameApi, t: Living): void {
+    const dx = t.x - this.x;
+    const dz = t.z - this.z;
+    const d = Math.sqrt(dx * dx + dz * dz);
+    this.face(t.x, t.z);
+    if (d > 9) this.moveForward = 0.9;
+    else if (d < 4 && !this.seesTarget) this.moveForward = 0.6;
+    this.hover(game, t.y + 0.5);
+    if (this.melee(game, t, (this.width + t.width) / 2 + 0.6, 4 + clamp(Math.floor(game.difficulty), 1, 3))) return;
+    if (!this.seesTarget || d > 28) {
+      this.charge = BLAZE_CHARGE;
+      this.burst = 0;
+      return;
+    }
+
+    if (this.burst > 0) {
+      if (--this.burstGap > 0) return;
+      this.burstGap = BLAZE_BURST_GAP;
+      this.burst--;
+      const fb = new Fireball(true);
+      fb.owner = this;
+      const oy = this.y + this.eyeHeight;
+      const ty = t.y + t.height * 0.5;
+      // un peu de dispersion, qui grandit avec la distance
+      const spread = Math.sqrt(d) * 0.25;
+      fb.shoot(this.x, oy - 0.2, this.z, dx + (game.rng() - 0.5) * spread, ty - oy + (game.rng() - 0.5) * spread, dz + (game.rng() - 0.5) * spread, 0.7);
+      game.spawn(fb);
+      game.sound('fire', this.x, oy, this.z, 0.8, 1.2 + game.rng() * 0.3);
+      if (this.burst === 0) this.charge = BLAZE_REST;
+      return;
+    }
+    // charge : il s'embrase avant de tirer
+    if (this.charge <= 20) game.particles('flame', this.x, this.y + this.height * 0.5, this.z, 2, 0.5);
+    if (--this.charge <= 0) {
+      this.burst = 3;
+      this.burstGap = 0;
+    }
+  }
+
+  protected override hurtSound(): SfxName | null {
+    return 'fizz';
+  }
+
+  protected override deathSound(): SfxName | null {
+    return 'fizz';
+  }
+
+  protected dropLoot(game: GameApi, _burning: boolean, byPlayer: boolean): void {
+    if (byPlayer) this.drop(game, I.BLAZE_ROD, randInt(game.rng, 0, 1));
+  }
+
+  protected override xpValue(): number {
+    return 10;
+  }
+}
+
+/** Durée du flétrissement infligé par un squelette wither (10 secondes). */
+const WITHER_TICKS = 200;
+
+/**
+ * Squelette wither : grand squelette noir des forteresses, armé d'une épée de pierre.
+ * Ses coups sont lourds et flétrissent : la victime perd un demi-cœur toutes les 2 secondes
+ * pendant 10 secondes.
+ */
+export class WitherSkeleton extends Monster {
+  constructor() {
+    super('wither_skeleton', 20, 0.058);
+    this.voice = 'skeleton';
+    this.fireImmune = true;
+    this.mobScale = 1.2;
+    this.itemId = I.STONE_SWORD;
+    this.itemCount = 1;
+  }
+
+  protected fight(game: GameApi, t: Living): void {
+    this.chase(game, t);
+    // 5 / 8 / 12 dégâts en facile / normal / difficile (Minecraft)
+    const damage = [5, 5, 8, 12][clamp(Math.floor(game.difficulty), 1, 3)];
+    if (this.melee(game, t, (this.width + t.width) / 2 + 0.7, damage)) t.witherTicks = Math.max(t.witherTicks, WITHER_TICKS);
+  }
+
+  protected dropLoot(game: GameApi): void {
+    this.drop(game, I.COAL, randInt(game.rng, 0, 1));
+    this.drop(game, I.BONE, randInt(game.rng, 0, 2));
+  }
+}
+
+// =============================================================================================
+// Villageois
+// =============================================================================================
+
+/** Au-delà de cette distance de chez lui, le villageois rentre. */
+const VILLAGER_ROAM = 26;
+/** Ticks avant qu'une porte ouverte par un villageois ne se referme. */
+const DOOR_CLOSE_TICKS = 30;
+/** Délai entre un premier échange et le réapprovisionnement (qui débloque le palier suivant). */
+const RESTOCK_TICKS = 40;
+
+/**
+ * Villageois : flâne autour de chez lui, rentre à la nuit tombée, ouvre et referme les
+ * portes, fuit quand on le frappe. Un clic droit ouvre ses échanges (voir entity/Trades).
+ */
+export class Villager extends Mob {
+  profession: Profession;
+  career = 0;
+  /** Palier d'offres atteint (à partir de 1). */
+  tier = 1;
+  offers: Offer[] = [];
+  /** Le joueur a déjà commercé avec lui : il doit survivre au déchargement de son chunk. */
+  traded = false;
+  /** Joueur en train de commercer avec lui (il reste alors sur place). */
+  customer: Entity | null = null;
+
+  private homeX = Number.NaN;
+  private homeZ = Number.NaN;
+  private panicTicks = 0;
+  private fleeX = 0;
+  private fleeZ = 0;
+  private restock = 0;
+  private doorX = 0;
+  private doorY = -1;
+  private doorZ = 0;
+  private doorTicks = 0;
+
+  constructor(rng: () => number = Math.random, profession?: Profession) {
+    super('villager', 20, 0.05);
+    this.opensDoors = true;
+    this.profession = profession ?? PROFESSIONS[Math.floor(rng() * PROFESSIONS.length)];
+    this.variant = PROFESSIONS.indexOf(this.profession);
+    this.career = Math.floor(rng() * careerCount(this.profession));
+    this.offers = offersForTier(this.profession, this.career, 1, rng);
+  }
+
+  /** Nom affiché en tête de l'écran d'échange. */
+  get title(): string {
+    return careerLabel(this.profession, this.career);
+  }
+
+  get persistent(): boolean {
+    return this.traded;
+  }
+
+  setProfession(profession: Profession, rng: () => number): void {
+    this.profession = profession;
+    this.variant = PROFESSIONS.indexOf(profession);
+    this.career = Math.floor(rng() * careerCount(profession));
+    this.tier = 1;
+    this.offers = offersForTier(profession, this.career, 1, rng);
+  }
+
+  /** Fixe le point autour duquel il vit (sa maison). */
+  setHome(x: number, z: number): void {
+    this.homeX = x;
+    this.homeZ = z;
+  }
+
+  protected behave(game: GameApi): void {
+    if (Number.isNaN(this.homeX)) this.setHome(this.x, this.z);
+    this.tickDoor(game);
+    if (this.restock > 0 && --this.restock === 0) this.refill(game);
+
+    if (this.panicTicks > 0) {
+      this.panicTicks--;
+      const dx = this.fleeX - this.x;
+      const dz = this.fleeZ - this.z;
+      if (dx * dx + dz * dz < 1 || !this.walkTo(game, this.fleeX, this.fleeZ, 1.8, true)) this.pickFlee(game, null);
+      this.openDoorAhead(game);
+      return;
+    }
+
+    const c = this.customer;
+    if (c) {
+      // le client s'éloigne ou meurt : fin de l'échange
+      if (c.dead || this.distanceSqTo(c) > 64) this.customer = null;
+      else {
+        this.face(c.x, c.z, 0.3);
+        this.lookAt(c, 10);
+        return;
+      }
+    }
+
+    const hx = this.homeX - this.x;
+    const hz = this.homeZ - this.z;
+    const homeSq = hx * hx + hz * hz;
+    const night = !isDay(game);
+    if (homeSq > VILLAGER_ROAM * VILLAGER_ROAM || (night && homeSq > 6)) {
+      this.pathTo(game, this.homeX, this.y, this.homeZ, 1, true);
+      this.openDoorAhead(game);
+      return;
+    }
+    if (night) {
+      // à l'abri : il ne ressort pas avant le matin
+      const p = game.player;
+      if (p.alive && this.distanceSqTo(p) < 36) this.lookAt(p, 10);
+      return;
+    }
+    this.clearPath();
+    this.wander(game, 0.9);
+    this.openDoorAhead(game);
+    const p = game.player;
+    if (this.resting && p.alive && this.distanceSqTo(p) < 25) this.lookAt(p, 20);
+  }
+
+  private pickFlee(game: GameApi, from: Entity | null): void {
+    let a = game.rng() * TAU;
+    if (from && !from.dead) a = Math.atan2(this.z - from.z, this.x - from.x) + (game.rng() - 0.5) * 1.2;
+    this.fleeX = this.x + Math.cos(a) * 8;
+    this.fleeZ = this.z + Math.sin(a) * 8;
+  }
+
+  protected onHurt(game: GameApi, _cause: DamageCause, attacker: Entity | null): void {
+    this.panicTicks = PANIC_TICKS * 2;
+    this.customer = null;
+    this.pickFlee(game, attacker);
+  }
+
+  /** Ouvre la porte fermée contre laquelle il bute. */
+  private openDoorAhead(game: GameApi): void {
+    if (!this.collidedH || this.moveForward === 0) return;
+    const w = game.world;
+    const by = Math.floor(this.y + 0.01);
+    const reach = this.width / 2 + 0.35;
+    const bx = Math.floor(this.x - Math.sin(this.yaw) * reach);
+    const bz = Math.floor(this.z - Math.cos(this.yaw) * reach);
+    for (const [dx, dz] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const x = dx === 0 && dz === 0 ? bx : Math.floor(this.x) + dx;
+      const z = dx === 0 && dz === 0 ? bz : Math.floor(this.z) + dz;
+      const v = w.getBlockAndMeta(x, by, z);
+      if (!isDoor(v & 255) || (v >> 8) & 4 || (v & 255) === B.IRON_DOOR) continue;
+      this.setDoor(game, x, by, z, true);
+      this.doorX = x;
+      this.doorY = by;
+      this.doorZ = z;
+      this.doorTicks = DOOR_CLOSE_TICKS;
+      return;
+    }
+  }
+
+  /** Referme derrière lui la porte qu'il a ouverte, dès que plus personne n'est dans l'embrasure. */
+  private tickDoor(game: GameApi): void {
+    if (this.doorTicks <= 0 || --this.doorTicks > 0) return;
+    const x = this.doorX;
+    const y = this.doorY;
+    const z = this.doorZ;
+    for (const e of game.entitiesInBox(x - 0.2, y, z - 0.2, x + 1.2, y + 2, z + 1.2)) {
+      if (e instanceof Living && e.alive) {
+        this.doorTicks = 10;
+        return;
+      }
+    }
+    this.setDoor(game, x, y, z, false);
+  }
+
+  private setDoor(game: GameApi, x: number, y: number, z: number, open: boolean): void {
+    const w = game.world;
+    let changed = false;
+    for (const yy of [y, y + 1]) {
+      const v = w.getBlockAndMeta(x, yy, z);
+      if (!isDoor(v & 255)) continue;
+      const meta = v >> 8;
+      const next = open ? meta | 4 : meta & ~4;
+      if (next !== meta) {
+        w.setMeta(x, yy, z, next);
+        changed = true;
+      }
+    }
+    if (changed) game.sound(open ? 'door_open' : 'door_close', x + 0.5, y + 1, z + 0.5, 0.6, 0.9 + game.rng() * 0.2);
+  }
+
+  interact(game: GameApi, player: PlayerLike): boolean {
+    if (!this.alive || !player.alive || this.panicTicks > 0 || !game.openTrade) return false;
+    this.customer = player;
+    game.openTrade(this);
+    return true;
+  }
+
+  /**
+   * Un échange vient d'être conclu sur l'offre `index` (le jeu a déjà fait passer les objets).
+   * Le premier usage d'une offre programme le réapprovisionnement et le palier suivant.
+   */
+  completeTrade(game: GameApi, index: number): void {
+    const o = this.offers[index];
+    if (!o) return;
+    o.uses++;
+    this.traded = true;
+    if (o.uses === 1 || this.offers.every((x) => x.uses >= x.maxUses)) this.restock = RESTOCK_TICKS;
+    game.particles('heart', this.x, this.y + this.height + 0.1, this.z, 2, 0.3);
+  }
+
+  /** Réapprovisionnement : nouveau palier d'offres s'il en reste, et toutes les offres redeviennent disponibles. */
+  private refill(game: GameApi): void {
+    if (this.tier < tierCount(this.profession, this.career)) {
+      this.tier++;
+      this.offers.push(...offersForTier(this.profession, this.career, this.tier, game.rng));
+    }
+    for (const o of this.offers) {
+      o.uses = 0;
+      o.maxUses = MAX_USES;
+    }
+    game.particles('bonemeal', this.x, this.y + this.height * 0.6, this.z, 8, 0.5);
+  }
+
+  protected dropLoot(): void {}
+
+  protected xpValue(): number {
+    return 0;
+  }
+
+  save(): EntityData | null {
+    if (this.health <= 0 || this.dead) return null;
+    const d = this.saveBase('mob');
+    d.kind = this.mobKind;
+    d.health = this.health;
+    d.profession = this.profession;
+    d.career = this.career;
+    d.tier = this.tier;
+    d.offers = this.offers.map((o) => ({ ...o }));
+    d.traded = this.traded;
+    if (!Number.isNaN(this.homeX)) d.home = [Math.round(this.homeX * 10) / 10, Math.round(this.homeZ * 10) / 10];
+    if (this.restock > 0) d.restock = this.restock;
+    return d;
+  }
+
+  loadExtra(d: EntityData): void {
+    if (isProfession(d.profession)) {
+      this.profession = d.profession;
+      this.variant = PROFESSIONS.indexOf(this.profession);
+    }
+    this.career = clamp(Math.floor(num(d.career, 0)), 0, careerCount(this.profession) - 1);
+    this.tier = clamp(Math.floor(num(d.tier, 1)), 1, tierCount(this.profession, this.career));
+    const offers = loadOffers(d.offers);
+    if (offers.length > 0) this.offers = offers;
+    else this.offers = offersForTier(this.profession, this.career, 1, Math.random);
+    this.traded = d.traded === true;
+    this.restock = Math.max(0, Math.floor(num(d.restock, 0)));
+    const home = d.home;
+    if (Array.isArray(home) && home.length === 2 && typeof home[0] === 'number' && typeof home[1] === 'number') this.setHome(home[0], home[1]);
+  }
+}
+
+// =============================================================================================
 // Fabrique, chargement, œuf
 // =============================================================================================
 
@@ -1746,6 +2156,12 @@ export function createMob(kind: MobKind, rng: () => number = Math.random): Mob |
       return new Ghast();
     case 'magma_cube':
       return new MagmaCube();
+    case 'villager':
+      return new Villager(rng);
+    case 'blaze':
+      return new Blaze();
+    case 'wither_skeleton':
+      return new WitherSkeleton();
     default:
       return null;
   }
@@ -1755,7 +2171,7 @@ export function createMob(kind: MobKind, rng: () => number = Math.random): Mob |
 export function loadMob(d: EntityData): Mob | null {
   if (!d || d.type !== 'mob' || typeof d.kind !== 'string') return null;
   const kind = d.kind as MobKind;
-  if (!PASSIVE_KINDS.includes(kind) && !HOSTILE_KINDS.includes(kind)) return null;
+  if (!PASSIVE_KINDS.includes(kind) && !HOSTILE_KINDS.includes(kind) && !NPC_KINDS.includes(kind)) return null;
   const m = createMob(kind);
   if (!m) return null;
   m.loadBase(d);

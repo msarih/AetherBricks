@@ -64,6 +64,33 @@ export interface UiGame {
   complete(text: string): string[];
 }
 
+/** Une offre d'un villageois, telle que l'écran d'échange l'affiche. */
+export interface TradeOfferView {
+  buy: number;
+  buyCount: number;
+  /** Second objet demandé (0 = aucun). */
+  buy2: number;
+  buy2Count: number;
+  sell: number;
+  sellCount: number;
+  enchanted: boolean;
+  /** Offre épuisée jusqu'au prochain réapprovisionnement. */
+  soldOut: boolean;
+  /** Le joueur a de quoi payer. */
+  affordable: boolean;
+}
+
+/** Échanges d'un villageois, vus par l'interface (fournis par le jeu à UiApi.openTrade()). */
+export interface TradeView {
+  /** Métier du villageois. */
+  readonly title: string;
+  offers(): TradeOfferView[];
+  /** Conclut l'échange de l'offre `index` ; false s'il est impossible. */
+  trade(index: number): boolean;
+  /** L'écran est fermé : le villageois reprend sa route. */
+  closed(): void;
+}
+
 export interface NewWorldOptions {
   name: string;
   /** Graine saisie (texte libre ; vide = aléatoire). */
@@ -125,6 +152,8 @@ export interface UiApi {
   openChat(initial?: string): void;
   /** Saisie du texte d'un panneau qui vient d'être posé (4 lignes de 15 caractères au plus). */
   openSignEditor(x: number, y: number, z: number, lines: readonly string[]): void;
+  /** Écran d'échange avec un villageois (le jeu continue pendant ce temps). */
+  openTrade(view: TradeView): void;
   /** Écran de mort. */
   showDeath(message: string): void;
   /** Ferme l'écran ouvert, sans rien demander au jeu. */

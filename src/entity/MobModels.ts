@@ -37,6 +37,9 @@ export type MobKind =
   | 'zombie_pigman'
   | 'ghast'
   | 'magma_cube'
+  | 'villager'
+  | 'blaze'
+  | 'wither_skeleton'
   | 'player';
 
 export interface ModelBox {
@@ -534,11 +537,123 @@ function buildMagmaCube(): MobModel {
   return finish('magma_cube', s, [body], 0.52, 0.52, 0.3);
 }
 
-function buildSkeleton(): MobModel {
+/**
+ * Blaze : une tête et douze bâtons incandescents qui tournent autour d'elle en trois couronnes.
+ * Chaque couronne est une partie animée (`ring0..2`) qui pivote autour de l'axe vertical.
+ */
+function buildBlaze(): MobModel {
+  const head = box('head', [0, 20, 0], [-4, 20, -4], [8, 8, 8], [0, 0]);
+  const boxes: ModelBox[] = [head];
+  const rings: Array<[number, number, number]> = [[9, 16, 0], [7, 9, 0.6], [5, 2, 1.2]];
+  rings.forEach(([radius, y, phase], r) => {
+    for (let i = 0; i < 4; i++) {
+      const a = phase + (i * Math.PI) / 2;
+      const x = Math.round(Math.cos(a) * radius);
+      const z = Math.round(Math.sin(a) * radius);
+      boxes.push(box(`ring${r}`, [0, y, 0], [x - 1, y, z - 1], [2, 8, 2], [0, 16]));
+    }
+  });
+  const s = new Skin(32, 32, 0xb1a2e);
+  const pal: Palette = { Y: 0xffd83a, O: 0xf08a12, o: 0xc85a08, K: 0x1a0c04, W: 0xfff0a0 };
+  s.box(head, 0xf2a61e, 0.05);
+  s.fill(faceRect(head, 'top'), 0xffd83a);
+  s.stamp(faceRect(head, 'front'), [
+    'YYYYYYYY',
+    'YOOYYOOY',
+    'OOOOOOOO',
+    'OKKOOKKO',
+    'OOOOOOOO',
+    'OoOOOOoO',
+    'oooKKooo',
+    'oooooooo',
+  ], pal);
+  for (let i = 1; i < boxes.length; i++) {
+    s.box(boxes[i], 0xf0a020, 0.05);
+    s.band(boxes[i], 0, 2, 0xffe060);
+    s.band(boxes[i], 6, 2, 0xb85a0a);
+  }
+  return finish('blaze', s, boxes, 0.6, 1.8, 1.5);
+}
+
+/** Couleur de la robe et du tablier par métier (fermier, bibliothécaire, prêtre, forgeron, boucher). */
+const VILLAGER_ROBES: ReadonlyArray<{ robe: number; trim: number; apron: number }> = [
+  { robe: 0x6b4a2c, trim: 0x4c3520, apron: 0 },
+  { robe: 0xe4e2dc, trim: 0xb9b4a8, apron: 0 },
+  { robe: 0x7a3f9e, trim: 0x54296f, apron: 0 },
+  { robe: 0x5a4a3c, trim: 0x3a2f26, apron: 0x2b2b2e },
+  { robe: 0x6b4a2c, trim: 0x4c3520, apron: 0xe8e6e0 },
+];
+
+/**
+ * Villageois : grande tête au long nez, robe jusqu'aux pieds, bras croisés devant la poitrine.
+ * `variant` = métier (0..4) : il change la couleur de la robe.
+ */
+function buildVillager(variant: number): MobModel {
+  const head = box('head', [0, 24, 0], [-4, 24, -4], [8, 10, 8], [0, 0]);
+  const nose = box('head', [0, 24, 0], [-1, 23, 4], [2, 4, 2], [24, 0]);
+  const body = box('body', [0, 12, 0], [-4, 12, -3], [8, 12, 6], [16, 20]);
+  const skirt = box('body', [0, 12, 0], [-4, 2, -3], [8, 10, 6], [0, 38], 0.45);
+  const armR = box('arms', [0, 21, 0], [-8, 16, -2], [4, 8, 4], [44, 22]);
+  const armL = box('arms', [0, 21, 0], [4, 16, -2], [4, 8, 4], [44, 22]);
+  const armMid = box('arms', [0, 21, 0], [-4, 16, -2], [8, 4, 4], [40, 38]);
+  const legR = box('legR', [-2, 12, 0], [-4, 0, -2], [4, 12, 4], [0, 22]);
+  const legL = box('legL', [2, 12, 0], [0, 0, -2], [4, 12, 4], [0, 22]);
+  const s = new Skin(64, 64, 0x51a6e + variant);
+  const skin = 0xbd8b72;
+  const skinDark = 0x9c6c56;
+  const c = VILLAGER_ROBES[variant] ?? VILLAGER_ROBES[0];
+  const pal: Palette = { S: skin, s: skinDark, B: 0x4a2f1f, W: WHITE, G: 0x2f7d3a, M: 0x7a4a3c };
+  s.box(head, skin);
+  s.stamp(faceRect(head, 'front'), [
+    'SSSSSSSS',
+    'SSSSSSSS',
+    'SSSSSSSS',
+    'BBBBBBBB',
+    'SWGSSGWS',
+    'SSSssSSS',
+    'SSSssSSS',
+    'SSSssSSS',
+    'SSMMMMSS',
+    'SSSSSSSS',
+  ], pal);
+  s.box(nose, skinDark);
+  s.box(body, c.robe);
+  s.band(body, 0, 1, c.trim);
+  s.box(skirt, c.robe);
+  s.band(skirt, 9, 1, c.trim);
+  if (c.apron) {
+    s.fill(faceRect(body, 'front'), c.apron, GRAIN, 1, 2, 6, 10);
+    s.fill(faceRect(skirt, 'front'), c.apron, GRAIN, 1, 0, 6, 7);
+  }
+  s.box(armR, c.robe);
+  s.box(armMid, c.robe);
+  s.fill(faceRect(armMid, 'front'), skin, GRAIN, 2, 1, 4, 2);
+  s.box(legR, c.trim);
+  s.band(legR, 9, 3, 0x3a3a3e);
+  return finish('villager', s, [head, nose, body, skirt, armR, armL, armMid, legR, legL], 0.6, 1.95, 1.62);
+}
+
+const villagerCache = new Map<number, MobModel>();
+
+/** Modèle du villageois pour un métier donné (0..4). */
+export function getVillagerModel(variant: number): MobModel {
+  const v = variant >= 0 && variant < VILLAGER_ROBES.length ? Math.floor(variant) : 0;
+  let model = villagerCache.get(v);
+  if (!model) {
+    model = buildVillager(v);
+    villagerCache.set(v, model);
+  }
+  return model;
+}
+
+/** Squelette, ou squelette wither (`wither`) : mêmes os, noircis, pour une créature plus grande. */
+function buildSkeleton(wither = false): MobModel {
   const m = bipedBoxes(2);
-  const s = new Skin(64, 32, 0x5ce1e);
-  const bone = 0xc8c8c8;
-  const pal: Palette = { B: bone, b: 0x9c9c9c, d: 0x3a3a3a, K: 0x141414, n: 0x787878, m: 0x4c4c4c };
+  const s = new Skin(64, 32, wither ? 0x717e2 : 0x5ce1e);
+  const bone = wither ? 0x2e2e2e : 0xc8c8c8;
+  const pal: Palette = wither
+    ? { B: bone, b: 0x1e1e1e, d: 0x0c0c0c, K: 0x9a9a9a, n: 0x161616, m: 0x101010 }
+    : { B: bone, b: 0x9c9c9c, d: 0x3a3a3a, K: 0x141414, n: 0x787878, m: 0x4c4c4c };
   s.box(m.head, bone);
   s.stamp(faceRect(m.head, 'front'), [
     'BBBBBBBB',
@@ -577,10 +692,11 @@ function buildSkeleton(): MobModel {
   // Os longs : articulation plus sombre au coude / genou, extrémité légèrement grisée.
   for (const limb of [m.armR, m.legR]) {
     s.box(limb, bone);
-    s.band(limb, 5, 1, 0x8c8c8c);
-    s.band(limb, 11, 1, 0xa8a8a8);
+    s.band(limb, 5, 1, wither ? 0x181818 : 0x8c8c8c);
+    s.band(limb, 11, 1, wither ? 0x222222 : 0xa8a8a8);
   }
-  return finish('skeleton', s, m.all, 0.6, 1.9, 1.7);
+  // le squelette wither est affiché 1,2 fois plus grand : sa boîte de collision suit
+  return wither ? finish('wither_skeleton', s, m.all, 0.7, 2.4, 2.1) : finish('skeleton', s, m.all, 0.6, 1.9, 1.7);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1068,6 +1184,15 @@ export function getMobModel(kind: MobKind): MobModel {
         break;
       case 'magma_cube':
         model = buildMagmaCube();
+        break;
+      case 'villager':
+        model = buildVillager(0);
+        break;
+      case 'blaze':
+        model = buildBlaze();
+        break;
+      case 'wither_skeleton':
+        model = buildSkeleton(true);
         break;
       default:
         model = buildPlayer();

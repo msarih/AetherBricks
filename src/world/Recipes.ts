@@ -136,6 +136,9 @@ shaped(['##', '##', '##'], { '#': I.IRON_INGOT }, B.IRON_DOOR, 3);
 shaped(['###', '###'], { '#': PLANKS }, B.TRAPDOOR, 2);
 shaped(['| |', '|||', '| |'], { '|': I.STICK }, B.LADDER, 3);
 shaped(['#|#', '#|#'], { '#': PLANKS, '|': I.STICK }, B.OAK_FENCE, 3);
+shaped(['# #', '#|#', '# #'], { '#': I.IRON_INGOT, '|': I.STICK }, B.RAIL, 16);
+shaped(['##', '##'], { '#': I.NETHER_BRICK }, B.NETHER_BRICKS);
+shaped(['###', '###'], { '#': B.NETHER_BRICKS }, B.NETHER_BRICK_FENCE, 6);
 shaped(['|#|', '|#|'], { '#': PLANKS, '|': I.STICK }, B.FENCE_GATE);
 shaped(['###', '###'], { '#': B.GLASS }, B.GLASS_PANE, 16);
 shaped(['###', '###'], { '#': I.IRON_INGOT }, B.IRON_BARS, 16);
@@ -252,6 +255,10 @@ shapeless([I.DYE_RED, I.DYE_BLUE], I.DYE_PURPLE, 2);
 shapeless([I.DYE_PURPLE, I.DYE_PINK], I.DYE_MAGENTA, 2);
 shapeless([I.DYE_RED, I.DYE_BLUE, I.DYE_PINK], I.DYE_MAGENTA, 3);
 shapeless([I.DYE_RED, I.DYE_BLUE, I.DYE_WHITE, I.DYE_WHITE], I.DYE_MAGENTA, 4);
+// Terre cuite colorée : huit terres cuites autour d'une teinture
+COLOR_NAMES.forEach((_, i) => {
+  shaped(['###', '#D#', '###'], { '#': B.TERRACOTTA, D: I.DYE_WHITE + i }, B.TERRACOTTA_WHITE + i, 8);
+});
 // Laine teinte : une laine d'une autre couleur (la blanche en premier lieu) + une teinture
 COLOR_NAMES.forEach((_, i) => {
   shapeless([WOOLS.filter((w) => w !== B.WOOL_WHITE + i), I.DYE_WHITE + i], B.WOOL_WHITE + i);
@@ -364,6 +371,9 @@ export function matchRecipe(grid: readonly number[], gridW: number): { id: numbe
 // Cuisson
 // ---------------------------------------------------------------------------
 const SMELTING = new Map<number, number>([
+  [B.CLAY, B.TERRACOTTA],
+  [B.NETHERRACK, I.NETHER_BRICK],
+  [B.RED_SAND, B.GLASS],
   [B.IRON_ORE, I.IRON_INGOT],
   [B.GOLD_ORE, I.GOLD_INGOT],
   [B.COAL_ORE, I.COAL],

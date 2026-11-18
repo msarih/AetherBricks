@@ -6,6 +6,7 @@
 import { B, I } from '../world/Ids';
 import { maxStack } from '../world/Items';
 import { makeStack, sanitizeEnchants, type ItemStack, type Slot } from '../world/ItemStack';
+import { generateLoot, isLootTable } from '../world/Loot';
 import { fuelTicks, smeltingResult } from '../world/Recipes';
 import type { BlockEntity, World } from '../world/World';
 
@@ -15,6 +16,29 @@ export const FURNACE_COOK_TICKS = 200;
 export interface ChestEntity extends BlockEntity {
   type: 'chest';
   items: Slot[];
+  /** Coffre généré jamais ouvert : nom de sa table de butin (voir world/Loot). */
+  loot?: string;
+}
+
+/** Générateur de monstres : espèce produite et ticks avant la prochaine vague. */
+export interface SpawnerEntity extends BlockEntity {
+  type: 'spawner';
+  mob: string;
+  delay: number;
+}
+
+/**
+ * Tire le butin d'un coffre généré s'il ne l'a pas encore été (première ouverture, ou coffre
+ * cassé sans avoir été ouvert). Retourne true si le contenu vient d'être créé.
+ */
+export function resolveLoot(be: BlockEntity, seed: number): boolean {
+  const chest = be as BlockEntity & { loot?: unknown; items?: unknown };
+  if (be.type !== 'chest' || chest.loot === undefined) return false;
+  const table = chest.loot;
+  delete chest.loot;
+  if (!isLootTable(table)) return false;
+  chest.items = generateLoot(table, seed, be.x, be.y, be.z, CHEST_SIZE);
+  return true;
 }
 
 export interface FurnaceEntity extends BlockEntity {
@@ -44,6 +68,7 @@ export function getChest(w: World, x: number, y: number, z: number): ChestEntity
   const be = w.getBlockEntity(x, y, z) as (BlockEntity & { items?: unknown }) | undefined;
   if (be && be.type === 'chest') {
     const chest = be as ChestEntity;
+    if (resolveLoot(chest, w.seed)) w.markBlockEntityDirty(chest);
     if (!Array.isArray(chest.items) || chest.items.length !== CHEST_SIZE) chest.items = fixSlots(be.items, CHEST_SIZE);
     return chest;
   }

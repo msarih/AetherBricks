@@ -39,6 +39,9 @@ function packRel(dx: number, y: number, dz: number): number {
   return ((dx + 512) << 17) | ((dz + 512) << 7) | (y & 127);
 }
 
+/** Recherche en cours : les portes en bois fermées comptent comme franchissables (villageois). */
+let throughDoors = false;
+
 /** La cellule (x, y, z) est-elle libre de bloc solide ou dangereux ? */
 function isPassable(w: World, x: number, y: number, z: number, avoidWater: boolean): boolean {
   if (y < 0 || y >= CHUNK_HEIGHT) return false;
@@ -49,6 +52,8 @@ function isPassable(w: World, x: number, y: number, z: number, avoidWater: boole
   if (id === B.WATER) return !avoidWater;
   const shape = BLOCK_SHAPE[id];
   if (shape === SHAPE.DOOR || shape === SHAPE.FENCE_GATE || shape === SHAPE.TRAPDOOR) {
+    // une porte en bois fermée n'arrête pas celui qui sait l'ouvrir
+    if (throughDoors && id === B.OAK_DOOR) return true;
     return (v & (4 << 8)) !== 0;
   }
   return BLOCK_SOLID[id] !== 1;
@@ -116,7 +121,9 @@ export function findPath(
   gz: number,
   height: number,
   avoidWater: boolean,
+  doors = false,
 ): PathPoint[] | null {
+  throughDoors = doors;
   const x0 = Math.floor(sx);
   const y0 = Math.floor(sy + 0.01);
   const z0 = Math.floor(sz);

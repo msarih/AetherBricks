@@ -803,6 +803,8 @@ const WHEAT_TILES: number[] = [];
 const CARROT_TILES: number[] = [];
 const POTATO_TILES: number[] = [];
 const ROOT_STAGE = [0, 0, 1, 1, 2, 2, 2, 3];
+/** Verrue du Nether : 4 stades de croissance sur 3 images. */
+const WART_TILES = [T.nether_wart_0, T.nether_wart_1, T.nether_wart_1, T.nether_wart_2];
 for (let s = 0; s < 8; s++) {
   WHEAT_TILES.push(T[`wheat_${s}` as TileName]);
   CARROT_TILES.push(T[`carrots_${ROOT_STAGE[s]}` as TileName]);
@@ -811,7 +813,7 @@ for (let s = 0; s < 8; s++) {
 
 function meshCrop(id: number, meta: number): void {
   const stage = meta & 7;
-  const tile = id === B.WHEAT ? WHEAT_TILES[stage] : id === B.CARROTS ? CARROT_TILES[stage] : POTATO_TILES[stage];
+  const tile = id === B.WHEAT ? WHEAT_TILES[stage] : id === B.CARROTS ? CARROT_TILES[stage] : id === B.NETHER_WART ? WART_TILES[meta & 3] : POTATO_TILES[stage];
   noTint();
   flatLight(1);
   const lo = -1 / 16;
@@ -1135,6 +1137,23 @@ function meshCell(id: number, meta: number): void {
       const r = hash2i(baseX + cX, baseZ + cZ) & 3;
       for (let k = 0; k < 4; k++) {
         for (let q = 0; q < r; q++) {
+          const t = UV[k * 2];
+          UV[k * 2] = UV[k * 2 + 1];
+          UV[k * 2 + 1] = 1 - t;
+        }
+      }
+      emit(opaquePass, BLOCK_TILES[id * 6], -1, NOMIP, true);
+      return;
+    }
+    case SHAPE.RAIL: {
+      noTint();
+      flatLight(1);
+      const y = 1 / 16;
+      quad(0, y, 1, 1, y, 1, 1, y, 0, 0, y, 0);
+      uvRect(0, 0, 1, 1);
+      if (meta & 1) {
+        // rails est-ouest : un quart de tour
+        for (let k = 0; k < 4; k++) {
           const t = UV[k * 2];
           UV[k * 2] = UV[k * 2 + 1];
           UV[k * 2 + 1] = 1 - t;

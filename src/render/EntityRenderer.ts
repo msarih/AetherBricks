@@ -13,7 +13,7 @@ import * as THREE from 'three';
 import type { Atlas } from './Atlas';
 import { createModelMaterial, lightColor, passGeometry, worldUniforms } from './ChunkMaterials';
 import type { EntityView } from '../entity/EntityView';
-import { getMobModel, getSheepModel, getWolfModel, type MobKind, type MobModel } from '../entity/MobModels';
+import { getMobModel, getSheepModel, getVillagerModel, getWolfModel, type MobKind, type MobModel } from '../entity/MobModels';
 import { BLOCKS, TINT } from '../world/Blocks';
 import { B, BLOCK_ID_LIMIT, I } from '../world/Ids';
 import { getItem } from '../world/Items';
@@ -702,6 +702,7 @@ function visualKey(e: EntityView): string {
     case 'player':
       if (e.mobKind === 'sheep') return `m:sheep:${e.woolColor}:${e.sheared ? 1 : 0}`;
       if (e.mobKind === 'wolf') return `m:wolf:${e.tamed ? 1 : 0}:${e.angry ? 1 : 0}:${e.collarColor & 0xffffff}`;
+      if (e.mobKind === 'villager') return `m:villager:${e.variant}`;
       return `m:${e.mobKind}`;
     case 'item':
       return `i:${e.itemId}:${itemCopies(e.itemCount)}`;
@@ -740,6 +741,9 @@ const SHADOW_DIAMETER: Record<MobKind, number> = {
   zombie_pigman: 0.95,
   ghast: 4.5,
   magma_cube: 0.8,
+  villager: 0.95,
+  blaze: 0.9,
+  wither_skeleton: 1.1,
   player: 0.95,
 };
 
@@ -771,7 +775,9 @@ class MobVisual implements Visual {
       ? getSheepModel(e.woolColor, e.sheared)
       : e.mobKind === 'wolf'
         ? getWolfModel(e.tamed, e.angry, e.collarColor)
-        : getMobModel(e.mobKind);
+        : e.mobKind === 'villager'
+          ? getVillagerModel(e.variant)
+          : getMobModel(e.mobKind);
     const assets = getMobAssets(this.model);
     this.material = createMobMaterial(assets.texture);
     this.body.rotation.order = 'YXZ';
@@ -851,6 +857,7 @@ class MobVisual implements Visual {
       case 'zombie':
       case 'zombie_pigman':
       case 'skeleton':
+      case 'wither_skeleton':
         this.animateBiped(e, walk, age, headX, headY);
         break;
       case 'pig':
@@ -918,6 +925,19 @@ class MobVisual implements Visual {
           this.rot(`leg${pair * 2}`, 0, SPIDER_YAW[pair] + fy, -SPIDER_ROLL[pair] + fz);
           this.rot(`leg${pair * 2 + 1}`, 0, -SPIDER_YAW[pair] - fy, SPIDER_ROLL[pair] - fz);
         }
+        break;
+      case 'blaze':
+        // trois couronnes de bâtons qui tournent à des vitesses différentes, le tout qui ondule
+        this.rot('ring0', 0, age * 0.16, 0);
+        this.rot('ring1', 0, -age * 0.12, 0);
+        this.rot('ring2', 0, age * 0.2, 0);
+        this.body.position.y += Math.sin(age * 0.15) * 0.06;
+        break;
+      case 'villager':
+        // bras croisés immobiles, jambes cachées sous la robe
+        this.rot('arms', -0.75, 0, 0);
+        this.rot('legR', walk * 0.5, 0, 0);
+        this.rot('legL', -walk * 0.5, 0, 0);
         break;
       case 'ghast':
         for (let i = 0; i < 9; i++) {
@@ -1226,6 +1246,9 @@ class FireballVisual implements Visual {
     placeRoot(this.root, e, alpha);
     const mesh = this.root.children[0];
     mesh.rotation.set(time * 5, time * 7, 0);
+    // petite boule de feu de blaze : même cube, réduit
+    mesh.scale.setScalar(e.mobScale);
+    mesh.position.y = 0.5 * e.mobScale;
   }
 
   dispose(): void {
