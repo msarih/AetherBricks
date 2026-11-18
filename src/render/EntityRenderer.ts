@@ -13,7 +13,10 @@ import * as THREE from 'three';
 import type { Atlas } from './Atlas';
 import { createModelMaterial, lightColor, passGeometry, worldUniforms } from './ChunkMaterials';
 import type { EntityView } from '../entity/EntityView';
-import { getHorseModel, getMobModel, getOcelotModel, getSheepModel, getVillagerModel, getWolfModel, type MobKind, type MobModel } from '../entity/MobModels';
+import {
+  DRAGON_NECK_SEGMENTS, DRAGON_TAIL_SEGMENTS, DRAGON_WING_SPAN, getHorseModel, getMobModel, getOcelotModel, getSheepModel, getVillagerModel,
+  getWolfModel, type MobKind, type MobModel,
+} from '../entity/MobModels';
 import { BLOCKS, TINT } from '../world/Blocks';
 import { B, BLOCK_ID_LIMIT, I } from '../world/Ids';
 import { getItem } from '../world/Items';
@@ -755,6 +758,9 @@ const SHADOW_DIAMETER: Record<MobKind, number> = {
   squid: 0.9,
   iron_golem: 1.7,
   ocelot: 0.75,
+  silverfish: 0.5,
+  ender_dragon: 0,
+  end_crystal: 0,
   player: 0.95,
 };
 
@@ -861,6 +867,8 @@ class MobVisual implements Visual {
       this.body.add(mesh);
     }
     this.shadow = new BlobShadow(SHADOW_DIAMETER[this.kind] ?? this.model.width * 1.5);
+    // ni le dragon en vol ni le cristal au sommet de son pilier ne posent d'ombre à leurs pieds
+    if (SHADOW_DIAMETER[this.kind] === 0) this.shadow.mesh.visible = false;
     this.root.add(this.body, this.shadow.mesh);
   }
 
@@ -895,7 +903,7 @@ class MobVisual implements Visual {
     // Lacet du corps, bascule de la mort
     const yaw = lerpAngle(e.pYaw, e.yaw, alpha);
     let tilt = 0;
-    if (e.deathTime > 0) {
+    if (e.deathTime > 0 && this.kind !== 'ender_dragon') {
       const f = clamp(((e.deathTime - 1 + alpha) / 20) * 1.6, 0, 1);
       // L'araignée se retourne sur le dos, les autres tombent sur le flanc
       tilt = Math.sqrt(f) * (this.kind === 'spider' ? PI : HALF_PI);
@@ -1060,6 +1068,47 @@ class MobVisual implements Visual {
           this.rot('tail', -0.25 + Math.sin(age * 0.1) * 0.1, 0, 0);
         }
         break;
+      case 'silverfish':
+        for (let i = 0; i < 5; i++) this.rot(`seg${i}`, 0, Math.sin(age * 0.9 + i * 0.5) * 0.12 * (1 + Math.abs(i - 2)), 0);
+        break;
+      case 'end_crystal': {
+        // deux cages qui tournent en sens contraires autour du cœur, le tout flottant doucement
+        const bob = Math.sin(age * 0.1) * 2;
+        for (const name of ['frame0', 'frame1', 'core']) this.offset(name, 0, bob, 0);
+        this.parts.get('frame0')?.rotation.set(age * 0.05, age * 0.07, 0.6);
+        this.parts.get('frame1')?.rotation.set(-age * 0.07, age * 0.04, -0.6);
+        this.parts.get('core')?.rotation.set(age * 0.09, age * 0.11, 0);
+        break;
+      }
+      case 'ender_dragon': {
+        // le corps entier pique ou se cabre ; la tête ne tourne pas à part
+        this.body.rotation.set(-pitch, yaw + PI, 0);
+        this.rot('head', 0, 0, 0);
+        const wave = age * 0.15;
+        const headLift = Math.sin(wave + DRAGON_NECK_SEGMENTS * 0.6) * 3;
+        for (let i = 0; i < DRAGON_NECK_SEGMENTS; i++) this.offset(`neck${i}`, 0, Math.sin(wave + i * 0.6) * (i + 1) * 0.5, 0);
+        this.offset('head', 0, headLift, 0);
+        this.offset('jaw', 0, headLift, 0);
+        this.rot('jaw', (Math.sin(age * 0.1) + 1) * 0.12, 0, 0);
+        for (let i = 0; i < DRAGON_TAIL_SEGMENTS; i++) {
+          this.offset(`tail${i}`, 0, Math.sin(wave - i * 0.5) * (i + 1) * 0.7, 0);
+          this.parts.get(`tail${i}`)?.scale.setScalar(1 - i * 0.05);
+        }
+        // battement : l'aile monte et descend, le bout d'aile suit avec retard, accroché au bout du premier os
+        const beat = (Math.sin(age * 0.25) * 0.55 + 0.1) * amount + (1 - amount) * 0.3;
+        const tip = (Math.sin(age * 0.25 - 1) * 0.6 - 0.15) * amount - (1 - amount) * 0.9;
+        const reach = DRAGON_WING_SPAN * (Math.cos(beat) - 1);
+        const lift = DRAGON_WING_SPAN * Math.sin(beat);
+        this.parts.get('wingL')?.rotation.set(0, 0, beat);
+        this.parts.get('wingR')?.rotation.set(0, 0, -beat);
+        this.offset('tipL', reach, lift, 0);
+        this.offset('tipR', -reach, lift, 0);
+        this.parts.get('tipL')?.rotation.set(0, 0, beat + tip);
+        this.parts.get('tipR')?.rotation.set(0, 0, -beat - tip);
+        // agonie : il blanchit en se désagrégeant
+        if (e.deathTime > 0) flash = clamp(e.deathTime / 200, 0, 1) * 0.85;
+        break;
+      }
       case 'squid': {
         // les tentacules s'écartent et se referment en cadence
         const open = 0.35 + Math.sin(age * 0.22) * 0.3;
@@ -1154,7 +1203,8 @@ class MobVisual implements Visual {
     if (!line) {
       const geometry = new THREE.BufferGeometry();
       geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array((LEASH_SEGMENTS + 1) * 3), 3));
-      line = new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: 0x5a4020 }));
+      // corde brune d'une laisse, ou rayon rose du cristal qui soigne le dragon
+      line = new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: this.kind === 'end_crystal' ? 0xf8a8ff : 0x5a4020 }));
       line.frustumCulled = false;
       this.root.add(line);
       this.leash = line;
@@ -1166,7 +1216,7 @@ class MobVisual implements Visual {
     const dy = lerp(e.pLeashY, e.leashY, alpha) - r.y - y0;
     const dz = lerp(e.pLeashZ, e.leashZ, alpha) - r.z;
     const attr = line.geometry.attributes.position as THREE.BufferAttribute;
-    const sag = Math.min(0.6, Math.sqrt(dx * dx + dz * dz) * 0.08);
+    const sag = this.kind === 'end_crystal' ? 0 : Math.min(0.6, Math.sqrt(dx * dx + dz * dz) * 0.08);
     for (let i = 0; i <= LEASH_SEGMENTS; i++) {
       const t = i / LEASH_SEGMENTS;
       attr.setXYZ(i, dx * t, y0 + dy * t - Math.sin(t * PI) * sag, dz * t);

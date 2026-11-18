@@ -147,6 +147,8 @@ export function blockDrops(id: number, meta: number, tool: number, rng: () => nu
     case B.NETHER_QUARTZ_ORE:
       return one(I.QUARTZ, fortuneBonus());
     case B.NETHER_PORTAL:
+    case B.END_PORTAL:
+    case B.END_PORTAL_FRAME:
       return [];
 
     // --- Rien du tout ---

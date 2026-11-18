@@ -11,7 +11,7 @@
  * Attention : la classe exportée s'appelle `Storage`, comme l'interface DOM globale
  * (type de `localStorage`). Il faut donc l'importer explicitement là où on s'en sert.
  */
-import type { GameMode, WorldType } from './Constants';
+import type { Dimension, GameMode, WorldType } from './Constants';
 
 // ---------------------------------------------------------------------------------------
 // Types publics
@@ -320,6 +320,21 @@ function checkWorldId(worldId: unknown): void {
 /** Clé de stockage des chunks du Nether pour un monde donné (laisse la surface intacte). */
 export function netherStorageId(worldId: string): string {
   return `${worldId}:nether`;
+}
+
+/** Clé de stockage des chunks de l'End pour un monde donné. */
+export function endStorageId(worldId: string): string {
+  return `${worldId}:end`;
+}
+
+/** Clé de stockage des chunks d'une dimension d'un monde. */
+export function dimensionStorageId(worldId: string, dimension: Dimension): string {
+  return dimension === 'nether' ? netherStorageId(worldId) : dimension === 'end' ? endStorageId(worldId) : worldId;
+}
+
+/** Dimension notée dans un état sauvegardé (toute valeur inconnue vaut la surface). */
+export function readDimension(value: unknown): Dimension {
+  return value === 'nether' || value === 'end' ? value : 'overworld';
 }
 
 function checkChunkKey(key: unknown): void {
@@ -818,10 +833,11 @@ export class Storage {
     return this.backend.putWorld(info);
   }
 
-  /** Supprime le monde et tous ses chunks (surface et Nether). */
+  /** Supprime le monde et tous ses chunks (surface, Nether et End). */
   async deleteWorld(id: string): Promise<void> {
     this.guard('Suppression du monde impossible', () => checkWorldId(id));
     await this.backend.deleteWorld(netherStorageId(id)).catch(() => undefined);
+    await this.backend.deleteWorld(endStorageId(id)).catch(() => undefined);
     return this.backend.deleteWorld(id);
   }
 

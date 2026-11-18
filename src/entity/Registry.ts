@@ -2,6 +2,7 @@
  * Recrée une entité à partir de sa donnée sauvegardée (voir Entity.save()).
  */
 import type { Entity, EntityData } from './Entity';
+import { EndCrystal } from './EndMobs';
 import { loadMob } from './Mobs';
 import { Arrow, FallingBlock, Fireball, ItemEntity, Tnt } from './Objects';
 
@@ -28,6 +29,8 @@ export function createEntity(data: unknown): Entity | null {
         return Fireball.load(data);
       case 'mob':
         return loadMob(data);
+      case 'end_crystal':
+        return EndCrystal.load(data);
       default:
         return null;
     }

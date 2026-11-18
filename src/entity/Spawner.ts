@@ -7,6 +7,7 @@ import { CHUNK_HEIGHT, SEA_LEVEL } from '../world/Constants';
 import { B } from '../world/Ids';
 import type { World } from '../world/World';
 import { BIOME, isWaterBiome } from '../world/gen/Biomes';
+import { END_CENTER_Y } from '../world/gen/EndLayout';
 import { FORTRESS_FLOOR_Y } from '../world/gen/Fortress';
 import { hash2, mulberry32 } from '../world/gen/Noise';
 import type { GameApi } from './Entity';
@@ -73,6 +74,8 @@ const FORTRESS_TABLE: readonly MobKind[] = [
 
 /** Nombre maximal de gardiens (squelettes wither et blazes) chargés à la fois, en plus du plafond ordinaire. */
 const FORTRESS_GUARD_CAP = 8;
+/** Endermen présents à la fois autour du joueur dans l'End. */
+const END_ENDERMAN_CAP = 12;
 
 /** Gardien qui apparaît sur ce sol du Nether : seulement sur les briques d'une forteresse (null ailleurs). */
 export function fortressGuard(below: number, rng: () => number): MobKind | null {
@@ -140,7 +143,8 @@ export class Spawner {
    * Déterministe : le tirage dépend de la graine du monde et des coordonnées du chunk.
    */
   populateChunk(game: GameApi, chunk: Chunk): void {
-    if (game.dimension === 'nether') return;
+    // ni bétail dans le Nether, ni dans l'End
+    if (game.dimension === 'nether' || game.dimension === 'end') return;
     const seed = (Math.imul(game.world.seed, 0x9e3779b1) ^ 0x4d0b5a11) >>> 0;
     const rng = mulberry32(hash2(chunk.cx, chunk.cz, seed));
     const chance = game.world.worldType === 'flat' ? FLAT_ANIMAL_CHUNK_CHANCE : ANIMAL_CHUNK_CHANCE;
@@ -212,6 +216,10 @@ export class Spawner {
     if (game.dimension === 'nether') {
       // même au plafond, les gardiens des forteresses gardent leur propre quota
       this.tickNether(game, count, cap);
+      return;
+    }
+    if (game.dimension === 'end') {
+      this.tickEnd(game);
       return;
     }
     this.tickSquids(game);
@@ -300,6 +308,35 @@ export class Spawner {
         game.spawn(mob);
         count++;
       }
+    }
+  }
+
+  /** L'End n'est peuplé que d'endermen, qui apparaissent sur la pierre de l'île quelle que soit la lumière. */
+  private tickEnd(game: GameApi): void {
+    let endermen = 0;
+    for (const e of game.entities) if (e.kind === 'mob' && !e.dead && e.mobKind === 'enderman') endermen++;
+    if (endermen >= END_ENDERMAN_CAP) return;
+    const w = game.world;
+    const p = game.player;
+    const rng = game.rng;
+    const a = rng() * TAU;
+    const dist = MIN_DISTANCE + rng() * (MAX_DISTANCE - MIN_DISTANCE);
+    const x = Math.floor(p.x + Math.cos(a) * dist);
+    const z = Math.floor(p.z + Math.sin(a) * dist);
+    const y = this.findFloor(w, x, END_CENTER_Y + 6, z, 20);
+    if (y < 0 || w.getBlock(x, y - 1, z) !== B.END_STONE) return;
+    const size = 1 + Math.floor(rng() * 3);
+    for (let i = 0; i < size && endermen < END_ENDERMAN_CAP; i++) {
+      const sx = x + (i === 0 ? 0 : Math.floor(rng() * 7) - 3);
+      const sz = z + (i === 0 ? 0 : Math.floor(rng() * 7) - 3);
+      const sy = i === 0 ? y : this.findFloor(w, sx, y + 4, sz, 8);
+      if (sy < 0 || !this.canSpawnNetherGround(game, 'enderman', sx, sy, sz)) continue;
+      const mob = createMob('enderman', rng);
+      if (!mob) break;
+      mob.setPosition(sx + 0.5, sy, sz + 0.5);
+      mob.setRotation(rng() * TAU);
+      game.spawn(mob);
+      endermen++;
     }
   }
 

@@ -14,7 +14,7 @@ import { maxStack } from './Items';
 import { makeStack, type Slot } from './ItemStack';
 import { hash3, mulberry32 } from './gen/Noise';
 
-export type LootTable = 'dungeon' | 'desert_temple' | 'jungle_temple' | 'mineshaft' | 'blacksmith' | 'fortress';
+export type LootTable = 'dungeon' | 'desert_temple' | 'jungle_temple' | 'mineshaft' | 'blacksmith' | 'fortress' | 'stronghold_corridor' | 'stronghold_library';
 
 /** [objet, poids, quantité min, quantité max]. */
 type Entry = readonly [id: number, weight: number, min: number, max: number];
@@ -91,6 +91,19 @@ const TABLES: Record<LootTable, readonly Pool[]> = {
         [I.NETHER_WART, 5, 3, 7], [I.SADDLE, 10, 1, 1],
       ],
     },
+  ],
+  stronghold_corridor: [
+    {
+      rolls: [2, 3],
+      entries: [
+        [I.ENDER_PEARL, 10, 1, 1], [I.DIAMOND, 3, 1, 3], [I.IRON_INGOT, 10, 1, 5], [I.GOLD_INGOT, 5, 1, 3], [I.REDSTONE, 5, 4, 9],
+        [I.BREAD, 15, 1, 3], [I.APPLE, 15, 1, 3], [I.IRON_PICKAXE, 5, 1, 1], [I.IRON_SWORD, 5, 1, 1], [I.IRON_CHESTPLATE, 5, 1, 1],
+        [I.IRON_HELMET, 5, 1, 1], [I.IRON_LEGGINGS, 5, 1, 1], [I.IRON_BOOTS, 5, 1, 1], [I.GOLDEN_APPLE, 1, 1, 1], [I.SADDLE, 1, 1, 1],
+      ],
+    },
+  ],
+  stronghold_library: [
+    { rolls: [2, 10], entries: [[I.BOOK, 20, 1, 3], [I.PAPER, 20, 2, 7], [I.MAP, 1, 1, 1], [I.COMPASS, 1, 1, 1]] },
   ],
 };
 

@@ -325,10 +325,31 @@ export function collisionBoxes(id: number, meta: number, nb: NeighborFn, out: nu
     case SHAPE.PISTON_HEAD:
       pistonHeadBoxes(meta, out);
       return;
+    case SHAPE.END_PORTAL:
+      return;
+    case SHAPE.END_FRAME:
+      out.push(0, 0, 0, 16, 13, 16);
+      if (meta & 4) out.push(4, 13, 4, 12, 16, 12);
+      return;
+    case SHAPE.DRAGON_EGG:
+      out.push(1, 0, 1, 15, 16, 15);
+      return;
     default:
       out.push(0, 0, 0, 16, 16, 16);
   }
 }
+
+/** Boîtes dessinées de l'œuf de dragon, de la base à la pointe (seizièmes). */
+export const DRAGON_EGG_BOXES: readonly number[] = [
+  3, 0, 3, 13, 1, 13,
+  2, 1, 2, 14, 3, 14,
+  1, 3, 1, 15, 8, 15,
+  2, 8, 2, 14, 11, 14,
+  3, 11, 3, 13, 13, 13,
+  4, 13, 4, 12, 14, 12,
+  5, 14, 5, 11, 15, 11,
+  6, 15, 6, 10, 16, 10,
+];
 
 function pistonHeadBoxes(meta: number, out: number[]): void {
   const f = meta & 7;
@@ -379,6 +400,7 @@ export function selectionBoxes(id: number, meta: number, nb: NeighborFn, out: nu
   switch (BLOCK_SHAPE[id]) {
     case SHAPE.NONE:
     case SHAPE.FLUID:
+    case SHAPE.END_PORTAL:
       return;
     case SHAPE.CROSS:
       if (id === B.TALL_GRASS || id === B.FERN || id === B.DEAD_BUSH) out.push(2, 0, 2, 14, 13, 14);

@@ -23,6 +23,7 @@ export const STAT = {
   BRED: 'animals_bred',
   SLEEP: 'sleep_in_bed',
   TRADES: 'trades',
+  END_VISITS: 'end_visits',
 } as const;
 
 export const minedKey = (blockId: number): string => `mined:${blockId}`;
@@ -54,6 +55,9 @@ export const MOB_NAMES: Record<MobKind, string> = {
   squid: 'Calamar',
   iron_golem: 'Golem de fer',
   ocelot: 'Ocelot',
+  silverfish: "Poisson d'argent",
+  ender_dragon: "Dragon de l'Ender",
+  end_crystal: "Cristal de l'End",
   player: 'Joueur',
 };
 

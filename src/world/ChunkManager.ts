@@ -11,7 +11,7 @@ import { computeHeightmap } from './gen/WorldGen';
 import type { GenRequest, GenResponse } from './gen/gen.worker';
 import type { GenSpawn } from './gen/WorldGen';
 import type { MeshRequest, MeshResult, PassData } from './mesh/MeshTypes';
-import { netherStorageId, type SavedChunk, type Storage } from './Storage';
+import { dimensionStorageId, type SavedChunk, type Storage } from './Storage';
 import type { BlockEntity, World } from './World';
 
 /** Destinataire des maillages (l'afficheur des chunks). */
@@ -102,7 +102,7 @@ export class ChunkManager {
     this.worldType = options.worldType;
     this.genVersion = options.genVersion ?? 1;
     const dim = options.dimension ?? 'overworld';
-    this.worldId = dim === 'nether' ? netherStorageId(options.worldId) : options.worldId;
+    this.worldId = dimensionStorageId(options.worldId, dim);
     this.savedKeys = options.savedKeys;
     this.viewDistance = options.viewDistance;
 
@@ -194,7 +194,7 @@ export class ChunkManager {
   /** Bascule le gestionnaire vers une autre dimension en réinitialisant les workers et les chunks en mémoire. */
   setDimension(dim: Dimension, savedKeys: Set<number>): void {
     this.epoch++;
-    this.worldId = dim === 'nether' ? netherStorageId(this.baseWorldId) : this.baseWorldId;
+    this.worldId = dimensionStorageId(this.baseWorldId, dim);
     this.savedKeys = savedKeys;
     this.loading.clear();
     this.storageLoads = 0;

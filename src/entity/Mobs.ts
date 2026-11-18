@@ -24,7 +24,7 @@ import { findPath, type PathPoint } from './Pathfinder';
 import { isBoxFree } from './Physics';
 
 export const PASSIVE_KINDS: readonly MobKind[] = ['pig', 'cow', 'sheep', 'chicken', 'wolf', 'horse', 'ocelot'];
-export const HOSTILE_KINDS: readonly MobKind[] = ['zombie', 'skeleton', 'creeper', 'spider', 'zombie_pigman', 'ghast', 'magma_cube', 'blaze', 'wither_skeleton', 'slime', 'enderman', 'witch'];
+export const HOSTILE_KINDS: readonly MobKind[] = ['zombie', 'skeleton', 'creeper', 'spider', 'zombie_pigman', 'ghast', 'magma_cube', 'blaze', 'wither_skeleton', 'slime', 'enderman', 'witch', 'silverfish'];
 /** Ni animaux d'élevage (pas de reproduction, pas de plafond) ni monstres : habitants, golems, calamars. */
 export const NPC_KINDS: readonly MobKind[] = ['villager', 'iron_golem', 'squid'];
 
@@ -83,6 +83,8 @@ export function randInt(rng: () => number, lo: number, hi: number): number {
 
 /** Fait-il jour (le soleil brûle les morts-vivants, les araignées sont paisibles) ? */
 export function isDay(game: GameApi): boolean {
+  // ni soleil ni lune hors de la surface
+  if (game.dimension === 'nether' || game.dimension === 'end') return false;
   const t = game.dayTime;
   return t < 12500 || t >= 23500;
 }

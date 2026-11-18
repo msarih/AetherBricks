@@ -191,6 +191,9 @@ shaped(['PPP', 'CIC', 'CRC'], { P: B.OAK_PLANKS, C: B.COBBLESTONE, I: I.IRON_ING
 shapeless([B.PISTON, B.VINE], B.STICKY_PISTON);
 shaped(['S', 'P'], { S: I.SLIME_BALL, P: B.PISTON }, B.STICKY_PISTON);
 shaped(['FF ', 'FS ', '  F'], { F: I.STRING, S: I.SLIME_BALL }, I.LEAD, 2);
+shapeless([I.BLAZE_ROD], I.BLAZE_POWDER, 2);
+shapeless([I.ENDER_PEARL, I.BLAZE_POWDER], I.ENDER_EYE);
+shapeless([I.BLAZE_POWDER, I.SLIME_BALL], I.MAGMA_CREAM);
 shaped([' R ', 'RGR', ' R '], { R: I.REDSTONE, G: B.GLOWSTONE }, B.REDSTONE_LAMP);
 shaped(['##', '##'], { '#': B.SAND }, B.SANDSTONE);
 shaped(['##', '##'], { '#': I.BRICK }, B.BRICKS);

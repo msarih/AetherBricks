@@ -109,7 +109,7 @@ async function reload(page) {
       const spawnSame = JSON.stringify(oldGen.findSpawn()) === JSON.stringify(v1.findSpawn());
       return { version: g.world.genVersion, deterministic, v1Places, v1Entities, v2Places, v2Entities, flatEntities, cols, exact, compared, different, spawnSame };
     }, SEED);
-    check('un nouveau monde porte la version 2 du générateur', r.version === 2, 'version ' + r.version);
+    check('un nouveau monde porte la version courante du générateur (3)', r.version === 3, 'version ' + r.version);
     check('le même chunk est généré à l’identique, quel que soit l’ordre', r.deterministic === true);
     check('générateur en version 1 (anciens mondes) : aucun lieu, aucun coffre, aucun habitant', r.v1Places === 0 && r.v1Entities === 0, JSON.stringify({ blocs: r.v1Places, entites: r.v1Entities }));
     check('générateur en version 2 : le village est bien là (chemins, portes, coffres, habitants)', r.v2Places > 50 && r.v2Entities > 5, JSON.stringify({ blocs: r.v2Places, entites: r.v2Entities }));
@@ -499,7 +499,7 @@ async function reload(page) {
       const WF = await import('/src/world/WorldFile.ts');
       const g = window.__game;
       await g.save();
-      // ce monde (version 2) : la copie importée garde son générateur
+      // ce monde (version 3) : la copie importée garde son générateur
       const copy = await WF.importWorld(g.storage, await (await WF.exportWorld(g.storage, g.info.id)).arrayBuffer());
       // un monde d'avant (pas de version notée) : la copie reste sans version, donc sans lieux
       const oldId = 'w-test-ancien';
@@ -510,7 +510,7 @@ async function reload(page) {
       for (const id of [copy.id, oldId, oldCopy.id]) await g.storage.deleteWorld(id);
       return { copy: copy.genVersion, old: oldCopy.genVersion === undefined, distinct: copy.id !== g.info.id };
     });
-    check('un monde exporté puis importé garde son générateur (2), un ancien monde reste sans lieux', r.copy === 2 && r.old === true && r.distinct, JSON.stringify(r));
+    check('un monde exporté puis importé garde son générateur (3), un ancien monde reste sans lieux', r.copy === 3 && r.old === true && r.distinct, JSON.stringify(r));
   });
 
   const fails = results.filter((r) => !r.ok);

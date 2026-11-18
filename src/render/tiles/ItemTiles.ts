@@ -1894,3 +1894,53 @@ def(
     { k: 0x2a2a34, c: 0x8a6a3c, g: 0xc8dce4, w: 0xffffff, p: 0x8a3cc8, d: 0x5a2290 },
   ),
 );
+
+// --- L'End : poudre de blaze, œil de l'Ender ---
+def(
+  'blaze_powder',
+  spr(
+    [
+      '................',
+      '................',
+      '................',
+      '.........k......',
+      '......k.kok.....',
+      '.....kok.kyk....',
+      '....kyyokkoyk...',
+      '...kyoyyyoyyk...',
+      '...koyyoyyyok...',
+      '..kyyoyyyoyyyk..',
+      '..koyyyoyyyoyk..',
+      '...kkoyyyoykk...',
+      '.....kkkkkk.....',
+      '................',
+      '................',
+      '................',
+    ],
+    { k: 0x8a4a08, y: 0xffe04a, o: 0xf09a18 },
+  ),
+);
+def(
+  'ender_eye',
+  spr(
+    [
+      '................',
+      '................',
+      '.....kkkkkk.....',
+      '...kkhhhhbbkk...',
+      '..khhwwhbbbbdk..',
+      '..khwhbbppbbdk..',
+      '.khhhbbpkkpbddk.',
+      '.khhbbbpkkpbddk.',
+      '.khbbbbpkkpdddk.',
+      '.kbbbbbpkkpdddk.',
+      '.kbbbbbbppddddk.',
+      '..kbbbbbdddddk..',
+      '..kkbbddddddkk..',
+      '....kkkkkkkk....',
+      '................',
+      '................',
+    ],
+    { k: 0x0c3a1e, d: 0x2a7a3c, b: 0x4aa858, h: 0x86d88a, w: 0xe0ffd8, p: 0x1c5a46 },
+  ),
+);

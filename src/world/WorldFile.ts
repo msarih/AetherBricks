@@ -15,7 +15,7 @@
  * abîmé ou étranger donne une erreur au libellé clair et n'écrit rien de partiel.
  */
 import { CHUNK_AREA, CHUNK_VOLUME, GEN_VERSION, type GameMode, type WorldType } from './Constants';
-import { createWorldId, netherStorageId, rleDecode, rleEncode, type SavedChunk, type Storage, type WorldInfo } from './Storage';
+import { createWorldId, endStorageId, netherStorageId, rleDecode, rleEncode, type SavedChunk, type Storage, type WorldInfo } from './Storage';
 
 export const WORLD_FILE_EXTENSION = '.aetherworld';
 const SIGNATURE = 'AEBWORLD';
@@ -35,6 +35,7 @@ interface FileHeader {
   info: WorldInfo;
   chunkCount: number;
   netherChunkCount?: number;
+  endChunkCount?: number;
 }
 
 interface ChunkHeader {
@@ -68,12 +69,19 @@ export async function exportWorld(storage: Storage, id: string, onProgress?: (do
   const keys = Array.from(await storage.chunkKeys(id)).sort((a, b) => a - b);
   const nId = netherStorageId(id);
   const nKeys = Array.from(await storage.chunkKeys(nId)).sort((a, b) => a - b);
-  const total = Math.max(1, keys.length + nKeys.length);
+  const eId = endStorageId(id);
+  const eKeys = Array.from(await storage.chunkKeys(eId)).sort((a, b) => a - b);
+  const total = Math.max(1, keys.length + nKeys.length + eKeys.length);
   const parts: Uint8Array[] = [encoder.encode(SIGNATURE), u32(FORMAT_VERSION)];
-  const header: FileHeader = { info, chunkCount: keys.length, ...(nKeys.length > 0 ? { netherChunkCount: nKeys.length } : {}) };
+  const header: FileHeader = {
+    info,
+    chunkCount: keys.length,
+    ...(nKeys.length > 0 ? { netherChunkCount: nKeys.length } : {}),
+    ...(eKeys.length > 0 ? { endChunkCount: eKeys.length } : {}),
+  };
   parts.push(...jsonPart(header));
   let done = 0;
-  for (const [srcId, list] of [[id, keys], [nId, nKeys]] as const) {
+  for (const [srcId, list] of [[id, keys], [nId, nKeys], [eId, eKeys]] as const) {
     for (let i = 0; i < list.length; i += BATCH) {
       const batch = await Promise.all(list.slice(i, i + BATCH).map((key) => storage.loadChunk(srcId, key)));
       for (const chunk of batch) {
@@ -222,6 +230,8 @@ export async function importWorld(storage: Storage, data: ArrayBuffer, onProgres
   if (typeof count !== 'number' || !Number.isInteger(count) || count < 0 || count > MAX_CHUNKS) throw new Error(DAMAGED);
   const nCount = header.netherChunkCount === undefined ? 0 : header.netherChunkCount;
   if (typeof nCount !== 'number' || !Number.isInteger(nCount) || nCount < 0 || count + nCount > MAX_CHUNKS) throw new Error(DAMAGED);
+  const eCount = header.endChunkCount === undefined ? 0 : header.endChunkCount;
+  if (typeof eCount !== 'number' || !Number.isInteger(eCount) || eCount < 0 || count + nCount + eCount > MAX_CHUNKS) throw new Error(DAMAGED);
   const info = readInfo(header.info, Date.now());
 
   // lecture et validation complètes avant toute écriture
@@ -229,6 +239,8 @@ export async function importWorld(storage: Storage, data: ArrayBuffer, onProgres
   for (let i = 0; i < count; i++) chunks.push(readChunk(r));
   const netherChunks: SavedChunk[] = [];
   for (let i = 0; i < nCount; i++) netherChunks.push(readChunk(r));
+  const endChunks: SavedChunk[] = [];
+  for (let i = 0; i < eCount; i++) endChunks.push(readChunk(r));
   if (!r.done) throw new Error(DAMAGED);
 
   const names = new Set((await storage.listWorlds()).map((w) => w.name));
@@ -240,7 +252,7 @@ export async function importWorld(storage: Storage, data: ArrayBuffer, onProgres
   }
 
   await storage.putWorld(info);
-  const total = Math.max(1, chunks.length + netherChunks.length);
+  const total = Math.max(1, chunks.length + netherChunks.length + endChunks.length);
   let written = 0;
   try {
     for (let i = 0; i < chunks.length; i += BATCH) {
@@ -249,12 +261,13 @@ export async function importWorld(storage: Storage, data: ArrayBuffer, onProgres
       written += slice.length;
       onProgress?.(Math.min(1, written / total));
     }
-    const nId = netherStorageId(info.id);
-    for (let i = 0; i < netherChunks.length; i += BATCH) {
-      const slice = netherChunks.slice(i, i + BATCH);
-      await storage.saveChunks(nId, slice);
-      written += slice.length;
-      onProgress?.(Math.min(1, written / total));
+    for (const [dimId, list] of [[netherStorageId(info.id), netherChunks], [endStorageId(info.id), endChunks]] as const) {
+      for (let i = 0; i < list.length; i += BATCH) {
+        const slice = list.slice(i, i + BATCH);
+        await storage.saveChunks(dimId, slice);
+        written += slice.length;
+        onProgress?.(Math.min(1, written / total));
+      }
     }
   } catch (error) {
     await storage.deleteWorld(info.id).catch(() => undefined);

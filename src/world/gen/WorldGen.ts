@@ -12,6 +12,7 @@ import { foliageColor, grassColor } from '../Blocks';
 import { BIOME, BIOMES, TREE, isWaterBiome } from './Biomes';
 import { placeDungeon } from './Dungeon';
 import './Mineshaft';
+import './Stronghold';
 import './Temples';
 import './Village';
 import { GenCanvas, type GenBlockEntity, type GenSpawn } from './GenCanvas';
@@ -20,8 +21,9 @@ import { structuresNear, type Structure, type StructureKind, type TerrainInfo } 
 
 export type { GenBlockEntity, GenSpawn };
 
-/** Lieux de l'Overworld. */
+/** Lieux de l'Overworld : ceux de la version 2 du générateur, puis les forts de la version 3. */
 const OVERWORLD_STRUCTURES: readonly StructureKind[] = ['village', 'desert_temple', 'jungle_temple', 'mineshaft'];
+const OVERWORLD_STRUCTURES_V3: readonly StructureKind[] = [...OVERWORLD_STRUCTURES, 'stronghold'];
 
 /** Marge de colonnes dont on calcule les paramètres autour du chunk. */
 const PAD = 5;
@@ -134,6 +136,8 @@ export class WorldGen implements TerrainInfo {
   readonly type: WorldType;
   /** Lieux à découvrir (donjons, villages…) : générateur en version 2, hors monde plat. */
   readonly features: boolean;
+  /** Types de lieux que ce monde contient (selon la version de son générateur). */
+  private readonly kinds: readonly StructureKind[];
   private readonly canvas = new GenCanvas();
   /** Lieux dont l'emprise touche le chunk en cours ou son anneau. */
   private structures: Structure[] = [];
@@ -198,6 +202,7 @@ export class WorldGen implements TerrainInfo {
     this.seed = seed >>> 0;
     this.type = type;
     this.features = genVersion >= 2 && type !== 'flat';
+    this.kinds = genVersion >= 3 ? OVERWORLD_STRUCTURES_V3 : OVERWORLD_STRUCTURES;
     const rng = mulberry32(this.seed ^ 0x5eed1234);
     const next = (): number => (rng() * 4294967296) >>> 0;
     this.nCont = new Simplex(next());
@@ -428,7 +433,7 @@ export class WorldGen implements TerrainInfo {
     // 4. minerais, 5. arbres, 6. plantes, 7. lieux à découvrir, 8. neige et glace
     this.placeVeins(cx, cz);
     this.placeEmeralds(cx, cz);
-    if (this.features) this.structures = structuresNear(this, OVERWORLD_STRUCTURES, cx, cz, RING);
+    if (this.features) this.structures = structuresNear(this, this.kinds, cx, cz, RING);
     this.placeTrees(bx, bz);
     this.placePlants(bx, bz);
     if (this.features) this.placeStructures(cx, cz, out);

@@ -22,6 +22,8 @@ export const worldUniforms = {
 export const OVERWORLD_AMBIENT = 0.045;
 /** Le Nether n'est jamais tout à fait noir (Minecraft : luminosité minimale de 0,1) : on y devine les murs. */
 export const NETHER_AMBIENT = 0.3;
+/** L'End baigne dans une pénombre uniforme : même à l'ombre d'un pilier, on distingue le sol. */
+export const END_AMBIENT = 0.3;
 
 /** Courbe de luminosité d'un niveau de lumière normalisé (0..1), proche de celle de Minecraft. */
 export function lightCurve(l: number): number {

@@ -7,13 +7,14 @@
 import { Living, type Entity, type GameApi } from '../entity/Entity';
 import { tryBuildGolem } from '../entity/Creatures';
 import { LEASH_BREAK, Mob, isLeashPost, notifyTamedWolves } from '../entity/Mobs';
-import { Arrow, FishingBobber, Thrown } from '../entity/Objects';
+import { Arrow, EyeOfEnder, FishingBobber, Thrown, ThrownPearl } from '../entity/Objects';
 import type { Input } from '../player/Input';
 import { attackDamage, type Player } from '../player/Player';
 import type { HandRenderer } from '../render/HandRenderer';
 import type { Selection } from '../render/Selection';
 import type { UiApi } from '../ui/UiApi';
 import { applyBonemeal, canStay, fireCanStay, neighborChanged, topSolid } from '../world/Behavior';
+import { FRAME_EYE, tryOpenEndPortal } from '../world/EndPortal';
 import { tryIgnitePortal } from '../world/Portal';
 import { META_DOOR_HINGE_RIGHT, META_DOOR_OPEN, META_DOOR_UPPER, ccw, collisionBoxes, cw, opposite } from '../world/BlockModels';
 import {
@@ -62,7 +63,12 @@ export interface InteractionHost extends GameApi {
   createMap(): void;
   /** Un panneau vient d'être posé en (x, y, z) : ouvrir la saisie de son texte. */
   openSignEditor(x: number, y: number, z: number): void;
+  /** Fort vers lequel vole un œil de l'Ender lancé, ou null si ce monde n'en a pas à cet endroit. */
+  strongholdTarget(): { x: number; y: number; z: number } | null;
 }
+
+/** Ticks entre deux lancers de perle de l'Ender (Minecraft : une seconde). */
+const PEARL_COOLDOWN = 20;
 
 /** Portée de la main, en blocs. */
 const REACH_SURVIVAL = 4.5;
@@ -119,6 +125,7 @@ export class Interaction {
   private useSlot = 0;
   /** Le clic droit en cours vient d'être pressé (et non répété parce que le bouton est tenu). */
   private freshClick = false;
+  private pearlDelay = 0;
   /** Flotteur de la canne à pêche, tant que la ligne est lancée. */
   private bobber: FishingBobber | null = null;
 
@@ -208,6 +215,7 @@ export class Interaction {
     this.updateTarget(p.x, p.y + p.eyeHeight, p.z);
     if (this.breakDelay > 0) this.breakDelay--;
     if (this.useDelay > 0) this.useDelay--;
+    if (this.pearlDelay > 0) this.pearlDelay--;
 
     this.tickUse(input.buttons[2]);
 
@@ -610,6 +618,21 @@ export class Interaction {
       g.trySleep(x, y, z, meta);
       return true;
     }
+    if (id === B.DRAGON_EGG) {
+      // l'œuf se dérobe : il se téléporte sur un sol libre à quelques blocs (Minecraft)
+      for (let i = 0; i < 200; i++) {
+        const nx = x + Math.floor(g.rng() * 15) - 7;
+        const ny = y + Math.floor(g.rng() * 7) - 3;
+        const nz = z + Math.floor(g.rng() * 15) - 7;
+        if (ny < 1 || ny >= CHUNK_HEIGHT || w.getBlock(nx, ny, nz) !== B.AIR || !topSolid(w, nx, ny - 1, nz)) continue;
+        w.setBlock(x, y, z, B.AIR, 0);
+        w.setBlock(nx, ny, nz, B.DRAGON_EGG, 0);
+        g.particles('portal', nx + 0.5, ny + 0.5, nz + 0.5, 24, 0.6);
+        g.sound('pop', x + 0.5, y + 0.5, z + 0.5, 0.8, 0.5);
+        return true;
+      }
+      return false;
+    }
     return false;
   }
 
@@ -644,6 +667,16 @@ export class Interaction {
 
     if (held === I.BUCKET || held === I.WATER_BUCKET || held === I.LAVA_BUCKET) return false; // voir useInAir
     if (held === B.LILY_PAD) return false;
+
+    if (held === I.ENDER_EYE && h.id === B.END_PORTAL_FRAME) {
+      // l'œil se loge dans le cadre ; le douzième ouvre le portail
+      if (h.meta & FRAME_EYE) return false;
+      w.setMeta(h.x, h.y, h.z, h.meta | FRAME_EYE);
+      g.blockSound('place', B.GLASS, h.x + 0.5, h.y + 1, h.z + 0.5);
+      p.consumeHeld();
+      if (tryOpenEndPortal(w, h.x, h.y, h.z)) g.sound('thunder', h.x + 0.5, h.y + 0.5, h.z + 0.5, 0.9, 0.6);
+      return true;
+    }
 
     if (held === I.FLINT_AND_STEEL) {
       if (h.id === B.TNT) {
@@ -780,6 +813,36 @@ export class Interaction {
     if (held === I.MAP) {
       if (!this.freshClick) return false;
       g.createMap();
+      this.swing();
+      return true;
+    }
+
+    if (held === I.ENDER_PEARL) {
+      if (!this.freshClick || this.pearlDelay > 0) return false;
+      const t = new ThrownPearl();
+      t.owner = p;
+      t.shoot(ex + l.x * 0.3, ey - 0.1, ez + l.z * 0.3, l.x, l.y, l.z, 1.5);
+      g.spawn(t);
+      g.sound('bow', ex, ey, ez, 0.4, 0.5 + g.rng() * 0.2);
+      p.consumeHeld();
+      this.pearlDelay = PEARL_COOLDOWN;
+      this.swing();
+      return true;
+    }
+
+    if (held === I.ENDER_EYE) {
+      // sur un cadre de portail, l'œil se pose (voir useOnBlock) : il ne part pas en l'air
+      if (!this.freshClick || (this.hasBlock && this.hit.id === B.END_PORTAL_FRAME)) return false;
+      const goal = g.strongholdTarget();
+      if (!goal) {
+        g.ui.actionBar("L'œil reste inerte : il n'y a pas de fort à trouver ici");
+        return false;
+      }
+      const eye = new EyeOfEnder();
+      eye.aim(p.x, p.y + p.height * 0.5, p.z, goal.x, goal.y, goal.z, g.rng);
+      g.spawn(eye);
+      g.sound('bow', ex, ey, ez, 0.4, 0.7 + g.rng() * 0.2);
+      p.consumeHeld();
       this.swing();
       return true;
     }

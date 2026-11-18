@@ -11,7 +11,7 @@ import { canMerge, makeStack, sanitizeEnchants, type ItemStack } from '../world/
 import { newRayHit, rayBoxDistance, raycast } from '../world/Raycast';
 import { Entity, Living, num, type DamageCause, type EntityData, type GameApi, type PlayerLike } from './Entity';
 import type { EntityKind } from './EntityView';
-import { groundSlip, move, pointInFluid, updateMedium } from './Physics';
+import { groundSlip, isBoxFree, move, pointInFluid, updateMedium } from './Physics';
 
 const hit = newRayHit();
 
@@ -487,6 +487,118 @@ export class Thrown extends Entity {
   }
 }
 
+/** Dégâts de chute infligés par une téléportation à la perle de l'Ender. */
+const PEARL_DAMAGE = 5;
+
+/**
+ * Perle de l'Ender lancée : là où elle se brise, elle téléporte celui qui l'a lancée, au prix
+ * de 2 cœurs et demi (Minecraft).
+ */
+export class ThrownPearl extends Thrown {
+  constructor() {
+    super(I.ENDER_PEARL);
+  }
+
+  protected override impact(game: GameApi, x: number, y: number, z: number, target: Living | null, dx: number, dz: number): void {
+    game.particles('portal', x, y, z, 24, 0.6);
+    if (target && target !== this.owner) target.hurt(game, 0.001, 'generic', this.owner);
+    const o = this.owner;
+    if (!(o instanceof Living) || !o.alive) return;
+    // un pas en retrait du point d'impact, puis vers le haut tant que le corps ne tient pas
+    const w = game.world;
+    const hw = o.width / 2;
+    let tx = x - dx * 0.35;
+    let tz = z - dz * 0.35;
+    let ty = y;
+    if (target) {
+      tx = target.x;
+      ty = target.y;
+      tz = target.z;
+    }
+    for (let i = 0; i < 6 && !isBoxFree(w, tx - hw, ty, tz - hw, tx + hw, ty + o.height, tz + hw); i++) ty = Math.floor(ty * 2 + 1) / 2;
+    game.particles('portal', o.x, o.y + o.height * 0.5, o.z, 24, 0.6);
+    game.sound('pop', o.x, o.y, o.z, 0.8, 0.5);
+    o.teleport(tx, ty, tz);
+    o.hurt(game, PEARL_DAMAGE, 'fall');
+    game.sound('pop', tx, ty, tz, 1, 0.6);
+  }
+}
+
+/** Ticks de vol d'un œil de l'Ender avant qu'il retombe ou se brise. */
+const EYE_FLIGHT_TICKS = 80;
+
+/**
+ * Œil de l'Ender lancé (Minecraft) : il s'élève et file vers le fort le plus proche, plane un
+ * instant, puis retombe (4 fois sur 5) ou se brise. Au-dessus du fort, il plonge vers le sol.
+ */
+export class EyeOfEnder extends Entity {
+  readonly kind: EntityKind = 'item';
+  private tx = 0;
+  private ty = 0;
+  private tz = 0;
+  /** L'œil retombe intact (sinon il se brise). */
+  survives = true;
+
+  constructor() {
+    super();
+    this.itemId = I.ENDER_EYE;
+    this.itemCount = 1;
+    this.width = 0.25;
+    this.height = 0.25;
+    this.noClip = true;
+  }
+
+  /** Lance l'œil de (x, y, z) vers le point visé (le fort). */
+  aim(x: number, y: number, z: number, goalX: number, goalY: number, goalZ: number, rng: () => number): void {
+    this.setPosition(x, y, z);
+    const dx = goalX - x;
+    const dz = goalZ - z;
+    const d = Math.sqrt(dx * dx + dz * dz);
+    if (d > 12) {
+      this.tx = x + (dx / d) * 12;
+      this.tz = z + (dz / d) * 12;
+      this.ty = y + 8;
+    } else {
+      this.tx = goalX;
+      this.ty = goalY;
+      this.tz = goalZ;
+    }
+    this.survives = rng() < 0.8;
+  }
+
+  tick(game: GameApi): void {
+    this.beginTick();
+    this.x += this.vx;
+    this.y += this.vy;
+    this.z += this.vz;
+    const speed = Math.sqrt(this.vx * this.vx + this.vz * this.vz);
+    const dx = this.tx - this.x;
+    const dz = this.tz - this.z;
+    const left = Math.sqrt(dx * dx + dz * dz);
+    let next = speed + (left - speed) * 0.0025;
+    if (left < 1) {
+      next *= 0.8;
+      this.vy *= 0.8;
+    }
+    if (left > 1e-6) {
+      this.vx = (dx / left) * next;
+      this.vz = (dz / left) * next;
+    }
+    this.vy += ((this.y < this.ty ? 1 : -1) - this.vy) * 0.015;
+    game.particles('portal', this.x, this.y + 0.2, this.z, 1, 0.3);
+    this.updateLight(game.world);
+    if (this.age > EYE_FLIGHT_TICKS) {
+      this.dead = true;
+      if (this.survives) {
+        game.dropItem(this.x, this.y, this.z, I.ENDER_EYE, 1);
+      } else {
+        game.blockSound('break', B.GLASS, this.x, this.y, this.z);
+        game.itemParticles(this.x, this.y, this.z, I.ENDER_EYE, 8);
+      }
+    }
+  }
+}
+
 export type PotionEffect = 'harm' | 'poison' | 'slow' | 'weak';
 
 /** Rayon d'action d'une potion jetable, en blocs. */
@@ -817,14 +929,17 @@ export class Fireball extends Entity {
     this.x += this.vx;
     this.y += this.vy;
     this.z += this.vz;
-    if ((this.age & 1) === 0) {
-      game.particles('flame', this.x, this.y + 0.5, this.z, 1, 0.25);
-      game.particles('smoke', this.x, this.y + 0.5, this.z, 1, 0.25);
-    }
+    if ((this.age & 1) === 0) this.trail(game);
     if (this.y < -64 || this.y > 320) this.dead = true;
   }
 
-  private detonate(game: GameApi, target: Entity | null): void {
+  /** Traînée laissée en vol. */
+  protected trail(game: GameApi): void {
+    game.particles('flame', this.x, this.y + 0.5, this.z, 1, 0.25);
+    game.particles('smoke', this.x, this.y + 0.5, this.z, 1, 0.25);
+  }
+
+  protected detonate(game: GameApi, target: Entity | null): void {
     if (this.dead) return;
     this.dead = true;
     if (this.small) {

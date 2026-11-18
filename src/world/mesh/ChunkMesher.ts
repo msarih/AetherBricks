@@ -13,7 +13,7 @@ import {
   BLOCK_TILES, BLOCK_TRANSLUCENT, FACING_DX, FACING_DZ, FACING_TO_FACE, ROT, SHAPE, TINT, faceTile, isLeaves,
 } from '../Blocks';
 import {
-  META_DOOR_HINGE_RIGHT, META_DOOR_UPPER, ccw, cw, doorNamedFacing, edgeBox, fenceBoxes, fenceConnections,
+  DRAGON_EGG_BOXES, META_DOOR_HINGE_RIGHT, META_DOOR_UPPER, ccw, cw, doorNamedFacing, edgeBox, fenceBoxes, fenceConnections,
   fenceGateBoxes, fluidHeight, opposite, paneConnections, selectionBoxes, stairsBoxes, type NeighborFn,
 } from '../BlockModels';
 import type { MeshRequest, MeshResult, PassData } from './MeshTypes';
@@ -1125,6 +1125,33 @@ function meshCell(id: number, meta: number): void {
     case SHAPE.FARMLAND:
       meshLowBox(id, meta, 0, 15 / 16, faceTile(id, meta, FACE_UP));
       return;
+    case SHAPE.END_FRAME: {
+      noTint();
+      for (let f = 0; f < 6; f++) boxFace(opaquePass, f, 0, 0, 0, 1, 13 / 16, 1, BLOCK_TILES[id * 6 + f], 0, false, NOMIP);
+      if (meta & 4) {
+        const a = 4 / 16;
+        const b = 12 / 16;
+        for (let f = 0; f < 6; f++) {
+          if (f !== FACE_DOWN) boxFace(opaquePass, f, a, 13 / 16, a, b, 1, b, T.end_portal_eye, 0, false, NOMIP);
+        }
+      }
+      return;
+    }
+    case SHAPE.END_PORTAL: {
+      // nappe étoilée aux trois quarts de la cellule, visible des deux côtés, toujours en pleine lumière
+      noTint();
+      fullLight();
+      const y = 12 / 16;
+      quad(0, y, 1, 1, y, 1, 1, y, 0, 0, y, 0);
+      uvRect(0, 0, 1, 1);
+      emit(opaquePass, BLOCK_TILES[id * 6], -1, NOMIP, true);
+      return;
+    }
+    case SHAPE.DRAGON_EGG: {
+      noTint();
+      for (let o = 0; o < DRAGON_EGG_BOXES.length; o += 6) boxAll(opaquePass, id, DRAGON_EGG_BOXES as number[], o, NOMIP, -1);
+      return;
+    }
     case SHAPE.SNOW_LAYER:
       meshLowBox(id, meta & 7, 0, ((meta & 7) + 1) / 8, BLOCK_TILES[id * 6]);
       return;

@@ -9,7 +9,7 @@ import { Atlas } from './render/Atlas';
 import { ItemIcons } from './render/ItemIcons';
 import { GameUi } from './ui/Ui';
 import type { NewWorldOptions, UiGame, UiHost } from './ui/UiApi';
-import { Storage, createWorldId, loadSettings, saveSettings, type WorldInfo } from './world/Storage';
+import { Storage, createWorldId, dimensionStorageId, loadSettings, readDimension, saveSettings, type WorldInfo } from './world/Storage';
 import { exportWorld, importWorld, worldFileName } from './world/WorldFile';
 import { DYNAMIC_ICON_ITEMS } from './world/Items';
 import { GEN_VERSION } from './world/Constants';
@@ -74,8 +74,7 @@ async function main(): Promise<void> {
   async function launch(info: WorldInfo): Promise<void> {
     closeGame();
     ui.showLoading('Chargement du monde', 'Ouverture de la sauvegarde…', 0);
-    const dim = info.state?.dimension === 'nether' ? 'nether' : 'overworld';
-    const savedKeys = await storage.chunkKeys(dim === 'nether' ? `${info.id}:nether` : info.id);
+    const savedKeys = await storage.chunkKeys(dimensionStorageId(info.id, readDimension(info.state?.dimension)));
     const g = new Game({ canvas, renderer, atlas, ui, sfx, settings, storage, info, savedKeys });
     game = g;
     host.game = g;
