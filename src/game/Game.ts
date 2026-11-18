@@ -19,7 +19,7 @@ import { IronGolem } from '../entity/Creatures';
 import { EndCrystal } from '../entity/EndMobs';
 import { HOSTILE_KINDS, Mob, Monster, NAME_MAX, NPC_KINDS, PASSIVE_KINDS, Villager, createMob, hatchEgg } from '../entity/Mobs';
 import { isProfession, type Offer } from '../entity/Trades';
-import { FallingBlock, ItemEntity, Thrown, Tnt } from '../entity/Objects';
+import { Arrow, FallingBlock, ItemEntity, Thrown, ThrownPearl, ThrownPotion, Tnt } from '../entity/Objects';
 import { isBoxFree, pointInFluid } from '../entity/Physics';
 import { createEntity } from '../entity/Registry';
 import { tickSpawners } from '../entity/BlockSpawner';
@@ -36,13 +36,15 @@ import { Selection } from '../render/Selection';
 import { SignRenderer } from '../render/SignRenderer';
 import { Sky, type SkyEnvironment } from '../render/Sky';
 import type { TradeView, UiApi, UiGame } from '../ui/UiApi';
-import { BLOCKS, BLOCK_SHAPE, BLOCK_SOLID, FACING_DX, FACING_DZ, SHAPE, isLeaves, isLog } from '../world/Blocks';
+import { BLOCKS, BLOCK_REPLACEABLE, BLOCK_SHAPE, BLOCK_SOLID, FACING_DX, FACING_DZ, PISTON_DX, PISTON_DY, PISTON_DZ, SHAPE, isLeaves, isLog } from '../world/Blocks';
 import type { Chunk } from '../world/Chunk';
 import { ChunkManager, type ChunkHooks } from '../world/ChunkManager';
-import { CHUNK_HEIGHT, DAY_TICKS, TICKS_PER_SECOND, chunkKey, type Dimension, type GameMode } from '../world/Constants';
+import { CHUNK_HEIGHT, DAY_TICKS, TICKS_PER_SECOND, chunkKey, skyDayFactor, type Dimension, type GameMode } from '../world/Constants';
 import { B, I } from '../world/Ids';
 import { ITEMS, getItem, itemLabel } from '../world/Items';
-import { cloneStack, makeStack, type ItemStack } from '../world/ItemStack';
+import { cloneStack, cloneStackWithCount, makeStack, maxDamage, type ItemStack } from '../world/ItemStack';
+import { applyBonemeal, fireCanStay } from '../world/Behavior';
+import { updateRedstoneAround } from '../world/Redstone';
 import { POTION_COMPLETIONS, POTION_GIVE_HELP, potionLabel, resolvePotionKind } from '../world/Potions';
 import { dialTile } from '../world/Tiles';
 import { buildEndPlatform } from '../world/EndPortal';
@@ -60,7 +62,7 @@ import type { GenSpawn } from '../world/gen/GenCanvas';
 import { hash2, mulberry32 } from '../world/gen/Noise';
 import { locateStructure, structuresNear, type Structure, type StructureKind, type TerrainInfo } from '../world/gen/Structures';
 import { WorldGen } from '../world/gen/WorldGen';
-import { blockEntityItems, cleanSignLines, getSign, resolveLoot, tickBlockEntities } from './BlockEntities';
+import { blockEntityItems, cleanSignLines, getDispenser, getSign, insertOneIntoContainer, resolveLoot, tickBlockEntities } from './BlockEntities';
 import { ADVANCEMENTS, advancementText } from './Advancements';
 import { Dial, bearing, clockTarget, dialNoise } from './Dials';
 import { EndFight } from './EndFight';
@@ -246,6 +248,10 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
   viewMode = 0;
   /** Le joueur est entré dans le monde (terrain initial chargé). */
   ready = false;
+
+  /** Dernière note jouée par un bloc musical (utilisé aussi par les contrôles). */
+  lastNote: { x: number; y: number; z: number; instrument: string; note: number; pitch: number; count: number } | null = null;
+  private noteCount = 0;
 
   private readonly renderer: THREE.WebGLRenderer;
   private readonly atlas: Atlas;
@@ -877,9 +883,18 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       this.sky.lightning();
       this.sfx.play('thunder', { volume: 0.7 + this.rng() * 0.3, pitch: 0.8 + this.rng() * 0.4 });
     }
-    const light = this.sky.dayFactor * (1 - (this.rainLevel * 5) / 16) * (1 - (this.thunderLevel * 5) / 16);
+    const light = skyDayFactor(this.dayTime) * (1 - (this.rainLevel * 5) / 16) * (1 - (this.thunderLevel * 5) / 16);
     w.skyDarken = Math.round((1 - light) * 11);
     w.raining = this.rainLevel > 0.2;
+  }
+
+  private updateSkyDarken(): void {
+    if (this.dimension !== 'overworld') {
+      this.world.skyDarken = 11;
+      return;
+    }
+    const light = skyDayFactor(this.dayTime) * (1 - (this.rainLevel * 5) / 16) * (1 - (this.thunderLevel * 5) / 16);
+    this.world.skyDarken = Math.round((1 - light) * 11);
   }
 
   /** Boussole (vers le point d'apparition du monde) et horloge ; toutes deux s'affolent dans le Nether et dans l'End. */
@@ -1638,7 +1653,136 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
         }
         return false;
       },
+      prepareBlockEntity: (be: BlockEntity) => {
+        if (resolveLoot(be, this.world.seed)) this.world.markBlockEntityDirty(be);
+      },
+      playNote: (x, y, z, instrument, note, pitch) => {
+        this.lastNote = { x, y, z, instrument, note, pitch, count: ++this.noteCount };
+        this.fx.spawn('note', x + 0.5, y + 1.2, z + 0.5, 1, 0.15);
+        this.sound(`note_${instrument}` as SfxName, x + 0.5, y + 0.5, z + 0.5, 0.9, pitch);
+      },
+      pullItemForHopper: (x, y, z, accept) => {
+        for (const e of this.entitiesInBox(x, y + 0.85, z, x + 1, y + 1.6, z + 1, null)) {
+          if (e instanceof ItemEntity && !e.dead && e.stack.count > 0 && accept(e.stack)) {
+            e.itemCount = e.stack.count;
+            if (e.stack.count <= 0) e.dead = true;
+            return true;
+          }
+        }
+        return false;
+      },
+      dispense: (x, y, z, dropper) => this.dispenseAt(x, y, z, dropper),
     };
+  }
+
+  private dispenseAt(x: number, y: number, z: number, dropper: boolean): void {
+    const w = this.world;
+    const v = w.getBlockAndMeta(x, y, z);
+    const id = v & 255;
+    if ((dropper && id !== B.DROPPER) || (!dropper && id !== B.DISPENSER)) return;
+    const f = Math.min(5, (v >> 8) & 7);
+    const be = getDispenser(w, x, y, z, dropper ? 'dropper' : 'dispenser');
+    const nonEmpty: number[] = [];
+    for (let i = 0; i < be.items.length; i++) {
+      const s = be.items[i];
+      if (s && s.count > 0) nonEmpty.push(i);
+    }
+    if (nonEmpty.length === 0) {
+      this.sound('click', x + 0.5, y + 0.5, z + 0.5, 0.5, 0.7);
+      return;
+    }
+    const idx = nonEmpty[Math.floor(this.rng() * nonEmpty.length)];
+    const stack = be.items[idx]!;
+    const dx = PISTON_DX[f];
+    const dy = PISTON_DY[f];
+    const dz = PISTON_DZ[f];
+    const tx = x + dx;
+    const ty = y + dy;
+    const tz = z + dz;
+    const ox = x + 0.5 + dx * 0.7;
+    const oy = y + 0.35 + dy * 0.7;
+    const oz = z + 0.5 + dz * 0.7;
+
+    if (dropper) {
+      if (insertOneIntoContainer(w, tx, ty, tz, stack, f)) {
+        if (stack.count <= 0) be.items[idx] = null;
+      } else {
+        const drop = new ItemEntity(cloneStackWithCount(stack, 1));
+        drop.setPosition(ox, oy, oz);
+        drop.vx = dx * 0.14 + (this.rng() - 0.5) * 0.03;
+        drop.vy = 0.14 + dy * 0.1;
+        drop.vz = dz * 0.14 + (this.rng() - 0.5) * 0.03;
+        drop.pickupDelay = 10;
+        this.spawn(drop);
+        if (--stack.count <= 0) be.items[idx] = null;
+      }
+    } else {
+      const py = y + 0.5 + dy * 0.7;
+      if (stack.id === I.ARROW) {
+        const a = new Arrow();
+        a.fromPlayer = true;
+        a.shoot(ox, py, oz, dx, dy + 0.05, dz, 1.1, 6, this.rng);
+        this.spawn(a);
+        this.sound('bow', ox, py, oz, 0.7, 0.9 + this.rng() * 0.2);
+        if (--stack.count <= 0) be.items[idx] = null;
+      } else if (stack.id === I.EGG || stack.id === I.SNOWBALL || stack.id === I.ENDER_PEARL || stack.id === I.SPLASH_POTION) {
+        const proj =
+          stack.id === I.ENDER_PEARL
+            ? new ThrownPearl()
+            : stack.id === I.SPLASH_POTION
+              ? new ThrownPotion(stack.potion ?? 'healing')
+              : new Thrown(stack.id);
+        proj.shoot(ox, py, oz, dx, dy + 0.05, dz, 1.1);
+        this.spawn(proj);
+        this.sound('bow', ox, py, oz, 0.6, 1.2);
+        if (--stack.count <= 0) be.items[idx] = null;
+      } else if (stack.id === B.TNT) {
+        if (w.getBlock(tx, ty, tz) === B.AIR || BLOCK_REPLACEABLE[w.getBlock(tx, ty, tz)] === 1) {
+          w.setBlock(tx, ty, tz, B.AIR, 0);
+          w.host.primeTnt(tx, ty, tz, 80);
+          if (--stack.count <= 0) be.items[idx] = null;
+        }
+      } else if (stack.id === I.WATER_BUCKET || stack.id === I.LAVA_BUCKET) {
+        const tid = w.getBlock(tx, ty, tz);
+        if (tid === B.AIR || BLOCK_REPLACEABLE[tid] === 1) {
+          w.setBlock(tx, ty, tz, stack.id === I.WATER_BUCKET ? B.WATER : B.LAVA, 0);
+          be.items[idx] = makeStack(I.BUCKET, 1);
+          this.sound('bucket_empty', tx + 0.5, ty + 0.5, tz + 0.5, 0.7);
+        }
+      } else if (stack.id === I.BUCKET) {
+        const tv = w.getBlockAndMeta(tx, ty, tz);
+        const tid = tv & 255;
+        if ((tid === B.WATER || tid === B.LAVA) && (tv >> 8) === 0 && stack.count === 1) {
+          w.setBlock(tx, ty, tz, B.AIR, 0);
+          be.items[idx] = makeStack(tid === B.WATER ? I.WATER_BUCKET : I.LAVA_BUCKET, 1);
+          this.sound('bucket_fill', tx + 0.5, ty + 0.5, tz + 0.5, 0.7);
+        }
+      } else if (stack.id === I.FLINT_AND_STEEL) {
+        if (w.getBlock(tx, ty, tz) === B.AIR && fireCanStay(w, tx, ty, tz)) {
+          w.setBlock(tx, ty, tz, B.FIRE, 0);
+          stack.damage++;
+          const lim = maxDamage(stack.id);
+          if (lim > 0 && stack.damage >= lim) be.items[idx] = null;
+          this.sound('ignite', tx + 0.5, ty + 0.5, tz + 0.5, 0.7);
+        }
+      } else if (stack.id === I.BONE_MEAL) {
+        if (applyBonemeal(w, tx, ty, tz) && --stack.count <= 0) be.items[idx] = null;
+      } else {
+        const item = new ItemEntity(cloneStackWithCount(stack, 1));
+        item.setPosition(ox, oy, oz);
+        item.vx = dx * 0.25 + (this.rng() - 0.5) * 0.04;
+        item.vy = 0.18 + dy * 0.2;
+        item.vz = dz * 0.25 + (this.rng() - 0.5) * 0.04;
+        item.pickupDelay = 10;
+        this.spawn(item);
+        if (--stack.count <= 0) be.items[idx] = null;
+      }
+    }
+
+    this.sound('click', x + 0.5, y + 0.5, z + 0.5, 0.55, 1.0);
+    this.fx.spawn('smoke', ox, y + 0.5 + dy * 0.5, oz, 4, 0.1);
+    w.markBlockEntityDirty(be);
+    updateRedstoneAround(w, x, y, z);
   }
 
   private worldEffect(kind: WorldEffect, x: number, y: number, z: number, a: number, b: number): void {
@@ -1974,6 +2118,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     if (!map) {
       map = new Map<string, number>();
       for (const it of ITEMS) if (it) map.set(it.name, it.id);
+      map.set('note_block', B.NOTE_BLOCK);
       this.itemNames = map;
     }
     return map;
@@ -2073,6 +2218,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
         }
         if (op === 'set') this.time = this.time - this.dayTime + ((Math.floor(value) % DAY_TICKS) + DAY_TICKS) % DAY_TICKS;
         else this.time = Math.max(0, this.time + Math.floor(value));
+        this.updateSkyDarken();
         say(`Heure : ${this.dayTime}`);
         return;
       }
