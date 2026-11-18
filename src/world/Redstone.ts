@@ -730,8 +730,8 @@ export function computeComparatorOutput(w: World, x: number, y: number, z: numbe
 
 export function computeDaylightPower(w: World, x: number, y: number, z: number, inverted: boolean): number {
   const rawSky = w.getSkyLight(x, y, z);
-  const darken = w.skyDarken >= 11 ? 15 : w.skyDarken;
-  const normal = Math.max(0, Math.min(15, Math.round((rawSky / 15) * (15 - darken))));
+  const eff = w.skyDarken >= 6 ? 0 : Math.max(0, 15 - w.skyDarken * 2.5);
+  const normal = Math.max(0, Math.min(15, Math.round((rawSky / 15) * eff)));
   return inverted ? 15 - normal : normal;
 }
 
