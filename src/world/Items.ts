@@ -5,6 +5,8 @@
  */
 import { B, BLOCK_ID_LIMIT, COLOR_NAMES, I, ITEM_ID_LIMIT } from './Ids';
 import { BLOCKS, type ToolKind } from './Blocks';
+import type { ItemStack } from './ItemStack';
+import { POTION_KEYS, SPLASH_POTION_KEYS } from './Potions';
 import { ARMOR_KINDS, ARMOR_MATERIALS, T, TOOL_KINDS, TOOL_MATERIALS, type TileName } from './Tiles';
 
 export type ItemCategory =
@@ -316,19 +318,27 @@ export function isTool(id: number): boolean {
 }
 
 /** Onglets de l'inventaire créatif, dans un ordre de présentation soigné. */
-export const CREATIVE_TABS: Array<{ key: ItemCategory; label: string; icon: number /* item id */; items: number[] }> = [
-  { key: 'construction', label: 'Construction', icon: B.BRICKS, items: [] },
-  { key: 'nature', label: 'Nature', icon: B.GRASS, items: [] },
-  { key: 'decoration', label: 'Décoration', icon: B.POPPY, items: [] },
-  { key: 'utilitaire', label: 'Utilitaire', icon: B.CRAFTING_TABLE, items: [] },
-  { key: 'outils', label: 'Outils', icon: I.IRON_PICKAXE, items: [] },
-  { key: 'combat', label: 'Combat', icon: I.IRON_SWORD, items: [] },
-  { key: 'nourriture', label: 'Nourriture', icon: I.APPLE, items: [] },
-  { key: 'materiaux', label: 'Matériaux', icon: I.IRON_INGOT, items: [] },
+export const CREATIVE_TABS: Array<{ key: ItemCategory; label: string; icon: number /* item id */; items: number[]; stacks: ItemStack[] }> = [
+  { key: 'construction', label: 'Construction', icon: B.BRICKS, items: [], stacks: [] },
+  { key: 'nature', label: 'Nature', icon: B.GRASS, items: [], stacks: [] },
+  { key: 'decoration', label: 'Décoration', icon: B.POPPY, items: [], stacks: [] },
+  { key: 'utilitaire', label: 'Utilitaire', icon: B.CRAFTING_TABLE, items: [], stacks: [] },
+  { key: 'outils', label: 'Outils', icon: I.IRON_PICKAXE, items: [], stacks: [] },
+  { key: 'combat', label: 'Combat', icon: I.IRON_SWORD, items: [], stacks: [] },
+  { key: 'nourriture', label: 'Nourriture', icon: I.APPLE, items: [], stacks: [] },
+  { key: 'materiaux', label: 'Matériaux', icon: I.IRON_INGOT, items: [], stacks: [] },
 ];
-// Dans chaque onglet : blocs puis objets, par identifiant croissant
+// Dans chaque onglet : blocs puis objets, par identifiant croissant (les potions sont déclinées par sorte)
 for (const item of ITEMS) {
   if (!item) continue;
   const tab = CREATIVE_TABS.find((t) => t.key === item.category);
-  if (tab) tab.items.push(item.id);
+  if (!tab) continue;
+  tab.items.push(item.id);
+  if (item.id === I.POTION) {
+    for (const potion of POTION_KEYS) tab.stacks.push({ id: I.POTION, count: 1, damage: 0, potion });
+  } else if (item.id === I.SPLASH_POTION) {
+    for (const potion of SPLASH_POTION_KEYS) tab.stacks.push({ id: I.SPLASH_POTION, count: 1, damage: 0, potion });
+  } else {
+    tab.stacks.push({ id: item.id, count: 1, damage: 0 });
+  }
 }

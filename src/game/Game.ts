@@ -43,6 +43,7 @@ import { CHUNK_HEIGHT, DAY_TICKS, TICKS_PER_SECOND, chunkKey, type Dimension, ty
 import { B, I } from '../world/Ids';
 import { ITEMS, getItem, itemLabel } from '../world/Items';
 import { cloneStack, makeStack, type ItemStack } from '../world/ItemStack';
+import { POTION_COMPLETIONS, POTION_GIVE_HELP, potionLabel, resolvePotionKind } from '../world/Potions';
 import { dialTile } from '../world/Tiles';
 import { buildEndPlatform } from '../world/EndPortal';
 import { findOrCreatePortal } from '../world/Portal';
@@ -2034,8 +2035,8 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       case 'help':
       case '?':
         say('Commandes : /gamemode <survival|creative>, /time <set|add> <valeur>, /weather <clear|rain|thunder>,');
-        say('/give <objet> [quantité], /tp <x> <y> <z>, /summon <créature> [nombre], /difficulty <0-3>,');
-        say('/kill, /clear, /seed, /spawnpoint, /locate <village|temple|jungle|mine|forteresse|fort>');
+        say('/give <objet> [quantité], /give <potion|splash_potion> <sorte> [quantité] (/give potion ? pour la liste),');
+        say('/tp <x> <y> <z>, /summon <créature> [nombre], /difficulty <0-3>, /kill, /clear, /seed, /spawnpoint, /locate <village|temple|jungle|mine|forteresse|fort>');
         return;
       case 'gamemode': {
         const m = (args[0] ?? '').toLowerCase();
@@ -2081,9 +2082,40 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       case 'give': {
         const key = (args[0] ?? '').toLowerCase();
         const id = this.items().get(key) ?? (/^\d+$/.test(key) && ITEMS[Number(key)] ? Number(key) : -1);
+        if (id === I.POTION || id === I.SPLASH_POTION) {
+          const arg1 = (args[1] ?? '').trim();
+          if (arg1 === '?' || arg1.toLowerCase() === 'help' || arg1.toLowerCase() === 'aide' || arg1.toLowerCase() === 'liste') {
+            say('Usage : /give <potion|splash_potion> <sorte> [quantité]');
+            say(POTION_GIVE_HELP);
+            return;
+          }
+          let potionKey = id === I.SPLASH_POTION ? 'healing' : 'water';
+          let countRaw = args[1];
+          if (arg1 !== '' && !/^\d+$/.test(arg1)) {
+            const resolved = resolvePotionKind(arg1);
+            if (!resolved) {
+              say(`Sorte de potion inconnue : ${arg1}`);
+              say(POTION_GIVE_HELP);
+              return;
+            }
+            potionKey = resolved;
+            countRaw = args[2];
+          }
+          const count = countRaw === undefined ? 1 : Math.floor(Number(countRaw));
+          if (!Number.isFinite(count) || count < 1) {
+            say('Usage : /give <potion|splash_potion> <sorte> [quantité]');
+            say(POTION_GIVE_HELP);
+            return;
+          }
+          const n = Math.min(count, 2304);
+          p.inventory.give(id, n, 0, potionKey);
+          say(`Donné : ${n} × ${potionLabel(potionKey, id === I.SPLASH_POTION)}`);
+          if (arg1 === '') say(POTION_GIVE_HELP);
+          return;
+        }
         const count = args[1] === undefined ? 1 : Math.floor(Number(args[1]));
         if (id <= 0 || !Number.isFinite(count) || count < 1) {
-          say(key === '' ? 'Usage : /give <objet> [quantité]' : `Objet inconnu : ${key}`);
+          say(key === '' ? 'Usage : /give <objet> [quantité] | /give <potion|splash_potion> <sorte> [quantité]' : `Objet inconnu : ${key}`);
           return;
         }
         const n = Math.min(count, 2304);
@@ -2236,6 +2268,9 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       }
     }
     if (parts.length === 3 && cmd === 'time' && parts[1].toLowerCase() === 'set') return pick(Object.keys(TIME_NAMES));
+    if (parts.length === 3 && cmd === 'give' && (parts[1].toLowerCase() === 'potion' || parts[1].toLowerCase() === 'splash_potion')) {
+      return pick(POTION_COMPLETIONS);
+    }
     if (cmd === 'tp' && parts.length <= 4) return pick(['~']);
     return [];
   }

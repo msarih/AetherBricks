@@ -46,6 +46,137 @@ export const POTIONS: Record<string, PotionDef> = {
   regeneration_2: { label: 'Potion de régénération II', effect: 'regeneration', level: 2, ticks: 440 },
 };
 
+export const POTION_KEYS: readonly string[] = [
+  'water',
+  'awkward',
+  'healing',
+  'healing_2',
+  'speed',
+  'speed_long',
+  'speed_2',
+  'night_vision',
+  'night_vision_long',
+  'strength',
+  'strength_long',
+  'strength_2',
+  'fire_resistance',
+  'fire_resistance_long',
+  'poison',
+  'poison_long',
+  'poison_2',
+  'regeneration',
+  'regeneration_long',
+  'regeneration_2',
+];
+
+export const SPLASH_POTION_KEYS: readonly string[] = POTION_KEYS.filter((k) => k !== 'water' && k !== 'awkward');
+
+const POTION_ALIASES: Record<string, string> = {
+  eau: 'water',
+  water: 'water',
+  etrange: 'awkward',
+  awkward: 'awkward',
+  soin: 'healing',
+  vie: 'healing',
+  heal: 'healing',
+  healing: 'healing',
+  soin_2: 'healing_2',
+  soin_ii: 'healing_2',
+  healing_2: 'healing_2',
+  healing_ii: 'healing_2',
+  rapidite: 'speed',
+  vitesse: 'speed',
+  speed: 'speed',
+  swiftness: 'speed',
+  rapidite_longue: 'speed_long',
+  rapidite_long: 'speed_long',
+  vitesse_longue: 'speed_long',
+  speed_long: 'speed_long',
+  rapidite_2: 'speed_2',
+  rapidite_ii: 'speed_2',
+  vitesse_2: 'speed_2',
+  speed_2: 'speed_2',
+  speed_ii: 'speed_2',
+  vision_nocturne: 'night_vision',
+  nuit: 'night_vision',
+  night_vision: 'night_vision',
+  vision_nocturne_longue: 'night_vision_long',
+  vision_nocturne_long: 'night_vision_long',
+  night_vision_long: 'night_vision_long',
+  force: 'strength',
+  strength: 'strength',
+  force_longue: 'strength_long',
+  force_long: 'strength_long',
+  strength_long: 'strength_long',
+  force_2: 'strength_2',
+  force_ii: 'strength_2',
+  strength_2: 'strength_2',
+  strength_ii: 'strength_2',
+  resistance_au_feu: 'fire_resistance',
+  feu: 'fire_resistance',
+  anti_feu: 'fire_resistance',
+  fire_resistance: 'fire_resistance',
+  fire: 'fire_resistance',
+  resistance_au_feu_longue: 'fire_resistance_long',
+  resistance_au_feu_long: 'fire_resistance_long',
+  feu_long: 'fire_resistance_long',
+  fire_resistance_long: 'fire_resistance_long',
+  poison: 'poison',
+  poison_long: 'poison_long',
+  poison_longue: 'poison_long',
+  poison_2: 'poison_2',
+  poison_ii: 'poison_2',
+  regeneration: 'regeneration',
+  regen: 'regeneration',
+  regeneration_longue: 'regeneration_long',
+  regeneration_long: 'regeneration_long',
+  regen_long: 'regeneration_long',
+  regeneration_2: 'regeneration_2',
+  regeneration_ii: 'regeneration_2',
+  regen_2: 'regeneration_2',
+};
+
+export const POTION_COMPLETIONS: readonly string[] = [
+  'soin',
+  'soin_2',
+  'rapidite',
+  'rapidite_longue',
+  'rapidite_2',
+  'vision_nocturne',
+  'vision_nocturne_longue',
+  'force',
+  'force_longue',
+  'force_2',
+  'resistance_au_feu',
+  'resistance_au_feu_longue',
+  'poison',
+  'poison_long',
+  'poison_2',
+  'regeneration',
+  'regeneration_longue',
+  'regeneration_2',
+  'eau',
+  'etrange',
+  ...POTION_KEYS,
+].filter((v, i, a) => a.indexOf(v) === i);
+
+export const POTION_GIVE_HELP =
+  'Sortes de potions : soin (healing), soin_2, rapidite (speed), rapidite_longue, rapidite_2, vision_nocturne (night_vision), vision_nocturne_longue, force (strength), force_longue, force_2, resistance_au_feu (fire_resistance), resistance_au_feu_longue, poison, poison_long, poison_2, regeneration, regeneration_longue, regeneration_2, eau (water), etrange (awkward)';
+
+/** Résout un nom de sorte de potion (français ou anglais, avec ou sans accents) vers sa clé POTIONS. */
+export function resolvePotionKind(raw: string): string | null {
+  const norm = raw
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim()
+    .replace(/[-\s]+/g, '_');
+  if (!norm) return null;
+  if (norm in POTION_ALIASES) return POTION_ALIASES[norm];
+  if (norm in POTIONS) return norm;
+  return null;
+}
+
 const AWKWARD_RECIPES: Record<number, string> = {
   [I.GLISTERING_MELON]: 'healing',
   [I.SUGAR]: 'speed',

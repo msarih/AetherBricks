@@ -5,7 +5,7 @@
  */
 import { I } from '../world/Ids';
 import { getItem, maxStack } from '../world/Items';
-import { addToSlots, canMerge, cloneStack, cloneStackWithCount, loadSlots, maxDamage, saveSlots, type ItemStack, type Slot } from '../world/ItemStack';
+import { addToSlots, canMerge, cloneStack, cloneStackWithCount, loadSlots, makeStack, maxDamage, saveSlots, type ItemStack, type Slot } from '../world/ItemStack';
 import { canEnchantItem, computeAnvilResult, enchantLevel, hasEnchants, rollEnchantOffers, type EnchantOffer } from '../world/Enchants';
 import { mulberry32 } from '../world/gen/Noise';
 import { RECIPES, fuelTicks, ingredientAccepts, matchRecipe, recipeFitsGrid, smeltingResult, type Ingredient, type Recipe } from '../world/Recipes';
@@ -61,12 +61,12 @@ export class Inventory {
   }
 
   /** Donne des objets ; ce qui ne rentre pas est lâché au sol. */
-  give(id: number, count: number, damage = 0): void {
+  give(id: number, count: number, damage = 0, potion?: string): void {
     const max = maxStack(id);
     while (count > 0) {
       const n = Math.min(max, count);
       count -= n;
-      const stack = { id, count: n, damage };
+      const stack = makeStack(id, n, damage, undefined, potion);
       if (this.add(stack) > 0) this.drop(stack);
     }
   }
@@ -1094,18 +1094,18 @@ export class CreativeMenu extends Menu {
   }
 
   /** Clic sur un objet de la palette. */
-  paletteClick(itemId: number, button: number, shift: boolean): void {
+  paletteClick(itemId: number, button: number, shift: boolean, potion?: string): void {
     const inv = this.inv;
     const cur = inv.cursor;
     const max = maxStack(itemId);
     if (shift) {
       // une pile entière directement dans la barre (ou le sac)
-      inv.add({ id: itemId, count: max, damage: 0 });
+      inv.add(makeStack(itemId, max, 0, undefined, potion));
       return;
     }
     if (!cur) {
-      inv.cursor = { id: itemId, count: button === 2 ? max : 1, damage: 0 };
-    } else if (cur.id === itemId && cur.damage === 0 && max > 1) {
+      inv.cursor = makeStack(itemId, button === 2 ? max : 1, 0, undefined, potion);
+    } else if (cur.id === itemId && cur.damage === 0 && cur.potion === potion && max > 1) {
       if (button === 1) {
         if (--cur.count <= 0) inv.cursor = null;
       } else {
