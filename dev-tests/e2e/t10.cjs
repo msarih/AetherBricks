@@ -92,11 +92,12 @@ async function reload(page) {
     // Conduite Z/S/Q/D + captures 1p et F5 sur le lac
     await ev(page, () => {
       const g = window.__game, b = g.player.vehicle;
-      if (b) { b.setPosition(18.5, 3.5, 18.5); b.yaw = 0; b.vx = b.vz = 0; }
-      T.look(0, -0.35);
+      if (b) { b.setPosition(18.5, 3.77, 18.5); b.yaw = 0; b.vx = b.vz = 0; }
+      T.look(0, -0.75);
     });
     await ticks(page, 3);
     await page.screenshot({ path: 'dev-tests/e2e/shots/t10-bateau-1p.png' });
+    await ev(page, () => { T.look(0, -0.35); });
     await page.keyboard.press('F5');
     await ticks(page, 2);
     await page.screenshot({ path: 'dev-tests/e2e/shots/t10-bateau-f5.png' });
@@ -351,7 +352,13 @@ async function reload(page) {
     await page.keyboard.down('KeyW');
     await ticks(page, 8);
     await page.keyboard.up('KeyW');
+    await ev(page, () => {
+      const c = window.__game.player.vehicle;
+      T.look(c ? c.yaw : 0, -0.95);
+    });
+    await ticks(page, 2);
     await page.screenshot({ path: 'dev-tests/e2e/shots/t10-wagonnet-1p.png' });
+    await ev(page, () => { T.look(0, -0.35); });
     await page.keyboard.press('F5');
     await ticks(page, 3);
     await page.screenshot({ path: 'dev-tests/e2e/shots/t10-wagonnet-f5.png' });
@@ -404,6 +411,42 @@ async function reload(page) {
       poweredTest.stoppedX < 53.5 && Math.abs(poweredTest.stoppedVx) < 0.01 && poweredTest.boostedX > 55,
       JSON.stringify(poweredTest));
 
+    // Relance d'un wagonnet à l'arrêt contre un bloc en cliquant réellement sur un levier
+    await ev(page, () => {
+      const g = window.__game, w = g.world, p = g.player;
+      w.setBlock(52, 4, 50, B.STONE, 0, true);
+      w.setBlock(53, 3, 50, B.STONE, 0, false);
+      w.setBlock(53, 3, 51, B.STONE, 0, false);
+      w.setBlock(53, 4, 50, B.POWERED_RAIL, 1, true);
+      for (let x = 54; x <= 59; x++) {
+        w.setBlock(x, 3, 50, B.STONE, 0, false);
+        w.setBlock(x, 4, 50, B.RAIL, 1, false);
+      }
+      w.setBlock(53, 4, 51, B.LEVER, 0, true);
+      const c = g.entities.find((e) => e.kind === 'minecart' && !e.dead);
+      c.setPosition(53.5, 4.0625, 50.5);
+      c.vx = 0; c.vz = 0;
+      p.inventory.clear();
+      p.inventory.selected = 0;
+      p.teleport(53.5, 4, 53.0);
+      T.aim(53.5, 4.15, 51.5);
+    });
+    await ticks(page, 3);
+    await rclick(page);
+    await ticks(page, 25);
+    const leverBoost = await ev(page, () => {
+      const g = window.__game, w = g.world;
+      const c = g.entities.find((e) => e.kind === 'minecart' && !e.dead);
+      return {
+        leverOn: (w.getMeta(53, 4, 51) & 8) !== 0,
+        railOn: (w.getMeta(53, 4, 50) & 8) !== 0,
+        x: c ? +c.x.toFixed(2) : 0,
+      };
+    });
+    check('rail propulseur : clic réel sur levier relance un wagonnet à l\'arrêt contre un bloc',
+      leverBoost.leverOn && leverBoost.railOn && leverBoost.x > 55.5,
+      JSON.stringify(leverBoost));
+
     // Rail détecteur allume une lampe à redstone voisine
     const detectorTest = await ev(page, () => {
       const g = window.__game, w = g.world;
@@ -422,6 +465,31 @@ async function reload(page) {
       return { lit };
     });
     check('rail détecteur : allume une lampe à redstone au passage d\'un wagonnet', detectorTest.lit);
+
+    // Wagonnet arrêté sur rail détecteur : lampe allumée en continu sur 80 ticks, puis éteinte après départ
+    const detectorSteady = await ev(page, () => {
+      const g = window.__game, w = g.world;
+      w.setBlock(63, 4, 60, B.RAIL, 1, false);
+      w.setBlock(64, 4, 60, B.RAIL, 1, false);
+      const c = g.entities.find((e) => e.kind === 'minecart' && !e.dead);
+      c.setPosition(61.5, 4.0625, 60.5);
+      c.vx = 0; c.vz = 0;
+      for (let i = 0; i < 5; i++) g.tick();
+      let offTicks = 0;
+      for (let i = 0; i < 80; i++) {
+        g.tick();
+        if (w.getBlock(61, 4, 61) !== B.REDSTONE_LAMP_LIT) offTicks++;
+      }
+      // Départ du wagonnet hors du rail détecteur
+      c.setPosition(64.5, 4.0625, 60.5);
+      c.vx = 0; c.vz = 0;
+      for (let i = 0; i < 25; i++) g.tick();
+      const litAfterLeave = w.getBlock(61, 4, 61) === B.REDSTONE_LAMP_LIT;
+      return { offTicks, litAfterLeave };
+    });
+    check('rail détecteur : wagonnet immobile garde la lampe allumée en continu puis l\'éteint au départ',
+      detectorSteady.offTicks === 0 && !detectorSteady.litAfterLeave,
+      JSON.stringify(detectorSteady));
 
     // Créature monte dans un wagonnet vide + casse du wagonnet en quelques coups
     const cartMobAndBreak = await ev(page, async () => {
@@ -448,19 +516,47 @@ async function reload(page) {
     check('wagonnet : une créature y monte et il se casse en quelques coups',
       cartMobAndBreak.mobMounted && cartMobAndBreak.dead && cartMobAndBreak.hits >= 2 && cartMobAndBreak.drop,
       JSON.stringify(cartMobAndBreak));
+
+    // Commandes /give
+    await ev(page, () => { window.__game.player.inventory.clear(); });
+    for (const cmd of ['/give boat', '/give rail 64', '/give powered_rail', '/give detector_rail', '/give minecart', '/give lever', '/give redstone_lamp']) {
+      await chat(page, cmd);
+    }
+    const giveCheck = await ev(page, () => {
+      const slots = window.__game.player.inventory.slots;
+      const countOf = (id) => slots.reduce((s, st) => s + (st && st.id === id ? st.count : 0), 0);
+      return {
+        boat: countOf(I.BOAT),
+        rail: countOf(B.RAIL),
+        powered: countOf(B.POWERED_RAIL),
+        detector: countOf(B.DETECTOR_RAIL),
+        cart: countOf(I.MINECART),
+        lever: countOf(B.LEVER),
+        lamp: countOf(B.REDSTONE_LAMP),
+      };
+    });
+    check('commandes /give : boat, rail 64, powered_rail, detector_rail, minecart, lever, redstone_lamp',
+      giveCheck.boat >= 1 && giveCheck.rail >= 64 && giveCheck.powered >= 1 && giveCheck.detector >= 1
+      && giveCheck.cart >= 1 && giveCheck.lever >= 1 && giveCheck.lamp >= 1,
+      JSON.stringify(giveCheck));
   });
 
   // ========================================================================= Sauvegarde & export/import
   await section('sauvegarde et export/import', async () => {
-    await ev(page, async () => {
+    const afterSaveNoReload = await ev(page, async () => {
       const { Boat, Minecart } = await import('/src/entity/Vehicles.ts');
       const { createMob } = await import('/src/entity/Mobs.ts');
       const g = window.__game, w = g.world, p = g.player;
       for (const e of g.entities) if (e.kind !== 'player') e.dead = true;
-      // Bateau vide sur le lac + wagonnet avec passager (cochon) sur rail
+      g.tick();
+      // Bateau avec passager (vache) sur le lac + wagonnet avec passager (cochon) sur rail
       const boat = new Boat();
-      boat.setPosition(20.5, 3.5, 20.5);
+      boat.setPosition(20.5, 3.77, 20.5);
+      const cow = createMob('cow');
+      cow.setPosition(20.5, 4.0, 20.5);
       g.spawn(boat);
+      g.spawn(cow);
+
       w.setBlock(70, 4, 70, B.RAIL, 0, false);
       const cart = new Minecart();
       cart.setPosition(70.5, 4.0625, 70.5);
@@ -470,7 +566,25 @@ async function reload(page) {
       g.spawn(pig);
       g.tick();
       p.teleport(22.5, 4, 20.5);
+
+      await g.save();
+      const cows = g.entities.filter((e) => e.kind === 'mob' && !e.dead && e.mobKind === 'cow');
+      const pigs = g.entities.filter((e) => e.kind === 'mob' && !e.dead && e.mobKind === 'pig');
+      return {
+        cows: cows.length,
+        pigs: pigs.length,
+        cowInBoat: cows[0] === boat.rider && cows[0]?.vehicle === boat,
+        pigInCart: pigs[0] === cart.rider && pigs[0]?.vehicle === cart,
+        cowDist: cows[0] ? +Math.hypot(cows[0].x - boat.x, cows[0].z - boat.z).toFixed(3) : 99,
+        pigDist: pigs[0] ? +Math.hypot(pigs[0].x - cart.x, pigs[0].z - cart.z).toFixed(3) : 99,
+      };
     });
+    check('sauvegarde sans rechargement : les passagers restent dans le monde et dans leur véhicule',
+      afterSaveNoReload.cows === 1 && afterSaveNoReload.pigs === 1
+      && afterSaveNoReload.cowInBoat && afterSaveNoReload.pigInCart
+      && afterSaveNoReload.cowDist < 0.1 && afterSaveNoReload.pigDist < 0.1,
+      JSON.stringify(afterSaveNoReload));
+
     await ticks(page, 4);
     await reload(page);
 
@@ -478,14 +592,21 @@ async function reload(page) {
       const g = window.__game;
       const boats = g.entities.filter((e) => e.kind === 'boat' && !e.dead);
       const carts = g.entities.filter((e) => e.kind === 'minecart' && !e.dead);
+      const cows = g.entities.filter((e) => e.kind === 'mob' && !e.dead && e.mobKind === 'cow');
+      const pigs = g.entities.filter((e) => e.kind === 'mob' && !e.dead && e.mobKind === 'pig');
       return {
         boats: boats.length,
         carts: carts.length,
+        cows: cows.length,
+        pigs: pigs.length,
+        boatHasCow: boats.some((b) => b.rider?.mobKind === 'cow'),
         cartHasPig: carts.some((c) => c.rider?.mobKind === 'pig'),
       };
     });
-    check('sauvegarde : bateau et wagonnet (avec passager) persistent après rechargement',
-      afterReload.boats === 1 && afterReload.carts === 1 && afterReload.cartHasPig,
+    check('sauvegarde : bateau et wagonnet (avec passager) persistent après rechargement sans doublon',
+      afterReload.boats === 1 && afterReload.carts === 1
+      && afterReload.cows === 1 && afterReload.pigs === 1
+      && afterReload.boatHasCow && afterReload.cartHasPig,
       JSON.stringify(afterReload));
 
     // Export / import .aetherworld
@@ -561,17 +682,17 @@ async function reload(page) {
         }
       }
       if (!rail) return { found: true, hasRail: false };
-      if (w.getBlock(rail.x, rail.y + 1, rail.z) === 0) {
-        w.setBlock(rail.x, rail.y + 1, rail.z, B.TORCH, 0, true);
-      }
-      p.teleport(rail.x + 0.5, rail.y, rail.z + 1.5);
-      T.aim(rail.x + 0.5, rail.y + 0.3, rail.z + 0.5);
+      p.addEffect('night_vision', 600, 1);
+      const camX = rail.x + (rail.meta === 1 ? -1.8 : 0.5);
+      const camZ = rail.z + (rail.meta === 1 ? 0.5 : 1.8);
+      p.teleport(camX, rail.y, camZ);
       const cart = new Minecart();
       cart.setPosition(rail.x + 0.5, rail.y + 0.0625, rail.z + 0.5);
       g.spawn(cart);
       cart.vx = rail.meta === 1 ? 0.1 : 0;
       cart.vz = rail.meta === 0 ? 0.1 : 0;
       for (let i = 0; i < 4; i++) g.tick();
+      T.aim(cart.x, cart.y + 0.3, cart.z);
       return {
         found: true,
         hasRail: true,

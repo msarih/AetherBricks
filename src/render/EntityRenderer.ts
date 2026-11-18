@@ -1628,16 +1628,16 @@ export class BoatVisual implements Visual {
   private readonly color = new THREE.Color();
 
   constructor(readonly key: string) {
-    const floor = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.12, 1.5), this.matDark);
-    floor.position.y = 0.06;
+    const floor = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.14, 1.5), this.matDark);
+    floor.position.y = 0.09;
     const left = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.38, 1.5), this.matWood);
-    left.position.set(-0.55, 0.25, 0);
+    left.position.set(-0.55, 0.27, 0);
     const right = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.38, 1.5), this.matWood);
-    right.position.set(0.55, 0.25, 0);
+    right.position.set(0.55, 0.27, 0);
     const front = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.38, 0.12), this.matWood);
-    front.position.set(0, 0.25, -0.72);
+    front.position.set(0, 0.27, -0.72);
     const back = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.38, 0.12), this.matWood);
-    back.position.set(0, 0.25, 0.72);
+    back.position.set(0, 0.27, 0.72);
     const oarL = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 0.9), this.matDark);
     oarL.position.set(-0.68, 0.42, 0.1);
     oarL.rotation.set(0.3, 0.35, 0);

@@ -9,7 +9,7 @@ import type { EntityKind } from './EntityView';
 import { loadMob } from './Mobs';
 import { move } from './Physics';
 
-const BOAT_SEAT = -0.08;
+const BOAT_SEAT = -0.02;
 const MINECART_SEAT = -0.05;
 const MAX_CART_SPEED = 0.4;
 const MAX_BOAT_SPEED = 0.42;
@@ -144,7 +144,7 @@ export class Boat extends Entity {
     const w = game.world;
     // Surface d'eau dans le niveau courant du bateau : il flotte mais ne grimpe pas une marche d'eau
     let waterSurface = -1;
-    const wy = Math.floor(this.y + 0.25);
+    const wy = Math.floor(this.y + 0.05);
     const x0 = Math.floor(this.x - 0.5);
     const x1 = Math.floor(this.x + 0.5);
     const z0 = Math.floor(this.z - 0.5);
@@ -181,7 +181,7 @@ export class Boat extends Entity {
     }
 
     if (onWater) {
-      const targetY = waterSurface - 0.35;
+      const targetY = waterSurface - 0.1;
       if (this.y < targetY) this.vy = Math.min(0.08, (targetY - this.y) * 0.5);
       else this.vy = Math.max(-0.04, (targetY - this.y) * 0.3);
     } else {
