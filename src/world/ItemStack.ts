@@ -10,29 +10,34 @@ export interface ItemStack {
   /** Usure de l'outil ou de l'armure (0 = neuf). */
   damage: number;
   enchants?: Enchants;
+  /** Variante de potion (fiole d'eau, potion étrange, soin, etc.). */
+  potion?: string;
 }
 
 export type Slot = ItemStack | null;
 
-export function makeStack(id: number, count = 1, damage = 0, enchants?: Enchants): ItemStack {
-  return enchants && Object.keys(enchants).length > 0 ? { id, count, damage, enchants: { ...enchants } } : { id, count, damage };
+export function makeStack(id: number, count = 1, damage = 0, enchants?: Enchants, potion?: string): ItemStack {
+  const s: ItemStack = { id, count, damage };
+  if (enchants && Object.keys(enchants).length > 0) s.enchants = { ...enchants };
+  if (potion) s.potion = potion;
+  return s;
 }
 
 export function cloneStack(s: Slot): Slot {
   if (!s) return null;
-  return makeStack(s.id, s.count, s.damage, s.enchants);
+  return makeStack(s.id, s.count, s.damage, s.enchants, s.potion);
 }
 
-/** Copie une pile en remplaçant sa quantité et en conservant usure et enchantements. */
+/** Copie une pile en remplaçant sa quantité et en conservant usure, enchantements et potion. */
 export function cloneStackWithCount(s: ItemStack, count: number): ItemStack {
-  return makeStack(s.id, count, s.damage, s.enchants);
+  return makeStack(s.id, count, s.damage, s.enchants, s.potion);
 }
 
 /** Deux piles peuvent-elles fusionner ? */
 export function canMerge(a: Slot, b: Slot): boolean {
   if (!a || !b) return false;
   if (a.enchants || b.enchants) return false;
-  return a.id === b.id && a.damage === b.damage && maxStack(a.id) > 1;
+  return a.id === b.id && a.damage === b.damage && (a.potion ?? '') === (b.potion ?? '') && maxStack(a.id) > 1;
 }
 
 /** Durabilité maximale (0 = objet qui ne s'use pas). */
@@ -64,13 +69,19 @@ export function addToSlots(slots: Slot[], stack: ItemStack, from = 0, to = slots
   return stack.count;
 }
 
-/** Sérialisation compacte : [id, quantité, usure] ou [id, quantité, usure, enchantements] ou null. */
-export type SavedSlot = [number, number, number] | [number, number, number, Enchants] | null;
+/** Sérialisation compacte : [id, quantité, usure, enchants?, potion?] ou null. */
+export type SavedSlot =
+  | [number, number, number]
+  | [number, number, number, Enchants | null]
+  | [number, number, number, Enchants | null, string]
+  | null;
 
 export function saveSlots(slots: Slot[]): SavedSlot[] {
   return slots.map((s) => {
     if (!s) return null;
-    return s.enchants && Object.keys(s.enchants).length > 0 ? [s.id, s.count, s.damage, { ...s.enchants }] : [s.id, s.count, s.damage];
+    const ench = s.enchants && Object.keys(s.enchants).length > 0 ? { ...s.enchants } : null;
+    if (s.potion) return [s.id, s.count, s.damage, ench, s.potion];
+    return ench ? [s.id, s.count, s.damage, ench] : [s.id, s.count, s.damage];
   });
 }
 
@@ -98,7 +109,8 @@ export function loadSlots(data: unknown, size: number): Slot[] {
     if (!Array.isArray(v) || typeof v[0] !== 'number' || typeof v[1] !== 'number') continue;
     if (v[1] <= 0) continue;
     const enchants = sanitizeEnchants(v[3]);
-    out[i] = makeStack(v[0], v[1], typeof v[2] === 'number' ? v[2] : 0, enchants);
+    const potion = typeof v[4] === 'string' && v[4].length > 0 && v[4].length <= 40 ? v[4] : undefined;
+    out[i] = makeStack(v[0], v[1], typeof v[2] === 'number' ? v[2] : 0, enchants, potion);
   }
   return out;
 }

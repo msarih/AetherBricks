@@ -1432,7 +1432,8 @@ export abstract class Monster extends Mob {
     this.attackCooldown = 20;
     this.swingArm();
     // faiblesse : coups affaiblis de 2 cœurs
-    if (this.weakTicks > 0) damage = Math.max(0, damage - 4);
+    if (this.hasEffect('strength')) damage += 3 * this.effectLevel('strength');
+    if (this.weakTicks > 0) damage = Math.max(0, damage - 4 * Math.max(1, this.effectLevel('weakness')));
     t.hurt(game, damage, 'attack', this);
     return true;
   }
@@ -1832,6 +1833,7 @@ export class Ghast extends Monster {
 
   protected dropLoot(game: GameApi): void {
     this.drop(game, I.GUNPOWDER, randInt(game.rng, 1, 2));
+    this.drop(game, I.GHAST_TEAR, 1);
   }
 }
 

@@ -4,10 +4,11 @@
  * pile du curseur qui suit la souris, infobulle, et tous les gestes : clic gauche / droit,
  * maj-clic, double clic, glisser sur plusieurs cases, touches 1 à 9, lâcher, clic hors fenêtre.
  */
-import type { AnvilMenu, CreativeMenu, EnchantMenu, FurnaceMenu, Menu, SlotGroup } from '../game/Inventory';
+import type { AnvilMenu, BrewingMenu, CreativeMenu, EnchantMenu, FurnaceMenu, Menu, SlotGroup } from '../game/Inventory';
 import type { ItemStack, Slot } from '../world/ItemStack';
 import { CREATIVE_TABS, ITEMS, itemLabel } from '../world/Items';
 import { B, I } from '../world/Ids';
+import { potionLabel } from '../world/Potions';
 import { ingredientSampleId, type Recipe } from '../world/Recipes';
 import { ItemView, el, place, stackSig, stackTooltip, u } from './dom';
 import type { Screen, UiContext } from './Screen';
@@ -21,8 +22,8 @@ const RECIPE_ROWS = 4;
 
 interface TabDef {
   label: string;
-  /** Objets de l'onglet ; null = inventaire de survie ; 'search' = recherche. */
-  items: number[] | null | 'search';
+  /** Piles de l'onglet ; null = inventaire de survie ; 'search' = recherche. */
+  items: ItemStack[] | null | 'search';
   icon: number;
   sprite: string;
   top: boolean;
@@ -82,9 +83,11 @@ export class SlotScreen implements Screen {
   private lastTime = 0;
   private doubleClick = false;
 
-  // fourneau
+  // fourneau & alambic
   private flameOn: HTMLDivElement | null = null;
   private arrowOn: HTMLDivElement | null = null;
+  private brewFuelOn: HTMLDivElement | null = null;
+  private brewBarOn: HTMLDivElement | null = null;
   private burn = -1;
   private cook = -1;
 
@@ -95,7 +98,7 @@ export class SlotScreen implements Screen {
   // créatif
   private tabs: TabDef[] = [];
   private tab = 0;
-  private paletteItems: number[] = [];
+  private paletteItems: ItemStack[] = [];
   private readonly paletteViews: ItemView[] = [];
   private readonly paletteStacks: Slot[] = [];
   private scroll = 0;
@@ -106,7 +109,7 @@ export class SlotScreen implements Screen {
   private thumb: HTMLDivElement | null = null;
   private track: HTMLDivElement | null = null;
   private scrolling = false;
-  private allItems: number[] = [];
+  private allItems: ItemStack[] = [];
 
   constructor(private readonly ctx: UiContext, private readonly menu: Menu) {
     this.el = el('div', 'mc-screen mc-screen-dim mc-slotscreen');
@@ -122,6 +125,9 @@ export class SlotScreen implements Screen {
         break;
       case 'furnace':
         this.buildFurnace();
+        break;
+      case 'brewing':
+        this.buildBrewing();
         break;
       case 'enchant':
         this.buildEnchant();
@@ -214,6 +220,7 @@ export class SlotScreen implements Screen {
     this.size(176, 166);
     for (let i = 0; i < 4; i++) this.armorSlot(i, 8, 8 + i * 18);
     this.playerBox(26, 8, 49, 70);
+    this.slot('offhand', 0, 77, 62);
     this.label('Fabrication', 97, 8);
     this.grid('craft', 4, 2, 98, 18);
     place(el('div', 'mc-arrow mc-arrow-small', this.win), 135, 29);
@@ -465,6 +472,25 @@ export class SlotScreen implements Screen {
     this.playerSlots(8, 84, 142);
   }
 
+  private buildBrewing(): void {
+    this.size(176, 166);
+    const title = this.label(this.menu.title, 0, 6);
+    title.classList.add('mc-label-center');
+    this.slot('fuel', 0, 17, 17);
+    const fuelBar = el('div', 'mc-brew-fuel', this.win);
+    place(fuelBar, 60, 44, 18, 4);
+    this.brewFuelOn = el('div', 'mc-brew-fuel-on', fuelBar);
+    this.slot('input', 0, 79, 17);
+    const arrow = el('div', 'mc-brew-bar', this.win);
+    place(arrow, 97, 16, 9, 28);
+    this.brewBarOn = el('div', 'mc-brew-bar-on', arrow);
+    this.slot('bottle', 0, 56, 51);
+    this.slot('bottle', 1, 79, 58);
+    this.slot('bottle', 2, 102, 51);
+    this.label('Inventaire', 8, 72);
+    this.playerSlots(8, 84, 142);
+  }
+
   private buildEnchant(): void {
     const em = this.menu as EnchantMenu;
     this.size(176, 166);
@@ -522,12 +548,13 @@ export class SlotScreen implements Screen {
     this.size(195, 136);
     this.el.classList.add('mc-creative');
 
-    const seen = new Set<number>();
+    const seen = new Set<string>();
     for (const t of CREATIVE_TABS) {
-      for (const id of t.items) {
-        if (seen.has(id)) continue;
-        seen.add(id);
-        this.allItems.push(id);
+      for (const st of t.stacks) {
+        const key = `${st.id}:${st.potion ?? ''}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        this.allItems.push(st);
       }
     }
 
@@ -538,7 +565,7 @@ export class SlotScreen implements Screen {
       const top = k < topCount;
       const col = top ? k : k - topCount;
       if (col > 4) return;
-      this.tabs.push({ label: t.label, items: t.items, icon: t.icon, sprite: '', top, x: col * 29, edge: col === 0 ? -1 : 0, el: null });
+      this.tabs.push({ label: t.label, items: t.stacks, icon: t.icon, sprite: '', top, x: col * 29, edge: col === 0 ? -1 : 0, el: null });
     });
     this.tabs.push({ label: 'Rechercher', items: 'search', icon: 0, sprite: 'magnifier', top: true, x: 167, edge: 1, el: null });
     this.tabs.push({ label: 'Inventaire de survie', items: null, icon: B.CHEST, sprite: '', top: false, x: 167, edge: 1, el: null });
@@ -642,15 +669,17 @@ export class SlotScreen implements Screen {
     }
     if (t.items === 'search') {
       const q = fold(this.search ? this.search.value.trim() : '');
-      this.paletteItems = q ? this.allItems.filter((id) => fold(itemLabel(id)).includes(q)) : this.allItems;
+      const labelOf = (s: ItemStack): string =>
+        (s.id === I.POTION || s.id === I.SPLASH_POTION) && s.potion ? potionLabel(s.potion, s.id === I.SPLASH_POTION) : itemLabel(s.id);
+      this.paletteItems = q ? this.allItems.filter((s) => fold(labelOf(s)).includes(q)) : this.allItems;
     } else {
       this.paletteItems = t.items;
     }
     this.scroll = Math.max(0, Math.min(this.maxScroll(), this.scroll));
     const base = this.scroll * PALETTE_COLS;
     for (let k = 0; k < this.paletteViews.length; k++) {
-      const id = this.paletteItems[base + k] ?? 0;
-      const stack: Slot = id ? { id, count: 1, damage: 0 } : null;
+      const st = this.paletteItems[base + k];
+      const stack: Slot = st ? { id: st.id, count: 1, damage: 0, ...(st.potion ? { potion: st.potion } : {}) } : null;
       this.paletteStacks[k] = stack;
       this.paletteViews[k].set(stack);
     }
@@ -753,7 +782,7 @@ export class SlotScreen implements Screen {
     if (cell) {
       const stack = this.paletteStacks[Number(cell.dataset.p)];
       const creative = this.menu as CreativeMenu;
-      if (stack) creative.paletteClick(stack.id, button, e.shiftKey);
+      if (stack) creative.paletteClick(stack.id, button, e.shiftKey, stack.potion);
       else if (this.menu.inv.cursor && button !== 2) creative.trashClick(false);
       return;
     }
@@ -966,6 +995,18 @@ export class SlotScreen implements Screen {
       if (cook !== this.cook && this.arrowOn) {
         this.cook = cook;
         this.arrowOn.style.width = u(cook);
+      }
+    } else if (menu.type === 'brewing') {
+      const b = menu as BrewingMenu;
+      const fuelW = Math.round(Math.max(0, Math.min(1, b.fuelProgress)) * 18);
+      if (fuelW !== this.burn && this.brewFuelOn) {
+        this.burn = fuelW;
+        this.brewFuelOn.style.width = u(fuelW);
+      }
+      const brewH = Math.round(Math.max(0, Math.min(1, b.brewProgress)) * 28);
+      if (brewH !== this.cook && this.brewBarOn) {
+        this.cook = brewH;
+        this.brewBarOn.style.height = u(brewH);
       }
     } else if (menu.type === 'enchant') {
       const em = menu as EnchantMenu;

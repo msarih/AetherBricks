@@ -30,7 +30,8 @@ const BASE_TILES = [
   'furnace_top', 'furnace_side', 'furnace_front', 'furnace_front_on',
   'chest_top', 'chest_side', 'chest_front',
   'enchanting_table_top', 'enchanting_table_side', 'enchanting_table_bottom',
-  'anvil_top', 'anvil_side',
+  'anvil_top', 'anvil_side', 'cauldron_top', 'cauldron_side', 'cauldron_bottom',
+  'cake_top', 'cake_bottom', 'cake_side', 'cake_inner', 'brewing_stand_base', 'brewing_stand_rod',
   'bed_head_top', 'bed_foot_top', 'bed_head_side', 'bed_foot_side', 'bed_head_end', 'bed_foot_end',
   'oak_door_top', 'oak_door_bottom', 'iron_door_top', 'iron_door_bottom', 'trapdoor', 'ladder', 'torch',
   'glass_pane_top', 'iron_bars', 'spawner', 'rail',
@@ -69,7 +70,8 @@ const BASE_TILES = [
   'slime_ball', 'ender_pearl', 'saddle', 'lead', 'name_tag', 'splash_potion',
   // --- L'End ---
   'end_stone', 'end_portal_frame_top', 'end_portal_frame_side', 'end_portal_eye', 'end_portal', 'dragon_egg',
-  'blaze_powder', 'ender_eye',
+  'blaze_powder', 'ender_eye', 'shield', 'glass_bottle', 'potion', 'cake_item',
+  'golden_carrot', 'glistering_melon', 'ghast_tear', 'brewing_stand_item',
 ] as const;
 
 /** Images animées de la boussole et de l'horloge (aiguille, cadran), 32 chacune. */

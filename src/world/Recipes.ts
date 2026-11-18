@@ -75,6 +75,13 @@ shaped(['#', '#'], { '#': PLANKS }, I.STICK, 4);
 shaped(['##', '##'], { '#': PLANKS }, B.CRAFTING_TABLE);
 shaped(['###', '# #', '###'], { '#': B.COBBLESTONE }, B.FURNACE);
 shaped(['###', '# #', '###'], { '#': PLANKS }, B.CHEST);
+shaped(['# #', '# #', '###'], { '#': I.IRON_INGOT }, B.CAULDRON);
+shaped(['# #', ' # '], { '#': B.GLASS }, I.GLASS_BOTTLE, 3);
+shaped(['MMM', 'SES', 'WWW'], { M: I.MILK_BUCKET, S: I.SUGAR, E: I.EGG, W: I.WHEAT }, B.CAKE);
+shaped([' B ', 'CCC'], { B: I.BLAZE_ROD, C: B.COBBLESTONE }, B.BREWING_STAND);
+shaped(['GGG', 'GCG', 'GGG'], { G: I.GOLD_NUGGET, C: I.CARROT }, I.GOLDEN_CARROT);
+shaped(['GGG', 'GMG', 'GGG'], { G: I.GOLD_NUGGET, M: I.MELON_SLICE }, I.GLISTERING_MELON);
+shaped(['PFP', 'PPP', ' P '], { P: PLANKS, F: I.IRON_INGOT }, I.SHIELD);
 shaped(['C', '|'], { C: COALS, '|': I.STICK }, B.TORCH, 4);
 
 // ---------------------------------------------------------------------------

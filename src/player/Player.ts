@@ -4,7 +4,7 @@
  * à chaque image par `turn()`.
  */
 import type { SfxName } from '../audio/Sfx';
-import { Living, num, round3, type DamageCause, type Entity, type GameApi, type PlayerLike } from '../entity/Entity';
+import { EFFECT_TYPES, Living, num, round3, type DamageCause, type EffectType, type Entity, type GameApi, type PlayerLike } from '../entity/Entity';
 import { notifyTamedWolves } from '../entity/Mobs';
 import type { EntityKind } from '../entity/EntityView';
 import type { MobKind } from '../entity/MobModels';
@@ -13,6 +13,7 @@ import { Inventory } from '../game/Inventory';
 import { STAT, addStat, craftedKey, killedByKey, loadStats, type Stats } from '../game/Stats';
 import type { GameMode } from '../world/Constants';
 import { armorProtectionFactor } from '../world/Enchants';
+import { I } from '../world/Ids';
 import { getItem } from '../world/Items';
 import { makeStack, type ItemStack } from '../world/ItemStack';
 
@@ -26,7 +27,7 @@ export interface PlayerInput {
   sprint: boolean;
 }
 
-export type UseKind = 'none' | 'eat' | 'bow';
+export type UseKind = 'none' | 'eat' | 'bow' | 'block';
 
 const STAND_EYE = 1.62;
 const SNEAK_EYE = 1.54;
@@ -115,6 +116,15 @@ export class Player extends Living implements PlayerLike {
     return this.inventory.heldId;
   }
 
+  get offhandItemId(): number {
+    return this.inventory.offhandId;
+  }
+
+  /** Bouclier levé et actif (après 5 ticks de clic droit maintenu). */
+  get blocking(): boolean {
+    return this.useKind === 'block' && this.useTicks >= 5;
+  }
+
   get creative(): boolean {
     return this.gameMode === 'creative';
   }
@@ -124,29 +134,47 @@ export class Player extends Living implements PlayerLike {
   }
 
   consumeHeld(count = 1): void {
+    this.consumeHand('main', count);
+  }
+
+  consumeHand(hand: 'main' | 'offhand', count = 1): void {
     if (this.creative) return;
-    this.inventory.consumeHeld(count);
+    if (hand === 'offhand') this.inventory.consumeOffhand(count);
+    else this.inventory.consumeHeld(count);
   }
 
   replaceHeld(id: number): void {
+    this.replaceHand('main', id);
+  }
+
+  replaceHand(hand: 'main' | 'offhand', id: number): void {
     const inv = this.inventory;
-    const held = inv.held;
+    const stack = hand === 'offhand' ? inv.offhandItem : inv.held;
     if (this.creative) {
       if (inv.count(id) === 0) inv.give(id, 1);
       return;
     }
-    if (!held || held.count <= 1) inv.slots[inv.selected] = makeStack(id, 1);
-    else {
-      held.count--;
+    if (!stack || stack.count <= 1) {
+      if (hand === 'offhand') inv.offhand[0] = makeStack(id, 1);
+      else inv.slots[inv.selected] = makeStack(id, 1);
+    } else {
+      stack.count--;
       inv.give(id, 1);
     }
   }
 
   damageHeld(game: GameApi, amount = 1): void {
+    this.damageHand('main', game, amount);
+  }
+
+  damageHand(hand: 'main' | 'offhand', game: GameApi, amount = 1): void {
     if (this.creative) return;
-    const id = this.inventory.heldId;
+    const id = hand === 'offhand' ? this.inventory.offhandId : this.inventory.heldId;
     if (id === 0) return;
-    if (this.inventory.damageHeld(amount, game.rng)) {
+    const broke = hand === 'offhand'
+      ? this.inventory.damageOffhand(amount, game.rng)
+      : this.inventory.damageHeld(amount, game.rng);
+    if (broke) {
       game.sound('tool_break', this.x, this.y + this.eyeHeight, this.z, 0.9);
       game.itemParticles(this.x, this.y + this.eyeHeight - 0.3, this.z, id, 8);
     }
@@ -289,6 +317,7 @@ export class Player extends Living implements PlayerLike {
     this.pEyeHeight = this.eyeHeight;
     this.eyeHeight += ((this.sneaking ? SNEAK_EYE : STAND_EYE) - this.eyeHeight) * 0.5;
     this.itemId = this.inventory.heldId;
+    this.offhandId = this.inventory.offhandId;
     super.tick(game);
     if (this.alive) this.foodTick(game);
   }
@@ -447,6 +476,17 @@ export class Player extends Living implements PlayerLike {
 
   hurt(game: GameApi, amount: number, cause: DamageCause, attacker: Entity | null = null): boolean {
     if (this.creative && cause !== 'void') return false;
+    if (this.blocking && (cause === 'attack' || cause === 'arrow' || cause === 'explosion')) {
+      const fromFront = attacker === null || (attacker.x - this.x) * -Math.sin(this.yaw) + (attacker.z - this.z) * -Math.cos(this.yaw) > 0;
+      if (fromFront) {
+        if (amount >= 3) {
+          const shieldHand = this.heldItemId === I.SHIELD ? 'main' : 'offhand';
+          this.damageHand(shieldHand, game, Math.floor(amount) + 1);
+        }
+        game.sound('attack_miss', this.x, this.y + 1, this.z, 0.8, 0.7);
+        return false;
+      }
+    }
     const ok = super.hurt(game, amount, cause, attacker);
     if (ok) {
       this.sleeping = false;
@@ -494,7 +534,7 @@ export class Player extends Living implements PlayerLike {
     this.riding = false;
     this.stopUsing();
     for (const s of this.inventory.takeAll()) {
-      const e = game.dropItem(this.x, this.y + 0.9, this.z, s.id, s.count, s.damage);
+      const e = game.dropStack ? game.dropStack(this.x, this.y + 0.9, this.z, s) : game.dropItem(this.x, this.y + 0.9, this.z, s.id, s.count, s.damage);
       e.vx = (game.rng() - 0.5) * 0.5;
       e.vy = 0.2 + game.rng() * 0.2;
       e.vz = (game.rng() - 0.5) * 0.5;
@@ -557,7 +597,7 @@ export class Player extends Living implements PlayerLike {
       exhaustion: round3(this.exhaustion),
       air: this.air,
       fire: this.fireTicks,
-      effects: [this.poisonTicks, this.slowTicks, this.weakTicks, this.witherTicks],
+      effects: Array.from(this.effects, ([type, fx]) => ({ type, level: fx.level, ticks: fx.ticks })),
       fall: round3(this.fallDistance),
       xpLevel: this.xpLevel,
       xpProgress: round3(this.xpProgress),
@@ -582,11 +622,24 @@ export class Player extends Living implements PlayerLike {
     this.exhaustion = Math.max(0, num(d.exhaustion, 0));
     this.air = num(d.air, 300);
     this.fireTicks = num(d.fire, 0);
+    this.effects.clear();
     const fx = Array.isArray(d.effects) ? d.effects : [];
-    this.poisonTicks = Math.max(0, Math.floor(num(fx[0], 0)));
-    this.slowTicks = Math.max(0, Math.floor(num(fx[1], 0)));
-    this.weakTicks = Math.max(0, Math.floor(num(fx[2], 0)));
-    this.witherTicks = Math.max(0, Math.floor(num(fx[3], 0)));
+    if (fx.length > 0 && typeof fx[0] === 'number') {
+      // Ancien format [poison, slow, weak, wither]
+      this.poisonTicks = Math.max(0, Math.floor(num(fx[0], 0)));
+      this.slowTicks = Math.max(0, Math.floor(num(fx[1], 0)));
+      this.weakTicks = Math.max(0, Math.floor(num(fx[2], 0)));
+      this.witherTicks = Math.max(0, Math.floor(num(fx[3], 0)));
+    } else {
+      for (const entry of fx) {
+        if (!entry || typeof entry !== 'object') continue;
+        const o = entry as Record<string, unknown>;
+        const t = o.type as EffectType;
+        if (EFFECT_TYPES.includes(t)) {
+          this.addEffect(t, Math.floor(num(o.ticks, 0)), Math.floor(num(o.level, 1)));
+        }
+      }
+    }
     this.fallDistance = Math.max(0, num(d.fall, 0));
     this.xpLevel = Math.max(0, Math.floor(num(d.xpLevel, 0)));
     this.xpProgress = Math.max(0, Math.min(0.999, num(d.xpProgress, 0)));

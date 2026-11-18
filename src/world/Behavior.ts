@@ -132,6 +132,7 @@ export function canStay(w: World, x: number, y: number, z: number, id: number, m
     case B.STONE_PRESSURE_PLATE:
     case B.RAIL:
     case B.SIGN:
+    case B.CAKE:
       return topSolid(w, x, y - 1, z);
     case B.WALL_SIGN: {
       // méta = direction vers laquelle le panneau est tourné ; il tient au bloc derrière lui
@@ -467,6 +468,9 @@ function waterNearFarmland(w: World, x: number, y: number, z: number): boolean {
 export function randomTick(w: World, x: number, y: number, z: number, id: number, meta: number): void {
   const rng = w.rng;
   switch (id) {
+    case B.CAULDRON:
+      if (meta < 3 && rainedOn(w, x, y + 1, z) && rng() < 0.05) w.setMeta(x, y, z, meta + 1);
+      return;
     case B.GRASS: {
       const above = w.getBlock(x, y + 1, z);
       if (BLOCK_LIGHT_OPACITY[above] > 2 && w.getLight(x, y + 1, z) < 4) {

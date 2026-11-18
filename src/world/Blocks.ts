@@ -46,6 +46,12 @@ export const SHAPE = {
   END_PORTAL: 31,
   /** Œuf de dragon : empilement de boîtes arrondi. */
   DRAGON_EGG: 32,
+  /** Chaudron : cuve creuse en fer pouvant contenir 0 à 3 niveaux d'eau. */
+  CAULDRON: 33,
+  /** Gâteau : posé sur un bloc, 7 parts (méta 0..6). */
+  CAKE: 34,
+  /** Alambic : socle et tige porte-fioles. */
+  BREWING_STAND: 35,
 } as const;
 
 export const TINT = { NONE: 0, GRASS: 1, FOLIAGE: 2, FIXED: 3 } as const;
@@ -544,6 +550,20 @@ reg(B.END_PORTAL, 'end_portal', "Portail de l'End", {
 reg(B.DRAGON_EGG, 'dragon_egg', 'Œuf de dragon', {
   tiles: 'dragon_egg', shape: SHAPE.DRAGON_EGG, opaque: false, lightOpacity: 0, emit: 1, hardness: 3, blastResistance: 45,
   ...rock, category: 'decoration',
+});
+reg(B.CAULDRON, 'cauldron', 'Chaudron', {
+  tiles: { top: 'cauldron_top', bottom: 'cauldron_bottom', side: 'cauldron_side' },
+  shape: SHAPE.CAULDRON, opaque: false, lightOpacity: 0, hardness: 2, ...rock, harvestTier: 1, sound: 'metal', category: 'utilitaire',
+});
+reg(B.CAKE, 'cake', 'Gâteau', {
+  tiles: { top: 'cake_top', bottom: 'cake_bottom', side: 'cake_side' },
+  shape: SHAPE.CAKE, opaque: false, lightOpacity: 0, hardness: 0.5, sound: 'cloth', needsSupport: true,
+  stack: 1, itemTile: 'cake_item', category: 'utilitaire',
+});
+reg(B.BREWING_STAND, 'brewing_stand', 'Alambic', {
+  tiles: { top: 'brewing_stand_rod', bottom: 'brewing_stand_base', side: 'brewing_stand_base' },
+  shape: SHAPE.BREWING_STAND, opaque: false, lightOpacity: 0, emit: 1, hardness: 0.5, ...rock,
+  itemTile: 'brewing_stand_item', category: 'utilitaire',
 });
 reg(B.SOUL_SAND, 'soul_sand', 'Sable des âmes', { tiles: 'soul_sand', hardness: 0.5, tool: 'shovel', sound: 'sand', category: 'nature' });
 reg(B.NETHER_WART, 'nether_wart_crop', 'Verrues du Nether', { tiles: 'nether_wart_2', ...crop });

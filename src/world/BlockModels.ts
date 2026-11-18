@@ -334,10 +334,30 @@ export function collisionBoxes(id: number, meta: number, nb: NeighborFn, out: nu
     case SHAPE.DRAGON_EGG:
       out.push(1, 0, 1, 15, 16, 15);
       return;
+    case SHAPE.CAULDRON:
+      for (let i = 0; i < CAULDRON_BOXES.length; i++) out.push(CAULDRON_BOXES[i]);
+      return;
+    case SHAPE.CAKE: {
+      const bites = Math.min(6, meta & 7);
+      out.push(1 + bites * 2, 0, 1, 15, 8, 15);
+      return;
+    }
+    case SHAPE.BREWING_STAND:
+      out.push(1, 0, 1, 15, 2, 15, 7, 0, 7, 9, 14, 9);
+      return;
     default:
       out.push(0, 0, 0, 16, 16, 16);
   }
 }
+
+/** Boîtes de la cuve du chaudron : fond + quatre parois de 2/16 (seizièmes). */
+export const CAULDRON_BOXES: readonly number[] = [
+  0, 0, 0, 16, 4, 16,
+  0, 4, 0, 2, 16, 16,
+  14, 4, 0, 16, 16, 16,
+  2, 4, 0, 14, 16, 2,
+  2, 4, 14, 14, 16, 16,
+];
 
 /** Boîtes dessinées de l'œuf de dragon, de la base à la pointe (seizièmes). */
 export const DRAGON_EGG_BOXES: readonly number[] = [

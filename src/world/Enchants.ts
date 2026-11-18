@@ -185,6 +185,7 @@ export function repairMaterial(itemId: number): number {
   if (name.startsWith('diamond_')) return I.DIAMOND;
   if (name.startsWith('leather_')) return I.LEATHER;
   if (itemId === I.BOW || itemId === I.FISHING_ROD) return I.STRING;
+  if (itemId === I.SHIELD) return B.OAK_PLANKS;
   return 0;
 }
 

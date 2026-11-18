@@ -56,6 +56,8 @@ export interface EntityView {
   /** 'item' : identifiant de l'objet (bloc < 256 → mini-bloc, sinon icône plate) et quantité. Aussi : objet tenu par un 'mob' ou 'player' (0 = rien). */
   itemId: number;
   itemCount: number;
+  /** Objet tenu dans la main gauche / seconde main (0 = rien). */
+  offhandId: number;
   /** 'falling_block' et 'tnt' : bloc et méta à afficher. Enderman : bloc porté entre ses bras (0 = aucun). */
   blockId: number;
   blockMeta: number;

@@ -3,8 +3,9 @@
  * Les valeurs (durabilité, dégâts, faim, armure) suivent Minecraft Java 1.12.
  * Module pur (pas de DOM ni de Three.js) : partagé avec les workers.
  */
-import { B, BLOCK_ID_LIMIT, COLOR_NAMES, I, ITEM_ID_LIMIT } from './Ids';
+import { B, BLOCK_ID_LIMIT, COLOR_NAMES, I, ITEM_ID_LIMIT, POTION_KEYS, SPLASH_POTION_KEYS } from './Ids';
 import { BLOCKS, type ToolKind } from './Blocks';
+import type { ItemStack } from './ItemStack';
 import { ARMOR_KINDS, ARMOR_MATERIALS, T, TOOL_KINDS, TOOL_MATERIALS, type TileName } from './Tiles';
 
 export type ItemCategory =
@@ -106,6 +107,12 @@ const SIMPLE_ITEMS: Array<[id: number, name: TileName, label: string, category: 
   [I.ENDER_PEARL, 'ender_pearl', "Perle de l'Ender", 'materiaux', { stack: 16 }],
   [I.BLAZE_POWDER, 'blaze_powder', 'Poudre de blaze', 'materiaux'],
   [I.ENDER_EYE, 'ender_eye', "Œil de l'Ender", 'materiaux'],
+  [I.SHIELD, 'shield', 'Bouclier', 'combat', { stack: 1, durability: 336 }],
+  [I.GLASS_BOTTLE, 'glass_bottle', 'Fiole', 'materiaux'],
+  [I.POTION, 'potion', 'Potion', 'nourriture', { stack: 1 }],
+  [I.GOLDEN_CARROT, 'golden_carrot', 'Carotte dorée', 'nourriture', food(6, 14.4)],
+  [I.GLISTERING_MELON, 'glistering_melon', 'Pastèque scintillante', 'materiaux'],
+  [I.GHAST_TEAR, 'ghast_tear', 'Larme de ghast', 'materiaux'],
   [I.DIAMOND, 'diamond', 'Diamant', 'materiaux'],
   [I.EMERALD, 'emerald', 'Émeraude', 'materiaux'],
   [I.LAPIS, 'lapis', 'Lapis-lazuli', 'materiaux'],
@@ -166,7 +173,7 @@ const SIMPLE_ITEMS: Array<[id: number, name: TileName, label: string, category: 
   [I.SADDLE, 'saddle', 'Selle', 'outils', { stack: 1 }],
   [I.LEAD, 'lead', 'Laisse', 'outils'],
   [I.NAME_TAG, 'name_tag', 'Étiquette', 'outils'],
-  [I.SPLASH_POTION, 'splash_potion', 'Potion jetable', 'aucune', { stack: 1 }],
+  [I.SPLASH_POTION, 'splash_potion', 'Potion jetable', 'combat', { stack: 1 }],
   [I.BUCKET, 'bucket', 'Seau', 'outils', { stack: 16 }],
   [I.WATER_BUCKET, 'water_bucket', "Seau d'eau", 'outils', { stack: 1 }],
   [I.LAVA_BUCKET, 'lava_bucket', 'Seau de lave', 'outils', { stack: 1 }],
@@ -310,19 +317,27 @@ export function isTool(id: number): boolean {
 }
 
 /** Onglets de l'inventaire créatif, dans un ordre de présentation soigné. */
-export const CREATIVE_TABS: Array<{ key: ItemCategory; label: string; icon: number /* item id */; items: number[] }> = [
-  { key: 'construction', label: 'Construction', icon: B.BRICKS, items: [] },
-  { key: 'nature', label: 'Nature', icon: B.GRASS, items: [] },
-  { key: 'decoration', label: 'Décoration', icon: B.POPPY, items: [] },
-  { key: 'utilitaire', label: 'Utilitaire', icon: B.CRAFTING_TABLE, items: [] },
-  { key: 'outils', label: 'Outils', icon: I.IRON_PICKAXE, items: [] },
-  { key: 'combat', label: 'Combat', icon: I.IRON_SWORD, items: [] },
-  { key: 'nourriture', label: 'Nourriture', icon: I.APPLE, items: [] },
-  { key: 'materiaux', label: 'Matériaux', icon: I.IRON_INGOT, items: [] },
+export const CREATIVE_TABS: Array<{ key: ItemCategory; label: string; icon: number /* item id */; items: number[]; stacks: ItemStack[] }> = [
+  { key: 'construction', label: 'Construction', icon: B.BRICKS, items: [], stacks: [] },
+  { key: 'nature', label: 'Nature', icon: B.GRASS, items: [], stacks: [] },
+  { key: 'decoration', label: 'Décoration', icon: B.POPPY, items: [], stacks: [] },
+  { key: 'utilitaire', label: 'Utilitaire', icon: B.CRAFTING_TABLE, items: [], stacks: [] },
+  { key: 'outils', label: 'Outils', icon: I.IRON_PICKAXE, items: [], stacks: [] },
+  { key: 'combat', label: 'Combat', icon: I.IRON_SWORD, items: [], stacks: [] },
+  { key: 'nourriture', label: 'Nourriture', icon: I.APPLE, items: [], stacks: [] },
+  { key: 'materiaux', label: 'Matériaux', icon: I.IRON_INGOT, items: [], stacks: [] },
 ];
-// Dans chaque onglet : blocs puis objets, par identifiant croissant
+// Dans chaque onglet : blocs puis objets, par identifiant croissant (les potions sont déclinées par sorte)
 for (const item of ITEMS) {
   if (!item) continue;
   const tab = CREATIVE_TABS.find((t) => t.key === item.category);
-  if (tab) tab.items.push(item.id);
+  if (!tab) continue;
+  tab.items.push(item.id);
+  if (item.id === I.POTION) {
+    for (const potion of POTION_KEYS) tab.stacks.push({ id: I.POTION, count: 1, damage: 0, potion });
+  } else if (item.id === I.SPLASH_POTION) {
+    for (const potion of SPLASH_POTION_KEYS) tab.stacks.push({ id: I.SPLASH_POTION, count: 1, damage: 0, potion });
+  } else {
+    tab.stacks.push({ id: item.id, count: 1, damage: 0 });
+  }
 }

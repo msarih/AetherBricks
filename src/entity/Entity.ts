@@ -29,6 +29,26 @@ export type DamageCause =
   | 'magic'
   | 'generic';
 
+export type EffectType =
+  | 'speed'
+  | 'slow'
+  | 'strength'
+  | 'regeneration'
+  | 'fire_resistance'
+  | 'night_vision'
+  | 'poison'
+  | 'weakness'
+  | 'wither';
+
+export interface ActiveEffect {
+  level: number;
+  ticks: number;
+}
+
+export const EFFECT_TYPES: readonly EffectType[] = [
+  'speed', 'slow', 'strength', 'regeneration', 'fire_resistance', 'night_vision', 'poison', 'weakness', 'wither',
+];
+
 /** Donnée sérialisable d'une entité (JSON pur). `type` désigne la classe à recréer. */
 export interface EntityData {
   type: string;
@@ -66,6 +86,8 @@ export interface GameApi {
   itemParticles(x: number, y: number, z: number, itemId: number, count?: number): void;
   /** Lâche un objet au sol avec une petite impulsion aléatoire. Retourne l'entité créée. */
   dropItem(x: number, y: number, z: number, id: number, count: number, damage?: number): Entity;
+  /** Lâche une pile complète au sol (clone avec enchantements et variante de potion). Retourne l'entité créée. */
+  dropStack?(x: number, y: number, z: number, stack: ItemStack): Entity;
   /** La colonne (x, z) est-elle dans un lieu généré de ce type (« fortress »…) ? Absent hors du jeu complet. */
   inStructure?(kind: string, x: number, z: number): boolean;
   /** Ouvre l'écran d'échange d'un villageois (absent hors du jeu complet). */
@@ -105,6 +127,7 @@ export abstract class Entity extends Body implements EntityView {
   blockLight = 0;
   itemId = 0;
   itemCount = 0;
+  offhandId = 0;
   blockId = 0;
   blockMeta = 0;
   fuse = 0;
@@ -315,14 +338,74 @@ export abstract class Living extends Entity {
   /** Insensible au feu et à la lave. */
   fireImmune = false;
 
-  /** Flétrissement (coup d'un squelette wither) : ticks restants ; un demi-cœur toutes les 2 secondes. */
-  witherTicks = 0;
-  /** Poison (potion de sorcière) : un demi-cœur toutes les 1,25 s, sans jamais tuer. */
-  poisonTicks = 0;
-  /** Lenteur : marche 15 % plus lente. */
-  slowTicks = 0;
-  /** Faiblesse : coups portés affaiblis de 2 cœurs. */
-  weakTicks = 0;
+  /** Effets actifs (type → { niveau, durée restante en ticks }). */
+  readonly effects = new Map<EffectType, ActiveEffect>();
+
+  private getEffectTicks(type: EffectType): number {
+    return this.effects.get(type)?.ticks ?? 0;
+  }
+
+  private setEffectTicks(type: EffectType, ticks: number): void {
+    const t = Math.max(0, Math.floor(ticks));
+    if (t <= 0) {
+      this.effects.delete(type);
+      return;
+    }
+    const cur = this.effects.get(type);
+    this.effects.set(type, { level: cur ? cur.level : 1, ticks: t });
+  }
+
+  get witherTicks(): number {
+    return this.getEffectTicks('wither');
+  }
+  set witherTicks(v: number) {
+    this.setEffectTicks('wither', v);
+  }
+  get poisonTicks(): number {
+    return this.getEffectTicks('poison');
+  }
+  set poisonTicks(v: number) {
+    this.setEffectTicks('poison', v);
+  }
+  get slowTicks(): number {
+    return this.getEffectTicks('slow');
+  }
+  set slowTicks(v: number) {
+    this.setEffectTicks('slow', v);
+  }
+  get weakTicks(): number {
+    return this.getEffectTicks('weakness');
+  }
+  set weakTicks(v: number) {
+    this.setEffectTicks('weakness', v);
+  }
+
+  addEffect(type: EffectType, ticks: number, level = 1): void {
+    const t = Math.max(0, Math.floor(ticks));
+    const lvl = Math.max(1, Math.floor(level));
+    if (t <= 0) return;
+    const cur = this.effects.get(type);
+    if (!cur || lvl > cur.level || (lvl === cur.level && t > cur.ticks)) {
+      this.effects.set(type, { level: lvl, ticks: t });
+    }
+  }
+
+  removeEffect(type: EffectType): void {
+    this.effects.delete(type);
+  }
+
+  hasEffect(type: EffectType): boolean {
+    const e = this.effects.get(type);
+    return !!e && e.ticks > 0;
+  }
+
+  effectLevel(type: EffectType): number {
+    return this.effects.get(type)?.level ?? 0;
+  }
+
+  effectTicks(type: EffectType): number {
+    return this.getEffectTicks(type);
+  }
 
   /** Dernier agresseur et âge (en ticks) du dernier coup reçu de lui. */
   attacker: Entity | null = null;
@@ -368,17 +451,22 @@ export abstract class Living extends Entity {
     if (this.invulnerable > 0) this.invulnerable--;
     if (this.hurtTime > 0) this.hurtTime--;
     if (this.attacker && ++this.attackerAge > 200) this.attacker = null;
-    if (this.witherTicks > 0) {
-      this.witherTicks--;
-      if (this.witherTicks % 40 === 0) this.hurt(game, 1, 'wither', null);
-      if (this.health <= 0) return;
+    for (const [type, fx] of this.effects) {
+      fx.ticks--;
+      if (type === 'wither') {
+        if (fx.ticks % 40 === 0) this.hurt(game, 1, 'wither', null);
+        if (this.health <= 0) return;
+      } else if (type === 'poison') {
+        const interval = fx.level >= 2 ? 12 : 25;
+        if (fx.ticks % interval === 0 && this.health > 1) this.hurt(game, 1, 'magic', null);
+      } else if (type === 'regeneration') {
+        const interval = fx.level >= 2 ? 25 : 50;
+        if (fx.ticks % interval === 0 && this.health > 0 && this.health < this.maxHealth) this.heal(1);
+      } else if (type === 'fire_resistance') {
+        this.fireTicks = 0;
+      }
+      if (fx.ticks <= 0) this.effects.delete(type);
     }
-    if (this.poisonTicks > 0) {
-      this.poisonTicks--;
-      if (this.poisonTicks % 25 === 0 && this.health > 1) this.hurt(game, 1, 'magic', null);
-    }
-    if (this.slowTicks > 0) this.slowTicks--;
-    if (this.weakTicks > 0) this.weakTicks--;
     if (this.swingTicks >= 0) {
       this.swingTicks++;
       if (this.swingTicks >= 6) {
@@ -439,6 +527,19 @@ export abstract class Living extends Entity {
       }
     }
     if (this.fireTicks > 0) {
+      const cx = Math.floor(this.x);
+      const cy = Math.floor(this.y);
+      const cz = Math.floor(this.z);
+      if (w.getBlock(cx, cy, cz) === B.CAULDRON) {
+        const cm = w.getMeta(cx, cy, cz) & 3;
+        if (cm > 0) {
+          this.fireTicks = 0;
+          w.setMeta(cx, cy, cz, cm - 1);
+          game.sound('fizz', this.x, this.y, this.z, 0.7);
+        }
+      }
+    }
+    if (this.fireTicks > 0) {
       if (this.fireImmune || (w.raining && w.canSeeSky(Math.floor(this.x), Math.floor(this.y + this.height), Math.floor(this.z)))) {
         this.fireTicks = 0;
       } else {
@@ -468,9 +569,15 @@ export abstract class Living extends Entity {
       this.jumpDelay = 0;
     }
 
+    const speedLvl = this.effectLevel('speed');
+    const slowLvl = this.effectLevel('slow');
+    let moveSpeed = this.speed;
+    if (speedLvl > 0) moveSpeed *= 1 + 0.2 * speedLvl;
+    if (slowLvl > 0) moveSpeed *= Math.max(0.1, 1 - 0.15 * slowLvl);
+
     travel(w, this, this.moveStrafe * 0.98, this.moveForward * 0.98, {
       yaw: this.yaw,
-      speed: this.slowTicks > 0 ? this.speed * 0.85 : this.speed,
+      speed: moveSpeed,
       airAccel: this.airAccel,
       sneaking: this.sneaking,
       flying: this.flying,
@@ -512,7 +619,7 @@ export abstract class Living extends Entity {
 
   hurt(game: GameApi, amount: number, cause: DamageCause, attacker: Entity | null = null): boolean {
     if (this.health <= 0 || this.dead) return false;
-    if (this.fireImmune && (cause === 'fire' || cause === 'lava')) return false;
+    if ((this.fireImmune || this.hasEffect('fire_resistance')) && (cause === 'fire' || cause === 'lava')) return false;
     if (this.invulnerable > 0 && cause !== 'void') return false;
     amount = this.reduceDamage(game, amount, cause);
     if (amount <= 0) return false;
@@ -562,7 +669,7 @@ export abstract class Living extends Entity {
 
   /** Dissipe poison, lenteur, faiblesse et flétrissement (lait, réapparition). */
   clearEffects(): void {
-    this.poisonTicks = this.slowTicks = this.weakTicks = this.witherTicks = 0;
+    this.effects.clear();
   }
 
   protected hurtSound(): SfxName | null {

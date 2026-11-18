@@ -13,7 +13,7 @@ import {
   BLOCK_TILES, BLOCK_TRANSLUCENT, FACING_DX, FACING_DZ, FACING_TO_FACE, ROT, SHAPE, TINT, faceTile, isLeaves,
 } from '../Blocks';
 import {
-  DRAGON_EGG_BOXES, META_DOOR_HINGE_RIGHT, META_DOOR_UPPER, ccw, cw, doorNamedFacing, edgeBox, fenceBoxes, fenceConnections,
+  CAULDRON_BOXES, DRAGON_EGG_BOXES, META_DOOR_HINGE_RIGHT, META_DOOR_UPPER, ccw, cw, doorNamedFacing, edgeBox, fenceBoxes, fenceConnections,
   fenceGateBoxes, fluidHeight, opposite, paneConnections, selectionBoxes, stairsBoxes, type NeighborFn,
 } from '../BlockModels';
 import type { MeshRequest, MeshResult, PassData } from './MeshTypes';
@@ -1150,6 +1150,41 @@ function meshCell(id: number, meta: number): void {
     case SHAPE.DRAGON_EGG: {
       noTint();
       for (let o = 0; o < DRAGON_EGG_BOXES.length; o += 6) boxAll(opaquePass, id, DRAGON_EGG_BOXES as number[], o, NOMIP, -1);
+      return;
+    }
+    case SHAPE.CAULDRON: {
+      noTint();
+      for (let o = 0; o < CAULDRON_BOXES.length; o += 6) boxAll(opaquePass, id, CAULDRON_BOXES as number[], o, NOMIP, -1);
+      const level = meta & 3;
+      if (level > 0) {
+        const wy = (6 + level * 3) / 16;
+        const a = 2 / 16;
+        const b = 14 / 16;
+        noTint();
+        flatLight(1);
+        quad(a, wy, b, b, wy, b, b, wy, a, a, wy, a);
+        uvRect(a, a, b, b);
+        emit(translucentPass, T.water, -1, NOMIP, true);
+      }
+      return;
+    }
+    case SHAPE.CAKE: {
+      noTint();
+      const bites = Math.min(6, meta & 7);
+      const x0 = (1 + bites * 2) / 16;
+      const a = 1 / 16;
+      const b = 15 / 16;
+      const h = 8 / 16;
+      for (let f = 0; f < 6; f++) {
+        const tile = f === FACE_WEST && bites > 0 ? T.cake_inner : BLOCK_TILES[id * 6 + f];
+        boxFace(opaquePass, f, x0, 0, a, b, h, b, tile, 0, false, NOMIP);
+      }
+      return;
+    }
+    case SHAPE.BREWING_STAND: {
+      noTint();
+      for (let f = 0; f < 6; f++) boxFace(opaquePass, f, 1 / 16, 0, 1 / 16, 15 / 16, 2 / 16, 15 / 16, T.brewing_stand_base, 0, false, NOMIP);
+      for (let f = 0; f < 6; f++) boxFace(opaquePass, f, 7 / 16, 2 / 16, 7 / 16, 9 / 16, 14 / 16, 9 / 16, T.brewing_stand_rod, 0, false, NOMIP);
       return;
     }
     case SHAPE.SNOW_LAYER:

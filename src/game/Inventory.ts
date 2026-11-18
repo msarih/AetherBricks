@@ -5,11 +5,11 @@
  */
 import { I } from '../world/Ids';
 import { getItem, maxStack } from '../world/Items';
-import { addToSlots, canMerge, cloneStack, cloneStackWithCount, loadSlots, maxDamage, saveSlots, type ItemStack, type Slot } from '../world/ItemStack';
+import { addToSlots, canMerge, cloneStack, cloneStackWithCount, loadSlots, makeStack, maxDamage, saveSlots, type ItemStack, type Slot } from '../world/ItemStack';
 import { canEnchantItem, computeAnvilResult, enchantLevel, hasEnchants, rollEnchantOffers, type EnchantOffer } from '../world/Enchants';
 import { mulberry32 } from '../world/gen/Noise';
 import { RECIPES, fuelTicks, ingredientAccepts, matchRecipe, recipeFitsGrid, smeltingResult, type Ingredient, type Recipe } from '../world/Recipes';
-import { FURNACE_COOK_TICKS, type ChestEntity, type FurnaceEntity } from './BlockEntities';
+import { BREW_FUEL_MAX, BREW_TICKS, FURNACE_COOK_TICKS, type BrewingStandEntity, type ChestEntity, type FurnaceEntity } from './BlockEntities';
 
 export const HOTBAR_SIZE = 9;
 export const INVENTORY_SIZE = 36;
@@ -19,6 +19,8 @@ export class Inventory {
   slots: Slot[] = new Array<Slot>(INVENTORY_SIZE).fill(null);
   /** 0 casque, 1 plastron, 2 jambières, 3 bottes. */
   armor: Slot[] = new Array<Slot>(4).fill(null);
+  /** Seconde main (une case). */
+  offhand: Slot[] = new Array<Slot>(1).fill(null);
   /** Case sélectionnée de la barre d'objets. */
   selected = 0;
   /** Pile tenue par le curseur dans un menu. */
@@ -37,33 +39,59 @@ export class Inventory {
     return s ? s.id : 0;
   }
 
+  get offhandItem(): Slot {
+    return this.offhand[0];
+  }
+
+  get offhandId(): number {
+    const s = this.offhand[0];
+    return s ? s.id : 0;
+  }
+
+  /** Échange la main principale et la seconde main. */
+  swapOffhand(): void {
+    const tmp = this.slots[this.selected];
+    this.slots[this.selected] = this.offhand[0];
+    this.offhand[0] = tmp;
+  }
+
   /** Range la pile (barre d'abord, puis sac). Retourne ce qui n'a pas pu l'être ; `stack.count` est mis à jour. */
   add(stack: ItemStack): number {
     return addToSlots(this.slots, stack, 0, INVENTORY_SIZE);
   }
 
   /** Donne des objets ; ce qui ne rentre pas est lâché au sol. */
-  give(id: number, count: number, damage = 0): void {
+  give(id: number, count: number, damage = 0, potion?: string): void {
     const max = maxStack(id);
     while (count > 0) {
       const n = Math.min(max, count);
       count -= n;
-      const stack = { id, count: n, damage };
+      const stack = makeStack(id, n, damage, undefined, potion);
       if (this.add(stack) > 0) this.drop(stack);
     }
   }
 
-  /** Retire `count` objets de la pile tenue. */
-  consumeHeld(count = 1): void {
-    const s = this.slots[this.selected];
+  /** Retire `count` objets d'une case donnée. */
+  private consumeSlot(list: Slot[], index: number, count: number): void {
+    const s = list[index];
     if (!s) return;
     s.count -= count;
-    if (s.count <= 0) this.slots[this.selected] = null;
+    if (s.count <= 0) list[index] = null;
   }
 
-  /** Use l'objet tenu (en tenant compte de Solidité). Retourne true s'il vient de se briser. */
-  damageHeld(amount: number, rng: () => number): boolean {
-    const s = this.slots[this.selected];
+  /** Retire `count` objets de la pile tenue. */
+  consumeHeld(count = 1): void {
+    this.consumeSlot(this.slots, this.selected, count);
+  }
+
+  /** Retire `count` objets de la seconde main. */
+  consumeOffhand(count = 1): void {
+    this.consumeSlot(this.offhand, 0, count);
+  }
+
+  /** Use l'objet d'une case donnée (en tenant compte de Solidité). Retourne true s'il vient de se briser. */
+  private damageSlot(list: Slot[], index: number, amount: number, rng: () => number): boolean {
+    const s = list[index];
     if (!s) return false;
     const max = maxDamage(s.id);
     if (max <= 0) return false;
@@ -75,10 +103,20 @@ export class Inventory {
     if (applied === 0) return false;
     s.damage += applied;
     if (s.damage >= max) {
-      this.slots[this.selected] = null;
+      list[index] = null;
       return true;
     }
     return false;
+  }
+
+  /** Use l'objet tenu (en tenant compte de Solidité). Retourne true s'il vient de se briser. */
+  damageHeld(amount: number, rng: () => number): boolean {
+    return this.damageSlot(this.slots, this.selected, amount, rng);
+  }
+
+  /** Use l'objet en seconde main (en tenant compte de Solidité). Retourne true s'il vient de se briser. */
+  damageOffhand(amount: number, rng: () => number): boolean {
+    return this.damageSlot(this.offhand, 0, amount, rng);
   }
 
   count(id: number): number {
@@ -153,6 +191,8 @@ export class Inventory {
       if (s) out.push(s);
       this.armor[i] = null;
     }
+    if (this.offhand[0]) out.push(this.offhand[0]);
+    this.offhand[0] = null;
     if (this.cursor) out.push(this.cursor);
     this.cursor = null;
     return out;
@@ -161,17 +201,19 @@ export class Inventory {
   clear(): void {
     this.slots.fill(null);
     this.armor.fill(null);
+    this.offhand.fill(null);
     this.cursor = null;
   }
 
   save(): Record<string, unknown> {
-    return { slots: saveSlots(this.slots), armor: saveSlots(this.armor), selected: this.selected };
+    return { slots: saveSlots(this.slots), armor: saveSlots(this.armor), offhand: saveSlots(this.offhand), selected: this.selected };
   }
 
   load(data: unknown): void {
     const d = (data ?? {}) as Record<string, unknown>;
     this.slots = loadSlots(d.slots, INVENTORY_SIZE);
     this.armor = loadSlots(d.armor, 4);
+    this.offhand = d.offhand !== undefined ? loadSlots(d.offhand, 1) : [null];
     this.selected = typeof d.selected === 'number' && d.selected >= 0 && d.selected < HOTBAR_SIZE ? d.selected | 0 : 0;
     this.cursor = null;
   }
@@ -179,8 +221,8 @@ export class Inventory {
 
 // ============================================================================================ menus
 
-export type SlotGroup = 'hotbar' | 'main' | 'armor' | 'craft' | 'result' | 'container' | 'input' | 'fuel' | 'output';
-export type MenuType = 'inventory' | 'crafting' | 'chest' | 'furnace' | 'enchant' | 'anvil' | 'creative';
+export type SlotGroup = 'hotbar' | 'main' | 'armor' | 'offhand' | 'craft' | 'result' | 'container' | 'input' | 'fuel' | 'output' | 'bottle';
+export type MenuType = 'inventory' | 'crafting' | 'chest' | 'furnace' | 'brewing' | 'enchant' | 'anvil' | 'creative';
 
 /** Une case d'un menu : vue sur un élément d'un tableau de piles. */
 export class MenuSlot {
@@ -252,6 +294,7 @@ export abstract class Menu {
 
   protected addArmorSlots(): void {
     for (let i = 0; i < 4; i++) this.addSlot('armor', i, this.inv.armor, i, false, (s) => getItem(s.id).armorSlot === i, 1);
+    this.addSlot('offhand', 0, this.inv.offhand, 0);
   }
 
   protected addCraftSlots(w: number): void {
@@ -696,7 +739,7 @@ export class InventoryMenu extends Menu {
   protected quickMove(slot: MenuSlot): void {
     const s = slot.stack;
     if (!s) return;
-    if (slot.group === 'craft' || slot.group === 'armor') {
+    if (slot.group === 'craft' || slot.group === 'armor' || slot.group === 'offhand') {
       this.transfer(slot, this.group('main', 'hotbar'));
       return;
     }
@@ -791,6 +834,53 @@ export class FurnaceMenu extends Menu {
     if (smeltingResult(s.id) && this.transfer(slot, this.group('input'))) return;
     if (fuelTicks(s.id) > 0 && this.transfer(slot, this.group('fuel'))) return;
     this.transfer(slot, this.group(slot.group === 'main' ? 'hotbar' : 'main'));
+  }
+}
+
+/** Alambic : 3 fioles/potions, 1 ingrédient, 1 carburant (poudre de blaze). */
+export class BrewingMenu extends Menu {
+  readonly type: MenuType = 'brewing';
+  readonly title = 'Alambic';
+
+  constructor(
+    inv: Inventory,
+    readonly stand: BrewingStandEntity,
+    private readonly onChange: () => void,
+  ) {
+    super(inv);
+    for (let i = 0; i < 3; i++) {
+      this.addSlot('bottle', i, stand.items, i, false, (s) => s.id === I.POTION || s.id === I.SPLASH_POTION, 1);
+    }
+    this.addSlot('input', 0, stand.items, 3);
+    this.addSlot('fuel', 0, stand.items, 4, false, (s) => s.id === I.BLAZE_POWDER);
+    this.addPlayerSlots();
+  }
+
+  get brewProgress(): number {
+    return this.stand.brewTime > 0 ? Math.min(1, this.stand.brewTime / BREW_TICKS) : 0;
+  }
+
+  get fuelProgress(): number {
+    return this.stand.fuel > 0 ? Math.min(1, this.stand.fuel / BREW_FUEL_MAX) : 0;
+  }
+
+  protected changed(): void {
+    this.onChange();
+  }
+
+  protected quickMove(slot: MenuSlot): void {
+    const s = slot.stack;
+    if (!s) return;
+    if (slot.group === 'bottle' || slot.group === 'input' || slot.group === 'fuel') {
+      this.transfer(slot, this.group('main', 'hotbar'));
+      return;
+    }
+    if (s.id === I.POTION || s.id === I.SPLASH_POTION) {
+      if (this.transfer(slot, this.group('bottle'))) return;
+    } else if (s.id === I.BLAZE_POWDER && this.transfer(slot, this.group('fuel'))) {
+      return;
+    }
+    this.transfer(slot, this.group('input'));
   }
 }
 
@@ -1004,18 +1094,18 @@ export class CreativeMenu extends Menu {
   }
 
   /** Clic sur un objet de la palette. */
-  paletteClick(itemId: number, button: number, shift: boolean): void {
+  paletteClick(itemId: number, button: number, shift: boolean, potion?: string): void {
     const inv = this.inv;
     const cur = inv.cursor;
     const max = maxStack(itemId);
     if (shift) {
       // une pile entière directement dans la barre (ou le sac)
-      inv.add({ id: itemId, count: max, damage: 0 });
+      inv.add(makeStack(itemId, max, 0, undefined, potion));
       return;
     }
     if (!cur) {
-      inv.cursor = { id: itemId, count: button === 2 ? max : 1, damage: 0 };
-    } else if (cur.id === itemId && cur.damage === 0 && max > 1) {
+      inv.cursor = makeStack(itemId, button === 2 ? max : 1, 0, undefined, potion);
+    } else if (cur.id === itemId && cur.damage === 0 && cur.potion === potion && max > 1) {
       if (button === 1) {
         if (--cur.count <= 0) inv.cursor = null;
       } else {

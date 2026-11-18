@@ -5,6 +5,7 @@
 import { BLOCK_REPLACEABLE, BLOCK_SHAPE, SHAPE } from '../world/Blocks';
 import { fluidHeight } from '../world/BlockModels';
 import { FISHING_BITE_MAX, FISHING_BITE_MIN, FISHING_WAIT_MAX, FISHING_WAIT_MIN, rollFishingCatch } from '../world/Fishing';
+import { applyPotionVariant } from '../world/Potions';
 import { B, I } from '../world/Ids';
 import { maxStack } from '../world/Items';
 import { canMerge, makeStack, sanitizeEnchants, type ItemStack } from '../world/ItemStack';
@@ -109,6 +110,7 @@ export class ItemEntity extends Entity {
     d.count = this.stack.count;
     d.damage = this.stack.damage;
     if (this.stack.enchants && Object.keys(this.stack.enchants).length > 0) d.enchants = { ...this.stack.enchants };
+    if (this.stack.potion) d.potion = this.stack.potion;
     return d;
   }
 
@@ -116,7 +118,8 @@ export class ItemEntity extends Entity {
     const id = num(d.id, 0);
     const count = num(d.count, 0);
     if (id <= 0 || count <= 0) return null;
-    const stack = makeStack(id, count, num(d.damage, 0), sanitizeEnchants(d.enchants));
+    const potion = typeof d.potion === 'string' && d.potion.length > 0 && d.potion.length <= 40 ? d.potion : undefined;
+    const stack = makeStack(id, count, num(d.damage, 0), sanitizeEnchants(d.enchants), potion);
     const e = new ItemEntity(stack);
     e.loadBase(d);
     return e;
@@ -609,7 +612,7 @@ const SPLASH_RADIUS = 4;
  * 4 blocs, d'autant plus fort qu'ils sont près. Les sorcières y sont insensibles.
  */
 export class ThrownPotion extends Thrown {
-  constructor(readonly effect: PotionEffect) {
+  constructor(readonly effect: PotionEffect | string) {
     super(I.SPLASH_POTION);
     this.gravity = 0.05;
   }
@@ -620,10 +623,16 @@ export class ThrownPotion extends Thrown {
     game.particles(this.effect === 'harm' ? 'crit' : 'slime', x, y + 0.2, z, 12, 1.2);
     const r = SPLASH_RADIUS;
     for (const e of game.entitiesInBox(x - r, y - 2, z - r, x + r, y + 2, z + r, null)) {
-      if (!(e instanceof Living) || !e.alive || e.mobKind === 'witch') continue;
+      if (!(e instanceof Living) || !e.alive) continue;
+      if (e.mobKind === 'witch' && (this.effect === 'harm' || this.effect === 'poison' || this.effect === 'slow' || this.effect === 'weak')) continue;
       const d = Math.sqrt(e.distanceSq(x, y - e.height * 0.5, z));
       if (e !== target && d >= r) continue;
-      applyPotion(game, e, this.effect, e === target ? 1 : 1 - d / r, this.owner);
+      const str = e === target ? 1 : 1 - d / r;
+      if (this.effect === 'harm' || this.effect === 'poison' || this.effect === 'slow' || this.effect === 'weak') {
+        applyPotion(game, e, this.effect, str, this.owner);
+      } else {
+        applyPotionVariant(e, this.effect, str, this.owner);
+      }
     }
   }
 }

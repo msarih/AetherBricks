@@ -816,6 +816,9 @@ class MobVisual implements Visual {
   private held: ItemModel | null = null;
   private heldId = 0;
   private heldGroup: THREE.Group | null = null;
+  private offhand: ItemModel | null = null;
+  private offhandId = 0;
+  private offhandGroup: THREE.Group | null = null;
   private flap = 0;
   private lastTime = -1;
   /** Enveloppe translucide du slime (partage ses uniformes avec le matériau principal). */
@@ -1145,6 +1148,7 @@ class MobVisual implements Visual {
 
     this.syncHeld(e);
     if (this.held) this.held.setLight(e.skyLight, e.blockLight);
+    if (this.offhand) this.offhand.setLight(e.skyLight, e.blockLight);
     if (this.kind === 'enderman') this.syncCarried(e);
     this.syncName(e, baseScale);
     this.syncLeash(e, alpha);
@@ -1309,38 +1313,48 @@ class MobVisual implements Visual {
     }
   }
 
-  /** Objet tenu dans la main droite (arc du squelette, outil ou bloc du joueur). */
-  private syncHeld(e: EntityView): void {
-    const id = e.itemId;
-    if (id === this.heldId) return;
-    this.heldId = id;
-    if (this.heldGroup) this.heldGroup.removeFromParent();
-    if (this.held) this.held.dispose();
-    this.held = null;
-    this.heldGroup = null;
-    const arm = this.parts.get('armR');
-    if (id === 0 || !arm) return;
-
+  /** Construit et attache un objet sur un bras (`armR` ou `armL`). */
+  private attachArmItem(armName: 'armR' | 'armL', id: number): { model: ItemModel; group: THREE.Group } | null {
+    const arm = this.parts.get(armName);
+    if (id === 0 || !arm) return null;
     const model = ItemModel.forItem(this.atlas, id);
     const group = model.instance();
-    // Enchaînement de Minecraft, exprimé dans le repère de son bras (y vers le bas, avant = −z),
-    // précédé du passage de ce repère au nôtre (demi-tour autour de x).
     const m = heldChain.identity().scale(1, -1, -1);
-    m.rotateX(-90).rotateY(180).translate(1 / 16, 0.125, -0.625);
+    const sign = armName === 'armL' ? -1 : 1;
+    m.rotateX(-90).rotateY(180).translate((1 / 16) * sign, 0.125, -0.625);
     if (model.isBlock) {
       m.translate(0, 2.5 / 16, 0).rotateX(75).rotateY(45).scale(0.375);
     } else if (id === I.BOW) {
       m.translate(-1 / 16, -2 / 16, 2.5 / 16).rotateX(-80).rotateY(260).rotateZ(-40).scale(0.9);
     } else if (isHandheldItem(id)) {
-      m.translate(0, 4 / 16, 0.5 / 16).rotateY(-90).rotateZ(55).scale(0.85);
+      m.translate(0, 4 / 16, 0.5 / 16).rotateY(-90 * sign).rotateZ(55 * sign).scale(0.85);
     } else {
       m.translate(0, 3 / 16, 1 / 16).scale(0.55);
     }
     group.matrixAutoUpdate = false;
     group.matrix.copy(m.matrix);
     arm.add(group);
-    this.held = model;
-    this.heldGroup = group;
+    return { model, group };
+  }
+
+  /** Objets tenus dans la main droite et la main gauche (seconde main). */
+  private syncHeld(e: EntityView): void {
+    if (e.itemId !== this.heldId) {
+      this.heldId = e.itemId;
+      if (this.heldGroup) this.heldGroup.removeFromParent();
+      if (this.held) this.held.dispose();
+      const attached = this.attachArmItem('armR', e.itemId);
+      this.held = attached ? attached.model : null;
+      this.heldGroup = attached ? attached.group : null;
+    }
+    if (e.offhandId !== this.offhandId) {
+      this.offhandId = e.offhandId;
+      if (this.offhandGroup) this.offhandGroup.removeFromParent();
+      if (this.offhand) this.offhand.dispose();
+      const attached = this.attachArmItem('armL', e.offhandId);
+      this.offhand = attached ? attached.model : null;
+      this.offhandGroup = attached ? attached.group : null;
+    }
   }
 
   /** Calcule la position monde du bout de la canne à pêche tenue en main droite. Retourne false sinon. */

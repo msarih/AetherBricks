@@ -42,7 +42,8 @@ import { ChunkManager, type ChunkHooks } from '../world/ChunkManager';
 import { CHUNK_HEIGHT, DAY_TICKS, TICKS_PER_SECOND, chunkKey, type Dimension, type GameMode } from '../world/Constants';
 import { B, I } from '../world/Ids';
 import { ITEMS, getItem, itemLabel } from '../world/Items';
-import { makeStack } from '../world/ItemStack';
+import { cloneStack, makeStack, type ItemStack } from '../world/ItemStack';
+import { POTION_COMPLETIONS, POTION_GIVE_HELP, potionLabel, resolvePotionKind } from '../world/Potions';
 import { dialTile } from '../world/Tiles';
 import { buildEndPlatform } from '../world/EndPortal';
 import { findOrCreatePortal } from '../world/Portal';
@@ -368,7 +369,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     this.entities.push(player);
     player.sfx = (name, volume, pitch) => this.sfx.play(name, { volume, pitch });
     player.inventory.drop = (stack) => {
-      const e = new ItemEntity(stack);
+      const e = new ItemEntity(cloneStack(stack)!);
       const v = this.lookDir;
       player.look(v);
       e.setPosition(player.x, player.y + player.eyeHeight - 0.3, player.z);
@@ -1192,7 +1193,8 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     this.sky.update(dt, cam, this.dayTime + (dt > 0 ? alpha : 0), this.rainLevel, this.thunderLevel, viewBlocks, this.dimension);
     const u = worldUniforms;
     u.uSkyLight.value.copy(this.sky.skyLight);
-    u.uAmbient.value = this.dimension === 'nether' ? NETHER_AMBIENT : this.dimension === 'end' ? END_AMBIENT : OVERWORLD_AMBIENT;
+    const baseAmbient = this.dimension === 'nether' ? NETHER_AMBIENT : this.dimension === 'end' ? END_AMBIENT : OVERWORLD_AMBIENT;
+    u.uAmbient.value = Math.max(baseAmbient, this.player.hasEffect('night_vision') ? 0.85 : 0);
     const inWater = pointInFluid(w, B.WATER, cam.position.x, cam.position.y, cam.position.z);
     const inLava = !inWater && pointInFluid(w, B.LAVA, cam.position.x, cam.position.y, cam.position.z);
     if (inWater) {
@@ -1232,13 +1234,14 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     const hand = this.hand;
     const hs = this.handState;
     hand.setItem(p.heldItemId);
+    hand.setOffhand(p.offhandItemId);
     hs.bobPhase = phase;
     hs.bobAmount = settings.viewBobbing ? bob : 0;
     hs.skyLight = p.skyLight;
     hs.blockLight = p.blockLight;
     hs.useKind = p.useKind;
     hs.fishing = this.interaction.fishing;
-    hs.useProgress = p.useKind === 'eat' ? Math.min(1, p.useTicks / 32) : p.useKind === 'bow' ? Math.min(1, p.useTicks / 20) : 0;
+    hs.useProgress = p.useKind === 'eat' ? Math.min(1, p.useTicks / 32) : p.useKind === 'bow' ? Math.min(1, p.useTicks / 20) : p.useKind === 'block' ? Math.min(1, p.useTicks / 5) : 0;
     hs.yawDelta = yaw - this.lastYaw;
     hs.pitchDelta = pitch - this.lastPitch;
     hs.pitch = pitch;
@@ -1303,6 +1306,15 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     if (!p.alive) return false;
     if (code === kb.inventory) {
       if (!repeat && !p.sleeping) this.openMenu(p.creative ? new CreativeMenu(p.inventory) : new InventoryMenu(p.inventory));
+      return true;
+    }
+    if (code === kb.offhand) {
+      if (!repeat && !p.sleeping) {
+        if (p.useKind !== 'none') p.stopUsing();
+        p.inventory.swapOffhand();
+        p.itemId = p.inventory.heldId;
+        p.offhandId = p.inventory.offhandId;
+      }
       return true;
     }
     if (code === kb.drop) {
@@ -1422,7 +1434,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
           if (o.buy2 !== 0) inv.remove(o.buy2, o.buy2Count);
         }
         const stack = makeStack(o.sell, o.sellCount, 0, o.enchants);
-        if (inv.add(stack) > 0) this.dropItem(p.x, p.y + 1, p.z, stack.id, stack.count, stack.damage);
+        if (inv.add(stack) > 0) this.dropStack(p.x, p.y + 1, p.z, stack);
         v.completeTrade(this, index);
         this.sfx.play('pop', { volume: 0.5, pitch: 0.9 + Math.random() * 0.3 });
         p.addStat(STAT.TRADES);
@@ -1555,14 +1567,18 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     this.fx.tileBurst(x, y, z, particleTile(block, 0), particleTint(this, Math.floor(x), Math.floor(z), block), count, 2);
   }
 
-  dropItem(x: number, y: number, z: number, id: number, count: number, damage = 0): Entity {
-    const e = new ItemEntity(makeStack(id, count, damage));
+  dropStack(x: number, y: number, z: number, stack: ItemStack): Entity {
+    const e = new ItemEntity(cloneStack(stack)!);
     e.setPosition(x, y, z);
     e.vx = (this.rng() - 0.5) * 0.1;
     e.vy = 0.2;
     e.vz = (this.rng() - 0.5) * 0.1;
     this.spawn(e);
     return e;
+  }
+
+  dropItem(x: number, y: number, z: number, id: number, count: number, damage = 0): Entity {
+    return this.dropStack(x, y, z, makeStack(id, count, damage));
   }
 
   explode(x: number, y: number, z: number, power: number, fire: boolean, source: Entity | null): void {
@@ -1607,7 +1623,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       effect: (kind, x, y, z, a, b) => this.worldEffect(kind, x, y, z, a ?? 0, b ?? 0),
       blockEntityRemoved: (be: BlockEntity) => {
         resolveLoot(be, this.world.seed);
-        for (const s of blockEntityItems(be)) this.dropItem(be.x + 0.5, be.y + 0.3, be.z + 0.5, s.id, s.count, s.damage);
+        for (const s of blockEntityItems(be)) this.dropStack(be.x + 0.5, be.y + 0.3, be.z + 0.5, s);
       },
       pushEntities: (x0, y0, z0, x1, y1, z1, dx, dy, dz) => {
         for (const e of this.entitiesInBox(x0, y0, z0, x1, y1, z1, null)) {
@@ -1775,6 +1791,14 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     return p.witherTicks > 0 ? 'wither' : p.poisonTicks > 0 ? 'poison' : '';
   }
 
+  get activeEffects(): ReadonlyArray<{ type: string; level: number; ticks: number }> {
+    const out: Array<{ type: string; level: number; ticks: number }> = [];
+    for (const [type, fx] of this.player.effects) {
+      if (fx.ticks > 0) out.push({ type, level: fx.level, ticks: fx.ticks });
+    }
+    return out;
+  }
+
   get boss(): { name: string; progress: number } | null {
     if (this.dimension !== 'end') return null;
     const progress = this.endFight.progress;
@@ -1881,6 +1905,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
   /** Remet le joueur sur pied à l'endroit donné et lui rend la main. */
   private revive(spot: { x: number; y: number; z: number }): void {
     this.player.respawn(spot.x, spot.y, spot.z);
+    if (this.deathShown && this.ui.modal) this.ui.closeScreen();
     this.deathShown = false;
     this.needSettle = true;
     this.interaction.reset();
@@ -2010,8 +2035,8 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       case 'help':
       case '?':
         say('Commandes : /gamemode <survival|creative>, /time <set|add> <valeur>, /weather <clear|rain|thunder>,');
-        say('/give <objet> [quantité], /tp <x> <y> <z>, /summon <créature> [nombre], /difficulty <0-3>,');
-        say('/kill, /clear, /seed, /spawnpoint, /locate <village|temple|jungle|mine|forteresse|fort>');
+        say('/give <objet> [quantité], /give <potion|splash_potion> <sorte> [quantité] (/give potion ? pour la liste),');
+        say('/tp <x> <y> <z>, /summon <créature> [nombre], /difficulty <0-3>, /kill, /clear, /seed, /spawnpoint, /locate <village|temple|jungle|mine|forteresse|fort>');
         return;
       case 'gamemode': {
         const m = (args[0] ?? '').toLowerCase();
@@ -2057,9 +2082,40 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       case 'give': {
         const key = (args[0] ?? '').toLowerCase();
         const id = this.items().get(key) ?? (/^\d+$/.test(key) && ITEMS[Number(key)] ? Number(key) : -1);
+        if (id === I.POTION || id === I.SPLASH_POTION) {
+          const arg1 = (args[1] ?? '').trim();
+          if (arg1 === '?' || arg1.toLowerCase() === 'help' || arg1.toLowerCase() === 'aide' || arg1.toLowerCase() === 'liste') {
+            say('Usage : /give <potion|splash_potion> <sorte> [quantité]');
+            say(POTION_GIVE_HELP);
+            return;
+          }
+          let potionKey = id === I.SPLASH_POTION ? 'healing' : 'water';
+          let countRaw = args[1];
+          if (arg1 !== '' && !/^\d+$/.test(arg1)) {
+            const resolved = resolvePotionKind(arg1);
+            if (!resolved) {
+              say(`Sorte de potion inconnue : ${arg1}`);
+              say(POTION_GIVE_HELP);
+              return;
+            }
+            potionKey = resolved;
+            countRaw = args[2];
+          }
+          const count = countRaw === undefined ? 1 : Math.floor(Number(countRaw));
+          if (!Number.isFinite(count) || count < 1) {
+            say('Usage : /give <potion|splash_potion> <sorte> [quantité]');
+            say(POTION_GIVE_HELP);
+            return;
+          }
+          const n = Math.min(count, 2304);
+          p.inventory.give(id, n, 0, potionKey);
+          say(`Donné : ${n} × ${potionLabel(potionKey, id === I.SPLASH_POTION)}`);
+          if (arg1 === '') say(POTION_GIVE_HELP);
+          return;
+        }
         const count = args[1] === undefined ? 1 : Math.floor(Number(args[1]));
         if (id <= 0 || !Number.isFinite(count) || count < 1) {
-          say(key === '' ? 'Usage : /give <objet> [quantité]' : `Objet inconnu : ${key}`);
+          say(key === '' ? 'Usage : /give <objet> [quantité] | /give <potion|splash_potion> <sorte> [quantité]' : `Objet inconnu : ${key}`);
           return;
         }
         const n = Math.min(count, 2304);
@@ -2212,6 +2268,9 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       }
     }
     if (parts.length === 3 && cmd === 'time' && parts[1].toLowerCase() === 'set') return pick(Object.keys(TIME_NAMES));
+    if (parts.length === 3 && cmd === 'give' && (parts[1].toLowerCase() === 'potion' || parts[1].toLowerCase() === 'splash_potion')) {
+      return pick(POTION_COMPLETIONS);
+    }
     if (cmd === 'tp' && parts.length <= 4) return pick(['~']);
     return [];
   }

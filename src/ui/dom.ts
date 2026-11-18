@@ -6,6 +6,7 @@ import type { ItemStack, Slot } from '../world/ItemStack';
 import { maxDamage } from '../world/ItemStack';
 import { enchantLines, hasEnchants } from '../world/Enchants';
 import { DYNAMIC_ICON_ITEMS, itemLabel } from '../world/Items';
+import { potionLabel } from '../world/Potions';
 import { I } from '../world/Ids';
 import type { UiHost } from './UiApi';
 
@@ -128,13 +129,14 @@ export function slider(host: UiHost, opts: SliderOptions, parent?: Element | nul
 /** Signature d'une pile ('' = vide) : sert à ne toucher au DOM que si la case a changé. */
 export function stackSig(s: Slot): string {
   if (!s) return '';
-  if (!s.enchants) return `${s.id}:${s.count}:${s.damage}`;
-  return `${s.id}:${s.count}:${s.damage}:${JSON.stringify(s.enchants)}`;
+  if (!s.enchants && !s.potion) return `${s.id}:${s.count}:${s.damage}`;
+  return `${s.id}:${s.count}:${s.damage}:${s.potion ?? ''}:${s.enchants ? JSON.stringify(s.enchants) : ''}`;
 }
 
 /** Lignes de l'infobulle d'une pile : nom, enchantements, puis durabilité si l'objet est usé. */
 export function stackTooltip(s: ItemStack): string[] {
-  const lines = [itemLabel(s.id), ...enchantLines(s.enchants)];
+  const name = s.potion ? potionLabel(s.potion, s.id === I.SPLASH_POTION) : itemLabel(s.id);
+  const lines = [name, ...enchantLines(s.enchants)];
   if (s.id === I.FILLED_MAP) lines.push(`Carte n° ${s.damage}`);
   const max = maxDamage(s.id);
   if (max > 0 && s.damage > 0) lines.push(`Durabilité : ${Math.max(0, max - s.damage)} / ${max}`);

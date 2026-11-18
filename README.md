@@ -53,6 +53,7 @@ npm run build    # version de production dans dist/
 - **Modes** : survie et créatif (vol par double appui sur Espace, casse instantanée).
 - **Mondes** : plusieurs mondes sauvegardés dans le navigateur (IndexedDB) — créer, renommer, supprimer ; sauvegarde automatique et à la fermeture. Un monde s'exporte dans un fichier `.aetherworld` et s'importe depuis ce fichier (sauvegarde externe, passage d'un navigateur ou d'un appareil à l'autre).
 - **Commandes** (touche `/`) : `/help`, `/gamemode`, `/time`, `/weather`, `/give`, `/tp`, `/kill`, `/seed`, `/difficulty`, `/summon`, `/clear`, `/spawnpoint`, `/locate`.
+- **Équipement** : seconde main (touche `F`, case dédiée dans l'inventaire, clic droit secondaire), bouclier (parade frontale après 5 ticks, flèches renvoyées, enclume), chaudron (3 niveaux d'eau, seau, fiole, pluie, extinction), gâteau (7 parts), alambic et potions (fiole, distillation en 400 ticks à la poudre de blaze, soin, rapidité, vision nocturne réelle, force, résistance au feu, poison, régénération, versions allongées/niveau II et jetables, effets affichés à l'écran).
 
 ## 🎮 Contrôles
 
@@ -69,6 +70,7 @@ Les touches sont repérées par leur position sur le clavier : sur un clavier QW
 | **Clic milieu** | Choisir le bloc visé |
 | **Molette, 1 à 9** | Changer de case |
 | **E** | Inventaire |
+| **F** | Échanger main principale et seconde main |
 | **A** | Lâcher l'objet |
 | **T** / **/** | Chat / commande |
 | **F1** / **F3** / **F5** | Cacher l'interface / écran de débogage / vue à la 3ᵉ personne |
@@ -92,6 +94,7 @@ Les touches sont repérées par leur position sur le clavier : sur un clavier QW
 - Lieux à découvrir : uniquement dans les mondes créés à partir de cette version. Écarts avec Minecraft : l'échange avec un villageois se fait en cliquant sur une offre (pas de cases à remplir) ; les zombies n'attaquent pas les villageois ; le temple de la jungle n'a pas de piège à flèches ; dans les mines, les coffres sont posés au sol et les cages donnent des araignées ordinaires ; les rails sont un décor (pas de wagonnet) ; la forteresse a un plan plus simple, sans escaliers.
 - Créatures, écarts avec Minecraft : l'étiquette se remplit au moment de l'utiliser (pas d'enclume) ; la selle se pose d'un clic droit (le cheval n'a pas d'inventaire) et le saut ne se dose pas ; pas d'âne, de mule ni d'armure de cheval ; pas de cabane de sorcière dans les marais (elle apparaît dans le noir, rarement) ; les slimes ne dépendent pas de la lune ; la sorcière ne lâche pas de fiole ; les nouvelles créatures n'ont pas de cri propre.
 - La boussole indique le point d'apparition du monde, pas le lit ; les cartes ne s'agrandissent pas et restent vierges dans le Nether et dans l'End.
+- Équipement, écarts avec Minecraft : le bouclier n'a pas de motif de bannière ni d'étourdissement par hache ; l'alambic n'affiche pas les fioles en 3D sur ses bras ; les potions disponibles sont eau, étrange, soin (I/II), rapidité (I/II/allongée), vision nocturne (normale/allongée), force (I/II/allongée), résistance au feu (normale/allongée), poison (I/II/allongé), régénération (I/II/allongée) et jetables (pas d'œil d'araignée fermenté, de respiration aquatique, d'invisibilité ni de potion persistante) et partagent une icône de fiole bleue (le type est indiqué dans l'infobulle et la barre) ; la vision nocturne ne clignote pas en fin d'effet ; le chaudron ne teint pas les armures en cuir.
 - Testé sur Chrome uniquement.
 
 ---

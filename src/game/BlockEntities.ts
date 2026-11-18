@@ -7,6 +7,7 @@ import { B, I } from '../world/Ids';
 import { maxStack } from '../world/Items';
 import { makeStack, sanitizeEnchants, type ItemStack, type Slot } from '../world/ItemStack';
 import { generateLoot, isLootTable } from '../world/Loot';
+import { brewResult, canBrewBottles } from '../world/Potions';
 import { fuelTicks, smeltingResult } from '../world/Recipes';
 import type { BlockEntity, World } from '../world/World';
 
@@ -41,6 +42,16 @@ export function resolveLoot(be: BlockEntity, seed: number): boolean {
   return true;
 }
 
+export const BREW_TICKS = 400;
+export const BREW_FUEL_MAX = 20;
+
+export interface BrewingStandEntity extends BlockEntity {
+  type: 'brewing';
+  /** 0..2 = fioles/potions, 3 = ingrédient, 4 = carburant (poudre de blaze). */
+  items: Slot[];
+  brewTime: number;
+  fuel: number;
+}
 export interface FurnaceEntity extends BlockEntity {
   type: 'furnace';
   /** 0 = à cuire, 1 = combustible, 2 = résultat. */
@@ -57,7 +68,8 @@ function fixSlots(v: unknown, size: number): Slot[] {
   for (let i = 0; i < size && i < v.length; i++) {
     const s = v[i] as Partial<ItemStack> | null;
     if (s && typeof s.id === 'number' && typeof s.count === 'number' && s.count > 0) {
-      out[i] = makeStack(s.id, s.count, typeof s.damage === 'number' ? s.damage : 0, sanitizeEnchants(s.enchants));
+      const potion = typeof s.potion === 'string' && s.potion.length > 0 && s.potion.length <= 40 ? s.potion : undefined;
+      out[i] = makeStack(s.id, s.count, typeof s.damage === 'number' ? s.damage : 0, sanitizeEnchants(s.enchants), potion);
     }
   }
   return out;
@@ -180,6 +192,57 @@ export function tickFurnace(w: World, f: FurnaceEntity): void {
   if (dirty || lit) w.markBlockEntityDirty(f);
 }
 
+/** Alambic en (x, y, z) : l'entité existante ou une nouvelle, vide. */
+export function getBrewingStand(w: World, x: number, y: number, z: number): BrewingStandEntity {
+  const be = w.getBlockEntity(x, y, z) as (BlockEntity & { items?: unknown; brewTime?: unknown; fuel?: unknown }) | undefined;
+  if (be && be.type === 'brewing') {
+    const b = be as BrewingStandEntity;
+    if (!Array.isArray(b.items) || b.items.length !== 5) b.items = fixSlots(be.items, 5);
+    b.brewTime = typeof b.brewTime === 'number' && Number.isFinite(b.brewTime) ? Math.max(0, b.brewTime) : 0;
+    b.fuel = typeof b.fuel === 'number' && Number.isFinite(b.fuel) ? Math.max(0, b.fuel) : 0;
+    return b;
+  }
+  const b: BrewingStandEntity = {
+    type: 'brewing',
+    x,
+    y,
+    z,
+    items: new Array<Slot>(5).fill(null),
+    brewTime: 0,
+    fuel: 0,
+  };
+  w.setBlockEntity(b);
+  return b;
+}
+
+function tickBrewingStand(w: World, b: BrewingStandEntity): void {
+  let dirty = false;
+  if (b.fuel <= 0 && b.items[4]?.id === I.BLAZE_POWDER) {
+    b.fuel = BREW_FUEL_MAX;
+    if (--b.items[4]!.count <= 0) b.items[4] = null;
+    dirty = true;
+  }
+  const ing = b.items[3];
+  const ready = b.fuel > 0 && !!ing && canBrewBottles(b.items, ing.id);
+  if (ready && ing) {
+    b.brewTime++;
+    dirty = true;
+    if (b.brewTime >= BREW_TICKS) {
+      b.brewTime = 0;
+      b.fuel--;
+      for (let i = 0; i < 3; i++) {
+        const res = brewResult(b.items[i], ing.id);
+        if (res) b.items[i] = res;
+      }
+      if (--ing.count <= 0) b.items[3] = null;
+    }
+  } else if (b.brewTime > 0) {
+    b.brewTime = 0;
+    dirty = true;
+  }
+  if (dirty) w.markBlockEntityDirty(b);
+}
+
 /** Avance toutes les entités de bloc actives du monde. */
 export function tickBlockEntities(w: World): void {
   for (const be of w.blockEntities.values()) {
@@ -187,6 +250,9 @@ export function tickBlockEntities(w: World): void {
       const f = be as FurnaceEntity;
       if (f.burnTime > 0 || (f.items && f.items[0] && f.items[1])) tickFurnace(w, f);
       else if (f.cookTime > 0) f.cookTime = 0;
+    } else if (be.type === 'brewing') {
+      const b = be as BrewingStandEntity;
+      if (b.brewTime > 0 || (b.items && (b.items[3] || b.items[4]))) tickBrewingStand(w, b);
     }
   }
 }

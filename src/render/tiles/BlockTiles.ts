@@ -1605,6 +1605,55 @@ def('anvil_side', (p) => {
     return shade(0x404248, 0.9 + p.rnd() * 0.15);
   });
 });
+def('cauldron_top', (p) => {
+  p.each((x, y) => {
+    const rim = x < 2 || x > 13 || y < 2 || y > 13;
+    return shade(rim ? 0x52555c : 0x26282c, 0.92 + p.rnd() * 0.14);
+  });
+});
+def('cauldron_side', (p) => {
+  p.each((x, y) => {
+    if (y <= 1) return shade(0x52555c, 0.92 + p.rnd() * 0.14);
+    if (y >= 13 && (x < 4 || x > 11)) return shade(0x303238, 0.92 + p.rnd() * 0.14);
+    if (y >= 14) return 0x00000000;
+    return shade(0x3a3d44, 0.9 + p.rnd() * 0.16);
+  });
+});
+def('cauldron_bottom', (p) => {
+  p.each(() => shade(0x2d2f34, 0.9 + p.rnd() * 0.15));
+});
+def('cake_top', (p) => {
+  p.each((x, y) => {
+    const berry = (x >= 3 && x <= 4 && y >= 4 && y <= 5) || (x >= 10 && x <= 11 && y >= 3 && y <= 4) || (x >= 6 && x <= 7 && y >= 10 && y <= 11) || (x >= 11 && x <= 12 && y >= 11 && y <= 12);
+    if (berry) return shade(0xd42c2c, 0.92 + p.rnd() * 0.14);
+    return shade(0xf5efe6, 0.95 + p.rnd() * 0.08);
+  });
+});
+def('cake_side', (p) => {
+  p.each((x, y) => {
+    const icing = y <= 3 || (y === 4 && (x % 3 === 0)) || (y === 5 && (x % 5 === 1));
+    if (icing) return shade(0xf5efe6, 0.95 + p.rnd() * 0.08);
+    if (y >= 14) return shade(0x9a5c28, 0.92 + p.rnd() * 0.12);
+    return shade(0xc68240, 0.92 + p.rnd() * 0.14);
+  });
+});
+def('cake_inner', (p) => {
+  p.each((x, y) => {
+    if (y <= 3) return shade(0xf5efe6, 0.95 + p.rnd() * 0.08);
+    if (y >= 7 && y <= 9) return shade(0xd42c2c, 0.92 + p.rnd() * 0.12);
+    if (y >= 14) return shade(0x9a5c28, 0.92 + p.rnd() * 0.12);
+    return shade(0xc68240, 0.92 + p.rnd() * 0.14);
+  });
+});
+def('cake_bottom', (p) => {
+  p.each(() => shade(0x9a5c28, 0.92 + p.rnd() * 0.14));
+});
+def('brewing_stand_base', (p) => {
+  p.each(() => shade(0x6c6e72, 0.88 + p.rnd() * 0.22));
+});
+def('brewing_stand_rod', (p) => {
+  p.each((x) => shade(x >= 6 && x <= 9 ? 0xf2b422 : 0xc87414, 0.92 + p.rnd() * 0.14));
+});
 
 // ---------------------------------------------------------------------------
 // Fluides et feu (images animées)
