@@ -44,6 +44,8 @@ export class Hud {
   private readonly xpFill: HTMLDivElement;
   private readonly xpLevel: HTMLDivElement;
   private readonly items: ItemView[] = [];
+  private readonly offhandBox: HTMLDivElement;
+  private readonly offhandView: ItemView;
   private readonly selection: HTMLDivElement;
   private readonly heldName: HTMLDivElement;
   private readonly action: HTMLDivElement;
@@ -121,6 +123,10 @@ export class Hud {
       this.items.push(view);
     }
     this.selection = el('div', 'mc-hotbar-sel', hotbar);
+    this.offhandBox = el('div', 'mc-offhand-hud', hotbar);
+    this.offhandView = new ItemView(host, this.offhandBox);
+    this.offhandView.el.style.left = u(2);
+    this.offhandView.el.style.top = u(2);
 
     this.chat = el('div', 'mc-chatlog', this.main);
     this.debug = el('div', 'mc-debug', this.main);
@@ -312,6 +318,9 @@ export class Hud {
     if (this.changed('sel', selected)) this.selection.style.left = u(-1 + selected * 20);
 
     // Nom de l'objet tenu : apparaît au changement de case ou d'objet, puis s'efface.
+    const off = inv.offhand[0];
+    this.offhandView.set(off);
+    if (this.changed('offhandOn', off !== null)) this.offhandBox.style.display = off !== null ? 'block' : '';
     const held = inv.slots[selected];
     const id = held ? held.id : 0;
     if (this.changed('held', selected * 4096 + id)) {

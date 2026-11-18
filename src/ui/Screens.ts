@@ -254,6 +254,7 @@ const KEYBIND_ROWS: ReadonlyArray<readonly [KeybindAction, string]> = [
   ['sneak', 'S\'accroupir'],
   ['sprint', 'Courir'],
   ['inventory', 'Inventaire'],
+  ['offhand', 'Échanger les mains'],
   ['drop', 'Lâcher l\'objet'],
   ['chat', 'Chat'],
   ['command', 'Commande'],

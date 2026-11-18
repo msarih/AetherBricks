@@ -902,6 +902,7 @@ export interface Keybinds {
   sneak: string;
   sprint: string;
   inventory: string;
+  offhand: string;
   drop: string;
   chat: string;
   command: string;
@@ -919,6 +920,7 @@ export const DEFAULT_KEYBINDS: Readonly<Keybinds> = Object.freeze({
   sneak: 'ShiftLeft',
   sprint: 'ControlLeft',
   inventory: 'KeyE',
+  offhand: 'KeyF',
   drop: 'KeyQ',
   chat: 'KeyT',
   command: 'Slash',

@@ -19,6 +19,8 @@ export class Inventory {
   slots: Slot[] = new Array<Slot>(INVENTORY_SIZE).fill(null);
   /** 0 casque, 1 plastron, 2 jambières, 3 bottes. */
   armor: Slot[] = new Array<Slot>(4).fill(null);
+  /** Seconde main (une case). */
+  offhand: Slot[] = new Array<Slot>(1).fill(null);
   /** Case sélectionnée de la barre d'objets. */
   selected = 0;
   /** Pile tenue par le curseur dans un menu. */
@@ -37,6 +39,22 @@ export class Inventory {
     return s ? s.id : 0;
   }
 
+  get offhandItem(): Slot {
+    return this.offhand[0];
+  }
+
+  get offhandId(): number {
+    const s = this.offhand[0];
+    return s ? s.id : 0;
+  }
+
+  /** Échange la main principale et la seconde main. */
+  swapOffhand(): void {
+    const tmp = this.slots[this.selected];
+    this.slots[this.selected] = this.offhand[0];
+    this.offhand[0] = tmp;
+  }
+
   /** Range la pile (barre d'abord, puis sac). Retourne ce qui n'a pas pu l'être ; `stack.count` est mis à jour. */
   add(stack: ItemStack): number {
     return addToSlots(this.slots, stack, 0, INVENTORY_SIZE);
@@ -53,17 +71,27 @@ export class Inventory {
     }
   }
 
-  /** Retire `count` objets de la pile tenue. */
-  consumeHeld(count = 1): void {
-    const s = this.slots[this.selected];
+  /** Retire `count` objets d'une case donnée. */
+  private consumeSlot(list: Slot[], index: number, count: number): void {
+    const s = list[index];
     if (!s) return;
     s.count -= count;
-    if (s.count <= 0) this.slots[this.selected] = null;
+    if (s.count <= 0) list[index] = null;
   }
 
-  /** Use l'objet tenu (en tenant compte de Solidité). Retourne true s'il vient de se briser. */
-  damageHeld(amount: number, rng: () => number): boolean {
-    const s = this.slots[this.selected];
+  /** Retire `count` objets de la pile tenue. */
+  consumeHeld(count = 1): void {
+    this.consumeSlot(this.slots, this.selected, count);
+  }
+
+  /** Retire `count` objets de la seconde main. */
+  consumeOffhand(count = 1): void {
+    this.consumeSlot(this.offhand, 0, count);
+  }
+
+  /** Use l'objet d'une case donnée (en tenant compte de Solidité). Retourne true s'il vient de se briser. */
+  private damageSlot(list: Slot[], index: number, amount: number, rng: () => number): boolean {
+    const s = list[index];
     if (!s) return false;
     const max = maxDamage(s.id);
     if (max <= 0) return false;
@@ -75,10 +103,20 @@ export class Inventory {
     if (applied === 0) return false;
     s.damage += applied;
     if (s.damage >= max) {
-      this.slots[this.selected] = null;
+      list[index] = null;
       return true;
     }
     return false;
+  }
+
+  /** Use l'objet tenu (en tenant compte de Solidité). Retourne true s'il vient de se briser. */
+  damageHeld(amount: number, rng: () => number): boolean {
+    return this.damageSlot(this.slots, this.selected, amount, rng);
+  }
+
+  /** Use l'objet en seconde main (en tenant compte de Solidité). Retourne true s'il vient de se briser. */
+  damageOffhand(amount: number, rng: () => number): boolean {
+    return this.damageSlot(this.offhand, 0, amount, rng);
   }
 
   count(id: number): number {
@@ -153,6 +191,8 @@ export class Inventory {
       if (s) out.push(s);
       this.armor[i] = null;
     }
+    if (this.offhand[0]) out.push(this.offhand[0]);
+    this.offhand[0] = null;
     if (this.cursor) out.push(this.cursor);
     this.cursor = null;
     return out;
@@ -161,17 +201,19 @@ export class Inventory {
   clear(): void {
     this.slots.fill(null);
     this.armor.fill(null);
+    this.offhand.fill(null);
     this.cursor = null;
   }
 
   save(): Record<string, unknown> {
-    return { slots: saveSlots(this.slots), armor: saveSlots(this.armor), selected: this.selected };
+    return { slots: saveSlots(this.slots), armor: saveSlots(this.armor), offhand: saveSlots(this.offhand), selected: this.selected };
   }
 
   load(data: unknown): void {
     const d = (data ?? {}) as Record<string, unknown>;
     this.slots = loadSlots(d.slots, INVENTORY_SIZE);
     this.armor = loadSlots(d.armor, 4);
+    this.offhand = d.offhand !== undefined ? loadSlots(d.offhand, 1) : [null];
     this.selected = typeof d.selected === 'number' && d.selected >= 0 && d.selected < HOTBAR_SIZE ? d.selected | 0 : 0;
     this.cursor = null;
   }
@@ -179,7 +221,7 @@ export class Inventory {
 
 // ============================================================================================ menus
 
-export type SlotGroup = 'hotbar' | 'main' | 'armor' | 'craft' | 'result' | 'container' | 'input' | 'fuel' | 'output';
+export type SlotGroup = 'hotbar' | 'main' | 'armor' | 'offhand' | 'craft' | 'result' | 'container' | 'input' | 'fuel' | 'output';
 export type MenuType = 'inventory' | 'crafting' | 'chest' | 'furnace' | 'enchant' | 'anvil' | 'creative';
 
 /** Une case d'un menu : vue sur un élément d'un tableau de piles. */
@@ -252,6 +294,7 @@ export abstract class Menu {
 
   protected addArmorSlots(): void {
     for (let i = 0; i < 4; i++) this.addSlot('armor', i, this.inv.armor, i, false, (s) => getItem(s.id).armorSlot === i, 1);
+    this.addSlot('offhand', 0, this.inv.offhand, 0);
   }
 
   protected addCraftSlots(w: number): void {
@@ -696,7 +739,7 @@ export class InventoryMenu extends Menu {
   protected quickMove(slot: MenuSlot): void {
     const s = slot.stack;
     if (!s) return;
-    if (slot.group === 'craft' || slot.group === 'armor') {
+    if (slot.group === 'craft' || slot.group === 'armor' || slot.group === 'offhand') {
       this.transfer(slot, this.group('main', 'hotbar'));
       return;
     }

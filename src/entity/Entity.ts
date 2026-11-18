@@ -105,6 +105,7 @@ export abstract class Entity extends Body implements EntityView {
   blockLight = 0;
   itemId = 0;
   itemCount = 0;
+  offhandId = 0;
   blockId = 0;
   blockMeta = 0;
   fuse = 0;

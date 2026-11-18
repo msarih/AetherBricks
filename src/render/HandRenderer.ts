@@ -206,6 +206,11 @@ export class HandRenderer {
   /** Carte dépliée (carte remplie tenue en main). */
   private readonly mapDisplay = new MapDisplay();
   private current: THREE.Object3D;
+  /** Seconde main (affichée en bas à gauche à la première personne). */
+  private readonly offHolder = new THREE.Group();
+  private offTargetId = 0;
+  private offShown: Shown | null = null;
+  private readonly offChain = new MatrixChain();
 
   /** 1 = sorti, 0 = rangé (hors de l'écran, en bas). */
   private equip = 1;
@@ -230,13 +235,35 @@ export class HandRenderer {
     this.holder.matrixAutoUpdate = false;
     this.holder.add(this.arm);
     this.holder.add(this.mapDisplay.group);
-    this.scene.add(this.holder);
+    this.offHolder.matrixAutoUpdate = false;
+    this.scene.add(this.holder, this.offHolder);
     this.camera.position.set(0, 0, 0);
   }
 
   /** Objet tenu (0 = main nue : bras du joueur). Déclenche « rangement puis sortie » si l'objet change. */
   setItem(itemId: number): void {
     this.targetId = itemId;
+  }
+
+  /** Objet tenu en seconde main (0 = rien, affiché en bas à gauche). */
+  setOffhand(itemId: number): void {
+    if (itemId === this.offTargetId) return;
+    this.offTargetId = itemId;
+    if (this.offShown) {
+      this.offShown.group.removeFromParent();
+      this.offShown.model.dispose();
+      this.offShown = null;
+    }
+    if (itemId !== 0) {
+      const model = ItemModel.forItem(this.atlas, itemId);
+      model.detachFromWorld(false);
+      const group = model.instance();
+      group.traverse((o) => {
+        o.frustumCulled = false;
+      });
+      this.offHolder.add(group);
+      this.offShown = { model, group };
+    }
   }
 
   /** Lance (ou relance) l'animation de coup. */
@@ -460,6 +487,19 @@ export class HandRenderer {
     display.visible = true;
     this.holder.matrix.copy(c.matrix);
     this.holder.matrixWorldNeedsUpdate = true;
+
+    if (this.offShown) {
+      this.offHolder.visible = true;
+      const oc = this.offChain.identity();
+      oc.translate(-0.56, -0.52, -0.72);
+      if (!this.offShown.model.isBlock) oc.scale(2).translate(0, 4 / 16, 2 / 16).rotateY(135).rotateZ(-25).scale(0.85);
+      else oc.rotateY(45).scale(0.4);
+      this.offShown.model.setLight(state.skyLight, state.blockLight);
+      this.offHolder.matrix.copy(oc.matrix);
+      this.offHolder.matrixWorldNeedsUpdate = true;
+    } else {
+      this.offHolder.visible = false;
+    }
   }
 
   /** Efface la profondeur puis dessine la main par-dessus l'image, sans effacer la couleur. */
@@ -474,8 +514,14 @@ export class HandRenderer {
 
   dispose(): void {
     this.disposeShown();
+    if (this.offShown) {
+      this.offShown.group.removeFromParent();
+      this.offShown.model.dispose();
+      this.offShown = null;
+    }
     this.mapDisplay.dispose();
     this.armMaterial.dispose();
     this.holder.clear();
+    this.offHolder.clear();
   }
 }

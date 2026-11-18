@@ -115,6 +115,10 @@ export class Player extends Living implements PlayerLike {
     return this.inventory.heldId;
   }
 
+  get offhandItemId(): number {
+    return this.inventory.offhandId;
+  }
+
   get creative(): boolean {
     return this.gameMode === 'creative';
   }
@@ -124,29 +128,47 @@ export class Player extends Living implements PlayerLike {
   }
 
   consumeHeld(count = 1): void {
+    this.consumeHand('main', count);
+  }
+
+  consumeHand(hand: 'main' | 'offhand', count = 1): void {
     if (this.creative) return;
-    this.inventory.consumeHeld(count);
+    if (hand === 'offhand') this.inventory.consumeOffhand(count);
+    else this.inventory.consumeHeld(count);
   }
 
   replaceHeld(id: number): void {
+    this.replaceHand('main', id);
+  }
+
+  replaceHand(hand: 'main' | 'offhand', id: number): void {
     const inv = this.inventory;
-    const held = inv.held;
+    const stack = hand === 'offhand' ? inv.offhandItem : inv.held;
     if (this.creative) {
       if (inv.count(id) === 0) inv.give(id, 1);
       return;
     }
-    if (!held || held.count <= 1) inv.slots[inv.selected] = makeStack(id, 1);
-    else {
-      held.count--;
+    if (!stack || stack.count <= 1) {
+      if (hand === 'offhand') inv.offhand[0] = makeStack(id, 1);
+      else inv.slots[inv.selected] = makeStack(id, 1);
+    } else {
+      stack.count--;
       inv.give(id, 1);
     }
   }
 
   damageHeld(game: GameApi, amount = 1): void {
+    this.damageHand('main', game, amount);
+  }
+
+  damageHand(hand: 'main' | 'offhand', game: GameApi, amount = 1): void {
     if (this.creative) return;
-    const id = this.inventory.heldId;
+    const id = hand === 'offhand' ? this.inventory.offhandId : this.inventory.heldId;
     if (id === 0) return;
-    if (this.inventory.damageHeld(amount, game.rng)) {
+    const broke = hand === 'offhand'
+      ? this.inventory.damageOffhand(amount, game.rng)
+      : this.inventory.damageHeld(amount, game.rng);
+    if (broke) {
       game.sound('tool_break', this.x, this.y + this.eyeHeight, this.z, 0.9);
       game.itemParticles(this.x, this.y + this.eyeHeight - 0.3, this.z, id, 8);
     }
@@ -289,6 +311,7 @@ export class Player extends Living implements PlayerLike {
     this.pEyeHeight = this.eyeHeight;
     this.eyeHeight += ((this.sneaking ? SNEAK_EYE : STAND_EYE) - this.eyeHeight) * 0.5;
     this.itemId = this.inventory.heldId;
+    this.offhandId = this.inventory.offhandId;
     super.tick(game);
     if (this.alive) this.foodTick(game);
   }

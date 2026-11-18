@@ -1232,6 +1232,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     const hand = this.hand;
     const hs = this.handState;
     hand.setItem(p.heldItemId);
+    hand.setOffhand(p.offhandItemId);
     hs.bobPhase = phase;
     hs.bobAmount = settings.viewBobbing ? bob : 0;
     hs.skyLight = p.skyLight;
@@ -1303,6 +1304,15 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     if (!p.alive) return false;
     if (code === kb.inventory) {
       if (!repeat && !p.sleeping) this.openMenu(p.creative ? new CreativeMenu(p.inventory) : new InventoryMenu(p.inventory));
+      return true;
+    }
+    if (code === kb.offhand) {
+      if (!repeat && !p.sleeping) {
+        if (p.useKind !== 'none') p.stopUsing();
+        p.inventory.swapOffhand();
+        p.itemId = p.inventory.heldId;
+        p.offhandId = p.inventory.offhandId;
+      }
       return true;
     }
     if (code === kb.drop) {

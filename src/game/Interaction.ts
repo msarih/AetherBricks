@@ -123,6 +123,8 @@ export class Interaction {
   /** Objet en cours d'utilisation (repas, arc) : un changement d'objet l'interrompt. */
   private useItem = 0;
   private useSlot = 0;
+  private useHand: 'main' | 'offhand' = 'main';
+  private activeHand: 'main' | 'offhand' = 'main';
   /** Le clic droit en cours vient d'être pressé (et non répété parce que le bouton est tenu). */
   private freshClick = false;
   private pearlDelay = 0;
@@ -408,8 +410,9 @@ export class Interaction {
     const g = this.game;
     const p = g.player;
     if (p.useKind === 'none') return;
-    const held = p.heldItemId;
-    if (held !== this.useItem || p.inventory.selected !== this.useSlot) {
+    const held = this.useHand === 'offhand' ? p.offhandItemId : p.heldItemId;
+    const slotMatch = this.useHand === 'offhand' || p.inventory.selected === this.useSlot;
+    if (held !== this.useItem || !slotMatch) {
       p.stopUsing();
       return;
     }
@@ -436,13 +439,13 @@ export class Interaction {
       p.feed(item.food, item.saturation);
       g.sound('burp', p.x, p.y + p.eyeHeight, p.z, 0.5, 0.9 + g.rng() * 0.2);
       if (held === I.GOLDEN_APPLE) p.heal(4);
-      if (held === I.MUSHROOM_STEW) p.replaceHeld(I.BOWL);
+      if (held === I.MUSHROOM_STEW) p.replaceHand(this.useHand, I.BOWL);
       else if (drink) {
         // le lait dissipe poison, lenteur, faiblesse et flétrissement
         p.fireTicks = 0;
         p.clearEffects();
-        p.replaceHeld(I.BUCKET);
-      } else p.consumeHeld();
+        p.replaceHand(this.useHand, I.BUCKET);
+      } else p.consumeHand(this.useHand);
       p.stopUsing();
       this.useDelay = USE_DELAY;
     }
@@ -460,20 +463,22 @@ export class Interaction {
     const arrow = new Arrow();
     arrow.owner = p;
     arrow.fromPlayer = true;
-    arrow.powerLevel = enchantLevel(p.inventory.held, 'power');
+    const bowStack = this.useHand === 'offhand' ? p.inventory.offhandItem : p.inventory.held;
+    arrow.powerLevel = enchantLevel(bowStack, 'power');
     arrow.critical = power >= 1;
     arrow.shoot(p.x + l.x * 0.3, p.y + p.eyeHeight - 0.1, p.z + l.z * 0.3, l.x, l.y, l.z, power * 3, 1, g.rng);
     g.spawn(arrow);
     g.sound('bow', p.x, p.y + p.eyeHeight, p.z, 0.8, 0.8 + power * 0.4 + g.rng() * 0.2);
     if (!p.creative) p.inventory.remove(I.ARROW, 1);
-    p.damageHeld(g);
+    p.damageHand(this.useHand, g);
   }
 
   private startUse(kind: 'eat' | 'bow'): void {
     const p = this.game.player;
     p.useKind = kind;
     p.useTicks = 0;
-    this.useItem = p.heldItemId;
+    this.useHand = this.activeHand;
+    this.useItem = this.activeHand === 'offhand' ? p.offhandItemId : p.heldItemId;
     this.useSlot = p.inventory.selected;
   }
 
@@ -512,12 +517,21 @@ export class Interaction {
         this.swing();
         return true;
       }
-      if (held !== 0 && this.useOnBlock(held)) {
+    }
+
+    // Main principale d'abord, puis seconde main si la principale n'a rien fait
+    for (const hand of ['main', 'offhand'] as const) {
+      const id = hand === 'main' ? held : p.offhandItemId;
+      if (id === 0) continue;
+      this.activeHand = hand;
+      if (this.hasBlock && this.useOnBlock(id)) {
         this.swing();
         return true;
       }
+      if (this.useInAir(id)) return true;
+      if (p.useKind !== 'none') return false;
     }
-    return held !== 0 && this.useInAir(held);
+    return false;
   }
 
   /** Noue à la barrière visée les laisses que tient le joueur. Retourne false s'il n'en tient aucune. */
@@ -673,7 +687,7 @@ export class Interaction {
       if (h.meta & FRAME_EYE) return false;
       w.setMeta(h.x, h.y, h.z, h.meta | FRAME_EYE);
       g.blockSound('place', B.GLASS, h.x + 0.5, h.y + 1, h.z + 0.5);
-      p.consumeHeld();
+      p.consumeHand(this.activeHand);
       if (tryOpenEndPortal(w, h.x, h.y, h.z)) g.sound('thunder', h.x + 0.5, h.y + 0.5, h.z + 0.5, 0.9, 0.6);
       return true;
     }
@@ -692,7 +706,7 @@ export class Interaction {
         }
       }
       g.sound('ignite', h.x + 0.5, h.y + 0.5, h.z + 0.5, 0.8, 0.9 + g.rng() * 0.2);
-      p.damageHeld(g);
+      p.damageHand(this.activeHand, g);
       return true;
     }
 
@@ -701,7 +715,7 @@ export class Interaction {
       if (h.id !== B.GRASS || h.face === FACE_DOWN || w.getBlock(h.x, h.y + 1, h.z) !== B.AIR) return false;
       w.setBlock(h.x, h.y, h.z, B.GRASS_PATH, 0);
       g.blockSound('place', B.GRASS, h.x + 0.5, h.y + 1, h.z + 0.5);
-      p.damageHeld(g);
+      p.damageHand(this.activeHand, g);
       return true;
     }
 
@@ -709,13 +723,13 @@ export class Interaction {
       if ((h.id !== B.GRASS && h.id !== B.DIRT) || h.face === FACE_DOWN || w.getBlock(h.x, h.y + 1, h.z) !== B.AIR) return false;
       w.setBlock(h.x, h.y, h.z, B.FARMLAND, 0);
       g.blockSound('place', B.GRAVEL, h.x + 0.5, h.y + 1, h.z + 0.5);
-      p.damageHeld(g);
+      p.damageHand(this.activeHand, g);
       return true;
     }
 
     if (held === I.BONE_MEAL) {
       if (!applyBonemeal(w, h.x, h.y, h.z)) return false;
-      p.consumeHeld();
+      p.consumeHand(this.activeHand);
       return true;
     }
 
@@ -741,7 +755,7 @@ export class Interaction {
       if (!raycast(w, ex, ey, ez, l.x, l.y, l.z, this.reach(), f, false, true)) return false;
       if ((f.id !== B.WATER && f.id !== B.LAVA) || f.meta !== 0) return false;
       w.setBlock(f.x, f.y, f.z, B.AIR, 0);
-      p.replaceHeld(f.id === B.WATER ? I.WATER_BUCKET : I.LAVA_BUCKET);
+      p.replaceHand(this.activeHand, f.id === B.WATER ? I.WATER_BUCKET : I.LAVA_BUCKET);
       g.sound('bucket_fill', f.x + 0.5, f.y + 0.5, f.z + 0.5, 0.8);
       this.swing();
       return true;
@@ -761,12 +775,12 @@ export class Interaction {
       if (y < 0 || y >= CHUNK_HEIGHT || BLOCK_REPLACEABLE[w.getBlock(x, y, z)] !== 1) return false;
       if (held === I.WATER_BUCKET && (g as { dimension?: string }).dimension === 'nether') {
         w.host.effect('fizz', x, y, z);
-        p.replaceHeld(I.BUCKET);
+        p.replaceHand(this.activeHand, I.BUCKET);
         this.swing();
         return true;
       }
       w.setBlock(x, y, z, held === I.WATER_BUCKET ? B.WATER : B.LAVA, 0);
-      p.replaceHeld(I.BUCKET);
+      p.replaceHand(this.activeHand, I.BUCKET);
       g.sound('bucket_empty', x + 0.5, y + 0.5, z + 0.5, 0.8);
       this.swing();
       return true;
@@ -779,7 +793,7 @@ export class Interaction {
       if (w.getBlock(f.x, f.y + 1, f.z) !== B.AIR) return false;
       w.setBlock(f.x, f.y + 1, f.z, B.LILY_PAD, 0);
       g.blockSound('place', B.LILY_PAD, f.x + 0.5, f.y + 1, f.z + 0.5);
-      p.consumeHeld();
+      p.consumeHand(this.activeHand);
       this.swing();
       return true;
     }
@@ -798,7 +812,7 @@ export class Interaction {
         const wear = b.reel(g);
         this.bobber = null;
         g.sound('bow', ex, ey, ez, 0.4, 1.3 + g.rng() * 0.2);
-        if (wear > 0) p.damageHeld(g, wear);
+        if (wear > 0) p.damageHand(this.activeHand, g, wear);
       } else {
         const nb = new FishingBobber(p);
         nb.cast(ex + l.x * 0.3, ey - 0.1, ez + l.z * 0.3, l.x, l.y, l.z, 1.1);
@@ -824,7 +838,7 @@ export class Interaction {
       t.shoot(ex + l.x * 0.3, ey - 0.1, ez + l.z * 0.3, l.x, l.y, l.z, 1.5);
       g.spawn(t);
       g.sound('bow', ex, ey, ez, 0.4, 0.5 + g.rng() * 0.2);
-      p.consumeHeld();
+      p.consumeHand(this.activeHand);
       this.pearlDelay = PEARL_COOLDOWN;
       this.swing();
       return true;
@@ -842,7 +856,7 @@ export class Interaction {
       eye.aim(p.x, p.y + p.height * 0.5, p.z, goal.x, goal.y, goal.z, g.rng);
       g.spawn(eye);
       g.sound('bow', ex, ey, ez, 0.4, 0.7 + g.rng() * 0.2);
-      p.consumeHeld();
+      p.consumeHand(this.activeHand);
       this.swing();
       return true;
     }
@@ -853,7 +867,7 @@ export class Interaction {
       t.shoot(ex + l.x * 0.3, ey - 0.1, ez + l.z * 0.3, l.x, l.y, l.z, 1.5);
       g.spawn(t);
       g.sound('bow', ex, ey, ez, 0.4, 0.5 + g.rng() * 0.2);
-      p.consumeHeld();
+      p.consumeHand(this.activeHand);
       this.swing();
       return true;
     }
@@ -890,7 +904,7 @@ export class Interaction {
     // un générateur posé à la main produit des cochons, comme dans Minecraft
     if (id === B.SPAWNER) g.world.setBlockEntity({ type: 'spawner', x, y, z, mob: 'pig', delay: 20 } as BlockEntity);
     g.blockSound('place', id, x + 0.5, y + 0.5, z + 0.5);
-    g.player.consumeHeld();
+    g.player.consumeHand(this.activeHand);
     // une citrouille posée sur quatre blocs de fer en T : un golem de fer
     if (id === B.PUMPKIN || id === B.JACK_O_LANTERN) tryBuildGolem(g, x, y, z);
     return true;

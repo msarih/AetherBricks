@@ -214,6 +214,7 @@ export class SlotScreen implements Screen {
     this.size(176, 166);
     for (let i = 0; i < 4; i++) this.armorSlot(i, 8, 8 + i * 18);
     this.playerBox(26, 8, 49, 70);
+    this.slot('offhand', 0, 77, 62);
     this.label('Fabrication', 97, 8);
     this.grid('craft', 4, 2, 98, 18);
     place(el('div', 'mc-arrow mc-arrow-small', this.win), 135, 29);

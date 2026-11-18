@@ -161,6 +161,18 @@
   background: var(--spr-hotbar-sel) 0 0 / 100% 100% no-repeat;
 }
 
+.mc-offhand-hud {
+  position: absolute;
+  left: calc(var(--u) * -29);
+  bottom: 0;
+  width: calc(var(--u) * 22);
+  height: calc(var(--u) * 22);
+  background: rgba(16, 16, 16, 0.72);
+  border: calc(var(--u) * 1) solid #8b8b8b;
+  box-sizing: border-box;
+  display: none;
+}
+
 .mc-stats {
   position: absolute;
   left: 0;
