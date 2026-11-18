@@ -1161,7 +1161,7 @@ function meshCell(id: number, meta: number): void {
         const a = 2 / 16;
         const b = 14 / 16;
         noTint();
-        fullLight();
+        flatLight(1);
         quad(a, wy, b, b, wy, b, b, wy, a, a, wy, a);
         uvRect(a, a, b, b);
         emit(translucentPass, T.water, -1, NOMIP, true);
