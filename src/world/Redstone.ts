@@ -5,7 +5,7 @@
  *  - récepteurs : lampe à redstone, porte en fer, TNT, piston et piston collant (jusqu'à 12 blocs)
  *  - propagation bornée (MAX_REDSTONE_UPDATES) pour garantir un coût borné par tick.
  */
-import { B } from './Ids';
+import { B, musicDiscInfo } from './Ids';
 import {
   BLOCKS,
   BLOCK_OPAQUE,
@@ -674,6 +674,10 @@ function blockContainerSignal(w: World, x: number, y: number, z: number): number
   const meta = v >> 8;
   if (id === B.CAULDRON) return Math.min(3, meta & 3);
   if (id === B.END_PORTAL_FRAME) return meta & 4 ? 15 : 0;
+  if (id === B.JUKEBOX) {
+    const be = w.getBlockEntity(x, y, z) as { disc?: number } | undefined;
+    return be && typeof be.disc === 'number' ? (musicDiscInfo(be.disc)?.signal ?? 0) : 0;
+  }
   if (
     id !== B.CHEST &&
     id !== B.HOPPER &&

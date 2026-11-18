@@ -3,7 +3,7 @@
  * Les valeurs (durabilité, dégâts, faim, armure) suivent Minecraft Java 1.12.
  * Module pur (pas de DOM ni de Three.js) : partagé avec les workers.
  */
-import { B, BLOCK_ID_LIMIT, COLOR_LABELS_FR, COLOR_NAMES, I, ITEM_ID_LIMIT, POTION_KEYS, SPLASH_POTION_KEYS, WOOD_VARIANT_LABELS_DE, WOOD_VARIANT_NAMES } from './Ids';
+import { B, BLOCK_ID_LIMIT, COLOR_LABELS_FR, COLOR_NAMES, I, ITEM_ID_LIMIT, MUSIC_DISCS, POTION_KEYS, SPLASH_POTION_KEYS, WOOD_VARIANT_LABELS_DE, WOOD_VARIANT_NAMES } from './Ids';
 import { BLOCKS, type ToolKind } from './Blocks';
 import type { ItemStack } from './ItemStack';
 import { ARMOR_KINDS, ARMOR_MATERIALS, T, TOOL_KINDS, TOOL_MATERIALS, type TileName } from './Tiles';
@@ -310,6 +310,12 @@ WOOD_VARIANT_NAMES.slice(1).forEach((wood, i) => {
     placeMeta: variant,
   });
 });
+
+for (const disc of MUSIC_DISCS) {
+  reg(disc.id, `music_disc_${disc.key}`, `Disque de musique (${disc.title})`, T[`music_disc_${disc.key}` as TileName], 'decoration', false, {
+    stack: 1,
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Aides

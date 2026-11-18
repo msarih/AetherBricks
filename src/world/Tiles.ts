@@ -88,7 +88,11 @@ const FRAME_IDS = [
 ] as const;
 
 const EXTRA_WOODS = ['spruce', 'birch', 'jungle', 'acacia', 'dark_oak'] as const;
-const DECOR_ITEM_TILES = ['painting', 'item_frame'] as const;
+const DECOR_ITEM_TILES = [
+  'painting', 'item_frame',
+  'jukebox_top', 'jukebox_side',
+  'music_disc_13', 'music_disc_cat', 'music_disc_blocks', 'music_disc_chirp', 'music_disc_far', 'music_disc_wait',
+] as const;
 
 type BaseTile = (typeof BASE_TILES)[number];
 type WoolTile = `wool_${(typeof COLOR_NAMES)[number]}`;

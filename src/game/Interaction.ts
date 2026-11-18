@@ -50,12 +50,12 @@ import {
 import { CHUNK_HEIGHT, FACE_DOWN, FACE_DX, FACE_DY, FACE_DZ, FACE_EAST, FACE_NORTH, FACE_SOUTH, FACE_UP, FACE_WEST } from '../world/Constants';
 import { blockDrops, canHarvest, miningSpeed, type Drop } from '../world/Drops';
 import { enchantLevel } from '../world/Enchants';
-import { B, I } from '../world/Ids';
+import { B, I, isMusicDisc } from '../world/Ids';
 import type { BlockEntity } from '../world/World';
 import { getItem, isTool } from '../world/Items';
 import { cloneStackWithCount, makeStack } from '../world/ItemStack';
 import { newRayHit, rayBoxDistance, raycast } from '../world/Raycast';
-import { getBrewingStand, getChest, getDaylight, getDispenser, getFurnace, getHopper } from './BlockEntities';
+import { getBrewingStand, getChest, getDaylight, getDispenser, getFurnace, getHopper, getJukebox } from './BlockEntities';
 import { AnvilMenu, BrewingMenu, ChestMenu, CraftingMenu, DispenserMenu, EnchantMenu, FurnaceMenu, HOTBAR_SIZE, HopperMenu, type Menu, type XpHost } from './Inventory';
 import { applyPotionVariant } from '../world/Potions';
 
@@ -80,6 +80,8 @@ export interface InteractionHost extends GameApi {
   openSignEditor(x: number, y: number, z: number): void;
   /** Fort vers lequel vole un œil de l'Ender lancé, ou null si ce monde n'en a pas à cet endroit. */
   strongholdTarget(): { x: number; y: number; z: number } | null;
+  playJukebox?(x: number, y: number, z: number, discId: number): void;
+  stopJukebox?(x: number, y: number, z: number): void;
 }
 
 /** Ticks entre deux lancers de perle de l'Ender (Minecraft : une seconde). */
@@ -675,6 +677,35 @@ export class Interaction {
       w.setMetaSilent(x, y, z, nextNote | (meta & 32));
       triggerNoteBlock(w, x, y, z, nextNote);
       return true;
+    }
+    if (id === B.JUKEBOX) {
+      if (!this.freshClick) return false;
+      const jb = getJukebox(w, x, y, z);
+      if (jb.disc > 0) {
+        const discId = jb.disc;
+        jb.disc = 0;
+        w.markBlockEntityDirty(jb);
+        w.setMeta(x, y, z, 0);
+        updateRedstoneAround(w, x, y, z);
+        g.stopJukebox?.(x, y, z);
+        const drop = g.dropItem(x + 0.5, y + 1.05, z + 0.5, discId, 1);
+        drop.vy = 0.18;
+        g.sound('pop', x + 0.5, y + 0.9, z + 0.5, 0.6, 1.1);
+        return true;
+      }
+      const hand = isMusicDisc(p.heldItemId) ? 'main' : isMusicDisc(p.offhandItemId) ? 'offhand' : null;
+      if (hand) {
+        const discId = hand === 'main' ? p.heldItemId : p.offhandItemId;
+        jb.disc = discId;
+        w.markBlockEntityDirty(jb);
+        w.setMeta(x, y, z, 1);
+        updateRedstoneAround(w, x, y, z);
+        p.consumeHand(hand);
+        g.playJukebox?.(x, y, z, discId);
+        g.particles('note', x + 0.5, y + 1.2, z + 0.5, 2, 0.2);
+        return true;
+      }
+      return false;
     }
     if (id === B.CRAFTING_TABLE) {
       g.openMenu(new CraftingMenu(p.inventory));

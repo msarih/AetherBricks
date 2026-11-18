@@ -2118,6 +2118,24 @@ def('noteblock', (p) => {
   p.rect(7, 6, 2, 4, 0x8f5938);
 });
 
+def('jukebox_side', (p) => {
+  p.rough([0x59311d, 0x663922, 0x734128], 4, 4, 0.45);
+  p.frame(0, 0, 16, 16, 0x361c10);
+  p.frame(1, 1, 14, 14, 0x472616);
+  p.rect(5, 5, 6, 6, 0x29150b);
+  p.frame(5, 5, 6, 6, 0x855034);
+});
+
+def('jukebox_top', (p) => {
+  p.rough([0x59311d, 0x663922, 0x734128], 4, 4, 0.45);
+  p.frame(0, 0, 16, 16, 0x361c10);
+  p.frame(1, 1, 14, 14, 0x472616);
+  // fente d'insertion du disque au centre
+  p.rect(4, 7, 8, 2, 0x121216);
+  p.rect(5, 6, 6, 1, 0x361c10);
+  p.rect(5, 9, 6, 1, 0x7c4a2e);
+});
+
 def('nether_portal', (p) => {
   for (let y = 0; y < TS; y++) {
     for (let x = 0; x < TS; x++) {

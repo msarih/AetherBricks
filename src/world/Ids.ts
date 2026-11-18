@@ -222,6 +222,8 @@ export const B = {
   /** Bûche et planches de chêne noir. */
   DARK_OAK_LOG: 207,
   DARK_OAK_PLANKS: 208,
+  /** Jukebox (méta 0 = vide, 1 = contient un disque). */
+  JUKEBOX: 209,
 } as const;
 
 /** Nombre maximal d'identifiants de blocs (les objets commencent à 256). */
@@ -441,9 +443,42 @@ export const I = {
   /** Tableau et cadre à accrocher au mur. */
   PAINTING: 454,
   ITEM_FRAME: 455,
+
+  /** Disques de musique pour le jukebox. */
+  MUSIC_DISC_13: 456,
+  MUSIC_DISC_CAT: 457,
+  MUSIC_DISC_BLOCKS: 458,
+  MUSIC_DISC_CHIRP: 459,
+  MUSIC_DISC_FAR: 460,
+  MUSIC_DISC_WAIT: 461,
 } as const;
 
 export const ITEM_ID_LIMIT = 470;
+
+export interface MusicDiscInfo {
+  readonly id: number;
+  readonly key: '13' | 'cat' | 'blocks' | 'chirp' | 'far' | 'wait';
+  readonly title: string;
+  readonly color: number;
+  readonly signal: number;
+}
+
+export const MUSIC_DISCS: readonly MusicDiscInfo[] = [
+  { id: I.MUSIC_DISC_13, key: '13', title: '13', color: 0xe6c83e, signal: 1 },
+  { id: I.MUSIC_DISC_CAT, key: 'cat', title: 'cat', color: 0x54b842, signal: 2 },
+  { id: I.MUSIC_DISC_BLOCKS, key: 'blocks', title: 'blocks', color: 0xd96836, signal: 3 },
+  { id: I.MUSIC_DISC_CHIRP, key: 'chirp', title: 'chirp', color: 0xc23232, signal: 4 },
+  { id: I.MUSIC_DISC_FAR, key: 'far', title: 'far', color: 0x73d485, signal: 5 },
+  { id: I.MUSIC_DISC_WAIT, key: 'wait', title: 'wait', color: 0x52a6dc, signal: 6 },
+];
+
+export function musicDiscInfo(id: number): MusicDiscInfo | undefined {
+  return MUSIC_DISCS.find((d) => d.id === id);
+}
+
+export function isMusicDisc(id: number): boolean {
+  return id >= I.MUSIC_DISC_13 && id <= I.MUSIC_DISC_WAIT;
+}
 
 export const WOOD_VARIANT_NAMES = ['oak', 'spruce', 'birch', 'jungle', 'acacia', 'dark_oak'] as const;
 export const WOOD_VARIANT_LABELS_DE = ['en chêne', 'en sapin', 'en bouleau', "d'acajou", "d'acacia", 'en chêne noir'] as const;

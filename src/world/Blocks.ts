@@ -313,6 +313,9 @@ reg(B.DARK_OAK_LOG, 'dark_oak_log', 'Bûche de chêne noir', {
 reg(B.DARK_OAK_PLANKS, 'dark_oak_planks', 'Planches de chêne noir', {
   tiles: 'dark_oak_planks', hardness: 2, blastResistance: 15, flammable: 20, ...wood,
 });
+reg(B.JUKEBOX, 'jukebox', 'Jukebox', {
+  tiles: { top: 'jukebox_top', bottom: 'jukebox_side', side: 'jukebox_side' }, hardness: 2, blastResistance: 30, ...wood, category: 'utilitaire',
+});
 
 // --- Construction ---
 reg(B.GLASS, 'glass', 'Verre', { tiles: 'glass', opaque: false, hardness: 0.3, sound: 'glass' });

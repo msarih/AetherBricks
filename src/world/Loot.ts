@@ -32,7 +32,13 @@ const JUNK: readonly Entry[] = [
 
 const TABLES: Record<LootTable, readonly Pool[]> = {
   dungeon: [
-    { rolls: [1, 3], entries: [[I.SADDLE, 20, 1, 1], [I.GOLDEN_APPLE, 15, 1, 1], [I.NAME_TAG, 20, 1, 1], [I.BOOK, 20, 1, 3], [I.DIAMOND, 4, 1, 1], [I.EMERALD, 8, 1, 2]] },
+    {
+      rolls: [1, 3],
+      entries: [
+        [I.SADDLE, 20, 1, 1], [I.GOLDEN_APPLE, 15, 1, 1], [I.MUSIC_DISC_13, 15, 1, 1], [I.MUSIC_DISC_CAT, 15, 1, 1],
+        [I.NAME_TAG, 20, 1, 1], [I.BOOK, 20, 1, 3], [I.DIAMOND, 4, 1, 1], [I.EMERALD, 8, 1, 2],
+      ],
+    },
     {
       rolls: [1, 4],
       entries: [

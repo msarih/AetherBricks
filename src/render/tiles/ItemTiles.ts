@@ -4,7 +4,7 @@
  * caractères renvoient à une palette (k = contour, d = ombre, b = base, h = clair, w = reflet).
  * Lumière venant du haut-gauche. Module pur (pas de DOM).
  */
-import { COLOR_HEX, COLOR_NAMES } from '../../world/Ids';
+import { COLOR_HEX, COLOR_NAMES, MUSIC_DISCS } from '../../world/Ids';
 import { ARMOR_KINDS, ARMOR_MATERIALS, TOOL_KINDS, TOOL_MATERIALS, type TileName } from '../../world/Tiles';
 import { luma, mix, shade, type Color, type Painter, type Px } from './PixelCanvas';
 
@@ -2277,3 +2277,34 @@ def(
     },
   ),
 );
+
+const DISC_ROWS = [
+  '................',
+  '................',
+  '.....kkkkkk.....',
+  '...kkddddddkk...',
+  '..kddhhhhhhddk..',
+  '.kddhddddddhddk.',
+  '.kddhdlllldhddk.',
+  'kddhdlcllcldhddk',
+  'kddhdlcllcldhddk',
+  '.kddhdlllldhddk.',
+  '.kddhddddddhddk.',
+  '..kddhhhhhhddk..',
+  '...kkddddddkk...',
+  '.....kkkkkk.....',
+  '................',
+  '................',
+];
+for (const disc of MUSIC_DISCS) {
+  def(
+    `music_disc_${disc.key}` as TileName,
+    spr(DISC_ROWS, {
+      k: 0x111216,
+      d: 0x25272e,
+      h: 0x434652,
+      l: disc.color,
+      c: shade(disc.color, 0.72),
+    }),
+  );
+}
