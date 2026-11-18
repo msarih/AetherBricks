@@ -543,6 +543,9 @@ export function selectionBoxes(id: number, meta: number, nb: NeighborFn, out: nu
     case SHAPE.DAYLIGHT_DETECTOR:
       out.push(0, 0, 0, 16, 6, 16);
       return;
+    case SHAPE.CARPET:
+      out.push(0, 0, 0, 16, 1, 16);
+      return;
     case SHAPE.CUBE:
       out.push(0, 0, 0, 16, 16, 16);
       return;

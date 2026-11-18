@@ -73,6 +73,8 @@ function runScript(scriptPath) {
     await runScript(path.join(__dirname, 't10.cjs'));
     console.log('\n=== Exécution de t11.cjs (Redstone avancée : répéteur, comparateur, entonnoir, distributeur, dropper, capteur, bloc musical) ===');
     await runScript(path.join(__dirname, 't11.cjs'));
+    console.log('\n=== Exécution de t12.cjs (Construction et décoration : verre teinté, terre cuite, tapis, bois, tableaux, cadres, jukebox) ===');
+    await runScript(path.join(__dirname, 't12.cjs'));
     console.log('\nTous les tests E2E sont passés avec succès.');
   } catch (err) {
     console.error('\nÉchec des tests E2E :', err.message);
