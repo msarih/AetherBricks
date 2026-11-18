@@ -5,12 +5,13 @@
  * recalculée entièrement (ciel + blocs), puis le chunk central est maillé avec
  * occlusion ambiante et lumière lissée. Module pur : tourne dans un worker.
  */
-import { B } from '../Ids';
+import { B, COLOR_NAMES, WOOD_VARIANT_NAMES } from '../Ids';
 import { T, type TileName } from '../Tiles';
 import { FACE_DOWN, FACE_EAST, FACE_NORTH, FACE_SOUTH, FACE_UP, FACE_WEST } from '../Constants';
 import {
   BLOCKS, BLOCK_AO, BLOCK_EMIT, BLOCK_LIGHT_OPACITY, BLOCK_NEIGHBOR_LIGHT, BLOCK_OPAQUE, BLOCK_SHAPE, BLOCK_SOLID,
-  BLOCK_TILES, BLOCK_TRANSLUCENT, FACING_DX, FACING_DZ, FACING_TO_FACE, ROT, SHAPE, TINT, faceTile, isLeaves,
+  BLOCK_TILES, BLOCK_TRANSLUCENT, FACING_DX, FACING_DZ, FACING_TO_FACE, ROT, SHAPE, TINT, clampWoodVariant, faceTile, isLeaves,
+  woodPlankTile,
 } from '../Blocks';
 import {
   CAULDRON_BOXES, DRAGON_EGG_BOXES, META_DOOR_HINGE_RIGHT, META_DOOR_UPPER, ccw, cw, doorNamedFacing, edgeBox, fenceBoxes, fenceConnections,
@@ -565,8 +566,8 @@ function boxFace(
   emit(p, tile, -1, flag, false);
 }
 
-/** Les 6 faces d'une boîte en seizièmes, avec les tuiles standard du bloc. */
-function boxAll(p: PassBuilder, id: number, bx: number[], o: number, flag: number, skipFace: number): void {
+/** Les 6 faces d'une boîte en seizièmes, avec les tuiles standard du bloc (ou une tuile fixe). */
+function boxAll(p: PassBuilder, id: number, bx: number[], o: number, flag: number, skipFace: number, overrideTile = -1): void {
   const x0 = bx[o] / 16;
   const y0 = bx[o + 1] / 16;
   const z0 = bx[o + 2] / 16;
@@ -575,7 +576,7 @@ function boxAll(p: PassBuilder, id: number, bx: number[], o: number, flag: numbe
   const z1 = bx[o + 5] / 16;
   for (let f = 0; f < 6; f++) {
     if (f === skipFace) continue;
-    boxFace(p, f, x0, y0, z0, x1, y1, z1, BLOCK_TILES[id * 6 + f], 0, false, flag);
+    boxFace(p, f, x0, y0, z0, x1, y1, z1, overrideTile >= 0 ? overrideTile : BLOCK_TILES[id * 6 + f], 0, false, flag);
   }
 }
 
@@ -661,6 +662,17 @@ function meshCube(id: number, meta: number): void {
   else if (d.tint === TINT.GRASS) setTint(0);
   else if (d.tint === TINT.FIXED) setColor(d.tintColor);
   else noTint();
+  if (id === B.STAINED_GLASS) {
+    const tile = T[`stained_glass_${COLOR_NAMES[meta & 15]}` as TileName];
+    for (let f = 0; f < 6; f++) {
+      const nIdx = cI + NOFF[f];
+      const nid = rid[nIdx];
+      if (BLOCK_OPAQUE[nid]) continue;
+      if (nid === id && (rmeta[nIdx] & 15) === (meta & 15)) continue;
+      cubeFace(p, f, tile, -1, flag);
+    }
+    return;
+  }
   for (let f = 0; f < 6; f++) {
     const nid = rid[cI + NOFF[f]];
     if (BLOCK_OPAQUE[nid]) continue;
@@ -918,7 +930,13 @@ function meshDoor(id: number, meta: number): void {
   const d = BLOCKS[id];
   const named = doorNamedFacing(meta);
   const upper = (meta & META_DOOR_UPPER) !== 0;
-  const tile = upper ? d.tiles[FACE_UP] : d.tiles[FACE_NORTH];
+  let tile: number;
+  if (id === B.OAK_DOOR) {
+    const wood = WOOD_VARIANT_NAMES[clampWoodVariant((meta >> 5) & 7)];
+    tile = T[`${wood}_door_${upper ? 'top' : 'bottom'}` as TileName];
+  } else {
+    tile = upper ? d.tiles[FACE_UP] : d.tiles[FACE_NORTH];
+  }
   // coin de la charnière : intersection du bord fermé et du bord ouvert
   const facing = meta & 3;
   const other = meta & META_DOOR_HINGE_RIGHT ? ccw(facing) : cw(facing);
@@ -1038,14 +1056,28 @@ function meshCell(id: number, meta: number): void {
       tmpBoxes.length = 0;
       fenceBoxes(fenceConnections(nb), tmpBoxes);
       noTint();
-      for (let o = 0; o < tmpBoxes.length; o += 6) boxAll(opaquePass, id, tmpBoxes, o, 0, -1);
+      const tile = id === B.OAK_FENCE ? woodPlankTile(meta & 7) : -1;
+      for (let o = 0; o < tmpBoxes.length; o += 6) boxAll(opaquePass, id, tmpBoxes, o, 0, -1, tile);
       return;
     }
     case SHAPE.FENCE_GATE: {
       tmpBoxes.length = 0;
       fenceGateBoxes(meta, tmpBoxes);
       noTint();
-      for (let o = 0; o < tmpBoxes.length; o += 6) boxAll(opaquePass, id, tmpBoxes, o, 0, -1);
+      const tile = id === B.FENCE_GATE ? woodPlankTile((meta >> 3) & 7) : -1;
+      for (let o = 0; o < tmpBoxes.length; o += 6) boxAll(opaquePass, id, tmpBoxes, o, 0, -1, tile);
+      return;
+    }
+    case SHAPE.CARPET: {
+      const tile = T[`wool_${COLOR_NAMES[meta & 15]}` as TileName];
+      noTint();
+      for (let f = 0; f < 6; f++) {
+        if (f >= 2) {
+          const n = cI + NOFF[f];
+          if (rid[n] === id && (rmeta[n] & 15) === (meta & 15)) continue;
+        }
+        boxFace(opaquePass, f, 0, 0, 0, 1, 1 / 16, 1, tile, 0, false, 0);
+      }
       return;
     }
     case SHAPE.DOOR:

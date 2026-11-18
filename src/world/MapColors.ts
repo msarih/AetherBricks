@@ -53,9 +53,10 @@ const C = {
 const SHADES = [180 / 255, 220 / 255, 1, 135 / 255];
 
 /** Couleur de base du bloc vu d'en haut (0 = transparent : on regarde dessous). */
-export function mapBaseColor(id: number): number {
+export function mapBaseColor(id: number, meta = 0): number {
   if (id === B.AIR || id === B.GLASS || id === B.GLASS_PANE) return 0;
   if (id >= B.WOOL_WHITE && id <= B.WOOL_BLACK) return WOOL_BASE + (id - B.WOOL_WHITE);
+  if (id === B.CARPET || id === B.STAINED_GLASS) return WOOL_BASE + (meta & 15);
   if (isTerracotta(id)) return TERRACOTTA_BASE + (id - B.TERRACOTTA);
   if (id === B.RED_SAND) return TERRACOTTA_BASE + 2;
   if (isLeaves(id)) return C.PLANT;

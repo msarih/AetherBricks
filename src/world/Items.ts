@@ -3,7 +3,7 @@
  * Les valeurs (durabilité, dégâts, faim, armure) suivent Minecraft Java 1.12.
  * Module pur (pas de DOM ni de Three.js) : partagé avec les workers.
  */
-import { B, BLOCK_ID_LIMIT, COLOR_NAMES, I, ITEM_ID_LIMIT, POTION_KEYS, SPLASH_POTION_KEYS } from './Ids';
+import { B, BLOCK_ID_LIMIT, COLOR_LABELS_FR, COLOR_NAMES, I, ITEM_ID_LIMIT, POTION_KEYS, SPLASH_POTION_KEYS, WOOD_VARIANT_LABELS_DE, WOOD_VARIANT_NAMES } from './Ids';
 import { BLOCKS, type ToolKind } from './Blocks';
 import type { ItemStack } from './ItemStack';
 import { ARMOR_KINDS, ARMOR_MATERIALS, T, TOOL_KINDS, TOOL_MATERIALS, type TileName } from './Tiles';
@@ -47,6 +47,8 @@ export interface ItemDef {
   armor: number;
   /** Bloc posé par un clic droit (id de bloc), -1 sinon. Pour un bloc : son propre id. */
   places: number;
+  /** Variante de méta transmise au bloc posé (couleur du verre/tapis, essence de bois…). */
+  placeMeta: number;
   category: ItemCategory;
 }
 
@@ -73,6 +75,7 @@ function reg(id: number, name: string, label: string, tile: number, category: It
     armorSlot: o.armorSlot ?? -1,
     armor: o.armor ?? 0,
     places: o.places ?? -1,
+    placeMeta: o.placeMeta ?? 0,
     category,
   };
 }
@@ -277,6 +280,36 @@ COLOR_NAMES.forEach((color, i) => {
 });
 
 // ---------------------------------------------------------------------------
+// Verre teinté, tapis et variantes de bois (portes, barrières, portillons)
+// ---------------------------------------------------------------------------
+COLOR_NAMES.forEach((color, i) => {
+  reg(I.WHITE_STAINED_GLASS + i, `${color}_stained_glass`, `Verre teinté ${COLOR_LABELS_FR[i]}`, -1, 'decoration', false, {
+    places: B.STAINED_GLASS,
+    placeMeta: i,
+  });
+  reg(I.WHITE_CARPET + i, `${color}_carpet`, `Tapis ${COLOR_LABELS_FR[i]}`, -1, 'decoration', false, {
+    places: B.CARPET,
+    placeMeta: i,
+  });
+});
+WOOD_VARIANT_NAMES.slice(1).forEach((wood, i) => {
+  const variant = i + 1;
+  const labelDe = WOOD_VARIANT_LABELS_DE[variant];
+  reg(I.SPRUCE_DOOR + i, `${wood}_door`, `Porte ${labelDe}`, T[`${wood}_door_item` as TileName], 'decoration', false, {
+    places: B.OAK_DOOR,
+    placeMeta: variant,
+  });
+  reg(I.SPRUCE_FENCE + i, `${wood}_fence`, `Barrière ${labelDe}`, -1, 'decoration', false, {
+    places: B.OAK_FENCE,
+    placeMeta: variant,
+  });
+  reg(I.SPRUCE_FENCE_GATE + i, `${wood}_fence_gate`, `Portillon ${labelDe}`, -1, 'decoration', false, {
+    places: B.FENCE_GATE,
+    placeMeta: variant,
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Aides
 // ---------------------------------------------------------------------------
 /** Définition de secours pour les identifiants inconnus (et la main vide, id 0). */
@@ -297,6 +330,7 @@ const UNKNOWN_ITEM: ItemDef = Object.freeze({
   armorSlot: -1,
   armor: 0,
   places: -1,
+  placeMeta: 0,
   category: 'aucune',
 });
 

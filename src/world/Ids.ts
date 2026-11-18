@@ -215,6 +215,13 @@ export const B = {
   DROPPER: 202,
   DAYLIGHT_DETECTOR: 203,
   NOTE_BLOCK: 204,
+  /** Verre teinté (méta : couleur 0..15). */
+  STAINED_GLASS: 205,
+  /** Tapis de laine (méta : couleur 0..15). */
+  CARPET: 206,
+  /** Bûche et planches de chêne noir. */
+  DARK_OAK_LOG: 207,
+  DARK_OAK_PLANKS: 208,
 } as const;
 
 /** Nombre maximal d'identifiants de blocs (les objets commencent à 256). */
@@ -373,9 +380,69 @@ export const I = {
   GHAST_TEAR: 404,
   BOAT: 405,
   MINECART: 406,
+
+  /** Verre teinté : 16 couleurs dans l'ordre COLOR_NAMES (pose B.STAINED_GLASS avec méta 0..15). */
+  WHITE_STAINED_GLASS: 407,
+  ORANGE_STAINED_GLASS: 408,
+  MAGENTA_STAINED_GLASS: 409,
+  LIGHT_BLUE_STAINED_GLASS: 410,
+  YELLOW_STAINED_GLASS: 411,
+  LIME_STAINED_GLASS: 412,
+  PINK_STAINED_GLASS: 413,
+  GRAY_STAINED_GLASS: 414,
+  LIGHT_GRAY_STAINED_GLASS: 415,
+  CYAN_STAINED_GLASS: 416,
+  PURPLE_STAINED_GLASS: 417,
+  BLUE_STAINED_GLASS: 418,
+  BROWN_STAINED_GLASS: 419,
+  GREEN_STAINED_GLASS: 420,
+  RED_STAINED_GLASS: 421,
+  BLACK_STAINED_GLASS: 422,
+
+  /** Tapis de laine : 16 couleurs dans l'ordre COLOR_NAMES (pose B.CARPET avec méta 0..15). */
+  WHITE_CARPET: 423,
+  ORANGE_CARPET: 424,
+  MAGENTA_CARPET: 425,
+  LIGHT_BLUE_CARPET: 426,
+  YELLOW_CARPET: 427,
+  LIME_CARPET: 428,
+  PINK_CARPET: 429,
+  GRAY_CARPET: 430,
+  LIGHT_GRAY_CARPET: 431,
+  CYAN_CARPET: 432,
+  PURPLE_CARPET: 433,
+  BLUE_CARPET: 434,
+  BROWN_CARPET: 435,
+  GREEN_CARPET: 436,
+  RED_CARPET: 437,
+  BLACK_CARPET: 438,
+
+  /** Portes en bois autres que le chêne (pose B.OAK_DOOR avec variante méta 1..5). */
+  SPRUCE_DOOR: 439,
+  BIRCH_DOOR: 440,
+  JUNGLE_DOOR: 441,
+  ACACIA_DOOR: 442,
+  DARK_OAK_DOOR: 443,
+
+  /** Barrières en bois autres que le chêne (pose B.OAK_FENCE avec méta 1..5). */
+  SPRUCE_FENCE: 444,
+  BIRCH_FENCE: 445,
+  JUNGLE_FENCE: 446,
+  ACACIA_FENCE: 447,
+  DARK_OAK_FENCE: 448,
+
+  /** Portillons en bois autres que le chêne (pose B.FENCE_GATE avec variante méta 1..5). */
+  SPRUCE_FENCE_GATE: 449,
+  BIRCH_FENCE_GATE: 450,
+  JUNGLE_FENCE_GATE: 451,
+  ACACIA_FENCE_GATE: 452,
+  DARK_OAK_FENCE_GATE: 453,
 } as const;
 
-export const ITEM_ID_LIMIT = 420;
+export const ITEM_ID_LIMIT = 470;
+
+export const WOOD_VARIANT_NAMES = ['oak', 'spruce', 'birch', 'jungle', 'acacia', 'dark_oak'] as const;
+export const WOOD_VARIANT_LABELS_DE = ['en chêne', 'en sapin', 'en bouleau', "d'acajou", "d'acacia", 'en chêne noir'] as const;
 
 export const POTION_KEYS: readonly string[] = [
   'water',

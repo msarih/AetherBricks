@@ -59,11 +59,13 @@ function range(first: number, n: number): number[] {
 // Groupes d'ingrédients interchangeables
 // ---------------------------------------------------------------------------
 const WOOD_COUNT = 5;
-const LOGS: readonly number[] = range(B.OAK_LOG, WOOD_COUNT);
-const PLANKS: readonly number[] = range(B.OAK_PLANKS, WOOD_COUNT);
+const LOGS: readonly number[] = [...range(B.OAK_LOG, WOOD_COUNT), B.DARK_OAK_LOG];
+const PLANKS: readonly number[] = [...range(B.OAK_PLANKS, WOOD_COUNT), B.DARK_OAK_PLANKS];
 const SAPLINGS: readonly number[] = range(B.OAK_SAPLING, WOOD_COUNT);
 const WOOD_SLABS: readonly number[] = range(B.OAK_SLAB, WOOD_COUNT);
 const WOOD_STAIRS: readonly number[] = range(B.OAK_STAIRS, WOOD_COUNT);
+const CARPETS: readonly number[] = range(I.WHITE_CARPET, COLOR_NAMES.length);
+const EXTRA_WOOD_ITEMS: readonly number[] = range(I.SPRUCE_DOOR, 15);
 const WOOLS: readonly number[] = range(B.WOOL_WHITE, COLOR_NAMES.length);
 const COALS: readonly number[] = [I.COAL, I.CHARCOAL];
 
@@ -71,6 +73,7 @@ const COALS: readonly number[] = [I.COAL, I.CHARCOAL];
 // Bases : bois, établi, fourneau, coffre, torches
 // ---------------------------------------------------------------------------
 for (let i = 0; i < WOOD_COUNT; i++) shaped(['#'], { '#': B.OAK_LOG + i }, B.OAK_PLANKS + i, 4);
+shaped(['#'], { '#': B.DARK_OAK_LOG }, B.DARK_OAK_PLANKS, 4);
 shaped(['#', '#'], { '#': PLANKS }, I.STICK, 4);
 shaped(['##', '##'], { '#': PLANKS }, B.CRAFTING_TABLE);
 shaped(['###', '# #', '###'], { '#': B.COBBLESTONE }, B.FURNACE);
@@ -138,11 +141,22 @@ shaped(['# #', ' # '], { '#': PLANKS }, I.BOWL, 4);
 // Mobilier, portes, clôtures, vitres
 // ---------------------------------------------------------------------------
 shaped(['WWW', 'PPP'], { W: WOOLS, P: PLANKS }, B.BED);
-shaped(['##', '##', '##'], { '#': PLANKS }, B.OAK_DOOR, 3);
+const WOOD_CRAFTING: ReadonlyArray<[planks: number, door: number, fence: number, gate: number]> = [
+  [B.OAK_PLANKS, B.OAK_DOOR, B.OAK_FENCE, B.FENCE_GATE],
+  [B.SPRUCE_PLANKS, I.SPRUCE_DOOR, I.SPRUCE_FENCE, I.SPRUCE_FENCE_GATE],
+  [B.BIRCH_PLANKS, I.BIRCH_DOOR, I.BIRCH_FENCE, I.BIRCH_FENCE_GATE],
+  [B.JUNGLE_PLANKS, I.JUNGLE_DOOR, I.JUNGLE_FENCE, I.JUNGLE_FENCE_GATE],
+  [B.ACACIA_PLANKS, I.ACACIA_DOOR, I.ACACIA_FENCE, I.ACACIA_FENCE_GATE],
+  [B.DARK_OAK_PLANKS, I.DARK_OAK_DOOR, I.DARK_OAK_FENCE, I.DARK_OAK_FENCE_GATE],
+];
+for (const [p, door, fence, gate] of WOOD_CRAFTING) {
+  shaped(['##', '##', '##'], { '#': p }, door, 3);
+  shaped(['#|#', '#|#'], { '#': p, '|': I.STICK }, fence, 3);
+  shaped(['|#|', '|#|'], { '#': p, '|': I.STICK }, gate);
+}
 shaped(['##', '##', '##'], { '#': I.IRON_INGOT }, B.IRON_DOOR, 3);
 shaped(['###', '###'], { '#': PLANKS }, B.TRAPDOOR, 2);
 shaped(['| |', '|||', '| |'], { '|': I.STICK }, B.LADDER, 3);
-shaped(['#|#', '#|#'], { '#': PLANKS, '|': I.STICK }, B.OAK_FENCE, 3);
 shaped(['# #', '#|#', '# #'], { '#': I.IRON_INGOT, '|': I.STICK }, B.RAIL, 16);
 shaped(['# #', '#|#', '#r#'], { '#': I.GOLD_INGOT, '|': I.STICK, r: I.REDSTONE }, B.POWERED_RAIL, 6);
 shaped(['# #', '#p#', '#r#'], { '#': I.IRON_INGOT, p: B.STONE_PRESSURE_PLATE, r: I.REDSTONE }, B.DETECTOR_RAIL, 6);
@@ -150,7 +164,6 @@ shaped(['# #', '###'], { '#': B.OAK_PLANKS }, I.BOAT, 1);
 shaped(['# #', '###'], { '#': I.IRON_INGOT }, I.MINECART, 1);
 shaped(['##', '##'], { '#': I.NETHER_BRICK }, B.NETHER_BRICKS);
 shaped(['###', '###'], { '#': B.NETHER_BRICKS }, B.NETHER_BRICK_FENCE, 6);
-shaped(['|#|', '|#|'], { '#': PLANKS, '|': I.STICK }, B.FENCE_GATE);
 shaped(['###', '###'], { '#': B.GLASS }, B.GLASS_PANE, 16);
 shaped(['###', '###'], { '#': I.IRON_INGOT }, B.IRON_BARS, 16);
 shaped(['###', 'BBB', '###'], { '#': PLANKS, B: I.BOOK }, B.BOOKSHELF);
@@ -281,6 +294,14 @@ shapeless([I.DYE_RED, I.DYE_BLUE, I.DYE_WHITE, I.DYE_WHITE], I.DYE_MAGENTA, 4);
 // Terre cuite colorée : huit terres cuites autour d'une teinture
 COLOR_NAMES.forEach((_, i) => {
   shaped(['###', '#D#', '###'], { '#': B.TERRACOTTA, D: I.DYE_WHITE + i }, B.TERRACOTTA_WHITE + i, 8);
+});
+// Verre teinté : huit blocs de verre autour d'une teinture
+COLOR_NAMES.forEach((_, i) => {
+  shaped(['###', '#D#', '###'], { '#': B.GLASS, D: I.DYE_WHITE + i }, I.WHITE_STAINED_GLASS + i, 8);
+});
+// Tapis de laine : deux laines de la même couleur en ligne donnent trois tapis
+COLOR_NAMES.forEach((_, i) => {
+  shaped(['##'], { '#': B.WOOL_WHITE + i }, I.WHITE_CARPET + i, 3);
 });
 // Laine teinte : une laine d'une autre couleur (la blanche en premier lieu) + une teinture
 COLOR_NAMES.forEach((_, i) => {
@@ -439,11 +460,12 @@ fuel(16000, B.COAL_BLOCK);
 fuel(1600, I.COAL, I.CHARCOAL);
 fuel(
   300,
-  LOGS, PLANKS, WOOD_SLABS, WOOD_STAIRS,
+  LOGS, PLANKS, WOOD_SLABS, WOOD_STAIRS, EXTRA_WOOD_ITEMS,
   B.OAK_FENCE, B.FENCE_GATE, B.TRAPDOOR, B.OAK_DOOR, B.CRAFTING_TABLE, B.CHEST, B.BOOKSHELF, B.LADDER, I.BOW, I.FISHING_ROD,
 );
 fuel(200, I.WOODEN_PICKAXE, I.WOODEN_AXE, I.WOODEN_SHOVEL, I.WOODEN_SWORD, I.WOODEN_HOE);
 fuel(100, I.STICK, SAPLINGS, WOOLS);
+fuel(67, CARPETS);
 
 /** Durée de combustion en ticks (0 = pas un combustible). */
 export function fuelTicks(id: number): number {

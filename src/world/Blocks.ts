@@ -2,7 +2,7 @@
  * Registre des blocs : apparence, physique, lumière, minage.
  * Module pur (pas de DOM ni de Three.js) : partagé avec les workers.
  */
-import { B, BLOCK_ID_LIMIT, COLOR_LABELS_FR, COLOR_NAMES } from './Ids';
+import { B, BLOCK_ID_LIMIT, COLOR_LABELS_FR, COLOR_NAMES, I, WOOD_VARIANT_NAMES } from './Ids';
 import { T, type TileName } from './Tiles';
 import { FACE_DOWN, FACE_EAST, FACE_NORTH, FACE_SOUTH, FACE_UP, FACE_WEST } from './Constants';
 
@@ -60,6 +60,8 @@ export const SHAPE = {
   HOPPER: 38,
   /** Capteur de lumière du jour : dalle 6/16. */
   DAYLIGHT_DETECTOR: 39,
+  /** Tapis de laine : nappe 1/16 sans collision. */
+  CARPET: 40,
 } as const;
 
 export const TINT = { NONE: 0, GRASS: 1, FOLIAGE: 2, FIXED: 3 } as const;
@@ -305,9 +307,22 @@ WOOD_NAMES.forEach((w, i) => {
     randomTicks: true, itemTile: `${w}_sapling`, category: 'nature',
   });
 });
+reg(B.DARK_OAK_LOG, 'dark_oak_log', 'Bûche de chêne noir', {
+  tiles: { side: 'dark_oak_log', end: 'dark_oak_log_top' }, rot: ROT.AXIS, hardness: 2, flammable: 5, ...wood, category: 'nature',
+});
+reg(B.DARK_OAK_PLANKS, 'dark_oak_planks', 'Planches de chêne noir', {
+  tiles: 'dark_oak_planks', hardness: 2, blastResistance: 15, flammable: 20, ...wood,
+});
 
 // --- Construction ---
 reg(B.GLASS, 'glass', 'Verre', { tiles: 'glass', opaque: false, hardness: 0.3, sound: 'glass' });
+reg(B.STAINED_GLASS, 'stained_glass', 'Verre teinté', {
+  tiles: 'stained_glass_white', opaque: false, translucent: true, hardness: 0.3, sound: 'glass', hasItem: false, category: 'decoration',
+});
+reg(B.CARPET, 'carpet', 'Tapis', {
+  tiles: 'wool_white', shape: SHAPE.CARPET, solid: false, opaque: false, hardness: 0.1, sound: 'cloth', flammable: 30,
+  needsSupport: true, hasItem: false, category: 'decoration',
+});
 reg(B.BRICKS, 'bricks', 'Briques', { tiles: 'bricks', hardness: 2, blastResistance: 30, ...rock });
 reg(B.STONE_BRICKS, 'stone_bricks', 'Pierre taillée', { tiles: 'stone_bricks', hardness: 1.5, blastResistance: 30, ...rock });
 reg(B.MOSSY_STONE_BRICKS, 'mossy_stone_bricks', 'Pierre taillée moussue', { tiles: 'mossy_stone_bricks', hardness: 1.5, blastResistance: 30, ...rock });
@@ -660,7 +675,7 @@ export function isLeaves(id: number): boolean {
   return id >= B.OAK_LEAVES && id <= B.ACACIA_LEAVES;
 }
 export function isLog(id: number): boolean {
-  return id >= B.OAK_LOG && id <= B.ACACIA_LOG;
+  return (id >= B.OAK_LOG && id <= B.ACACIA_LOG) || id === B.DARK_OAK_LOG;
 }
 export function isSlab(id: number): boolean {
   return id >= B.STONE_SLAB && id <= B.QUARTZ_SLAB;
@@ -682,6 +697,34 @@ export function isWool(id: number): boolean {
 }
 export function isDoor(id: number): boolean {
   return id === B.OAK_DOOR || id === B.IRON_DOOR;
+}
+
+/** Variante de bois valide (0 = chêne .. 5 = chêne noir). */
+export function clampWoodVariant(v: number): number {
+  return v >= 0 && v < WOOD_VARIANT_NAMES.length ? v | 0 : 0;
+}
+
+/** Tuile des planches de la variante de bois (0..5). */
+export function woodPlankTile(wood: number): number {
+  return T[`${WOOD_VARIANT_NAMES[clampWoodVariant(wood)]}_planks` as TileName];
+}
+
+/** Identifiant d'objet de la porte pour la variante de bois (0..5). */
+export function woodDoorItem(wood: number): number {
+  const v = clampWoodVariant(wood);
+  return v === 0 ? B.OAK_DOOR : I.SPRUCE_DOOR + v - 1;
+}
+
+/** Identifiant d'objet de la barrière pour la variante de bois (0..5). */
+export function woodFenceItem(wood: number): number {
+  const v = clampWoodVariant(wood);
+  return v === 0 ? B.OAK_FENCE : I.SPRUCE_FENCE + v - 1;
+}
+
+/** Identifiant d'objet du portillon pour la variante de bois (0..5). */
+export function woodFenceGateItem(wood: number): number {
+  const v = clampWoodVariant(wood);
+  return v === 0 ? B.FENCE_GATE : I.SPRUCE_FENCE_GATE + v - 1;
 }
 export function isCrop(id: number): boolean {
   return id === B.WHEAT || id === B.CARROTS || id === B.POTATOES;
@@ -737,6 +780,11 @@ export function particleTile(id: number, meta = 0): number {
   const d = BLOCKS[id];
   if (id === B.GRASS) return T.dirt;
   if (id === B.WHEAT) return T[`wheat_${Math.min(7, meta & 7)}` as TileName];
+  if (id === B.STAINED_GLASS) return T[`stained_glass_${COLOR_NAMES[meta & 15]}` as TileName];
+  if (id === B.CARPET) return T[`wool_${COLOR_NAMES[meta & 15]}` as TileName];
+  if (id === B.OAK_FENCE) return woodPlankTile(meta & 7);
+  if (id === B.FENCE_GATE) return woodPlankTile((meta >> 3) & 7);
+  if (id === B.OAK_DOOR) return T[`${WOOD_VARIANT_NAMES[clampWoodVariant((meta >> 5) & 7)]}_door_bottom` as TileName];
   return d.tiles[FACE_NORTH];
 }
 

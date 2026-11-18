@@ -116,7 +116,8 @@ export class MapStore {
     let y = w.heightAt(x, z) - 1;
     let base = 0;
     while (y > 0) {
-      base = mapBaseColor(w.getBlock(x, y, z));
+      const v = w.getBlockAndMeta(x, y, z);
+      base = mapBaseColor(v & 255, v >> 8);
       if (base !== 0) break;
       y--;
     }

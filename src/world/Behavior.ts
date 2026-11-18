@@ -167,6 +167,8 @@ export function canStay(w: World, x: number, y: number, z: number, id: number, m
       return BLOCK_OPAQUE[below] === 1 || isLeaves(below);
     case B.FIRE:
       return fireCanStay(w, x, y, z);
+    case B.CARPET:
+      return below !== B.AIR;
     default:
       if (isSapling(id) || isFlower(id)) return isSoil(below);
       return true;

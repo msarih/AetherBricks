@@ -294,7 +294,7 @@ export class ItemModel {
   /** Modèle d'un objet d'inventaire : mini-bloc si `getItem(id).tile < 0`, sprite extrudé sinon. */
   static forItem(atlas: Atlas, itemId: number): ItemModel {
     const def = getItem(itemId);
-    if (def.tile < 0) return ItemModel.forBlock(atlas, def.places >= 0 ? def.places : itemId, 0);
+    if (def.tile < 0) return ItemModel.forBlock(atlas, def.places >= 0 ? def.places : itemId, def.placeMeta);
     return ItemModel.forTile(atlas, def.tile, itemTint(itemId));
   }
 

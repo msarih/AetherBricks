@@ -2119,6 +2119,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       map = new Map<string, number>();
       for (const it of ITEMS) if (it) map.set(it.name, it.id);
       map.set('note_block', B.NOTE_BLOCK);
+      map.set('fence_gate', B.FENCE_GATE);
       this.itemNames = map;
     }
     return map;

@@ -176,7 +176,7 @@ export function paneConnections(nb: NeighborFn): number {
   let mask = 0;
   for (let f = 0; f < 4; f++) {
     const id = nb(FACING_DX[f], 0, FACING_DZ[f]) & 255;
-    if (BLOCK_SHAPE[id] === SHAPE.PANE || BLOCK_OPAQUE[id] || id === B.GLASS) mask |= 1 << f;
+    if (BLOCK_SHAPE[id] === SHAPE.PANE || BLOCK_OPAQUE[id] || id === B.GLASS || id === B.STAINED_GLASS) mask |= 1 << f;
   }
   return mask;
 }
@@ -267,6 +267,7 @@ export function collisionBoxes(id: number, meta: number, nb: NeighborFn, out: nu
     case SHAPE.VINE:
     case SHAPE.FIRE:
     case SHAPE.SIGN:
+    case SHAPE.CARPET:
       return;
     case SHAPE.BREWING_STAND:
       out.push(1, 0, 1, 15, 2, 15, 7, 0, 7, 9, 14, 9);
