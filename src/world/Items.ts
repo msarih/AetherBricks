@@ -107,6 +107,8 @@ const SIMPLE_ITEMS: Array<[id: number, name: TileName, label: string, category: 
   [I.BLAZE_POWDER, 'blaze_powder', 'Poudre de blaze', 'materiaux'],
   [I.ENDER_EYE, 'ender_eye', "Œil de l'Ender", 'materiaux'],
   [I.SHIELD, 'shield', 'Bouclier', 'combat', { stack: 1, durability: 336 }],
+  [I.GLASS_BOTTLE, 'glass_bottle', 'Fiole', 'materiaux'],
+  [I.POTION, 'potion', 'Potion', 'nourriture', { stack: 1 }],
   [I.DIAMOND, 'diamond', 'Diamant', 'materiaux'],
   [I.EMERALD, 'emerald', 'Émeraude', 'materiaux'],
   [I.LAPIS, 'lapis', 'Lapis-lazuli', 'materiaux'],

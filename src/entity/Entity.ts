@@ -440,6 +440,19 @@ export abstract class Living extends Entity {
       }
     }
     if (this.fireTicks > 0) {
+      const cx = Math.floor(this.x);
+      const cy = Math.floor(this.y);
+      const cz = Math.floor(this.z);
+      if (w.getBlock(cx, cy, cz) === B.CAULDRON) {
+        const cm = w.getMeta(cx, cy, cz) & 3;
+        if (cm > 0) {
+          this.fireTicks = 0;
+          w.setMeta(cx, cy, cz, cm - 1);
+          game.sound('fizz', this.x, this.y, this.z, 0.7);
+        }
+      }
+    }
+    if (this.fireTicks > 0) {
       if (this.fireImmune || (w.raining && w.canSeeSky(Math.floor(this.x), Math.floor(this.y + this.height), Math.floor(this.z)))) {
         this.fireTicks = 0;
       } else {

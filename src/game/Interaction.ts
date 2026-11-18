@@ -679,7 +679,40 @@ export class Interaction {
     const h = this.hit;
     const item = getItem(held);
 
-    if (held === I.BUCKET || held === I.WATER_BUCKET || held === I.LAVA_BUCKET) return false; // voir useInAir
+    if (held === I.BUCKET || held === I.WATER_BUCKET || held === I.LAVA_BUCKET) {
+      if (h.id === B.CAULDRON) {
+        if (held === I.WATER_BUCKET && (h.meta & 3) < 3) {
+          w.setMeta(h.x, h.y, h.z, 3);
+          p.replaceHand(this.activeHand, I.BUCKET);
+          g.sound('bucket_empty', h.x + 0.5, h.y + 0.5, h.z + 0.5, 0.8);
+          return true;
+        }
+        if (held === I.BUCKET && (h.meta & 3) === 3) {
+          w.setMeta(h.x, h.y, h.z, 0);
+          p.replaceHand(this.activeHand, I.WATER_BUCKET);
+          g.sound('bucket_fill', h.x + 0.5, h.y + 0.5, h.z + 0.5, 0.8);
+          return true;
+        }
+      }
+      return false; // voir useInAir
+    }
+    if (held === I.GLASS_BOTTLE && h.id === B.CAULDRON && (h.meta & 3) > 0) {
+      w.setMeta(h.x, h.y, h.z, (h.meta & 3) - 1);
+      p.consumeHand(this.activeHand);
+      const waterBottle = makeStack(I.POTION, 1, 0, undefined, 'water');
+      if (p.inventory.add(waterBottle) > 0) g.dropItem(p.x, p.y + 0.5, p.z, I.POTION, 1);
+      g.sound('bucket_fill', h.x + 0.5, h.y + 0.5, h.z + 0.5, 0.7, 1.1);
+      return true;
+    }
+    if (held === I.POTION && h.id === B.CAULDRON && (h.meta & 3) < 3) {
+      const st = this.activeHand === 'offhand' ? p.inventory.offhandItem : p.inventory.held;
+      if (st?.potion === 'water') {
+        w.setMeta(h.x, h.y, h.z, (h.meta & 3) + 1);
+        p.replaceHand(this.activeHand, I.GLASS_BOTTLE);
+        g.sound('bucket_empty', h.x + 0.5, h.y + 0.5, h.z + 0.5, 0.7, 1.1);
+        return true;
+      }
+    }
     if (held === B.LILY_PAD) return false;
 
     if (held === I.ENDER_EYE && h.id === B.END_PORTAL_FRAME) {
@@ -782,6 +815,18 @@ export class Interaction {
       w.setBlock(x, y, z, held === I.WATER_BUCKET ? B.WATER : B.LAVA, 0);
       p.replaceHand(this.activeHand, I.BUCKET);
       g.sound('bucket_empty', x + 0.5, y + 0.5, z + 0.5, 0.8);
+      this.swing();
+      return true;
+    }
+
+    if (held === I.GLASS_BOTTLE) {
+      const f = this.fluidHit;
+      if (!raycast(w, ex, ey, ez, l.x, l.y, l.z, this.reach(), f, false, true)) return false;
+      if (f.id !== B.WATER) return false;
+      p.consumeHand(this.activeHand);
+      const waterBottle = makeStack(I.POTION, 1, 0, undefined, 'water');
+      if (p.inventory.add(waterBottle) > 0) g.dropItem(p.x, p.y + 0.5, p.z, I.POTION, 1);
+      g.sound('bucket_fill', f.x + 0.5, f.y + 0.5, f.z + 0.5, 0.7, 1.1);
       this.swing();
       return true;
     }

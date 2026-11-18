@@ -1968,3 +1968,51 @@ def(
     { k: 0x2a1c0e, i: 0x9aa2aa, w: 0xd8dee4, p: 0xb08048, b: 0x8d6334, d: 0x684722 },
   ),
 );
+def(
+  'glass_bottle',
+  spr(
+    [
+      '................',
+      '......kkkk......',
+      '.....kcccck.....',
+      '......kcck......',
+      '......kcck......',
+      '.....kcwwck.....',
+      '....kccwwcck....',
+      '...kccwwwwcck...',
+      '...kccwwwwcck...',
+      '...kccwwwwcck...',
+      '...kccwwwwcck...',
+      '...kccwwwwcck...',
+      '....kcccccck....',
+      '.....kkkkkk.....',
+      '................',
+      '................',
+    ],
+    { k: 0x4b6a7a, c: 0xbfe6f5, w: 0xeaf8ff },
+  ),
+);
+def(
+  'potion',
+  spr(
+    [
+      '................',
+      '......kkkk......',
+      '.....kbbbbk.....',
+      '......kcck......',
+      '......kcck......',
+      '.....kcwwck.....',
+      '....kccwwcck....',
+      '...kclllllcck...',
+      '...kllwwwlllck..',
+      '...kllllllllck..',
+      '...kllllllllck..',
+      '...klddddddlck..',
+      '....kddddddk....',
+      '.....kkkkkk.....',
+      '................',
+      '................',
+    ],
+    { k: 0x3b4d5e, b: 0x8b5a2b, c: 0xbfe6f5, w: 0xeaf8ff, l: 0x4f90f0, d: 0x2d62c4 },
+  ),
+);

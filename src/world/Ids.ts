@@ -203,6 +203,7 @@ export const B = {
   /** Portail de l'End : nappe noire étoilée, traversable, qui emporte le joueur. */
   END_PORTAL: 191,
   DRAGON_EGG: 192,
+  CAULDRON: 193,
 } as const;
 
 /** Nombre maximal d'identifiants de blocs (les objets commencent à 256). */
@@ -354,6 +355,8 @@ export const I = {
   /** Œil de l'Ender : lancé, il vole vers le fort ; posé sur un cadre, il ouvre le portail de l'End. */
   ENDER_EYE: 398,
   SHIELD: 399,
+  GLASS_BOTTLE: 400,
+  POTION: 401,
 } as const;
 
 export const ITEM_ID_LIMIT = 420;

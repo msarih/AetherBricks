@@ -46,6 +46,8 @@ export const SHAPE = {
   END_PORTAL: 31,
   /** Œuf de dragon : empilement de boîtes arrondi. */
   DRAGON_EGG: 32,
+  /** Chaudron : cuve creuse en fer pouvant contenir 0 à 3 niveaux d'eau. */
+  CAULDRON: 33,
 } as const;
 
 export const TINT = { NONE: 0, GRASS: 1, FOLIAGE: 2, FIXED: 3 } as const;
@@ -544,6 +546,10 @@ reg(B.END_PORTAL, 'end_portal', "Portail de l'End", {
 reg(B.DRAGON_EGG, 'dragon_egg', 'Œuf de dragon', {
   tiles: 'dragon_egg', shape: SHAPE.DRAGON_EGG, opaque: false, lightOpacity: 0, emit: 1, hardness: 3, blastResistance: 45,
   ...rock, category: 'decoration',
+});
+reg(B.CAULDRON, 'cauldron', 'Chaudron', {
+  tiles: { top: 'cauldron_top', bottom: 'cauldron_bottom', side: 'cauldron_side' },
+  shape: SHAPE.CAULDRON, opaque: false, lightOpacity: 0, hardness: 2, ...rock, harvestTier: 1, sound: 'metal', category: 'utilitaire',
 });
 reg(B.SOUL_SAND, 'soul_sand', 'Sable des âmes', { tiles: 'soul_sand', hardness: 0.5, tool: 'shovel', sound: 'sand', category: 'nature' });
 reg(B.NETHER_WART, 'nether_wart_crop', 'Verrues du Nether', { tiles: 'nether_wart_2', ...crop });

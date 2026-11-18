@@ -109,6 +109,7 @@ export class ItemEntity extends Entity {
     d.count = this.stack.count;
     d.damage = this.stack.damage;
     if (this.stack.enchants && Object.keys(this.stack.enchants).length > 0) d.enchants = { ...this.stack.enchants };
+    if (this.stack.potion) d.potion = this.stack.potion;
     return d;
   }
 
@@ -116,7 +117,8 @@ export class ItemEntity extends Entity {
     const id = num(d.id, 0);
     const count = num(d.count, 0);
     if (id <= 0 || count <= 0) return null;
-    const stack = makeStack(id, count, num(d.damage, 0), sanitizeEnchants(d.enchants));
+    const potion = typeof d.potion === 'string' && d.potion.length > 0 && d.potion.length <= 40 ? d.potion : undefined;
+    const stack = makeStack(id, count, num(d.damage, 0), sanitizeEnchants(d.enchants), potion);
     const e = new ItemEntity(stack);
     e.loadBase(d);
     return e;

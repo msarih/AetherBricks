@@ -1605,6 +1605,23 @@ def('anvil_side', (p) => {
     return shade(0x404248, 0.9 + p.rnd() * 0.15);
   });
 });
+def('cauldron_top', (p) => {
+  p.each((x, y) => {
+    const rim = x < 2 || x > 13 || y < 2 || y > 13;
+    return shade(rim ? 0x52555c : 0x26282c, 0.92 + p.rnd() * 0.14);
+  });
+});
+def('cauldron_side', (p) => {
+  p.each((x, y) => {
+    if (y <= 1) return shade(0x52555c, 0.92 + p.rnd() * 0.14);
+    if (y >= 13 && (x < 4 || x > 11)) return shade(0x303238, 0.92 + p.rnd() * 0.14);
+    if (y >= 14) return 0x00000000;
+    return shade(0x3a3d44, 0.9 + p.rnd() * 0.16);
+  });
+});
+def('cauldron_bottom', (p) => {
+  p.each(() => shade(0x2d2f34, 0.9 + p.rnd() * 0.15));
+});
 
 // ---------------------------------------------------------------------------
 // Fluides et feu (images animées)

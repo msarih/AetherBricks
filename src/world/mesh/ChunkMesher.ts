@@ -13,7 +13,7 @@ import {
   BLOCK_TILES, BLOCK_TRANSLUCENT, FACING_DX, FACING_DZ, FACING_TO_FACE, ROT, SHAPE, TINT, faceTile, isLeaves,
 } from '../Blocks';
 import {
-  DRAGON_EGG_BOXES, META_DOOR_HINGE_RIGHT, META_DOOR_UPPER, ccw, cw, doorNamedFacing, edgeBox, fenceBoxes, fenceConnections,
+  CAULDRON_BOXES, DRAGON_EGG_BOXES, META_DOOR_HINGE_RIGHT, META_DOOR_UPPER, ccw, cw, doorNamedFacing, edgeBox, fenceBoxes, fenceConnections,
   fenceGateBoxes, fluidHeight, opposite, paneConnections, selectionBoxes, stairsBoxes, type NeighborFn,
 } from '../BlockModels';
 import type { MeshRequest, MeshResult, PassData } from './MeshTypes';
@@ -1150,6 +1150,22 @@ function meshCell(id: number, meta: number): void {
     case SHAPE.DRAGON_EGG: {
       noTint();
       for (let o = 0; o < DRAGON_EGG_BOXES.length; o += 6) boxAll(opaquePass, id, DRAGON_EGG_BOXES as number[], o, NOMIP, -1);
+      return;
+    }
+    case SHAPE.CAULDRON: {
+      noTint();
+      for (let o = 0; o < CAULDRON_BOXES.length; o += 6) boxAll(opaquePass, id, CAULDRON_BOXES as number[], o, NOMIP, -1);
+      const level = meta & 3;
+      if (level > 0) {
+        const wy = (6 + level * 3) / 16;
+        const a = 2 / 16;
+        const b = 14 / 16;
+        noTint();
+        fullLight();
+        quad(a, wy, b, b, wy, b, b, wy, a, a, wy, a);
+        uvRect(a, a, b, b);
+        emit(translucentPass, T.water, -1, NOMIP, true);
+      }
       return;
     }
     case SHAPE.SNOW_LAYER:
