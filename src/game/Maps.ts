@@ -151,7 +151,7 @@ export class MapStore {
       }
       if (colors.length !== MAP_PIXELS) continue;
       const id = Math.max(0, Math.floor(d.id));
-      this.maps.set(id, { id, x0: d.x0, z0: d.z0, dim: d.dim === 'nether' ? 'nether' : 'overworld', colors, version: 1 });
+      this.maps.set(id, { id, x0: d.x0, z0: d.z0, dim: d.dim === 'nether' || d.dim === 'end' ? d.dim : 'overworld', colors, version: 1 });
       this.nextId = Math.max(this.nextId, id + 1);
     }
   }

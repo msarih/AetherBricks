@@ -246,7 +246,7 @@ async function useOnGround(page, x, z) {
       return { base, remapped, raw, count: A.ADVANCEMENTS.length };
     });
     check('progrès : les textes d\'aide citent la touche d\'inventaire configurée',
-      keyText.base.includes('appuyez sur E ') && keyText.remapped.includes('appuyez sur I ') && keyText.raw.length === 0 && keyText.count === 14,
+      keyText.base.includes('appuyez sur E ') && keyText.remapped.includes('appuyez sur I ') && keyText.raw.length === 0 && keyText.count === 18,
       JSON.stringify(keyText));
     check('progression guidée : progrès débloqués (bois, planches, pierre) et notification affichée',
       advInfo.advs.includes('wood') && advInfo.advs.includes('planks') && advInfo.advs.includes('cobblestone') && advInfo.toastShown,

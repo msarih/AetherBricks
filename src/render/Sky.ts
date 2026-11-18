@@ -10,6 +10,7 @@
  * et le disque franchit l'horizon un peu après 12000 / un peu avant 0 (comme dans le jeu).
  */
 import * as THREE from 'three';
+import type { Dimension } from '../world/Constants';
 import { worldUniforms } from './ChunkMaterials';
 
 export interface SkyEnvironment {
@@ -852,20 +853,24 @@ export class Sky {
     rain: number,
     thunder: number,
     viewDistance: number,
-    nether = false,
+    dimension: Dimension = 'overworld',
   ): void {
-    if (nether) {
+    if (dimension !== 'overworld') {
+      // Nether : brume rouge sombre. End : ciel noir violacé, lumière froide et égale, sans astre.
+      const end = dimension === 'end';
       this.dayFactor = 0.25;
-      const nr = 0x33 / 255;
-      const ng = 0x08 / 255;
-      const nb = 0x08 / 255;
+      const nr = end ? 0.045 : 0x33 / 255;
+      const ng = end ? 0.03 : 0x08 / 255;
+      const nb = end ? 0.07 : 0x08 / 255;
       this.skyColor.setRGB(nr, ng, nb);
       this.fogColor.setRGB(nr, ng, nb);
-      this.skyLight.setRGB(0.28, 0.2, 0.2);
+      if (end) this.skyLight.setRGB(0.6, 0.56, 0.68);
+      else this.skyLight.setRGB(0.28, 0.2, 0.2);
       const dome = this.dome.material.uniforms;
       (dome.uSky.value as THREE.Color).setRGB(nr, ng, nb);
       (dome.uFog.value as THREE.Color).setRGB(nr, ng, nb);
-      (dome.uVoid.value as THREE.Color).setRGB(0.1, 0.02, 0.02);
+      if (end) (dome.uVoid.value as THREE.Color).setRGB(0.02, 0.012, 0.035);
+      else (dome.uVoid.value as THREE.Color).setRGB(0.1, 0.02, 0.02);
       dome.uSunsetAlpha.value = 0;
       this.sun.visible = false;
       this.moon.visible = false;

@@ -17,7 +17,7 @@ import type { Menu } from '../game/Inventory';
 import { T } from '../world/Tiles';
 import { Hud } from './Hud';
 import type { Screen, TitlePage, UiContext } from './Screen';
-import { ChatScreen, DeathScreen, LoadingScreen, NameScreen, OptionsScreen, PauseScreen, SignScreen } from './Screens';
+import { ChatScreen, DeathScreen, LoadingScreen, NameScreen, OptionsScreen, PauseScreen, SignScreen, WinScreen } from './Screens';
 import { StatsScreen } from './StatsScreen';
 import { SlotScreen } from './SlotScreen';
 import { installSprites } from './Sprites';
@@ -146,6 +146,10 @@ export class GameUi implements UiApi {
 
   showDeath(message: string): void {
     this.setScreen(new DeathScreen(this.ctx, message));
+  }
+
+  showWin(): void {
+    this.setScreen(new WinScreen(this.ctx));
   }
 
   closeScreen(): void {

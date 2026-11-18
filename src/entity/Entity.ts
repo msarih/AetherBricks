@@ -50,7 +50,7 @@ export interface GameApi {
   readonly dayTime: number;
   /** 0 paisible (aucun monstre), 1 facile, 2 normal, 3 difficile. */
   readonly difficulty: number;
-  /** Dimension courante ('overworld' ou 'nether'). */
+  /** Dimension courante ('overworld', 'nether' ou 'end'). */
   readonly dimension?: Dimension;
 
   /** Ajoute une entité au monde (effective à la fin du tick courant). */
@@ -186,6 +186,14 @@ export abstract class Entity extends Body implements EntityView {
    * doit être sauvegardé même si aucun bloc n'y a changé, sinon elle serait régénérée à neuf.
    */
   get persistent(): boolean {
+    return false;
+  }
+
+  /**
+   * L'entité vit hors des chunks (dragon de l'Ender) : elle n'est ni abandonnée quand elle sort
+   * du monde chargé, ni sauvegardée ou retirée avec un chunk. Le jeu la gère lui-même.
+   */
+  get roaming(): boolean {
     return false;
   }
 

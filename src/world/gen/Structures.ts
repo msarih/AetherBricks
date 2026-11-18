@@ -41,7 +41,7 @@ export interface Structure {
   build(c: GenCanvas): void;
 }
 
-export type StructureKind = 'village' | 'desert_temple' | 'jungle_temple' | 'mineshaft' | 'fortress';
+export type StructureKind = 'village' | 'desert_temple' | 'jungle_temple' | 'mineshaft' | 'fortress' | 'stronghold';
 
 interface Placement {
   /** Côté d'une case, en chunks. */

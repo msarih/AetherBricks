@@ -643,7 +643,8 @@ async function reload(page) {
     await ev(page, () => { const p = window.__game.player; p.teleport(p.x + 14, 4, p.z); });
     await ticks(page, 200);
     const kept = await ev(page, (id, post) => { const m = M.get(id); return { d: Math.hypot(m.x - post.x - 0.5, m.z - post.z - 0.5), knot: !!m.leashKnot }; }, id, post);
-    check('attachée, la vache reste autour de la barrière', kept.knot && kept.d < 6.5, JSON.stringify(kept));
+    // la laisse rappelle l'animal au-delà de 6 blocs et casse à 10 : il peut dépasser 6 d'un pas avant d'être ramené
+    check('attachée, la vache reste autour de la barrière', kept.knot && kept.d < 8, JSON.stringify(kept));
     // détacher : la laisse tombe
     await ev(page, (id) => { const m = M.get(id); const p = window.__game.player; p.teleport(m.x, 4, m.z + 2); p.inventory.selected = 8; T.aim(m.x, m.y + m.height * 0.5, m.z); }, id);
     await ticks(page, 2);

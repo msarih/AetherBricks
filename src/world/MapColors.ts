@@ -104,7 +104,12 @@ export function mapBaseColor(id: number): number {
       return C.NETHERRACK;
     case B.OBSIDIAN:
     case B.COAL_BLOCK:
+    case B.END_PORTAL:
+    case B.DRAGON_EGG:
       return C.BLACK;
+    case B.END_STONE:
+    case B.END_PORTAL_FRAME:
+      return C.SAND;
     case B.PUMPKIN:
     case B.JACK_O_LANTERN:
       return C.ORANGE;

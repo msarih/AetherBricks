@@ -363,7 +363,8 @@ function fireTick(w: World, x: number, y: number, z: number, meta: number): void
     return;
   }
   const below = w.getBlock(x, y - 1, z);
-  const eternal = below === B.NETHERRACK;
+  // feu éternel : sur la netherrack, et sur le bedrock des piliers de l'End
+  const eternal = below === B.NETHERRACK || below === B.BEDROCK;
   if (!eternal && rainedOn(w, x, y, z)) {
     w.setBlock(x, y, z, B.AIR, 0);
     w.host.effect('fizz', x, y, z);

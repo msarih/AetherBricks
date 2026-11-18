@@ -95,7 +95,8 @@ export function tickSpawners(game: GameApi): void {
       const bz = Math.floor(z);
       if (y < 1 || y + 2 >= CHUNK_HEIGHT || !w.isLoaded(bx, bz)) continue;
       if (!w.isSolid(bx, y - 1, bz) || !open(w.getBlock(bx, y, bz))) continue;
-      if (hostile && w.getLight(bx, y, bz) > (kind === 'blaze' ? BLAZE_MAX_LIGHT : MAX_LIGHT)) continue;
+      // les poissons d'argent supportent la pénombre de la salle du portail (Minecraft : lumière de 11 au plus)
+      if (hostile && w.getLight(bx, y, bz) > (kind === 'blaze' || kind === 'silverfish' ? BLAZE_MAX_LIGHT : MAX_LIGHT)) continue;
       if (!isBoxFree(w, x - hw, y, z - hw, x + hw, y + model.height, z + hw)) continue;
       const mob = createMob(kind, rng);
       if (!mob) break;

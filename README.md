@@ -40,7 +40,16 @@ npm run build    # version de production dans dist/
   - **Mines abandonnées** : galeries étayées, rails, toiles d'araignée, coffres et cages à araignées.
   - **Badlands** : plateaux de terre cuite en strates colorées et sable rouge. La terre cuite se fabrique aussi (argile cuite au fourneau), en 16 couleurs (8 terres cuites autour d'une teinture).
   - **Forteresse du Nether** : ponts et couloirs de briques du Nether, cages à blazes, salle où poussent les verrues du Nether, coffres. On y croise le **blaze** (salves de boules de feu, lâche un bâton de blaze) et le **squelette wither** (ses coups flétrissent : la vie baisse encore 10 secondes).
-  - `/locate <village|temple|jungle|mine|forteresse>` donne la position du lieu le plus proche.
+  - `/locate <village|temple|jungle|mine|forteresse|fort>` donne la position du lieu le plus proche.
+- **L'End, la fin du jeu** :
+  - La **perle de l'Ender** se lance (clic droit) : elle téléporte là où elle tombe, au prix de 2 cœurs et demi. Une seconde d'attente entre deux lancers.
+  - L'**œil de l'Ender** (1 perle + 1 poudre de blaze ; un bâton de blaze donne 2 poudres) montre le chemin : lancé, il s'élève et file vers le fort le plus proche, puis retombe (une fois sur cinq, il se brise). Là où il plonge vers le sol, il faut creuser.
+  - Le **fort** est enfoui sous terre (mondes créés à partir de cette version) : un escalier en colimaçon, des couloirs de briques de pierre, une bibliothèque, une prison, une fontaine, une réserve, et la **salle du portail**. Douze cadres y entourent un bassin de lave, gardés par une cage à poissons d'argent. Un œil de l'Ender posé sur chaque cadre (clic droit) ouvre le portail ; il n'y a plus qu'à sauter dedans.
+  - L'**End** est une île de pierre pâle dans le vide, sous un ciel noir. On arrive sur une dalle d'obsidienne au bord de l'île. Dix piliers d'obsidienne portent chacun un **cristal** qui soigne le dragon quand il passe près de lui : un coup ou une flèche le fait exploser (deux sont protégés par une cage de barreaux).
+  - Le **dragon de l'Ender** (100 cœurs, barre de vie en haut de l'écran) tourne autour des piliers, crache des boules qui laissent un nuage brûlant, fonce sur le joueur, et vient par moments se poser sur la fontaine centrale : c'est là que l'épée l'atteint (posé, ses écailles renvoient les flèches).
+  - À sa mort, la fontaine devient le **portail de sortie**, un œuf de dragon apparaît à son sommet et le joueur reçoit une montagne d'expérience. Le portail ramène à la surface, au point de réapparition, avec un écran de fin la première fois. Le portail du fort reste ouvert : on peut retourner dans l'End.
+  - Mourir dans le Nether ou dans l'End fait réapparaître à la surface.
+  - En survie, les objectifs guidés mènent jusqu'au dragon (bâton de blaze, œil de l'Ender, entrée dans l'End, victoire).
 - **Modes** : survie et créatif (vol par double appui sur Espace, casse instantanée).
 - **Mondes** : plusieurs mondes sauvegardés dans le navigateur (IndexedDB) — créer, renommer, supprimer ; sauvegarde automatique et à la fermeture. Un monde s'exporte dans un fichier `.aetherworld` et s'importe depuis ce fichier (sauvegarde externe, passage d'un navigateur ou d'un appareil à l'autre).
 - **Commandes** (touche `/`) : `/help`, `/gamemode`, `/time`, `/weather`, `/give`, `/tp`, `/kill`, `/seed`, `/difficulty`, `/summon`, `/clear`, `/spawnpoint`, `/locate`.
@@ -78,10 +87,11 @@ Les touches sont repérées par leur position sur le clavier : sur un clavier QW
 
 ## ⚠️ Limites connues
 
-- Pas d'End ni de multijoueur.
+- Pas de multijoueur.
+- L'End : les forts n'existent que dans les mondes créés à partir de cette version (un monde plus ancien garde son terrain ; en créatif, 12 cadres garnis d'yeux y ouvrent quand même un portail). Écarts avec Minecraft : un fort par case de 768 blocs, au moins à 320 blocs de l'origine, au lieu des anneaux autour de l'origine ; fort sur un seul niveau, sans portes ni blocs infestés ; l'orientation des cadres posés à la main n'est pas vérifiée ; pas d'îles extérieures ni de cités de l'End ; le pourtour de l'île est aplani pour qu'on la rejoigne à pied depuis la dalle d'arrivée ; le dragon n'a qu'une zone de touche (pas de dégâts doublés à la tête) et sa ronde est un cercle ; on ne peut pas le faire revenir avec des cristaux ; l'œuf se ramasse à la pioche ; l'écran de fin tient en trois lignes ; ni le dragon ni le poisson d'argent n'ont de cri propre.
 - Lieux à découvrir : uniquement dans les mondes créés à partir de cette version. Écarts avec Minecraft : l'échange avec un villageois se fait en cliquant sur une offre (pas de cases à remplir) ; les zombies n'attaquent pas les villageois ; le temple de la jungle n'a pas de piège à flèches ; dans les mines, les coffres sont posés au sol et les cages donnent des araignées ordinaires ; les rails sont un décor (pas de wagonnet) ; la forteresse a un plan plus simple, sans escaliers.
-- Créatures, écarts avec Minecraft : l'étiquette se remplit au moment de l'utiliser (pas d'enclume) ; la selle se pose d'un clic droit (le cheval n'a pas d'inventaire) et le saut ne se dose pas ; pas d'âne, de mule ni d'armure de cheval ; pas de cabane de sorcière dans les marais (elle apparaît dans le noir, rarement) ; les slimes ne dépendent pas de la lune ; la sorcière ne lâche pas de fiole ; la perle de l'Ender ne se lance pas encore ; les nouvelles créatures n'ont pas de cri propre.
-- La boussole indique le point d'apparition du monde, pas le lit ; les cartes ne s'agrandissent pas et restent vierges dans le Nether.
+- Créatures, écarts avec Minecraft : l'étiquette se remplit au moment de l'utiliser (pas d'enclume) ; la selle se pose d'un clic droit (le cheval n'a pas d'inventaire) et le saut ne se dose pas ; pas d'âne, de mule ni d'armure de cheval ; pas de cabane de sorcière dans les marais (elle apparaît dans le noir, rarement) ; les slimes ne dépendent pas de la lune ; la sorcière ne lâche pas de fiole ; les nouvelles créatures n'ont pas de cri propre.
+- La boussole indique le point d'apparition du monde, pas le lit ; les cartes ne s'agrandissent pas et restent vierges dans le Nether et dans l'End.
 - Testé sur Chrome uniquement.
 
 ---

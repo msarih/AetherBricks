@@ -34,6 +34,8 @@ export interface UiGame {
   readonly onFire: boolean;
   /** Teinte des cœurs : empoisonné (verts), flétri (noirs), ou rien. */
   readonly heartTint: '' | 'poison' | 'wither';
+  /** Barre de vie d'un boss en haut de l'écran (dragon de l'Ender), ou null. `progress` : 0..1. */
+  readonly boss: { name: string; progress: number } | null;
   /** Voile noir plein écran (0..1) : endormissement dans un lit. */
   readonly fade: number;
   /** Prochain objectif guidé (en survie), ou chaîne vide si tout est terminé. */
@@ -162,6 +164,8 @@ export interface UiApi {
   openTrade(view: TradeView): void;
   /** Écran de mort. */
   showDeath(message: string): void;
+  /** Écran de fin, au retour de l'End après la victoire sur le dragon (le jeu continue ensuite). */
+  showWin(): void;
   /** Ferme l'écran ouvert, sans rien demander au jeu. */
   closeScreen(): void;
 

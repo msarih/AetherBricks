@@ -53,6 +53,9 @@ export class Hud {
   private readonly debugRight: HTMLDivElement;
   private readonly fps: HTMLDivElement;
   private readonly guide: HTMLDivElement;
+  private readonly boss: HTMLDivElement;
+  private readonly bossName: HTMLDivElement;
+  private readonly bossFill: HTMLDivElement;
   private readonly toast: HTMLDivElement;
   private readonly toastIcon: ItemView;
   private readonly toastTitle: HTMLDivElement;
@@ -126,6 +129,10 @@ export class Hud {
     this.fps = el('div', 'mc-fps', this.main);
     this.guide = el('div', 'mc-guide', this.main);
     this.guide.dataset.mc = 'guide';
+    this.boss = el('div', 'mc-boss', this.main);
+    this.boss.dataset.mc = 'boss';
+    this.bossName = el('div', 'mc-boss-name', this.boss);
+    this.bossFill = el('div', 'mc-boss-fill', el('div', 'mc-boss-bar', this.boss));
 
     this.toast = el('div', 'mc-toast', this.main);
     this.toast.dataset.mc = 'toast';
@@ -198,6 +205,7 @@ export class Hud {
     this.updateChat();
     this.updateDebug(g, dt);
     this.updateGuideAndToast(g, dt);
+    this.updateBoss(g);
 
     if (this.actionTimer > 0) {
       this.actionTimer -= dt;
@@ -370,6 +378,16 @@ export class Hud {
       line.textContent = lines[i];
       line.classList.toggle('mc-empty', lines[i] === '');
     }
+  }
+
+  /** Barre de vie du boss, en haut au centre. */
+  private updateBoss(g: UiGame): void {
+    const b = g.boss;
+    if (this.changed('bossShown', b !== null)) this.boss.style.display = b ? 'block' : 'none';
+    if (!b) return;
+    if (this.changed('bossName', b.name)) this.bossName.textContent = b.name;
+    const pct = Math.round(Math.max(0, Math.min(1, b.progress)) * 1000) / 10;
+    if (this.changed('bossPct', pct)) this.bossFill.style.width = `${pct}%`;
   }
 
   private updateGuideAndToast(g: UiGame, dt: number): void {

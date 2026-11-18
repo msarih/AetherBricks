@@ -5,6 +5,7 @@
  */
 import type { Player } from '../player/Player';
 import { B, I } from '../world/Ids';
+import { STAT, killedKey } from './Stats';
 
 export interface Advancement {
   id: string;
@@ -142,6 +143,38 @@ export const ADVANCEMENTS: readonly Advancement[] = [
     goal: 'Objectif : creusez tout en bas du monde (hauteur Y sous 16, visible avec F3) et minez du diamant avec une pioche en fer',
     icon: I.DIAMOND,
     check: (p) => hasAny(p, [I.DIAMOND]),
+  },
+  {
+    id: 'blaze_rod',
+    title: 'Dans le feu',
+    detail: 'Un bâton de blaze donne 2 poudres de blaze. Avec une perle de l’Ender, la poudre fait un œil de l’Ender.',
+    goal: 'Objectif : bâtissez un portail du Nether (cadre d’obsidienne de 4 × 5, allumé au briquet), trouvez une forteresse et tuez un blaze pour son bâton',
+    icon: I.BLAZE_ROD,
+    check: (p) => hasAny(p, [I.BLAZE_ROD, I.BLAZE_POWDER, I.ENDER_EYE]),
+  },
+  {
+    id: 'ender_eye',
+    title: 'L’œil de l’Ender',
+    detail: 'Lancé (clic droit), l’œil vole vers le fort le plus proche. Suivez-le, puis creusez là où il plonge.',
+    goal: 'Objectif : tuez des endermen pour leurs perles et fabriquez un œil de l’Ender (1 perle + 1 poudre de blaze). Il en faudra une douzaine',
+    icon: I.ENDER_EYE,
+    check: (p) => hasAny(p, [I.ENDER_EYE]) || (p.stats[STAT.END_VISITS] ?? 0) > 0,
+  },
+  {
+    id: 'the_end',
+    title: 'La fin ?',
+    detail: 'Vous voici dans l’End. Détruisez les cristaux au sommet des piliers : ils soignent le dragon.',
+    goal: 'Objectif : dans le fort, trouvez la salle du portail, posez un œil de l’Ender sur chacun des 12 cadres et sautez dans le portail',
+    icon: B.END_STONE,
+    check: (p) => (p.stats[STAT.END_VISITS] ?? 0) > 0,
+  },
+  {
+    id: 'dragon',
+    title: 'Libérer l’End',
+    detail: 'Le dragon de l’Ender est vaincu. Le portail au centre de l’île vous ramène chez vous.',
+    goal: 'Objectif : détruisez les cristaux (une flèche suffit), puis abattez le dragon ; il se pose par moments sur la fontaine centrale',
+    icon: B.DRAGON_EGG,
+    check: (p) => (p.stats[killedKey('ender_dragon')] ?? 0) > 0,
   },
 ];
 

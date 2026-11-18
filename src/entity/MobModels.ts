@@ -47,6 +47,9 @@ export type MobKind =
   | 'squid'
   | 'iron_golem'
   | 'ocelot'
+  | 'silverfish'
+  | 'ender_dragon'
+  | 'end_crystal'
   | 'player';
 
 export interface ModelBox {
@@ -1483,6 +1486,175 @@ export function getOcelotModel(variant: number): MobModel {
 }
 
 /** Modèle d'une créature, construit au premier appel puis mis en cache (ne pas modifier l'objet renvoyé). */
+// ---------------------------------------------------------------------------------------------
+// L'End : poisson d'argent, cristal, dragon
+// ---------------------------------------------------------------------------------------------
+
+/** Poisson d'argent : un petit corps annelé qui se tortille. */
+function buildSilverfish(): MobModel {
+  const head = box('head', [0, 2, 4], [-1.5, 0, 4], [3, 2, 2], [0, 0]);
+  const seg0 = box('seg0', [0, 2, 2], [-2, 0, 1], [4, 3, 3], [0, 4]);
+  const seg1 = box('seg1', [0, 2, -1], [-3, 0, -2], [6, 4, 3], [0, 10]);
+  const seg2 = box('seg2', [0, 2, -3], [-1.5, 0, -5], [3, 3, 3], [0, 17]);
+  const seg3 = box('seg3', [0, 1, -6], [-1, 0, -8], [2, 2, 3], [0, 23]);
+  const seg4 = box('seg4', [0, 1, -9], [-0.5, 0, -10], [1, 1, 2], [0, 28]);
+  const boxes = [head, seg0, seg1, seg2, seg3, seg4];
+  const s = new Skin(32, 32, 0x51f15);
+  const gray = 0x8a9096;
+  for (const b of boxes) {
+    s.box(b, gray, 0.12);
+    s.band(b, 0, 1, 0xa8aeb4);
+  }
+  s.box(head, 0x70767c, 0.1);
+  s.stamp(faceRect(head, 'front'), ['K.K'], { K: BLACK }, 0, 0, 0);
+  s.fill(faceRect(seg1, 'top'), 0x5c6268, 0.12);
+  return finish('silverfish', s, boxes, 0.4, 0.3, 0.13);
+}
+
+/** Cristal de l'End : un cœur lumineux dans deux cages qui tournent, sur un socle. */
+function buildEndCrystal(): MobModel {
+  const base = box('base', [0, 0, 0], [-6, 0, -6], [12, 3, 12], [0, 44]);
+  const outer = box('frame0', [0, 20, 0], [-7, 13, -7], [14, 14, 14], [0, 0]);
+  const inner = box('frame1', [0, 20, 0], [-5, 15, -5], [10, 10, 10], [56, 0]);
+  const core = box('core', [0, 20, 0], [-3, 17, -3], [6, 6, 6], [56, 20]);
+  const s = new Skin(128, 64, 0xc2157a1);
+  s.box(base, 0x3a3a40, 0.2);
+  // cages : seules les arêtes et quelques éclats sont pleins, le reste est transparent
+  for (const b of [outer, inner]) {
+    for (const f of FACES) {
+      const r = faceRect(b, f);
+      const light = b === outer ? 0xe8d8f8 : 0xf4b8e8;
+      s.fill(r, light, 0.05, 0, 0, r.w, 1);
+      s.fill(r, light, 0.05, 0, r.h - 1, r.w, 1);
+      s.fill(r, light, 0.05, 0, 0, 1, r.h);
+      s.fill(r, light, 0.05, r.w - 1, 0, 1, r.h);
+      for (let i = 2; i < r.w - 2; i += 3) s.px(r.x + i, r.y + ((i * 5) % (r.h - 4)) + 2, 0xffffff);
+    }
+  }
+  s.box(core, 0xe050c8, 0.18);
+  for (const f of FACES) s.stamp(faceRect(core, f), ['......', '.WWWW.', '.WPPW.', '.WPPW.', '.WWWW.', '......'], { W: 0xffd0f8, P: 0xffffff }, 0, 0, 0);
+  return finish('end_crystal', s, [base, outer, inner, core], 2, 2, 1);
+}
+
+/** Longueur d'un os d'aile du dragon, en pixels (l'animation place le bout d'aile au bout du premier os). */
+export const DRAGON_WING_SPAN = 56;
+export const DRAGON_NECK_SEGMENTS = 5;
+export const DRAGON_TAIL_SEGMENTS = 12;
+
+/**
+ * Dragon de l'Ender, aux proportions de Minecraft : un corps de 4 blocs, cinq anneaux de cou,
+ * douze de queue, et deux ailes en deux parties de 3,5 blocs chacune.
+ */
+function buildEnderDragon(): MobModel {
+  const boxes: ModelBox[] = [];
+  const body = box('body', [0, 20, 0], [-12, 8, -32], [24, 24, 64], [0, 0]);
+  boxes.push(body);
+  const spike = (z: number): ModelBox => box('body', [0, 20, 0], [-1, 32, z], [2, 4, 6], [72, 161]);
+  const spikes = [spike(-22), spike(-3), spike(16)];
+  boxes.push(...spikes);
+
+  const segUv: [number, number] = [176, 73];
+  const neck: ModelBox[] = [];
+  for (let i = 0; i < DRAGON_NECK_SEGMENTS; i++) {
+    const z = 32 + i * 10;
+    neck.push(box(`neck${i}`, [0, 22, z + 5], [-5, 17, z], [10, 10, 10], segUv));
+  }
+  const tail: ModelBox[] = [];
+  for (let i = 0; i < DRAGON_TAIL_SEGMENTS; i++) {
+    const z = -42 - i * 10;
+    tail.push(box(`tail${i}`, [0, 22, z + 5], [-5, 17, z], [10, 10, 10], segUv));
+  }
+  boxes.push(...neck, ...tail);
+
+  const hz = 32 + DRAGON_NECK_SEGMENTS * 10;
+  const hp: Vec3 = [0, 22, hz];
+  const head = box('head', hp, [-8, 14, hz], [16, 16, 16], [176, 0]);
+  const snout = box('head', hp, [-6, 18, hz + 16], [12, 5, 16], [176, 32]);
+  const jaw = box('jaw', [0, 18, hz + 16], [-6, 14, hz + 16], [12, 4, 16], [176, 53]);
+  boxes.push(head, snout, jaw);
+
+  const L = DRAGON_WING_SPAN;
+  const membraneUv: [number, number] = [0, 88];
+  const wingBones: ModelBox[] = [];
+  const tipBones: ModelBox[] = [];
+  const membranes: ModelBox[] = [];
+  for (const side of [1, -1]) {
+    const n = side > 0 ? 'L' : 'R';
+    const x0 = side > 0 ? 12 : -12 - L;
+    const x1 = side > 0 ? 12 + L : -12 - 2 * L;
+    const wp: Vec3 = [side * 12, 30, 0];
+    const tp: Vec3 = [side * (12 + L), 30, 0];
+    wingBones.push(box(`wing${n}`, wp, [x0, 26, -4], [L, 8, 8], [0, 145]));
+    membranes.push(box(`wing${n}`, wp, [x0, 29.5, -56], [L, 1, 56], membraneUv));
+    tipBones.push(box(`tip${n}`, tp, [x1, 28, -2], [L, 4, 4], [128, 145]));
+    membranes.push(box(`tip${n}`, tp, [x1, 29.5, -56], [L, 1, 56], membraneUv));
+  }
+  boxes.push(...wingBones, ...tipBones, ...membranes);
+
+  const rearLegs: ModelBox[] = [];
+  const frontLegs: ModelBox[] = [];
+  for (const side of [1, -1]) {
+    const n = side > 0 ? 'L' : 'R';
+    rearLegs.push(box(`rear${n}`, [side * 13, 14, -22], [side * 13 - 5, -4, -27], [10, 18, 10], [0, 161]));
+    frontLegs.push(box(`front${n}`, [side * 12, 12, 20], [side * 12 - 4, -2, 16], [8, 14, 8], [40, 161]));
+  }
+  boxes.push(...rearLegs, ...frontLegs);
+
+  const s = new Skin(256, 256, 0xd4a607);
+  // plus clair que le noir de Minecraft : il doit se détacher du ciel de l'End
+  const hide = 0x34303f;
+  const scale = 0x4d4660;
+  const bone = 0xb0aebc;
+  s.box(body, hide, 0.14);
+  for (const f of ['top', 'right', 'left'] as Face[]) {
+    const r = faceRect(body, f);
+    for (let y = 2; y < r.h; y += 6) {
+      for (let x = (y % 12 === 2 ? 1 : 4); x < r.w; x += 6) s.fill(r, scale, 0.1, x, y, 3, 2);
+    }
+  }
+  s.fill(faceRect(body, 'bottom'), 0x5a5266, 0.1);
+  s.box(spikes[0], bone, 0.08);
+  s.box(neck[0], hide, 0.14);
+  s.band(neck[0], 0, 2, scale);
+  s.fill(faceRect(neck[0], 'top'), bone, 0.08, 4, 2, 2, 6);
+  s.box(head, hide, 0.12);
+  s.fill(faceRect(head, 'top'), scale, 0.12);
+  for (const f of ['right', 'left'] as Face[]) {
+    const r = faceRect(head, f);
+    const front = f === 'right' ? r.w - 6 : 2;
+    s.fill(r, 0xd040f0, 0, front, 4, 4, 2);
+    s.fill(r, 0xf8c0ff, 0, front + (f === 'right' ? 2 : 0), 4, 2, 1);
+  }
+  const face = faceRect(head, 'front');
+  s.stamp(face, ['PP............PP', 'PW............WP'], { P: 0xd040f0, W: 0xf8c0ff }, 0, 4, 0);
+  s.box(snout, 0x3c3748, 0.12);
+  s.stamp(faceRect(snout, 'front'), ['.KK......KK.'], { K: BLACK }, 0, 1, 0);
+  s.band(snout, 4, 1, 0xd8d4c8);
+  s.box(jaw, 0x3c3748, 0.12);
+  s.band(jaw, 0, 1, 0xd8d4c8);
+  s.fill(faceRect(jaw, 'top'), 0x5a2030, 0.1);
+  s.box(wingBones[0], 0x5c5670, 0.1);
+  s.box(tipBones[0], 0x5c5670, 0.1);
+  // membrane : peau sombre tendue entre des rayons plus clairs
+  const m = membranes[0];
+  s.box(m, 0x4a4560, 0.1);
+  for (const f of ['top', 'bottom'] as Face[]) {
+    const r = faceRect(m, f);
+    for (let x = 0; x < r.w; x += 14) s.fill(r, 0x6c6684, 0.08, x, 0, 2, r.h);
+    s.fill(r, 0x6c6684, 0.08, 0, r.h - 2, r.w, 2);
+    // bord de fuite dentelé
+    for (let x = 0; x < r.w; x++) {
+      const cut = Math.round(Math.abs(((x % 14) - 7) / 7) * 5);
+      for (let y = 0; y < cut; y++) s.px(r.x + x, r.y + y, 0, 0, 0);
+    }
+  }
+  s.box(rearLegs[0], hide, 0.14);
+  s.band(rearLegs[0], 15, 3, bone);
+  s.box(frontLegs[0], hide, 0.14);
+  s.band(frontLegs[0], 11, 3, bone);
+  return finish('ender_dragon', s, boxes, 4, 2.5, 1.4);
+}
+
 export function getMobModel(kind: MobKind): MobModel {
   let model = modelCache.get(kind);
   if (!model) {
@@ -1552,6 +1724,15 @@ export function getMobModel(kind: MobKind): MobModel {
         break;
       case 'ocelot':
         model = getOcelotModel(0);
+        break;
+      case 'silverfish':
+        model = buildSilverfish();
+        break;
+      case 'ender_dragon':
+        model = buildEnderDragon();
+        break;
+      case 'end_crystal':
+        model = buildEndCrystal();
         break;
       default:
         model = buildPlayer();

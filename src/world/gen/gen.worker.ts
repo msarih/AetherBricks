@@ -6,6 +6,7 @@
  */
 import { WorldGen, type GenBlockEntity, type GenSpawn } from './WorldGen';
 import { NetherGen } from './NetherGen';
+import { EndGen } from './EndGen';
 import type { Dimension, WorldType } from '../Constants';
 
 export type GenRequest =
@@ -33,13 +34,13 @@ const ctx = self as unknown as {
   onmessage: ((e: MessageEvent) => void) | null;
 };
 
-let gen: WorldGen | NetherGen | null = null;
+let gen: WorldGen | NetherGen | EndGen | null = null;
 
 ctx.onmessage = (e: MessageEvent) => {
   const m = e.data as GenRequest;
   if (m.type === 'init') {
     const version = m.genVersion ?? 1;
-    gen = m.dimension === 'nether' ? new NetherGen(m.seed, version) : new WorldGen(m.seed, m.worldType, version);
+    gen = m.dimension === 'nether' ? new NetherGen(m.seed, version) : m.dimension === 'end' ? new EndGen(m.seed) : new WorldGen(m.seed, m.worldType, version);
     return;
   }
   if (!gen) return;

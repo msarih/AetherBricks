@@ -40,6 +40,12 @@ export const SHAPE = {
   SIGN: 28,
   /** Rail : plan posé au sol, tourné selon la méta. */
   RAIL: 29,
+  /** Cadre du portail de l'End : socle de 13/16, plus l'œil si la méta porte le bit 4. */
+  END_FRAME: 30,
+  /** Portail de l'End : nappe horizontale aux trois quarts de la cellule, sans collision. */
+  END_PORTAL: 31,
+  /** Œuf de dragon : empilement de boîtes arrondi. */
+  DRAGON_EGG: 32,
 } as const;
 
 export const TINT = { NONE: 0, GRASS: 1, FOLIAGE: 2, FIXED: 3 } as const;
@@ -525,6 +531,19 @@ reg(B.NETHER_QUARTZ_ORE, 'nether_quartz_ore', 'Minerai de quartz du Nether', {
 reg(B.NETHER_BRICKS, 'nether_bricks', 'Briques du Nether', { tiles: 'nether_bricks', hardness: 2, blastResistance: 30, ...rock });
 reg(B.NETHER_BRICK_FENCE, 'nether_brick_fence', 'Barrière en briques du Nether', {
   tiles: 'nether_bricks', shape: SHAPE.FENCE, opaque: false, hardness: 2, blastResistance: 30, ...rock, category: 'decoration',
+});
+reg(B.END_STONE, 'end_stone', "Pierre de l'End", { tiles: 'end_stone', hardness: 3, blastResistance: 45, ...rock, category: 'nature' });
+reg(B.END_PORTAL_FRAME, 'end_portal_frame', "Cadre de portail de l'End", {
+  tiles: { top: 'end_portal_frame_top', bottom: 'end_stone', side: 'end_portal_frame_side' }, shape: SHAPE.END_FRAME, opaque: false,
+  lightOpacity: 0, emit: 1, hardness: -1, blastResistance: 1e7, sound: 'glass', category: 'decoration',
+});
+reg(B.END_PORTAL, 'end_portal', "Portail de l'End", {
+  tiles: 'end_portal', shape: SHAPE.END_PORTAL, solid: false, opaque: false, emit: 15, hardness: -1, blastResistance: 1e7,
+  sound: 'glass', hasItem: false, category: 'aucune',
+});
+reg(B.DRAGON_EGG, 'dragon_egg', 'Œuf de dragon', {
+  tiles: 'dragon_egg', shape: SHAPE.DRAGON_EGG, opaque: false, lightOpacity: 0, emit: 1, hardness: 3, blastResistance: 45,
+  ...rock, category: 'decoration',
 });
 reg(B.SOUL_SAND, 'soul_sand', 'Sable des âmes', { tiles: 'soul_sand', hardness: 0.5, tool: 'shovel', sound: 'sand', category: 'nature' });
 reg(B.NETHER_WART, 'nether_wart_crop', 'Verrues du Nether', { tiles: 'nether_wart_2', ...crop });

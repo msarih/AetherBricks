@@ -1857,3 +1857,72 @@ def('nether_quartz_ore', (p) => {
     p.set(x + 1, y + 1, 0xe8e2d8);
   }
 });
+
+// ---------------------------------------------------------------------------
+// L'End : pierre de l'End, cadre et nappe du portail, œuf de dragon
+// ---------------------------------------------------------------------------
+const END_STONE = [0xc9cc93, 0xd4d79e, 0xdcdfa8, 0xe4e6b3, 0xecefc2];
+
+function endStone(p: Px): void {
+  p.rough(END_STONE, 4, 4, 0.5);
+  for (let i = 0; i < 9; i++) {
+    const x = p.int(TS);
+    const y = p.int(TS);
+    p.set(x, y, 0xb3b680);
+    if (p.rnd() < 0.6) p.setWrap(x + 1, y, 0xbcbf88);
+  }
+}
+
+def('end_stone', endStone);
+
+def('end_portal_frame_side', (p) => {
+  endStone(p);
+  // le cadre fait 13/16 de haut : les trois lignes du haut de la tuile ne se voient pas
+  p.rect(0, 3, 16, 4, 0x2f6f62);
+  for (let x = 0; x < TS; x++) {
+    p.set(x, 3, x % 4 === 0 ? 0x1f4f46 : 0x4f9c88);
+    p.set(x, 6, x % 4 === 2 ? 0x3d8a78 : 0x1f4f46);
+    if (x % 4 === 1) p.set(x, 5, 0x6fc2a8);
+  }
+});
+
+def('end_portal_frame_top', (p) => {
+  endStone(p);
+  p.frame(0, 0, 16, 16, 0x2f6f62);
+  p.frame(1, 1, 14, 14, 0x4f9c88);
+  for (let i = 0; i < TS; i += 4) {
+    p.set(i, 0, 0x1f4f46);
+    p.set(0, i, 0x1f4f46);
+    p.set(15 - i, 15, 0x1f4f46);
+    p.set(15, 15 - i, 0x1f4f46);
+  }
+  // logement de l'œil
+  p.rect(4, 4, 8, 8, 0x1f4f46);
+  p.rect(5, 5, 6, 6, 0x143a34);
+});
+
+def('end_portal_eye', (p) => {
+  p.rough([0x2f8a6a, 0x3a9c78, 0x46ae86], 4, 4, 0.4);
+  // dessus de l'œil : iris clair et pupille fendue, au centre de la tuile
+  p.rect(4, 4, 8, 8, 0x3fae84);
+  p.frame(4, 4, 8, 8, 0x1c5a46);
+  p.rect(6, 6, 4, 4, 0x8ff0c8);
+  p.rect(7, 5, 2, 6, 0x0c2a22);
+  p.set(6, 6, 0xd8ffee);
+  // côtés : liseré sombre en bas de la bande visible
+  for (let x = 0; x < TS; x++) p.set(x, 3, 0x1c5a46);
+});
+
+def('end_portal', (p) => {
+  p.fill(0x05030a);
+  const stars = [0x7fe8d0, 0xffffff, 0x9a7ff0, 0x4fb8a8, 0xd8c8ff];
+  for (let i = 0; i < 26; i++) {
+    const c = stars[p.int(stars.length)];
+    p.set(p.int(TS), p.int(TS), p.rnd() < 0.5 ? shade(c, 0.55) : c);
+  }
+});
+
+def('dragon_egg', (p) => {
+  p.rough([0x0a0810, 0x110d1a, 0x18122a, 0x1f1836], 4, 4, 0.5);
+  for (let i = 0; i < 12; i++) p.set(p.int(TS), p.int(TS), p.rnd() < 0.5 ? 0x5a2f8f : 0x3a1f66);
+});

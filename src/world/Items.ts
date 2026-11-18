@@ -104,6 +104,8 @@ const SIMPLE_ITEMS: Array<[id: number, name: TileName, label: string, category: 
   [I.BLAZE_ROD, 'blaze_rod', 'Bâton de blaze', 'materiaux'],
   [I.SLIME_BALL, 'slime_ball', 'Boule de slime', 'materiaux'],
   [I.ENDER_PEARL, 'ender_pearl', "Perle de l'Ender", 'materiaux', { stack: 16 }],
+  [I.BLAZE_POWDER, 'blaze_powder', 'Poudre de blaze', 'materiaux'],
+  [I.ENDER_EYE, 'ender_eye', "Œil de l'Ender", 'materiaux'],
   [I.DIAMOND, 'diamond', 'Diamant', 'materiaux'],
   [I.EMERALD, 'emerald', 'Émeraude', 'materiaux'],
   [I.LAPIS, 'lapis', 'Lapis-lazuli', 'materiaux'],

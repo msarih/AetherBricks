@@ -16,6 +16,7 @@ import type { Sfx, SfxName } from '../audio/Sfx';
 import { Living, type DamageCause, type Entity, type GameApi } from '../entity/Entity';
 import type { MobKind } from '../entity/MobModels';
 import { IronGolem } from '../entity/Creatures';
+import { EndCrystal } from '../entity/EndMobs';
 import { HOSTILE_KINDS, Mob, Monster, NAME_MAX, NPC_KINDS, PASSIVE_KINDS, Villager, createMob, hatchEgg } from '../entity/Mobs';
 import { isProfession, type Offer } from '../entity/Trades';
 import { FallingBlock, ItemEntity, Thrown, Tnt } from '../entity/Objects';
@@ -26,7 +27,7 @@ import { Spawner } from '../entity/Spawner';
 import { Input } from '../player/Input';
 import { Player } from '../player/Player';
 import type { Atlas } from '../render/Atlas';
-import { NETHER_AMBIENT, OVERWORLD_AMBIENT, worldUniforms } from '../render/ChunkMaterials';
+import { END_AMBIENT, NETHER_AMBIENT, OVERWORLD_AMBIENT, worldUniforms } from '../render/ChunkMaterials';
 import { ChunkRenderer } from '../render/ChunkRenderer';
 import { EntityRenderer } from '../render/EntityRenderer';
 import { HandRenderer, type HandState, type HeldMap } from '../render/HandRenderer';
@@ -43,20 +44,25 @@ import { B, I } from '../world/Ids';
 import { ITEMS, getItem, itemLabel } from '../world/Items';
 import { makeStack } from '../world/ItemStack';
 import { dialTile } from '../world/Tiles';
+import { buildEndPlatform } from '../world/EndPortal';
 import { findOrCreatePortal } from '../world/Portal';
 import { newRayHit, raycast } from '../world/Raycast';
-import { formatKeyCode, netherStorageId } from '../world/Storage';
+import { dimensionStorageId, formatKeyCode, readDimension } from '../world/Storage';
 import type { Settings, Storage, WorldInfo } from '../world/Storage';
 import { World, posKey, posKeyX, posKeyY, posKeyZ, type BlockEntity, type WorldEffect, type WorldHost } from '../world/World';
 import { BIOMES } from '../world/gen/Biomes';
+import { EndGen } from '../world/gen/EndGen';
+import { END_PLATFORM } from '../world/gen/EndLayout';
 import { NetherGen } from '../world/gen/NetherGen';
+import { Stronghold } from '../world/gen/Stronghold';
 import type { GenSpawn } from '../world/gen/GenCanvas';
 import { hash2, mulberry32 } from '../world/gen/Noise';
-import { locateStructure, structuresNear, type StructureKind, type TerrainInfo } from '../world/gen/Structures';
+import { locateStructure, structuresNear, type Structure, type StructureKind, type TerrainInfo } from '../world/gen/Structures';
 import { WorldGen } from '../world/gen/WorldGen';
 import { blockEntityItems, cleanSignLines, getSign, resolveLoot, tickBlockEntities } from './BlockEntities';
 import { ADVANCEMENTS, advancementText } from './Advancements';
 import { Dial, bearing, clockTarget, dialNoise } from './Dials';
+import { EndFight } from './EndFight';
 import { explode as runExplosion } from './Explosion';
 import { MapStore, type MapData } from './Maps';
 import { STAT, type Stats } from './Stats';
@@ -114,7 +120,17 @@ const LOCATE_NAMES: Record<string, { kind: StructureKind; label: string }> = {
   mineshaft: { kind: 'mineshaft', label: 'Mine abandonnée' },
   forteresse: { kind: 'fortress', label: 'Forteresse du Nether' },
   fortress: { kind: 'fortress', label: 'Forteresse du Nether' },
+  fort: { kind: 'stronghold', label: 'Fort' },
+  stronghold: { kind: 'stronghold', label: 'Fort' },
 };
+
+/** Dimension où se trouve chaque type de lieu, et version du générateur qui l'a introduit. */
+function structureHome(kind: StructureKind): Dimension {
+  return kind === 'fortress' ? 'nether' : 'overworld';
+}
+function structureSince(kind: StructureKind): number {
+  return kind === 'stronghold' ? 3 : 2;
+}
 const MOB_LABELS: Record<string, string> = {
   zombie: 'un zombie',
   skeleton: 'un squelette',
@@ -128,6 +144,8 @@ const MOB_LABELS: Record<string, string> = {
   slime: 'un slime',
   enderman: 'un enderman',
   witch: 'une sorcière',
+  silverfish: "un poisson d'argent",
+  ender_dragon: "le dragon de l'Ender",
   iron_golem: 'un golem de fer',
   wolf: 'un loup',
 };
@@ -201,8 +219,10 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
   readonly info: WorldInfo;
 
   private level = 2;
-  /** Dimension courante ('overworld' ou 'nether'). */
+  /** Dimension courante ('overworld', 'nether' ou 'end'). */
   dimension: Dimension = 'overworld';
+  /** Combat du dragon de l'Ender (état gardé d'une séance à l'autre). */
+  readonly endFight = new EndFight();
   private portalTicks = 0;
   private portalCooldown = 0;
   private dimensionSwitching = false;
@@ -311,7 +331,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     world.host = this.createWorldHost();
 
     const st0 = info.state as Record<string, unknown> | null;
-    this.dimension = st0?.dimension === 'nether' ? 'nether' : 'overworld';
+    this.dimension = readDimension(st0?.dimension);
 
     this.chunkRenderer = new ChunkRenderer(this.scene, o.atlas.texture);
     this.chunks = new ChunkManager(world, this.chunkRenderer, {
@@ -378,6 +398,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       this.weatherTimer = Math.max(0, Math.floor(num(st.weatherTimer, 0)));
       this.level = Math.max(0, Math.min(3, Math.floor(num(st.difficulty, 2))));
       this.maps.load(st.maps);
+      this.endFight.load(st.end);
       if (Array.isArray(st.pressedPlates)) {
         for (const pk of st.pressedPlates) {
           if (typeof pk === 'number' && Number.isFinite(pk)) this.pressedPlates.set(pk, this.world.age + 10);
@@ -467,6 +488,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       dimension: this.dimension,
       pressedPlates: Array.from(this.pressedPlates.keys()),
       maps: this.maps.save(),
+      end: this.endFight.save(),
     };
     info.gameMode = this.player.gameMode;
     info.lastPlayed = Date.now();
@@ -719,7 +741,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     const list = this.entities;
     for (let i = 0; i < list.length; i++) {
       const e = list[i];
-      if (e !== p && !w.isLoaded(Math.floor(e.x), Math.floor(e.z))) {
+      if (e !== p && !e.roaming && !w.isLoaded(Math.floor(e.x), Math.floor(e.z))) {
         // sortie du monde chargé : l'entité est abandonnée
         e.dead = true;
         continue;
@@ -788,6 +810,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     this.time++;
     p.addStat(STAT.PLAY_TIME);
     this.tickWeather();
+    this.tickEnd();
     this.tickPortal();
     this.tickSleep();
     this.tickAdvancements();
@@ -826,7 +849,8 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
 
   private tickWeather(): void {
     const w = this.world;
-    if (this.dimension === 'nether') {
+    if (this.dimension !== 'overworld') {
+      // ni pluie ni jour dans le Nether et dans l'End : la lumière du ciel y vaut celle d'une nuit
       this.raining = false;
       this.thundering = false;
       this.rainLevel = 0;
@@ -857,10 +881,10 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     w.raining = this.rainLevel > 0.2;
   }
 
-  /** Boussole (vers le point d'apparition du monde) et horloge ; toutes deux s'affolent dans le Nether. */
+  /** Boussole (vers le point d'apparition du monde) et horloge ; toutes deux s'affolent dans le Nether et dans l'End. */
   private tickDials(): void {
     const p = this.player;
-    const nether = this.dimension === 'nether';
+    const nether = this.dimension !== 'overworld';
     const sp = this.spawnPoint;
     this.compassDial.update(nether ? this.dialRng() : bearing(p.x, p.z, p.yaw, sp.x + 0.5, sp.z + 0.5));
     this.clockDial.update(nether ? this.dialRng() : clockTarget(this.dayTime));
@@ -898,16 +922,31 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     for (let i = 0; i < 16; i++) this.maps.update(this.world, map, p.x, p.z, this.dimension);
   }
 
+  /** Dans l'End : fait vivre le dragon, puis ouvre le portail de sortie à sa mort. */
+  private tickEnd(): void {
+    if (this.dimension !== 'end') return;
+    if (this.endFight.tick(this)) {
+      this.sfx.play('levelup', { volume: 0.8, pitch: 0.7 });
+      this.ui.addMessage("Le dragon de l'Ender est vaincu ! Le portail de sortie s'est ouvert au centre de l'île.");
+    }
+  }
+
   private tickPortal(): void {
     if (this.dimensionSwitching) return;
+    const p = this.player;
+    const feet = this.world.getBlock(Math.floor(p.x), Math.floor(p.y + 0.2), Math.floor(p.z));
+    // portail de l'End : il emporte aussitôt, sans attente
+    if (feet === B.END_PORTAL && p.alive) {
+      if (this.dimension === 'end') void this.leaveEnd();
+      else if (this.dimension === 'overworld') void this.enterEnd();
+      return;
+    }
     if (this.portalCooldown > 0) {
       this.portalCooldown--;
       this.portalTicks = 0;
       return;
     }
-    const p = this.player;
-    const inPortal = this.world.getBlock(Math.floor(p.x), Math.floor(p.y + 0.2), Math.floor(p.z)) === B.NETHER_PORTAL;
-    if (!inPortal) {
+    if (feet !== B.NETHER_PORTAL || this.dimension === 'end') {
       this.portalTicks = 0;
       return;
     }
@@ -921,14 +960,50 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
 
   /** Change de dimension ('overworld' ↔ 'nether') avec facteur d'échelle 1:8 et lien de portail. */
   async switchDimension(target: Dimension, portalX: number, portalZ: number): Promise<void> {
+    if (this.dimension === target || target === 'end') return;
+    const tx = target === 'nether' ? Math.floor(portalX / 8) : Math.floor(portalX * 8);
+    const tz = target === 'nether' ? Math.floor(portalZ / 8) : Math.floor(portalZ * 8);
+    await this.travel(target, tx, tz, () => findOrCreatePortal(this.world, tx, tz, target));
+  }
+
+  /** Entre dans l'End : le joueur arrive sur la plate-forme d'obsidienne, face à l'île. */
+  async enterEnd(): Promise<void> {
+    if (this.dimension === 'end') return;
+    await this.travel('end', END_PLATFORM.x, END_PLATFORM.z, () => {
+      this.player.addStat(STAT.END_VISITS);
+      const spot = buildEndPlatform(this.world);
+      this.player.setRotation(Math.PI / 2);
+      return spot;
+    });
+  }
+
+  /** Quitte l'End par le portail de sortie : retour au point de réapparition, à la surface. */
+  async leaveEnd(): Promise<void> {
+    if (this.dimension !== 'end') return;
+    const won = this.endFight.killed && !this.endFight.creditsSeen;
+    const aim = this.respawnAim();
+    await this.travel('overworld', Math.floor(aim.x), Math.floor(aim.z), () => this.respawnSpot());
+    this.needSettle = true;
+    if (won && !this.disposed) {
+      this.endFight.creditsSeen = true;
+      this.interaction.reset();
+      this.ui.showWin();
+      this.input.unlock();
+    }
+  }
+
+  /**
+   * Voyage vers une autre dimension : sauvegarde celle qu'on quitte, vide le monde chargé, attend
+   * le terrain autour de (tx, tz) puis pose le joueur là où `arrive` le décide.
+   */
+  private async travel(target: Dimension, tx: number, tz: number, arrive: () => { x: number; y: number; z: number }): Promise<void> {
     if (this.dimensionSwitching || this.dimension === target) return;
     this.dimensionSwitching = true;
     try {
+      if (this.dimension === 'end') this.endFight.leave();
       this.keepPersistentEntities();
       await this.chunks.saveAll();
-      const keys = this.storage
-        ? await this.storage.chunkKeys(target === 'nether' ? netherStorageId(this.info.id) : this.info.id)
-        : new Set<number>();
+      const keys = this.storage ? await this.storage.chunkKeys(dimensionStorageId(this.info.id, target)) : new Set<number>();
       const p = this.player;
       this.entities.length = 0;
       this.entities.push(p);
@@ -938,19 +1013,15 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       this.dimension = target;
       this.chunks.setDimension(target, keys);
 
-      const tx = target === 'nether' ? Math.floor(portalX / 8) : Math.floor(portalX * 8);
-      const tz = target === 'nether' ? Math.floor(portalZ / 8) : Math.floor(portalZ * 8);
       p.teleport(tx + 0.5, 80, tz + 0.5);
-      p.vx = p.vy = p.vz = 0;
 
-      for (let i = 0; i < 120 && !this.disposed; i++) {
+      for (let i = 0; i < 240 && !this.disposed; i++) {
         this.chunks.update(tx, tz);
         if (this.chunks.isReady(tx, tz, 2)) break;
         await new Promise((r) => setTimeout(r, 25));
       }
-      const dest = findOrCreatePortal(this.world, tx, tz, target);
+      const dest = arrive();
       p.teleport(dest.x, dest.y, dest.z);
-      p.vx = p.vy = p.vz = 0;
       p.fallDistance = 0;
       this.portalCooldown = 100;
       this.portalTicks = 0;
@@ -1118,10 +1189,10 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
 
     // --- ciel et brouillard ---
     const viewBlocks = this.chunks.viewDistance * 16;
-    this.sky.update(dt, cam, this.dayTime + (dt > 0 ? alpha : 0), this.rainLevel, this.thunderLevel, viewBlocks, this.dimension === 'nether');
+    this.sky.update(dt, cam, this.dayTime + (dt > 0 ? alpha : 0), this.rainLevel, this.thunderLevel, viewBlocks, this.dimension);
     const u = worldUniforms;
     u.uSkyLight.value.copy(this.sky.skyLight);
-    u.uAmbient.value = this.dimension === 'nether' ? NETHER_AMBIENT : OVERWORLD_AMBIENT;
+    u.uAmbient.value = this.dimension === 'nether' ? NETHER_AMBIENT : this.dimension === 'end' ? END_AMBIENT : OVERWORLD_AMBIENT;
     const inWater = pointInFluid(w, B.WATER, cam.position.x, cam.position.y, cam.position.z);
     const inLava = !inWater && pointInFluid(w, B.LAVA, cam.position.x, cam.position.y, cam.position.z);
     if (inWater) {
@@ -1374,7 +1445,8 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
   }
 
   trySleep(x: number, y: number, z: number, meta: number): void {
-    if (this.dimension === 'nether') {
+    // hors de la surface, un lit explose (Nether et End)
+    if (this.dimension !== 'overworld') {
       this.world.setBlock(x, y, z, B.AIR, 0);
       runExplosion(this, x + 0.5, y + 0.5, z + 0.5, 5, true, null);
       return;
@@ -1419,7 +1491,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
 
   private add(e: Entity, touch: boolean): void {
     this.entities.push(e);
-    if (e instanceof Thrown) return;
+    if (e instanceof Thrown || e.roaming) return;
     const key = chunkKey(Math.floor(e.x) >> 4, Math.floor(e.z) >> 4);
     this.homes.set(e, key);
     if (touch) this.touch(key);
@@ -1597,6 +1669,12 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       this.spawn(golem);
       return;
     }
+    if (s.kind === 'end_crystal') {
+      const crystal = new EndCrystal();
+      crystal.setPosition(s.x, s.y, s.z);
+      this.spawn(crystal);
+      return;
+    }
     if (s.kind !== 'villager') return;
     const rng = mulberry32(hash2(Math.floor(s.x), Math.floor(s.z), (this.world.seed ^ 0x51a6e7) >>> 0));
     const v = new Villager(rng, isProfession(s.profession) ? s.profession : undefined);
@@ -1627,7 +1705,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     let n = 0;
     for (let i = 0; i < list.length; i++) {
       const e = list[i];
-      if (e === this.player || Math.floor(e.x) >> 4 !== chunk.cx || Math.floor(e.z) >> 4 !== chunk.cz) {
+      if (e === this.player || e.roaming || Math.floor(e.x) >> 4 !== chunk.cx || Math.floor(e.z) >> 4 !== chunk.cz) {
         list[n++] = e;
         continue;
       }
@@ -1695,6 +1773,12 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
   get heartTint(): '' | 'poison' | 'wither' {
     const p = this.player;
     return p.witherTicks > 0 ? 'wither' : p.poisonTicks > 0 ? 'poison' : '';
+  }
+
+  get boss(): { name: string; progress: number } | null {
+    if (this.dimension !== 'end') return null;
+    const progress = this.endFight.progress;
+    return progress === null ? null : { name: "Dragon de l'Ender", progress };
   }
 
   get fade(): number {
@@ -1781,6 +1865,37 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
 
   respawn(): void {
     const p = this.player;
+    if (this.dimension !== 'overworld') {
+      // mort dans le Nether ou dans l'End : on réapparaît à la surface, comme dans Minecraft
+      const aim = this.respawnAim();
+      void this.travel('overworld', Math.floor(aim.x), Math.floor(aim.z), () => {
+        const spot = this.respawnSpot();
+        this.revive(spot);
+        return spot;
+      });
+      return;
+    }
+    this.revive(this.respawnSpot());
+  }
+
+  /** Remet le joueur sur pied à l'endroit donné et lui rend la main. */
+  private revive(spot: { x: number; y: number; z: number }): void {
+    this.player.respawn(spot.x, spot.y, spot.z);
+    this.deathShown = false;
+    this.needSettle = true;
+    this.interaction.reset();
+    this.input.lock();
+  }
+
+  /** Point visé par une réapparition (lit ou point d'apparition du monde), avant toute vérification. */
+  private respawnAim(): { x: number; z: number } {
+    const bed = this.player.bed;
+    return bed ? { x: bed.x, z: bed.z } : { x: this.spawnPoint.x, z: this.spawnPoint.z };
+  }
+
+  /** Endroit où le joueur réapparaît à la surface : près de son lit s'il existe encore, sinon au point d'apparition. */
+  private respawnSpot(): { x: number; y: number; z: number } {
+    const p = this.player;
     let x = this.spawnPoint.x;
     let y = this.spawnPoint.y;
     let z = this.spawnPoint.z;
@@ -1803,11 +1918,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
         this.ui.addMessage('Votre lit a disparu ou est obstrué');
       }
     }
-    p.respawn(x, y, z);
-    this.deathShown = false;
-    this.needSettle = true;
-    this.interaction.reset();
-    this.input.lock();
+    return { x, y, z };
   }
 
   // ------------------------------------------------------------------ chat et commandes
@@ -1839,12 +1950,33 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
    * monde créé avant les lieux à découvrir, ou lieu d'une autre dimension.
    */
   locate(kind: StructureKind): { x: number; y: number; z: number; distance: number } | null {
-    if (this.world.genVersion < 2 || this.world.worldType === 'flat') return null;
-    if ((kind === 'fortress') !== (this.dimension === 'nether')) return null;
-    const p = this.player;
-    const s = locateStructure(this.terrainInfo(), kind, Math.floor(p.x), Math.floor(p.z));
+    const s = this.nearest(kind);
     if (!s) return null;
+    const p = this.player;
     return { x: s.x, y: s.y, z: s.z, distance: Math.round(Math.hypot(s.x - p.x, s.z - p.z)) };
+  }
+
+  /** Ce monde contient-il ce type de lieu, et se trouve-t-il dans la dimension courante ? */
+  private hasStructures(kind: StructureKind): boolean {
+    return this.world.worldType !== 'flat' && this.world.genVersion >= structureSince(kind) && this.dimension === structureHome(kind);
+  }
+
+  private nearest(kind: StructureKind): Structure | null {
+    if (!this.hasStructures(kind)) return null;
+    const p = this.player;
+    return locateStructure(this.terrainInfo(), kind, Math.floor(p.x), Math.floor(p.z));
+  }
+
+  /** Fort le plus proche : là où mène un œil de l'Ender lancé. Null si ce monde n'en a pas. */
+  strongholdTarget(): { x: number; y: number; z: number } | null {
+    const s = this.nearest('stronghold');
+    return s ? { x: s.x + 0.5, y: s.y, z: s.z + 0.5 } : null;
+  }
+
+  /** Centre du portail du fort le plus proche (cellule du milieu de l'anneau de cadres), ou null. */
+  strongholdPortal(): { x: number; y: number; z: number; dir: number } | null {
+    const s = this.nearest('stronghold');
+    return s instanceof Stronghold ? { x: s.portalX, y: s.portalY, z: s.portalZ, dir: s.portalDir } : null;
   }
 
   /** Générateur de la dimension courante, gardé pour situer les lieux sans régénérer de chunk. */
@@ -1852,7 +1984,9 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     if (!this.terrain || this.terrainDimension !== this.dimension) {
       this.terrain = this.dimension === 'nether'
         ? new NetherGen(this.info.seed, this.world.genVersion)
-        : new WorldGen(this.info.seed, this.info.worldType, this.world.genVersion);
+        : this.dimension === 'end'
+          ? new EndGen(this.info.seed)
+          : new WorldGen(this.info.seed, this.info.worldType, this.world.genVersion);
       this.terrainDimension = this.dimension;
     }
     return this.terrain;
@@ -1860,8 +1994,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
 
   /** La colonne (x, z) est-elle dans un lieu généré du type donné ? */
   inStructure(kind: string, x: number, z: number): boolean {
-    if (this.world.genVersion < 2 || this.world.worldType === 'flat') return false;
-    if ((kind === 'fortress') !== (this.dimension === 'nether')) return false;
+    if (!this.hasStructures(kind as StructureKind)) return false;
     for (const s of structuresNear(this.terrainInfo(), [kind as StructureKind], x >> 4, z >> 4, 0)) {
       if (x >= s.x0 && x <= s.x1 && z >= s.z0 && z <= s.z1 && (!s.covers || s.covers(x, z))) return true;
     }
@@ -1878,7 +2011,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       case '?':
         say('Commandes : /gamemode <survival|creative>, /time <set|add> <valeur>, /weather <clear|rain|thunder>,');
         say('/give <objet> [quantité], /tp <x> <y> <z>, /summon <créature> [nombre], /difficulty <0-3>,');
-        say('/kill, /clear, /seed, /spawnpoint, /locate <village|temple|jungle|mine|forteresse>');
+        say('/kill, /clear, /seed, /spawnpoint, /locate <village|temple|jungle|mine|forteresse|fort>');
         return;
       case 'gamemode': {
         const m = (args[0] ?? '').toLowerCase();
@@ -1966,21 +2099,26 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
         const key = (args[0] ?? '').toLowerCase();
         const place = LOCATE_NAMES[key];
         if (!place) {
-          say('Usage : /locate <village|temple|jungle|mine|forteresse>');
+          say('Usage : /locate <village|temple|jungle|mine|forteresse|fort>');
           return;
         }
-        if (this.world.genVersion < 2 || this.world.worldType === 'flat') {
-          say('Ce monde ne contient pas de lieux à découvrir (monde plat, ou créé avant leur arrivée).');
+        if (this.world.genVersion < structureSince(place.kind) || this.world.worldType === 'flat') {
+          say(place.kind === 'stronghold' && this.world.worldType !== 'flat'
+            ? 'Ce monde a été créé avant les forts : il n’en contient pas. En créatif, 12 cadres garnis d’yeux de l’Ender ouvrent un portail.'
+            : 'Ce monde ne contient pas de lieux à découvrir (monde plat, ou créé avant leur arrivée).');
           return;
         }
         const found = this.locate(place.kind);
         if (!found) {
-          say((place.kind === 'fortress') !== (this.dimension === 'nether')
-            ? `${place.label} : à chercher ${place.kind === 'fortress' ? 'dans le Nether' : 'à la surface'}.`
+          const home = structureHome(place.kind);
+          say(this.dimension !== home
+            ? `${place.label} : à chercher ${home === 'nether' ? 'dans le Nether' : 'à la surface'}.`
             : `${place.label} : rien à proximité.`);
           return;
         }
-        say(`${place.label} : x ${found.x}, z ${found.z} (à ${found.distance} blocs)`);
+        say(place.kind === 'stronghold'
+          ? `${place.label} : x ${found.x}, z ${found.z}, sous terre vers y ${found.y} (à ${found.distance} blocs)`
+          : `${place.label} : x ${found.x}, z ${found.z} (à ${found.distance} blocs)`);
         return;
       }
       case 'difficulty': {

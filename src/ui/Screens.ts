@@ -766,6 +766,38 @@ export class DeathScreen implements Screen {
   }
 }
 
+// ---------------------------------------------------------------------------------------- fin du jeu
+
+/** Écran de fin : affiché une fois, au retour de l'End après la victoire sur le dragon. */
+export class WinScreen implements Screen {
+  readonly el: HTMLDivElement;
+  readonly pausing = false;
+
+  constructor(private readonly ctx: UiContext) {
+    this.el = el('div', 'mc-screen mc-win mc-menu');
+    this.el.dataset.mc = 'win';
+    el('div', 'mc-title mc-title-big', this.el, 'Fin');
+    el('div', 'mc-win-text', this.el, 'Le dragon de l’Ender est vaincu. Vous avez traversé la surface, le Nether et l’End.');
+    el('div', 'mc-win-text', this.el, 'Le monde reste ouvert : il y a encore tout à bâtir.');
+    el('div', 'mc-gap', this.el);
+    sized(button(ctx.host, 'Retourner dans le monde', () => this.close(), 'continue', this.el), 204);
+  }
+
+  dispose(): void {}
+
+  key(e: KeyboardEvent): boolean {
+    if (e.code !== 'Escape' && e.code !== 'Enter') return false;
+    e.preventDefault();
+    this.close();
+    return true;
+  }
+
+  private close(): void {
+    this.ctx.closeScreen();
+    this.ctx.host.game?.resume();
+  }
+}
+
 // ---------------------------------------------------------------------------------------- chargement
 
 export class LoadingScreen implements Screen {

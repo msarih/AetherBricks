@@ -197,6 +197,12 @@ export const B = {
   SOUL_SAND: 187,
   /** Verrue du Nether (méta : croissance 0..3), sur le sable des âmes. */
   NETHER_WART: 188,
+  END_STONE: 189,
+  /** Cadre du portail de l'End (méta : orientation 0..3, +4 s'il porte un œil de l'Ender). */
+  END_PORTAL_FRAME: 190,
+  /** Portail de l'End : nappe noire étoilée, traversable, qui emporte le joueur. */
+  END_PORTAL: 191,
+  DRAGON_EGG: 192,
 } as const;
 
 /** Nombre maximal d'identifiants de blocs (les objets commencent à 256). */
@@ -344,6 +350,9 @@ export const I = {
   NAME_TAG: 395,
   /** Potion jetable de la sorcière (projectile ; pas encore utilisable par le joueur). */
   SPLASH_POTION: 396,
+  BLAZE_POWDER: 397,
+  /** Œil de l'Ender : lancé, il vole vers le fort ; posé sur un cadre, il ouvre le portail de l'End. */
+  ENDER_EYE: 398,
 } as const;
 
 export const ITEM_ID_LIMIT = 400;
