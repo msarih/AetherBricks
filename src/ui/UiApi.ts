@@ -34,6 +34,8 @@ export interface UiGame {
   readonly onFire: boolean;
   /** Teinte des cœurs : empoisonné (verts), flétri (noirs), ou rien. */
   readonly heartTint: '' | 'poison' | 'wither';
+  /** Effets actifs sur le joueur : type, niveau et durée restante en ticks. */
+  readonly activeEffects: ReadonlyArray<{ type: string; level: number; ticks: number }>;
   /** Barre de vie d'un boss en haut de l'écran (dragon de l'Ender), ou null. `progress` : 0..1. */
   readonly boss: { name: string; progress: number } | null;
   /** Voile noir plein écran (0..1) : endormissement dans un lit. */

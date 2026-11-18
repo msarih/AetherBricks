@@ -1192,7 +1192,8 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     this.sky.update(dt, cam, this.dayTime + (dt > 0 ? alpha : 0), this.rainLevel, this.thunderLevel, viewBlocks, this.dimension);
     const u = worldUniforms;
     u.uSkyLight.value.copy(this.sky.skyLight);
-    u.uAmbient.value = this.dimension === 'nether' ? NETHER_AMBIENT : this.dimension === 'end' ? END_AMBIENT : OVERWORLD_AMBIENT;
+    const baseAmbient = this.dimension === 'nether' ? NETHER_AMBIENT : this.dimension === 'end' ? END_AMBIENT : OVERWORLD_AMBIENT;
+    u.uAmbient.value = Math.max(baseAmbient, this.player.hasEffect('night_vision') ? 0.85 : 0);
     const inWater = pointInFluid(w, B.WATER, cam.position.x, cam.position.y, cam.position.z);
     const inLava = !inWater && pointInFluid(w, B.LAVA, cam.position.x, cam.position.y, cam.position.z);
     if (inWater) {
@@ -1783,6 +1784,14 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
   get heartTint(): '' | 'poison' | 'wither' {
     const p = this.player;
     return p.witherTicks > 0 ? 'wither' : p.poisonTicks > 0 ? 'poison' : '';
+  }
+
+  get activeEffects(): ReadonlyArray<{ type: string; level: number; ticks: number }> {
+    const out: Array<{ type: string; level: number; ticks: number }> = [];
+    for (const [type, fx] of this.player.effects) {
+      if (fx.ticks > 0) out.push({ type, level: fx.level, ticks: fx.ticks });
+    }
+    return out;
   }
 
   get boss(): { name: string; progress: number } | null {

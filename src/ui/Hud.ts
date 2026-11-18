@@ -58,6 +58,7 @@ export class Hud {
   private readonly boss: HTMLDivElement;
   private readonly bossName: HTMLDivElement;
   private readonly bossFill: HTMLDivElement;
+  private readonly effectsBox: HTMLDivElement;
   private readonly toast: HTMLDivElement;
   private readonly toastIcon: ItemView;
   private readonly toastTitle: HTMLDivElement;
@@ -139,6 +140,8 @@ export class Hud {
     this.boss.dataset.mc = 'boss';
     this.bossName = el('div', 'mc-boss-name', this.boss);
     this.bossFill = el('div', 'mc-boss-fill', el('div', 'mc-boss-bar', this.boss));
+    this.effectsBox = el('div', 'mc-effects', this.main);
+    this.effectsBox.dataset.mc = 'effects';
 
     this.toast = el('div', 'mc-toast', this.main);
     this.toast.dataset.mc = 'toast';
@@ -212,6 +215,7 @@ export class Hud {
     this.updateDebug(g, dt);
     this.updateGuideAndToast(g, dt);
     this.updateBoss(g);
+    this.updateEffects(g);
 
     if (this.actionTimer > 0) {
       this.actionTimer -= dt;
@@ -397,6 +401,34 @@ export class Hud {
     if (this.changed('bossName', b.name)) this.bossName.textContent = b.name;
     const pct = Math.round(Math.max(0, Math.min(1, b.progress)) * 1000) / 10;
     if (this.changed('bossPct', pct)) this.bossFill.style.width = `${pct}%`;
+  }
+
+  private static readonly EFFECT_LABELS: Record<string, string> = {
+    speed: 'Rapidité',
+    slow: 'Lenteur',
+    strength: 'Force',
+    regeneration: 'Régénération',
+    fire_resistance: 'Résistance au feu',
+    night_vision: 'Vision nocturne',
+    poison: 'Poison',
+    weakness: 'Faiblesse',
+    wither: 'Flétrissement',
+  };
+
+  private updateEffects(g: UiGame): void {
+    const list = g.activeEffects;
+    const key = list.map((e) => `${e.type}:${e.level}:${Math.ceil(e.ticks / 20)}`).join('|');
+    if (!this.changed('effectsKey', key)) return;
+    this.effectsBox.textContent = '';
+    for (const fx of list) {
+      const sec = Math.max(0, Math.ceil(fx.ticks / 20));
+      const m = Math.floor(sec / 60);
+      const s = sec % 60;
+      const lvl = fx.level >= 2 ? ' II' : '';
+      const label = Hud.EFFECT_LABELS[fx.type] ?? fx.type;
+      const pill = el('div', 'mc-effect-pill', this.effectsBox);
+      pill.textContent = `${label}${lvl} ${m}:${s < 10 ? '0' : ''}${s}`;
+    }
   }
 
   private updateGuideAndToast(g: UiGame, dt: number): void {

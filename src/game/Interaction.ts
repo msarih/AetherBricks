@@ -385,7 +385,8 @@ export class Interaction {
     const crit = p.fallDistance > 0 && !p.onGround && !p.inWater && !p.onLadder && !p.flying;
     if (crit) damage *= 1.5;
     // faiblesse (potion de sorcière) : coups affaiblis de 2 cœurs
-    if (p.weakTicks > 0) damage = Math.max(0, damage - 4);
+    if (p.hasEffect('strength')) damage += 3 * p.effectLevel('strength');
+    if (p.weakTicks > 0) damage = Math.max(0, damage - 4 * Math.max(1, p.effectLevel('weakness')));
     const ok = e.hurt(g, damage, 'attack', p);
     if (ok) p.addStat('damage_dealt', damage);
     const ey = e.y + e.height * 0.6;

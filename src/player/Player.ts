@@ -4,7 +4,7 @@
  * à chaque image par `turn()`.
  */
 import type { SfxName } from '../audio/Sfx';
-import { Living, num, round3, type DamageCause, type Entity, type GameApi, type PlayerLike } from '../entity/Entity';
+import { EFFECT_TYPES, Living, num, round3, type DamageCause, type EffectType, type Entity, type GameApi, type PlayerLike } from '../entity/Entity';
 import { notifyTamedWolves } from '../entity/Mobs';
 import type { EntityKind } from '../entity/EntityView';
 import type { MobKind } from '../entity/MobModels';
@@ -597,7 +597,7 @@ export class Player extends Living implements PlayerLike {
       exhaustion: round3(this.exhaustion),
       air: this.air,
       fire: this.fireTicks,
-      effects: [this.poisonTicks, this.slowTicks, this.weakTicks, this.witherTicks],
+      effects: Array.from(this.effects, ([type, fx]) => ({ type, level: fx.level, ticks: fx.ticks })),
       fall: round3(this.fallDistance),
       xpLevel: this.xpLevel,
       xpProgress: round3(this.xpProgress),
@@ -622,11 +622,24 @@ export class Player extends Living implements PlayerLike {
     this.exhaustion = Math.max(0, num(d.exhaustion, 0));
     this.air = num(d.air, 300);
     this.fireTicks = num(d.fire, 0);
+    this.effects.clear();
     const fx = Array.isArray(d.effects) ? d.effects : [];
-    this.poisonTicks = Math.max(0, Math.floor(num(fx[0], 0)));
-    this.slowTicks = Math.max(0, Math.floor(num(fx[1], 0)));
-    this.weakTicks = Math.max(0, Math.floor(num(fx[2], 0)));
-    this.witherTicks = Math.max(0, Math.floor(num(fx[3], 0)));
+    if (fx.length > 0 && typeof fx[0] === 'number') {
+      // Ancien format [poison, slow, weak, wither]
+      this.poisonTicks = Math.max(0, Math.floor(num(fx[0], 0)));
+      this.slowTicks = Math.max(0, Math.floor(num(fx[1], 0)));
+      this.weakTicks = Math.max(0, Math.floor(num(fx[2], 0)));
+      this.witherTicks = Math.max(0, Math.floor(num(fx[3], 0)));
+    } else {
+      for (const entry of fx) {
+        if (!entry || typeof entry !== 'object') continue;
+        const o = entry as Record<string, unknown>;
+        const t = o.type as EffectType;
+        if (EFFECT_TYPES.includes(t)) {
+          this.addEffect(t, Math.floor(num(o.ticks, 0)), Math.floor(num(o.level, 1)));
+        }
+      }
+    }
     this.fallDistance = Math.max(0, num(d.fall, 0));
     this.xpLevel = Math.max(0, Math.floor(num(d.xpLevel, 0)));
     this.xpProgress = Math.max(0, Math.min(0.999, num(d.xpProgress, 0)));

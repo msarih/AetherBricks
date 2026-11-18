@@ -173,6 +173,26 @@
   display: none;
 }
 
+.mc-effects {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  pointer-events: none;
+}
+
+.mc-effect-pill {
+  background: rgba(16, 16, 16, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #f0f0f0;
+  padding: 3px 8px;
+  font-size: 13px;
+  text-shadow: 1px 1px 0 #000;
+}
+
 .mc-stats {
   position: absolute;
   left: 0;
