@@ -173,6 +173,18 @@ export class Player extends Living implements PlayerLike {
 
   // ------------------------------------------------------------------ monture
 
+  /** Quitte sa monture sans bouger (téléportation, portail, lit). */
+  leaveVehicle(): void {
+    this.vehicle = null;
+    this.riding = false;
+  }
+
+  /** Une téléportation fait descendre de cheval : sinon la monture ramènerait aussitôt son cavalier. */
+  override teleport(x: number, y: number, z: number): void {
+    this.leaveVehicle();
+    super.teleport(x, y, z);
+  }
+
   mount(vehicle: Entity): boolean {
     if (this.vehicle || !this.alive || this.sleeping) return false;
     this.vehicle = vehicle;
@@ -187,8 +199,7 @@ export class Player extends Living implements PlayerLike {
   dismount(game: GameApi): void {
     const v = this.vehicle;
     if (!v) return;
-    this.vehicle = null;
-    this.riding = false;
+    this.leaveVehicle();
     this.fallDistance = 0;
     this.vx = this.vy = this.vz = 0;
     // à gauche, à droite ou derrière la monture, là où la place est libre ; sinon sur place
@@ -286,6 +297,7 @@ export class Player extends Living implements PlayerLike {
     const inp = this.input;
     this.headYaw = this.yaw;
     if (this.sleeping) {
+      this.leaveVehicle();
       this.moveForward = this.moveStrafe = 0;
       this.jumping = false;
       this.sneaking = false;

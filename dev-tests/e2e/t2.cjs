@@ -1823,11 +1823,16 @@ async function useOnGround(page, x, z) {
     const cast = async (x, y, z) => { await ev(page, (x, y, z) => { T.select('fishing_rod'); T.aim(x, y, z); }, x, y, z); await ticks(page, 2); await rclick(page); };
     const setBobber = (fields) => ev(page, (fields) => { const b = window.__game.entities.find((e) => e.kind === 'bobber' && !e.dead); if (b) Object.assign(b, fields); return !!b; }, fields);
 
+    // les chunks du bassin viennent de se charger avec leurs animaux : un cheval à portée de main
+    // se laisserait monter au lieu de laisser lancer la ligne
+    await ev(page, () => { const g = window.__game; for (const e of g.entities) if (e.kind === 'mob' && Math.hypot(e.x - 62, e.z - 60) < 16) e.dead = true; });
+    await ticks(page, 2);
     // --- lancer : le flotteur vole puis flotte
     await cast(64.5, 4.8, 60.5);
     await ticks(page, 40);
     const b1 = await bob();
     const r1 = await rod();
+    if (!b1) console.log('   [diagnostic]', JSON.stringify(await ev(page, () => { const e = document.querySelector('.mc-screen'); const g = window.__game, p = g.player; return { screen: e && e.dataset.mc, modal: g.ui.modal, alive: p.alive, health: p.health, vehicle: p.vehicle ? p.vehicle.mobKind : null, pos: [p.x, p.y, p.z], time: g.dayTime, kinds: T.kinds() }; })));
     check('pêche : la canne lance un flotteur qui flotte à la surface du bassin',
       !!b1 && b1.floating && !b1.grounded && b1.x >= 60 && b1.x < 71 && b1.z >= 57 && b1.z < 64 && b1.y > 3.6 && b1.y < 3.95 && r1.fishing && r1.damage === 0,
       `${JSON.stringify(b1)} ${JSON.stringify(r1)}`);

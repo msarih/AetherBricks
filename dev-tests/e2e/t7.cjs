@@ -221,6 +221,20 @@ async function reload(page) {
       return { n, pumpkin: B.PUMPKIN };
     }, pen);
     check('il emporte un bloc : une citrouille a quitté le sol et il la tient', carried === after.pumpkin && after.n === pen.n - 1, JSON.stringify({ carried, reste: after.n, avant: pen.n }));
+    // loin du joueur, un enderman les mains vides disparaît ; celui qui porte un bloc reste, sinon le bloc serait perdu
+    const far = await ev(page, async (id) => {
+      const g = window.__game, m = M.get(id);
+      let d = 0;
+      for (const c of [110, 104, 98]) if (g.world.isLoaded(c, 0)) { d = c; break; }
+      if (!d) return null;
+      m.teleport(d + 0.5, 4, 0.5);
+      return { empty: M.spawn('enderman', d + 0.5, 4.5), d };
+    }, pen.id);
+    await ticks(page, 10);
+    const kept = await ev(page, (id, far) => (far ? { carrier: !!M.get(id), empty: !!M.get(far.empty) } : null), pen.id, far);
+    check('un enderman qui porte un bloc ne disparaît pas loin du joueur', !!kept && kept.carrier === true && kept.empty === false, JSON.stringify(kept));
+    await ev(page, (id, pen) => { M.get(id).teleport(pen.cx + 0.5, 4, pen.cz + 0.5); }, pen.id, pen);
+    await ticks(page, 3);
     await ev(page, (id) => { const g = window.__game; M.get(id).hurt(g, 1000, 'attack', g.player); }, pen.id);
     await ticks(page, 30);
     const dropped = await ev(page, () => M.items('pumpkin') + T.count('pumpkin'));
@@ -399,8 +413,11 @@ async function reload(page) {
     await ticks(page, 5);
     const hp1 = await ev(page, (id) => ({ h: M.get(id).health, aimed: window.__game.interaction.entity === M.get(id) }), id);
     check('en selle, on ne frappe pas sa propre monture', hp1.h === hp0 && hp1.aimed === false, JSON.stringify(hp1));
-    await page.keyboard.down('ShiftLeft'); await ticks(page, 4); await page.keyboard.up('ShiftLeft');
-    await ticks(page, 5);
+    // une téléportation fait descendre : le cheval ne ramène pas son cavalier
+    await chat(page, '/tp ~30 ~ ~');
+    await ticks(page, 10);
+    const tp = await ev(page, (id) => { const p = window.__game.player, m = M.get(id); return { on: !!p.vehicle, riding: p.riding, d: Math.hypot(p.x - m.x, p.z - m.z), rider: !!m.rider }; }, id);
+    check('se téléporter fait descendre de cheval', !tp.on && !tp.riding && tp.d > 25 && !tp.rider, JSON.stringify(tp));
   });
 
   await section('calamar', async () => {

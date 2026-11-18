@@ -1017,8 +1017,6 @@ class MobVisual implements Visual {
           this.rot('armR', -0.5, 0, 0.05);
           this.rot('armL', -0.5, 0, -0.05);
         }
-        // provoqué, il ouvre la mâchoire : la tête se soulève
-        this.offset('head', 0, e.angry ? 3 : 0, 0);
         break;
       case 'iron_golem': {
         const sw = Math.sin(clamp(e.swing, 0, 1) * PI);

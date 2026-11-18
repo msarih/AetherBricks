@@ -1357,8 +1357,8 @@ export abstract class Monster extends Mob {
 
   /** Disparition loin du joueur : toujours au-delà de 96 blocs, au hasard au-delà de 32 après 30 s sans le voir. */
   private checkDespawn(game: GameApi): boolean {
-    // une créature nommée ne disparaît jamais
-    if (this.customName !== '') return false;
+    // une créature nommée (ou qui porte quelque chose à rendre) ne disparaît jamais
+    if (this.persistent) return false;
     const dSq = this.distanceSqTo(game.player);
     this.unseenTicks++;
     if (dSq > 96 * 96 || (dSq > 32 * 32 && this.unseenTicks > 600 && game.rng() < 1 / 800)) {

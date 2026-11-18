@@ -75,7 +75,7 @@ export class Slime extends Monster {
     this.vy = 0.42;
     this.onGround = false;
     this.moveForward = 1;
-    game.sound('pop', this.x, this.y, this.z, 0.25 * this.size, 1.3 - this.size * 0.15);
+    game.sound('pop', this.x, this.y, this.z, 0.1 * this.size, 1.3 - this.size * 0.15);
   }
 
   protected override land(game: GameApi, distance: number): void {
@@ -145,9 +145,9 @@ export class Enderman extends Monster {
     this.mobScale = 0.93;
   }
 
-  /** Bloc porté (0 = aucun). */
-  get carried(): number {
-    return this.blockId;
+  /** Tant qu'il porte un bloc, il ne disparaît pas : le bloc serait perdu pour le monde. */
+  get persistent(): boolean {
+    return this.blockId !== 0 || super.persistent;
   }
 
   protected override aggressive(): boolean {
