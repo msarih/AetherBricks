@@ -492,7 +492,7 @@ export class HandRenderer {
       this.offHolder.visible = true;
       const oc = this.offChain.identity();
       if (state.useKind === 'block' && this.offTargetId === I.SHIELD && this.targetId !== I.SHIELD) {
-        oc.translate(-0.28, -0.32, -0.58).rotateY(22).rotateX(12);
+        oc.translate(-0.34, -0.44, -0.68).rotateY(18).rotateX(8);
       } else {
         oc.translate(-0.56, -0.52, -0.72);
       }
