@@ -1018,6 +1018,7 @@ export class Sheep extends Animal {
 
   private eatGrass(game: GameApi): void {
     const w = game.world;
+    if (!w.rules.mobGriefing) return;
     const x = Math.floor(this.x);
     const y = Math.floor(this.y + 0.01);
     const z = Math.floor(this.z);
@@ -1621,7 +1622,7 @@ export class Creeper extends Monster {
       if (++this.fuseTicks >= FUSE_TICKS) {
         this.fuse = 1;
         this.dead = true;
-        game.explode(this.x, this.y + this.height * 0.5, this.z, 3, false, this);
+        game.explode(this.x, this.y + this.height * 0.5, this.z, 3, false, this, game.world.rules.mobGriefing);
         return;
       }
     } else {

@@ -40,6 +40,7 @@ import { BLOCKS, BLOCK_REPLACEABLE, BLOCK_SHAPE, BLOCK_SOLID, FACING_DX, FACING_
 import type { Chunk } from '../world/Chunk';
 import { ChunkManager, type ChunkHooks } from '../world/ChunkManager';
 import { CHUNK_HEIGHT, DAY_TICKS, TICKS_PER_SECOND, chunkKey, skyDayFactor, type Dimension, type GameMode } from '../world/Constants';
+import { GAME_RULE_NAMES, loadGameRules, resolveGameRule, saveGameRules } from '../world/GameRules';
 import { B, I, MUSIC_DISCS, musicDiscInfo } from '../world/Ids';
 import { ITEMS, getItem, itemLabel } from '../world/Items';
 import { cloneStack, cloneStackWithCount, makeStack, maxDamage, type ItemStack } from '../world/ItemStack';
@@ -110,7 +111,7 @@ const ROD_TIP_Y = 0.12;
 const DIFFICULTY_LABELS = ['Paisible', 'Facile', 'Normale', 'Difficile'];
 const DIFFICULTY_NAMES = ['peaceful', 'easy', 'normal', 'hard'];
 const TIME_NAMES: Record<string, number> = { day: 1000, noon: 6000, night: 13000, midnight: 18000 };
-const COMMANDS = ['help', 'gamemode', 'time', 'weather', 'give', 'tp', 'kill', 'seed', 'difficulty', 'summon', 'clear', 'spawnpoint', 'locate'];
+const COMMANDS = ['help', 'gamemode', 'time', 'weather', 'give', 'tp', 'kill', 'seed', 'difficulty', 'summon', 'clear', 'spawnpoint', 'locate', 'gamerule'];
 
 /** Lieux reconnus par /locate (noms français et anglais). */
 const LOCATE_NAMES: Record<string, { kind: StructureKind; label: string }> = {
@@ -236,8 +237,10 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
   /** Hasard purement visuel (cadrans affolés dans le Nether), distinct de celui du jeu. */
   private readonly dialRng = dialNoise(0x5eed);
   private readonly heldMapState: HeldMap = { id: 0, colors: new Uint8Array(0), version: 0, markerX: 0, markerZ: 0, dirX: 0, dirZ: -1 };
-  /** Âge du monde en ticks (l'heure du jour en découle). */
+  /** Âge du monde en ticks (horloge interne). */
   time = 1000;
+  /** Horloge du cycle jour/nuit (gelée quand doDaylightCycle vaut false). */
+  skyTime = 1000;
   raining = false;
   thundering = false;
   rainLevel = 0;
@@ -400,6 +403,8 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     const num = (v: unknown, fallback: number): number => (typeof v === 'number' && Number.isFinite(v) ? v : fallback);
     if (st) {
       this.time = Math.max(0, Math.floor(num(st.time, 1000)));
+      this.skyTime = Math.max(0, Math.floor(num(st.skyTime, this.time)));
+      loadGameRules(this.world.rules, st.gameRules);
       this.raining = st.raining === true;
       this.thundering = st.thundering === true && this.raining;
       this.rainLevel = this.raining ? 1 : 0;
@@ -489,6 +494,8 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     info.state = {
       player: this.player.saveState(),
       time: this.time,
+      skyTime: this.skyTime,
+      gameRules: saveGameRules(this.world.rules),
       raining: this.raining,
       thundering: this.thundering,
       weatherTimer: this.weatherTimer,
@@ -816,9 +823,10 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     w.tick(p.x, p.z);
     tickBlockEntities(w);
     tickSpawners(this);
-    this.spawner.tick(this);
+    if (this.world.rules.doMobSpawning) this.spawner.tick(this);
     this.atlas.tick();
     this.time++;
+    if (this.world.rules.doDaylightCycle) this.skyTime++;
     p.addStat(STAT.PLAY_TIME);
     this.tickWeather();
     this.tickEnd();
@@ -1061,7 +1069,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     }
     if (++p.sleepTicks >= SLEEP_TICKS) {
       // le matin
-      this.time += (DAY_TICKS - this.dayTime) % DAY_TICKS;
+      this.skyTime += (DAY_TICKS - this.dayTime) % DAY_TICKS;
       p.addStat(STAT.SLEEP);
       this.raining = false;
       this.thundering = false;
@@ -1209,7 +1217,8 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
 
     // --- ciel et brouillard ---
     const viewBlocks = this.chunks.viewDistance * 16;
-    this.sky.update(dt, cam, this.dayTime + (dt > 0 ? alpha : 0), this.rainLevel, this.thunderLevel, viewBlocks, this.dimension);
+    const skySubtick = dt > 0 && this.world.rules.doDaylightCycle ? alpha : 0;
+    this.sky.update(dt, cam, this.dayTime + skySubtick, this.rainLevel, this.thunderLevel, viewBlocks, this.dimension);
     const u = worldUniforms;
     u.uSkyLight.value.copy(this.sky.skyLight);
     const baseAmbient = this.dimension === 'nether' ? NETHER_AMBIENT : this.dimension === 'end' ? END_AMBIENT : OVERWORLD_AMBIENT;
@@ -1512,7 +1521,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
   // ------------------------------------------------------------------ GameApi
 
   get dayTime(): number {
-    return this.time % DAY_TICKS;
+    return ((this.skyTime % DAY_TICKS) + DAY_TICKS) % DAY_TICKS;
   }
 
   spawn(e: Entity): void {
@@ -1600,8 +1609,8 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     return this.dropStack(x, y, z, makeStack(id, count, damage));
   }
 
-  explode(x: number, y: number, z: number, power: number, fire: boolean, source: Entity | null): void {
-    runExplosion(this, x, y, z, power, fire, source);
+  explode(x: number, y: number, z: number, power: number, fire: boolean, source: Entity | null, griefing = true): void {
+    runExplosion(this, x, y, z, power, fire, source, griefing);
   }
 
   entitiesInBox(x0: number, y0: number, z0: number, x1: number, y1: number, z1: number, except: Entity | null = null): Entity[] {
@@ -2217,7 +2226,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       case '?':
         say('Commandes : /gamemode <survival|creative>, /time <set|add> <valeur>, /weather <clear|rain|thunder>,');
         say('/give <objet> [quantité], /give <potion|splash_potion> <sorte> [quantité] (/give potion ? pour la liste),');
-        say('/tp <x> <y> <z>, /summon <créature> [nombre], /difficulty <0-3>, /kill, /clear, /seed, /spawnpoint, /locate <village|temple|jungle|mine|forteresse|fort>');
+        say('/tp <x> <y> <z>, /summon <créature> [nombre], /difficulty <0-3>, /gamerule <règle> [true|false], /kill, /clear, /seed, /spawnpoint, /locate <village|temple|jungle|mine|forteresse|fort>');
         return;
       case 'gamemode': {
         const m = (args[0] ?? '').toLowerCase();
@@ -2243,8 +2252,8 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
           say('Usage : /time <set|add> <day|noon|night|midnight|ticks>');
           return;
         }
-        if (op === 'set') this.time = this.time - this.dayTime + ((Math.floor(value) % DAY_TICKS) + DAY_TICKS) % DAY_TICKS;
-        else this.time = Math.max(0, this.time + Math.floor(value));
+        if (op === 'set') this.skyTime = this.skyTime - this.dayTime + ((Math.floor(value) % DAY_TICKS) + DAY_TICKS) % DAY_TICKS;
+        else this.skyTime = Math.max(0, this.skyTime + Math.floor(value));
         this.updateSkyDarken();
         say(`Heure : ${this.dayTime}`);
         return;
@@ -2403,6 +2412,29 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
         this.spawnPoint = { x: Math.floor(p.x) + 0.5, y: Math.floor(p.y), z: Math.floor(p.z) + 0.5 };
         say(`Point d'apparition du monde : ${Math.floor(p.x)} ${Math.floor(p.y)} ${Math.floor(p.z)}`);
         return;
+      case 'gamerule': {
+        if (args.length === 0) {
+          say(`Règles : ${GAME_RULE_NAMES.map((r) => `${r}=${this.world.rules[r]}`).join(', ')}`);
+          return;
+        }
+        const rule = resolveGameRule(args[0]);
+        if (!rule) {
+          say(`Règle inconnue : ${args[0]} (${GAME_RULE_NAMES.join(', ')})`);
+          return;
+        }
+        if (args.length === 1) {
+          say(`${rule} = ${this.world.rules[rule]}`);
+          return;
+        }
+        const val = args[1].toLowerCase();
+        if (val !== 'true' && val !== 'false') {
+          say('Usage : /gamerule <règle> [true|false]');
+          return;
+        }
+        this.world.rules[rule] = val === 'true';
+        say(`Règle ${rule} = ${this.world.rules[rule]}`);
+        return;
+      }
       default:
         say(`Commande inconnue : /${name} (essayez /help)`);
     }
@@ -2445,10 +2477,13 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
           return pick([...this.items().keys()]).sort();
         case 'tp':
           return pick(['~']);
+        case 'gamerule':
+          return pick(GAME_RULE_NAMES);
         default:
           return [];
       }
     }
+    if (parts.length === 3 && cmd === 'gamerule') return pick(['true', 'false']);
     if (parts.length === 3 && cmd === 'time' && parts[1].toLowerCase() === 'set') return pick(Object.keys(TIME_NAMES));
     if (parts.length === 3 && cmd === 'give' && (parts[1].toLowerCase() === 'potion' || parts[1].toLowerCase() === 'splash_potion')) {
       return pick(POTION_COMPLETIONS);

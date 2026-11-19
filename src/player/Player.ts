@@ -453,7 +453,7 @@ export class Player extends Living implements PlayerLike {
       if (this.health < this.maxHealth && this.age % 20 === 0) this.heal(1);
       if (this.hunger < 20 && this.age % 10 === 0) this.hunger++;
     }
-    if (this.hunger >= 18 && this.health < this.maxHealth) {
+    if (game.world.rules.naturalRegeneration && this.hunger >= 18 && this.health < this.maxHealth) {
       if (++this.foodTimer >= 80) {
         this.heal(1);
         this.exhaustion += 3;
@@ -531,14 +531,16 @@ export class Player extends Living implements PlayerLike {
     this.vehicle = null;
     this.riding = false;
     this.stopUsing();
-    for (const s of this.inventory.takeAll()) {
-      const e = game.dropStack ? game.dropStack(this.x, this.y + 0.9, this.z, s) : game.dropItem(this.x, this.y + 0.9, this.z, s.id, s.count, s.damage);
-      e.vx = (game.rng() - 0.5) * 0.5;
-      e.vy = 0.2 + game.rng() * 0.2;
-      e.vz = (game.rng() - 0.5) * 0.5;
+    if (!game.world.rules.keepInventory) {
+      for (const s of this.inventory.takeAll()) {
+        const e = game.dropStack ? game.dropStack(this.x, this.y + 0.9, this.z, s) : game.dropItem(this.x, this.y + 0.9, this.z, s.id, s.count, s.damage);
+        e.vx = (game.rng() - 0.5) * 0.5;
+        e.vy = 0.2 + game.rng() * 0.2;
+        e.vz = (game.rng() - 0.5) * 0.5;
+      }
+      this.xpLevel = 0;
+      this.xpProgress = 0;
     }
-    this.xpLevel = 0;
-    this.xpProgress = 0;
   }
 
   /** Le corps du joueur reste dans le monde jusqu'à la réapparition. */

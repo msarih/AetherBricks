@@ -7,6 +7,7 @@ import { BLOCK_OPAQUE, BLOCK_RANDOM_TICKS, BLOCK_SHAPE, BLOCK_SOLID, SHAPE } fro
 import { collisionBoxes, selectionBoxes, type NeighborFn } from './BlockModels';
 import { blockDrops } from './Drops';
 import { CHUNK_HEIGHT, chunkKey, type WorldType } from './Constants';
+import { createGameRules, type GameRules } from './GameRules';
 import { mulberry32 } from './gen/Noise';
 import type { Chunk } from './Chunk';
 import { neighborChanged, randomTick, scheduledTick } from './Behavior';
@@ -118,6 +119,8 @@ export class World {
   /** Assombrissement du ciel (0 = plein jour, 11 = nuit noire) : sert aux règles de lumière. */
   skyDarken = 0;
   raining = false;
+  /** Règles du monde (/gamerule). */
+  readonly rules: GameRules = createGameRules();
 
   private lastChunk: Chunk | null = null;
   private lastKey = -1;

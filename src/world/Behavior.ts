@@ -382,6 +382,10 @@ function fireEncouragement(w: World, x: number, y: number, z: number): number {
 }
 
 function fireTick(w: World, x: number, y: number, z: number, meta: number): void {
+  if (!w.rules.doFireTick) {
+    w.scheduleTick(x, y, z, 40);
+    return;
+  }
   if (!fireCanStay(w, x, y, z)) {
     w.setBlock(x, y, z, B.AIR, 0);
     return;

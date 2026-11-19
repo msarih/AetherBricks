@@ -39,7 +39,7 @@ function exposure(w: World, x: number, y: number, z: number, e: Entity): number 
   return seen / total;
 }
 
-export function explode(game: GameApi, x: number, y: number, z: number, power: number, fire: boolean, source: Entity | null): void {
+export function explode(game: GameApi, x: number, y: number, z: number, power: number, fire: boolean, source: Entity | null, griefing = true): void {
   const w = game.world;
   const rng = game.rng;
 
@@ -115,35 +115,37 @@ export function explode(game: GameApi, x: number, y: number, z: number, power: n
   game.particles('large_smoke', x, y, z, 12, power * 0.8);
 
   // --- 4. destruction ---
-  let smoke = 0;
-  for (const key of affected) {
-    const bx = posKeyX(key);
-    const by = posKeyY(key);
-    const bz = posKeyZ(key);
-    const v = w.getBlockAndMeta(bx, by, bz);
-    const id = v & 255;
-    if (id === B.AIR) continue;
-    if (id === B.TNT) {
-      w.setBlock(bx, by, bz, B.AIR, 0);
-      w.host.primeTnt(bx, by, bz, 10 + Math.floor(rng() * 20));
-      continue;
-    }
-    if (BLOCKS[id].hasItem || BLOCKS[id].hardness >= 0) {
-      if (rng() < 1 / power) {
-        for (const d of blockDrops(id, v >> 8, I.DIAMOND_PICKAXE, rng)) game.dropItem(bx + 0.5, by + 0.5, bz + 0.5, d.id, d.count);
-      }
-    }
-    w.setBlock(bx, by, bz, B.AIR, 0);
-    if (smoke++ % 6 === 0) game.particles('smoke', bx + 0.5, by + 0.5, bz + 0.5, 2, 0.4);
-  }
-
-  if (fire) {
+  if (griefing) {
+    let smoke = 0;
     for (const key of affected) {
       const bx = posKeyX(key);
       const by = posKeyY(key);
       const bz = posKeyZ(key);
-      if (w.getBlock(bx, by, bz) === B.AIR && BLOCK_OPAQUE[w.getBlock(bx, by - 1, bz)] === 1 && rng() < 1 / 3) {
-        w.setBlock(bx, by, bz, B.FIRE, 0);
+      const v = w.getBlockAndMeta(bx, by, bz);
+      const id = v & 255;
+      if (id === B.AIR) continue;
+      if (id === B.TNT) {
+        w.setBlock(bx, by, bz, B.AIR, 0);
+        w.host.primeTnt(bx, by, bz, 10 + Math.floor(rng() * 20));
+        continue;
+      }
+      if (BLOCKS[id].hasItem || BLOCKS[id].hardness >= 0) {
+        if (rng() < 1 / power) {
+          for (const d of blockDrops(id, v >> 8, I.DIAMOND_PICKAXE, rng)) game.dropItem(bx + 0.5, by + 0.5, bz + 0.5, d.id, d.count);
+        }
+      }
+      w.setBlock(bx, by, bz, B.AIR, 0);
+      if (smoke++ % 6 === 0) game.particles('smoke', bx + 0.5, by + 0.5, bz + 0.5, 2, 0.4);
+    }
+
+    if (fire) {
+      for (const key of affected) {
+        const bx = posKeyX(key);
+        const by = posKeyY(key);
+        const bz = posKeyZ(key);
+        if (w.getBlock(bx, by, bz) === B.AIR && BLOCK_OPAQUE[w.getBlock(bx, by - 1, bz)] === 1 && rng() < 1 / 3) {
+          w.setBlock(bx, by, bz, B.FIRE, 0);
+        }
       }
     }
   }

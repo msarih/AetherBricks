@@ -260,6 +260,7 @@ export class Enderman extends Monster {
   /** Emporte un bloc voisin de la liste, s'il en trouve un à découvert. */
   private pickUp(game: GameApi): void {
     const w = game.world;
+    if (!w.rules.mobGriefing) return;
     const rng = game.rng;
     const x = Math.floor(this.x - 2 + rng() * 4);
     const y = Math.floor(this.y + rng() * 3);
@@ -276,6 +277,7 @@ export class Enderman extends Monster {
   /** Repose le bloc porté sur un sol ferme voisin. */
   private putDown(game: GameApi): void {
     const w = game.world;
+    if (!w.rules.mobGriefing) return;
     const rng = game.rng;
     const x = Math.floor(this.x - 1 + rng() * 2);
     const y = Math.floor(this.y + rng() * 2);
