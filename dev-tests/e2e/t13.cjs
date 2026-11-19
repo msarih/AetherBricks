@@ -350,22 +350,32 @@ async function reloadWorld(page) {
       grief.intactFalse && grief.brokenTrue,
       JSON.stringify(grief));
 
-    // doFireTick false -> le feu reste en place sans brûler les planches
+    // doFireTick false -> le feu reste en place sans brûler les feuilles/planches ; true -> finit par consumer/éteindre
     await chat(page, '/gamerule doFireTick false');
     await ev(page, () => {
       const w = window.__game.world;
-      w.setBlock(40, 4, 10, B.OAK_PLANKS, 0, false);
+      w.setBlock(40, 4, 10, B.OAK_LEAVES, 1, false);
       w.setBlock(40, 5, 10, B.FIRE, 0, true);
+      w.setBlock(41, 4, 10, B.OAK_LEAVES, 1, false);
     });
-    await ticks(page, 90);
+    await ticks(page, 130);
     const fireFalse = await ev(page, () => ({
-      planks: window.__game.world.getBlock(40, 4, 10) === B.OAK_PLANKS,
+      leaves: window.__game.world.getBlock(40, 4, 10) === B.OAK_LEAVES,
       fire: window.__game.world.getBlock(40, 5, 10) === B.FIRE,
+      noSpread: window.__game.world.getBlock(41, 5, 10) === B.AIR,
     }));
     await chat(page, '/gamerule doFireTick true');
-    check('doFireTick : le feu n’évolue ni ne détruit à false',
-      fireFalse.planks && fireFalse.fire,
-      JSON.stringify(fireFalse));
+    const fireTrueProgressed = await ev(page, async () => {
+      const { scheduledTick } = await import('/src/world/Behavior.ts');
+      const w = window.__game.world;
+      for (let i = 0; i < 60 && w.getBlock(40, 5, 10) === B.FIRE && w.getBlock(40, 4, 10) === B.OAK_LEAVES; i++) {
+        scheduledTick(w, 40, 5, 10, B.FIRE, w.getMeta(40, 5, 10));
+      }
+      return w.getBlock(40, 5, 10) !== B.FIRE || w.getBlock(40, 4, 10) !== B.OAK_LEAVES || w.getBlock(41, 5, 10) === B.FIRE;
+    });
+    check('doFireTick : le feu n’évolue ni ne détruit à false et reprend à true',
+      fireFalse.leaves && fireFalse.fire && fireFalse.noSpread && fireTrueProgressed,
+      JSON.stringify({ fireFalse, fireTrueProgressed }));
 
     // naturalRegeneration false vs true
     await chat(page, '/gamerule naturalRegeneration false');
@@ -404,7 +414,7 @@ async function reloadWorld(page) {
     // Prépare porte, levier, coffre, bloc à miner et cochon
     await ev(page, () => {
       const g = window.__game, w = g.world, p = g.player;
-      w.setBlock(50, 4, 10, B.DIRT, 0, false);
+      w.setBlock(50, 4, 10, B.TORCH, 0, false);
       w.setBlock(52, 4, 10, B.LEVER, 0, false);
       w.setBlock(53, 4, 10, B.CHEST, 0, false);
       w.setBlock(54, 4, 10, B.OAK_DOOR, 0, false);
@@ -418,13 +428,14 @@ async function reloadWorld(page) {
     await ev(page, () => {
       const p = window.__game.player;
       p.teleport(50.5, 4, 12.2);
-      T.aim(50.5, 4.5, 10.5);
+      T.aim(50.5, 4.3, 10.5);
     });
-    await lclick(page); // tente de casser DIRT -> interdit
+    await lclick(page); // tente de casser la torche (hardness 0 : 1 clic suffit normalement) -> interdit
+    await ev(page, () => { T.aim(50.5, 3.8, 11.2); });
     await rclick(page); // tente de poser STONE -> interdit
     await ticks(page, 2);
     const advBlocks = await ev(page, () => ({
-      dirtKept: window.__game.world.getBlock(50, 4, 10) === B.DIRT,
+      torchKept: window.__game.world.getBlock(50, 4, 10) === B.TORCH,
       noPlace: window.__game.world.getBlock(50, 4, 11) === B.AIR,
       stoneCount: window.__game.player.inventory.slots[0]?.count,
     }));
@@ -473,7 +484,7 @@ async function reloadWorld(page) {
       pigHurt: window.__advPig.health < 10,
     }), advMenu);
     check('mode aventure : aucune casse ni pose, mais levier, porte, coffre et combat fonctionnent',
-      advBlocks.dirtKept && advBlocks.noPlace && advBlocks.stoneCount === 4
+      advBlocks.torchKept && advBlocks.noPlace && advBlocks.stoneCount === 4
       && advInteract.leverOn && advInteract.doorOpen && advInteract.chestOpened && advInteract.pigHurt,
       JSON.stringify({ advBlocks, advInteract, advMenu }));
 
@@ -504,10 +515,11 @@ async function reloadWorld(page) {
     await ticks(page, 22);
     await page.keyboard.up('KeyW');
 
-    // Tente aussi de casser/exploser sans dégât
+    // Tente aussi de casser/exploser/blesser au vide en spectateur
     await ev(page, () => {
       const g = window.__game, p = g.player;
       g.explode(p.x, p.y, p.z, 3, false, null, false);
+      p.hurt(g, 10, 'void');
       T.aim(60.5, 4.5, 10.5);
     });
     await lclick(page);
