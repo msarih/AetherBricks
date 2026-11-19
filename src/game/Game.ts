@@ -419,6 +419,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
         }
       }
     }
+    if (this.hardcore) this.level = 3;
     if (this.weatherTimer <= 0) this.weatherTimer = 12000 + Math.floor(Math.random() * 168000);
     const savedPlayer = st?.player;
     if (savedPlayer && typeof savedPlayer === 'object') {
@@ -676,6 +677,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
   /** Remonte le joueur jusqu'à un endroit libre (point d'apparition dans un feuillage, lit recouvert…). */
   private settle(): void {
     const p = this.player;
+    if (p.spectator) return;
     const w = this.world;
     const hw = p.width / 2;
     if (this.freshSpawn) {
@@ -1295,7 +1297,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     r.clear();
     r.render(this.scene, cam);
     this.triangles = r.info.render.triangles;
-    if (first && this.hudVisible && p.alive && !p.sleeping) hand.render(r);
+    if (first && this.hudVisible && p.alive && !p.sleeping && !p.spectator) hand.render(r);
   }
 
   // ------------------------------------------------------------------ clavier
@@ -1333,7 +1335,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     }
     if (!p.alive) return false;
     if (code === kb.inventory) {
-      if (!repeat && !p.sleeping) this.openMenu(p.creative ? new CreativeMenu(p.inventory) : new InventoryMenu(p.inventory));
+      if (!repeat && !p.sleeping && !p.spectator) this.openMenu(p.creative ? new CreativeMenu(p.inventory) : new InventoryMenu(p.inventory));
       return true;
     }
     if (code === kb.offhand) {
@@ -1917,6 +1919,10 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     return this.player.gameMode;
   }
 
+  get hardcore(): boolean {
+    return this.info.hardcore === true;
+  }
+
   get health(): number {
     return Math.max(0, Math.ceil(this.player.health));
   }
@@ -2025,7 +2031,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     ];
     const right = [
       `Graine : ${this.info.seed}`,
-      `Mode : ${p.gameMode === 'creative' ? 'créatif' : 'survie'}`,
+      `Mode : ${this.hardcore ? 'Extrême' : p.gameMode === 'creative' ? 'créatif' : p.gameMode === 'adventure' ? 'aventure' : p.gameMode === 'spectator' ? 'spectateur' : 'survie'}`,
       `Difficulté : ${DIFFICULTY_LABELS[this.difficulty] ?? this.difficulty}`,
       `Sauvegarde : ${this.storage.persistent ? 'sur disque' : 'en mémoire'}`,
     ];
@@ -2055,6 +2061,10 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
   }
 
   respawn(): void {
+    if (this.hardcore) {
+      this.spectate();
+      return;
+    }
     const p = this.player;
     if (this.dimension !== 'overworld') {
       // mort dans le Nether ou dans l'End : on réapparaît à la surface, comme dans Minecraft
@@ -2067,6 +2077,20 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       return;
     }
     this.revive(this.respawnSpot());
+  }
+
+  spectate(): void {
+    const p = this.player;
+    p.gameMode = 'spectator';
+    const y = p.y < 0 ? Math.max(this.spawnPoint.y, 64) : p.y;
+    p.respawn(p.x, y, p.z);
+    p.flying = true;
+    p.noClip = true;
+    if (this.deathShown && this.ui.modal) this.ui.closeScreen();
+    this.deathShown = false;
+    this.needSettle = false;
+    this.interaction.reset();
+    this.input.lock();
   }
 
   /** Remet le joueur sur pied à l'endroit donné et lui rend la main. */
@@ -2224,24 +2248,42 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     switch (name) {
       case 'help':
       case '?':
-        say('Commandes : /gamemode <survival|creative>, /time <set|add> <valeur>, /weather <clear|rain|thunder>,');
+        say('Commandes : /gamemode <survival|creative|adventure|spectator>, /time <set|add> <valeur>, /weather <clear|rain|thunder>,');
         say('/give <objet> [quantité], /give <potion|splash_potion> <sorte> [quantité] (/give potion ? pour la liste),');
         say('/tp <x> <y> <z>, /summon <créature> [nombre], /difficulty <0-3>, /gamerule <règle> [true|false], /kill, /clear, /seed, /spawnpoint, /locate <village|temple|jungle|mine|forteresse|fort>');
         return;
       case 'gamemode': {
+        if (this.hardcore) {
+          say('Le mode de jeu ne peut pas être changé en mode Extrême');
+          return;
+        }
         const m = (args[0] ?? '').toLowerCase();
-        const mode: GameMode | null = ['creative', 'c', '1'].includes(m) ? 'creative' : ['survival', 's', '0'].includes(m) ? 'survival' : null;
+        const mode: GameMode | null =
+          ['creative', 'creatif', 'créatif', 'c', '1'].includes(m) ? 'creative'
+            : ['survival', 'survie', 's', '0'].includes(m) ? 'survival'
+              : ['adventure', 'aventure', 'a', '2'].includes(m) ? 'adventure'
+                : ['spectator', 'spectateur', 'sp', '3'].includes(m) ? 'spectator'
+                  : null;
         if (!mode) {
-          say('Usage : /gamemode <survival|creative>');
+          say('Usage : /gamemode <survival|creative|adventure|spectator>');
           return;
         }
         p.gameMode = mode;
-        if (mode === 'survival') p.flying = false;
+        if (mode === 'spectator') {
+          p.flying = true;
+          p.noClip = true;
+          p.leaveVehicle();
+          p.stopUsing();
+        } else {
+          p.noClip = false;
+          if (mode === 'survival' || mode === 'adventure') p.flying = false;
+        }
         if (this.menu) {
           this.menu.close();
           this.menu = null;
         }
-        say(`Mode de jeu : ${mode === 'creative' ? 'créatif' : 'survie'}`);
+        const label = mode === 'creative' ? 'créatif' : mode === 'adventure' ? 'aventure' : mode === 'spectator' ? 'spectateur' : 'survie';
+        say(`Mode de jeu : ${label}`);
         return;
       }
       case 'time': {
@@ -2369,6 +2411,10 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
         return;
       }
       case 'difficulty': {
+        if (this.hardcore) {
+          say('La difficulté est verrouillée en mode Extrême');
+          return;
+        }
         const key = (args[0] ?? '').toLowerCase();
         const d = DIFFICULTY_NAMES.includes(key) ? DIFFICULTY_NAMES.indexOf(key) : /^[0-3]$/.test(key) ? Number(key) : -1;
         if (d < 0) {
@@ -2446,6 +2492,10 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
   }
 
   set difficulty(d: number) {
+    if (this.hardcore) {
+      this.level = 3;
+      return;
+    }
     this.level = Math.max(0, Math.min(3, Math.floor(d) || 0));
     if (this.level === 0) {
       for (const e of this.entities) if (e instanceof Monster) e.dead = true;
@@ -2462,7 +2512,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     if (parts.length === 2) {
       switch (cmd) {
         case 'gamemode':
-          return pick(['survival', 'creative']);
+          return pick(['survival', 'creative', 'adventure', 'spectator', 'survie', 'creatif', 'aventure', 'spectateur']);
         case 'time':
           return pick(['set', 'add']);
         case 'weather':

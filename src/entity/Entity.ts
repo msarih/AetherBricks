@@ -556,8 +556,8 @@ export abstract class Living extends Entity {
       }
     }
 
-    if (this.touchesBlock(w, B.CACTUS)) this.hurt(game, 1, 'cactus');
-    if (this.y < -64) this.hurt(game, 4, 'void');
+    if (!this.noClip && this.touchesBlock(w, B.CACTUS)) this.hurt(game, 1, 'cactus');
+    if (!this.noClip && this.y < -64) this.hurt(game, 4, 'void');
   }
 
   // ------------------------------------------------------------------ déplacement

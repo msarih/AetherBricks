@@ -107,7 +107,7 @@ export class Player extends Living implements PlayerLike {
   // ------------------------------------------------------------------ PlayerLike
 
   get targetable(): boolean {
-    return this.alive && this.gameMode === 'survival';
+    return this.alive && (this.gameMode === 'survival' || this.gameMode === 'adventure');
   }
 
   get heldItemId(): number {
@@ -125,6 +125,10 @@ export class Player extends Living implements PlayerLike {
 
   get creative(): boolean {
     return this.gameMode === 'creative';
+  }
+
+  get spectator(): boolean {
+    return this.gameMode === 'spectator';
   }
 
   collect(stack: ItemStack): number {
@@ -212,7 +216,7 @@ export class Player extends Living implements PlayerLike {
   }
 
   mount(vehicle: Entity): boolean {
-    if (this.vehicle || !this.alive || this.sleeping) return false;
+    if (this.spectator || this.vehicle || !this.alive || this.sleeping) return false;
     this.vehicle = vehicle;
     this.riding = true;
     this.sprinting = false;
@@ -287,7 +291,7 @@ export class Player extends Living implements PlayerLike {
   }
 
   private canSprint(): boolean {
-    return !this.sneaking && this.useKind === 'none' && !this.sleeping && (this.creative || this.hunger > 6);
+    return !this.sneaking && this.useKind === 'none' && !this.sleeping && (this.creative || this.spectator || this.hunger > 6);
   }
 
   stopUsing(): void {
@@ -305,9 +309,19 @@ export class Player extends Living implements PlayerLike {
 
   tick(game: GameApi): void {
     const creative = this.creative;
-    this.waterBreathing = creative;
-    this.fireImmune = creative;
-    if (!creative) this.flying = false;
+    const spect = this.spectator;
+    const invuln = creative || spect;
+    this.waterBreathing = invuln;
+    this.fireImmune = invuln;
+    this.noClip = spect;
+    if (spect) {
+      this.flying = true;
+      this.fallDistance = 0;
+      this.fireTicks = 0;
+      if (this.vehicle) this.leaveVehicle();
+    } else if (!creative) {
+      this.flying = false;
+    }
     if (this.jumpTap > 0) this.jumpTap--;
     if (this.forwardTap > 0) this.forwardTap--;
     this.pBob = this.bob;
@@ -361,7 +375,7 @@ export class Player extends Living implements PlayerLike {
       this.airAccel = this.sprinting ? 0.1 : 0.05;
       if (inp.jump) this.vy += 0.15;
       if (inp.sneak) this.vy -= 0.15;
-      if (this.onGround) this.flying = false;
+      if (this.onGround && !this.spectator) this.flying = false;
     } else {
       this.airAccel = this.sprinting ? 0.026 : 0.02;
     }
@@ -397,12 +411,12 @@ export class Player extends Living implements PlayerLike {
     this.bob += (target - this.bob) * 0.4;
     this.walk += dist * 0.6;
 
-    if (!this.creative) {
+    if (!this.creative && !this.spectator) {
       if (this.inWater) this.exhaustion += 0.015 * Math.sqrt(dist * dist + dy * dy);
       else if (this.onGround) this.exhaustion += (this.sprinting ? 0.1 : 0.01) * dist;
     }
 
-    if (this.onGround && !this.sneaking && dist > 0.005) {
+    if (this.onGround && !this.sneaking && !this.spectator && dist > 0.005) {
       this.stepAcc += dist * 0.6;
       if (this.stepAcc >= 1) {
         this.stepAcc = 0;
@@ -442,7 +456,7 @@ export class Player extends Living implements PlayerLike {
   }
 
   private foodTick(game: GameApi): void {
-    if (this.creative) return;
+    if (this.creative || this.spectator) return;
     const diff = game.difficulty;
     if (this.exhaustion > 4) {
       this.exhaustion -= 4;
@@ -473,6 +487,7 @@ export class Player extends Living implements PlayerLike {
   // ------------------------------------------------------------------ dégâts, mort
 
   hurt(game: GameApi, amount: number, cause: DamageCause, attacker: Entity | null = null): boolean {
+    if (this.spectator) return false;
     if (this.creative && cause !== 'void') return false;
     if (this.blocking && (cause === 'attack' || cause === 'arrow' || cause === 'explosion')) {
       const fromFront = attacker === null || (attacker.x - this.x) * -Math.sin(this.yaw) + (attacker.z - this.z) * -Math.cos(this.yaw) > 0;
@@ -644,7 +659,7 @@ export class Player extends Living implements PlayerLike {
     this.xpLevel = Math.max(0, Math.floor(num(d.xpLevel, 0)));
     this.xpProgress = Math.max(0, Math.min(0.999, num(d.xpProgress, 0)));
     this.enchantSeed = Math.max(1, Math.floor(num(d.enchantSeed, 1337)) >>> 0);
-    this.flying = d.flying === true && this.creative;
+    this.flying = this.spectator || (d.flying === true && this.creative);
     const bed = d.bed;
     this.bed =
       Array.isArray(bed) && bed.length === 3 && bed.every((v) => typeof v === 'number')

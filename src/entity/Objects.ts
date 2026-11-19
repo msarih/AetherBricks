@@ -70,7 +70,7 @@ export class ItemEntity extends Entity {
     if (this.age % 20 === this.id % 20 && this.stack.count < maxStack(this.stack.id)) this.mergeNearby(game);
 
     const p = game.player;
-    if (this.pickupDelay === 0 && p.alive) {
+    if (this.pickupDelay === 0 && p.alive && p.gameMode !== 'spectator') {
       const hw = this.width / 2;
       if (p.intersects(this.x - hw - 1, this.y - 0.5, this.z - hw - 1, this.x + hw + 1, this.y + this.height + 0.5, this.z + hw + 1)) {
         const before = this.stack.count;

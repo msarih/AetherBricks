@@ -99,6 +99,7 @@ export function explode(game: GameApi, x: number, y: number, z: number, power: n
     const impact = (1 - dist / radius) * exposure(w, x, y, z, e);
     if (impact <= 0) continue;
     if (e instanceof Living) {
+      if ((e as { gameMode?: string }).gameMode === 'spectator') continue;
       if (e !== source) e.hurt(game, Math.floor(((impact * impact + impact) / 2) * 7 * radius + 1), 'explosion', source);
     } else if (e.kind === 'item') {
       e.dead = true;

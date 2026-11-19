@@ -12,12 +12,19 @@ import { LOGO_HEIGHT, LOGO_WIDTH } from './Sprites';
 
 type Page = TitlePage | 'rename' | 'delete';
 
-const MODE_LABEL: Record<GameMode, string> = { survival: 'Survie', creative: 'Créatif' };
-const TYPE_LABEL: Record<WorldType, string> = { default: 'Normal', flat: 'Plat' };
-const MODE_HINT: Record<GameMode, string> = {
-  survival: 'Chercher des ressources, fabriquer, survivre à la faim et aux monstres',
-  creative: 'Ressources illimitées, vol libre, destruction instantanée des blocs',
+const MODE_LABEL: Record<GameMode, string> = {
+  survival: 'Survie',
+  creative: 'Créatif',
+  adventure: 'Aventure',
+  spectator: 'Spectateur',
 };
+const TYPE_LABEL: Record<WorldType, string> = { default: 'Normal', flat: 'Plat' };
+const CREATE_MODES: ReadonlyArray<{ gameMode: GameMode; hardcore: boolean; label: string; hint: string }> = [
+  { gameMode: 'survival', hardcore: false, label: 'Survie', hint: 'Chercher des ressources, fabriquer, survivre à la faim et aux monstres' },
+  { gameMode: 'creative', hardcore: false, label: 'Créatif', hint: 'Ressources illimitées, vol libre, destruction instantanée des blocs' },
+  { gameMode: 'survival', hardcore: true, label: 'Extrême', hint: 'Survie en difficulté difficile verrouillée, sans seconde chance à la mort' },
+  { gameMode: 'adventure', hardcore: false, label: 'Aventure', hint: 'Explorer sans casser ni poser de bloc, tout en interagissant avec le monde' },
+];
 const DEFAULT_NAME = 'Nouveau monde';
 const NAME_MAX = 32;
 
@@ -52,7 +59,7 @@ export class TitleMenu implements Screen {
   private fileInput: HTMLInputElement | null = null;
   private seedInput: HTMLInputElement | null = null;
   private focusFirst: HTMLElement | null = null;
-  private newMode: GameMode = 'survival';
+  private newModeIndex = 0;
   private newType: WorldType = 'default';
 
   constructor(private readonly ctx: UiContext, page: TitlePage, error = '') {
@@ -240,15 +247,17 @@ export class TitleMenu implements Screen {
     this.seedInput = this.field(form, '', 'seed', 64);
     el('div', 'mc-hint', form, 'Laisser vide pour une graine aléatoire');
     const row = el('div', 'mc-row', form);
-    const hint = el('div', 'mc-hint mc-hint-center', form, MODE_HINT[this.newMode]);
+    const currentMode = CREATE_MODES[this.newModeIndex];
+    const hint = el('div', 'mc-hint mc-hint-center', form, currentMode.hint);
     const mode = sized(
       button(
         host,
-        `Mode de jeu : ${MODE_LABEL[this.newMode]}`,
+        `Mode de jeu : ${currentMode.label}`,
         () => {
-          this.newMode = this.newMode === 'survival' ? 'creative' : 'survival';
-          setButtonLabel(mode, `Mode de jeu : ${MODE_LABEL[this.newMode]}`);
-          hint.textContent = MODE_HINT[this.newMode];
+          this.newModeIndex = (this.newModeIndex + 1) % CREATE_MODES.length;
+          const next = CREATE_MODES[this.newModeIndex];
+          setButtonLabel(mode, `Mode de jeu : ${next.label}`);
+          hint.textContent = next.hint;
         },
         'mode',
         row,
@@ -388,7 +397,7 @@ export class TitleMenu implements Screen {
       const text = el('div', 'mc-world-text', row);
       el('div', 'mc-world-name', text, w.name || 'Monde sans nom');
       el('div', 'mc-world-line', text, `Dernière partie : ${dateText(w.lastPlayed)}`);
-      el('div', 'mc-world-line', text, `Mode ${MODE_LABEL[w.gameMode] ?? w.gameMode}, monde ${(TYPE_LABEL[w.worldType] ?? w.worldType).toLowerCase()}`);
+      el('div', 'mc-world-line', text, `Mode ${w.hardcore ? 'Extrême' : MODE_LABEL[w.gameMode] ?? w.gameMode}, monde ${(TYPE_LABEL[w.worldType] ?? w.worldType).toLowerCase()}`);
       row.addEventListener('mousedown', (e) => {
         if (e.button !== 0 || this.busy) return;
         this.select(w.id);
@@ -461,7 +470,8 @@ export class TitleMenu implements Screen {
     if (this.busy || !this.nameInput || !this.seedInput) return;
     const name = this.nameInput.value.trim() || DEFAULT_NAME;
     const seed = this.seedInput.value.trim();
-    const options = { name, seed, worldType: this.newType, gameMode: this.newMode };
+    const chosen = CREATE_MODES[this.newModeIndex];
+    const options = { name, seed, worldType: this.newType, gameMode: chosen.gameMode, hardcore: chosen.hardcore };
     this.run('Création du monde impossible', () => this.ctx.host.createWorld(options), () => undefined);
   }
 

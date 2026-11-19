@@ -13,6 +13,7 @@ import type { Settings, WorldInfo } from '../world/Storage';
 export interface UiGame {
   readonly inventory: Inventory;
   readonly gameMode: GameMode;
+  readonly hardcore: boolean;
   /** Vie en demi-cœurs (0..maxHealth). */
   readonly health: number;
   readonly maxHealth: number;
@@ -66,6 +67,8 @@ export interface UiGame {
   resume(): void;
   /** Réapparaître après la mort. */
   respawn(): void;
+  /** Passer en mode spectateur après la mort en mode Extrême. */
+  spectate(): void;
   /** Texte validé dans le chat : message, ou commande s'il commence par « / ». */
   chat(text: string): void;
   /** Propositions de complétion pour une commande en cours de saisie (touche Tab). */
@@ -105,6 +108,7 @@ export interface NewWorldOptions {
   seed: string;
   worldType: WorldType;
   gameMode: GameMode;
+  hardcore?: boolean;
 }
 
 /** L'application, vue par l'interface. */
