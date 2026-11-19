@@ -37,6 +37,7 @@ import { SignRenderer } from '../render/SignRenderer';
 import { Sky, type SkyEnvironment } from '../render/Sky';
 import type { TradeView, UiApi, UiGame } from '../ui/UiApi';
 import { BLOCKS, BLOCK_REPLACEABLE, BLOCK_SHAPE, BLOCK_SOLID, FACING_DX, FACING_DZ, PISTON_DX, PISTON_DY, PISTON_DZ, SHAPE, isLeaves, isLog } from '../world/Blocks';
+import { blockDrops } from '../world/Drops';
 import type { Chunk } from '../world/Chunk';
 import { ChunkManager, type ChunkHooks } from '../world/ChunkManager';
 import { CHUNK_HEIGHT, DAY_TICKS, TICKS_PER_SECOND, chunkKey, skyDayFactor, type Dimension, type GameMode } from '../world/Constants';
@@ -111,7 +112,9 @@ const ROD_TIP_Y = 0.12;
 const DIFFICULTY_LABELS = ['Paisible', 'Facile', 'Normale', 'Difficile'];
 const DIFFICULTY_NAMES = ['peaceful', 'easy', 'normal', 'hard'];
 const TIME_NAMES: Record<string, number> = { day: 1000, noon: 6000, night: 13000, midnight: 18000 };
-const COMMANDS = ['help', 'gamemode', 'time', 'weather', 'give', 'tp', 'kill', 'seed', 'difficulty', 'summon', 'clear', 'spawnpoint', 'locate', 'gamerule'];
+const COMMANDS = ['help', 'gamemode', 'time', 'weather', 'give', 'tp', 'kill', 'seed', 'difficulty', 'summon', 'clear', 'spawnpoint', 'locate', 'gamerule', 'setblock', 'fill'];
+const FILL_MODES = ['replace', 'hollow', 'outline', 'destroy', 'keep'] as const;
+const FILL_MAX_BLOCKS = 32768;
 
 /** Lieux reconnus par /locate (noms français et anglais). */
 const LOCATE_NAMES: Record<string, { kind: StructureKind; label: string }> = {
@@ -119,7 +122,9 @@ const LOCATE_NAMES: Record<string, { kind: StructureKind; label: string }> = {
   temple: { kind: 'desert_temple', label: 'Temple du désert' },
   pyramide: { kind: 'desert_temple', label: 'Temple du désert' },
   desert: { kind: 'desert_temple', label: 'Temple du désert' },
+  desert_temple: { kind: 'desert_temple', label: 'Temple du désert' },
   jungle: { kind: 'jungle_temple', label: 'Temple de la jungle' },
+  jungle_temple: { kind: 'jungle_temple', label: 'Temple de la jungle' },
   mine: { kind: 'mineshaft', label: 'Mine abandonnée' },
   mineshaft: { kind: 'mineshaft', label: 'Mine abandonnée' },
   forteresse: { kind: 'fortress', label: 'Forteresse du Nether' },
@@ -156,6 +161,15 @@ const MOB_LABELS: Record<string, string> = {
 
 function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
+}
+
+function normalizeCmdName(label: string): string {
+  return label
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_|_$/g, '');
 }
 
 function approach(v: number, target: number, step: number): number {
@@ -317,6 +331,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
   private fpsTime = 0;
   private disposed = false;
   private itemNames: Map<string, number> | null = null;
+  private blockNames: Map<string, { id: number; meta: number }> | null = null;
   private readonly pressedPlates = new Map<number, number>();
   /** Générateur gardé pour situer les lieux (/locate) : créé à la première demande. */
   private terrain: TerrainInfo | null = null;
@@ -2162,9 +2177,177 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
         map.set(`record_${disc.key}`, disc.id);
         map.set(`disc_${disc.key}`, disc.id);
       }
+      for (const it of ITEMS) {
+        if (!it) continue;
+        const fr = normalizeCmdName(it.label);
+        if (fr && !map.has(fr)) map.set(fr, it.id);
+      }
       this.itemNames = map;
     }
     return map;
+  }
+
+  private blocks(): Map<string, { id: number; meta: number }> {
+    let map = this.blockNames;
+    if (!map) {
+      map = new Map<string, { id: number; meta: number }>();
+      for (const b of BLOCKS) {
+        if (b) map.set(b.name, { id: b.id, meta: 0 });
+      }
+      map.set('grass', { id: B.GRASS, meta: 0 });
+      map.set('note_block', { id: B.NOTE_BLOCK, meta: 0 });
+      map.set('fence_gate', { id: B.FENCE_GATE, meta: 0 });
+      for (const it of ITEMS) {
+        if (!it || it.places < 0) continue;
+        if (!map.has(it.name)) map.set(it.name, { id: it.places, meta: it.placeMeta });
+      }
+      for (const b of BLOCKS) {
+        if (!b) continue;
+        const fr = normalizeCmdName(b.label);
+        if (fr && !map.has(fr)) map.set(fr, { id: b.id, meta: 0 });
+      }
+      for (const it of ITEMS) {
+        if (!it || it.places < 0) continue;
+        const fr = normalizeCmdName(it.label);
+        if (fr && !map.has(fr)) map.set(fr, { id: it.places, meta: it.placeMeta });
+      }
+      this.blockNames = map;
+    }
+    return map;
+  }
+
+  private parseBlockCoord(raw: string, base: number): number {
+    const v = raw.startsWith('~') ? base + (raw.length > 1 ? Number(raw.slice(1)) : 0) : Number(raw);
+    return Number.isFinite(v) ? Math.floor(v) : Number.NaN;
+  }
+
+  private resolveBlock(rawName: string, rawMeta?: string): { id: number; meta: number } | null {
+    const key = rawName.toLowerCase().replace(/^minecraft:/, '');
+    const base = this.blocks().get(key) ?? (/^\d+$/.test(key) && BLOCKS[Number(key)] ? { id: Number(key), meta: 0 } : null);
+    if (!base) return null;
+    if (rawMeta === undefined) return base;
+    const m = Number(rawMeta);
+    if (!/^-?\d+$/.test(rawMeta) || !Number.isFinite(m) || m < 0 || m > 255) return null;
+    return { id: base.id, meta: m & 255 };
+  }
+
+  private cmdSetBlock(args: string[], say: (text: string) => void): void {
+    if (args.length < 4) {
+      say('Usage : /setblock <x> <y> <z> <bloc> [méta]');
+      return;
+    }
+    const p = this.player;
+    const x = this.parseBlockCoord(args[0], Math.floor(p.x));
+    const y = this.parseBlockCoord(args[1], Math.floor(p.y));
+    const z = this.parseBlockCoord(args[2], Math.floor(p.z));
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z) || Math.abs(x) > 1e6 || Math.abs(z) > 1e6) {
+      say('Coordonnées invalides');
+      return;
+    }
+    if (y < 0 || y >= CHUNK_HEIGHT) {
+      say(`Hauteur hors limites (0..${CHUNK_HEIGHT - 1})`);
+      return;
+    }
+    if (!this.world.isLoaded(x, z)) {
+      say('Chunk non chargé à cette position');
+      return;
+    }
+    const spec = this.resolveBlock(args[3], args[4]);
+    if (!spec) {
+      say(args[4] !== undefined && this.resolveBlock(args[3]) ? 'Méta invalide (0..255)' : `Bloc inconnu : ${args[3]}`);
+      return;
+    }
+    this.world.setBlock(x, y, z, spec.id, spec.meta);
+    say(`Bloc posé en ${x} ${y} ${z} : ${BLOCKS[spec.id]?.label ?? spec.id}`);
+  }
+
+  private cmdFill(args: string[], say: (text: string) => void): void {
+    if (args.length < 7) {
+      say('Usage : /fill <x1> <y1> <z1> <x2> <y2> <z2> <bloc> [replace|hollow|outline|destroy|keep]');
+      return;
+    }
+    const p = this.player;
+    const bx = Math.floor(p.x);
+    const by = Math.floor(p.y);
+    const bz = Math.floor(p.z);
+    const x1 = this.parseBlockCoord(args[0], bx);
+    const y1 = this.parseBlockCoord(args[1], by);
+    const z1 = this.parseBlockCoord(args[2], bz);
+    const x2 = this.parseBlockCoord(args[3], bx);
+    const y2 = this.parseBlockCoord(args[4], by);
+    const z2 = this.parseBlockCoord(args[5], bz);
+    if (![x1, y1, z1, x2, y2, z2].every(Number.isFinite) || Math.abs(x1) > 1e6 || Math.abs(x2) > 1e6 || Math.abs(z1) > 1e6 || Math.abs(z2) > 1e6) {
+      say('Coordonnées invalides');
+      return;
+    }
+    if (y1 < 0 || y1 >= CHUNK_HEIGHT || y2 < 0 || y2 >= CHUNK_HEIGHT) {
+      say(`Hauteur hors limites (0..${CHUNK_HEIGHT - 1})`);
+      return;
+    }
+    const minX = Math.min(x1, x2);
+    const maxX = Math.max(x1, x2);
+    const minY = Math.min(y1, y2);
+    const maxY = Math.max(y1, y2);
+    const minZ = Math.min(z1, z2);
+    const maxZ = Math.max(z1, z2);
+    const volume = (maxX - minX + 1) * (maxY - minY + 1) * (maxZ - minZ + 1);
+    if (volume > FILL_MAX_BLOCKS) {
+      say(`Zone trop grande (${volume} blocs, maximum ${FILL_MAX_BLOCKS})`);
+      return;
+    }
+    let mode: (typeof FILL_MODES)[number] = 'replace';
+    let metaArg: string | undefined;
+    if (args[7] !== undefined) {
+      const a7 = args[7].toLowerCase();
+      if (FILL_MODES.includes(a7 as (typeof FILL_MODES)[number])) {
+        mode = a7 as (typeof FILL_MODES)[number];
+      } else if (/^\d+$/.test(a7)) {
+        metaArg = a7;
+        if (args[8] !== undefined) {
+          const a8 = args[8].toLowerCase();
+          if (!FILL_MODES.includes(a8 as (typeof FILL_MODES)[number])) {
+            say(`Mode /fill inconnu : ${args[8]} (replace, hollow, outline, destroy, keep)`);
+            return;
+          }
+          mode = a8 as (typeof FILL_MODES)[number];
+        }
+      } else {
+        say(`Mode /fill inconnu : ${args[7]} (replace, hollow, outline, destroy, keep)`);
+        return;
+      }
+    }
+    const spec = this.resolveBlock(args[6], metaArg);
+    if (!spec) {
+      say(metaArg !== undefined && this.resolveBlock(args[6]) ? 'Méta invalide (0..255)' : `Bloc inconnu : ${args[6]}`);
+      return;
+    }
+    const w = this.world;
+    let changed = 0;
+    for (let y = minY; y <= maxY; y++) {
+      for (let z = minZ; z <= maxZ; z++) {
+        for (let x = minX; x <= maxX; x++) {
+          if (!w.isLoaded(x, z)) continue;
+          const shell = x === minX || x === maxX || y === minY || y === maxY || z === minZ || z === maxZ;
+          const cur = w.getBlockAndMeta(x, y, z);
+          const curId = cur & 255;
+          const curMeta = cur >> 8;
+          if (mode === 'keep' && curId !== B.AIR) continue;
+          if (mode === 'outline' && !shell) continue;
+          const nextId = mode === 'hollow' && !shell ? B.AIR : spec.id;
+          const nextMeta = mode === 'hollow' && !shell ? 0 : spec.meta;
+          if (mode === 'destroy' && curId !== B.AIR && (curId !== nextId || curMeta !== nextMeta)) {
+            w.host.effect('break', x, y, z, curId, curMeta);
+            for (const d of blockDrops(curId, curMeta, I.DIAMOND_PICKAXE, this.rng)) {
+              this.dropItem(x + 0.5, y + 0.5, z + 0.5, d.id, d.count);
+            }
+          }
+          if (curId !== nextId || curMeta !== nextMeta) {
+            if (w.setBlock(x, y, z, nextId, nextMeta)) changed++;
+          }
+        }
+      }
+    }
+    say(`${changed} bloc(s) rempli(s)`);
   }
 
   /**
@@ -2250,7 +2433,8 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       case '?':
         say('Commandes : /gamemode <survival|creative|adventure|spectator>, /time <set|add> <valeur>, /weather <clear|rain|thunder>,');
         say('/give <objet> [quantité], /give <potion|splash_potion> <sorte> [quantité] (/give potion ? pour la liste),');
-        say('/tp <x> <y> <z>, /summon <créature> [nombre], /difficulty <0-3>, /gamerule <règle> [true|false], /kill, /clear, /seed, /spawnpoint, /locate <village|temple|jungle|mine|forteresse|fort>');
+        say('/tp <x> <y> <z>, /setblock <x> <y> <z> <bloc> [méta], /fill <x1> <y1> <z1> <x2> <y2> <z2> <bloc> [mode],');
+        say('/summon <créature> [nombre], /difficulty <0-3>, /gamerule <règle> [true|false], /kill, /clear, /seed, /spawnpoint, /locate <village|temple|jungle|mine|forteresse|fort>');
         return;
       case 'gamemode': {
         if (this.hardcore) {
@@ -2481,6 +2665,12 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
         say(`Règle ${rule} = ${this.world.rules[rule]}`);
         return;
       }
+      case 'setblock':
+        this.cmdSetBlock(args, say);
+        return;
+      case 'fill':
+        this.cmdFill(args, say);
+        return;
       default:
         say(`Commande inconnue : /${name} (essayez /help)`);
     }
@@ -2526,6 +2716,8 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
         case 'give':
           return pick([...this.items().keys()]).sort();
         case 'tp':
+        case 'setblock':
+        case 'fill':
           return pick(['~']);
         case 'gamerule':
           return pick(GAME_RULE_NAMES);
@@ -2539,6 +2731,15 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       return pick(POTION_COMPLETIONS);
     }
     if (cmd === 'tp' && parts.length <= 4) return pick(['~']);
+    if (cmd === 'setblock') {
+      if (parts.length <= 4) return pick(['~']);
+      if (parts.length === 5) return pick([...this.blocks().keys()]).sort();
+    }
+    if (cmd === 'fill') {
+      if (parts.length <= 7) return pick(['~']);
+      if (parts.length === 8) return pick([...this.blocks().keys()]).sort();
+      if (parts.length === 9) return pick(FILL_MODES);
+    }
     return [];
   }
 }
