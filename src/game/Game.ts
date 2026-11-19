@@ -1086,7 +1086,9 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     }
     if (++p.sleepTicks >= SLEEP_TICKS) {
       // le matin
-      this.skyTime += (DAY_TICKS - this.dayTime) % DAY_TICKS;
+      const skip = (DAY_TICKS - this.dayTime) % DAY_TICKS;
+      this.time += skip;
+      this.skyTime += skip;
       p.addStat(STAT.SLEEP);
       this.raining = false;
       this.thundering = false;
@@ -2478,8 +2480,16 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
           say('Usage : /time <set|add> <day|noon|night|midnight|ticks>');
           return;
         }
-        if (op === 'set') this.skyTime = this.skyTime - this.dayTime + ((Math.floor(value) % DAY_TICKS) + DAY_TICKS) % DAY_TICKS;
-        else this.skyTime = Math.max(0, this.skyTime + Math.floor(value));
+        if (op === 'set') {
+          const target = ((Math.floor(value) % DAY_TICKS) + DAY_TICKS) % DAY_TICKS;
+          const delta = target - this.dayTime;
+          this.skyTime = Math.max(0, this.skyTime + delta);
+          this.time = Math.max(0, this.time + delta);
+        } else {
+          const delta = Math.floor(value);
+          this.skyTime = Math.max(0, this.skyTime + delta);
+          this.time = Math.max(0, this.time + delta);
+        }
         this.updateSkyDarken();
         say(`Heure : ${this.dayTime}`);
         return;
