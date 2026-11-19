@@ -1,4 +1,4 @@
-// Batterie sur un monde normal (graine 1337, survie) puis un monde créatif, gestion des mondes, page legacy (LEGACY=1).
+// Batterie sur un monde normal (graine 1337, survie) puis un monde créatif, gestion des mondes.
 const { sleep, launch, openPage, click, createWorld, shot, ticks, state, URL, S } = require('./lib.cjs');
 const { results, check, install, ev, chat, rclick, lclick, pos, section } = require('./h.cjs');
 const fs = require('fs');
@@ -680,19 +680,6 @@ const dbg = (page) => ev(page, () => { const d = window.__game.debugLines(); ret
     await sleep(800);
     const after = await page.evaluate(() => Array.from(document.querySelectorAll('.mc-world-name')).map((e) => e.textContent));
     check('supprimer un monde', before.length === 2 && after.length === 1, `${JSON.stringify(before)} → ${JSON.stringify(after)}`);
-  });
-
-  if (process.env.LEGACY === '1') await section('ancienne version (legacy.html)', async () => {
-    const errs = [];
-    const p2 = await browser.newPage();
-    await p2.setViewport({ width: 1280, height: 720 });
-    p2.on('pageerror', (e) => errs.push(e.message));
-    await p2.goto(URL + 'legacy.html', { waitUntil: 'networkidle0' });
-    await sleep(2500);
-    await p2.screenshot({ path: S + '/shots/game/60-legacy.png' });
-    const info = await p2.evaluate(() => ({ title: document.title, canvases: document.querySelectorAll('canvas').length }));
-    check('legacy.html se charge sans erreur', errs.length === 0 && info.canvases >= 1, JSON.stringify(info) + ' ' + errs.join(' | '));
-    await p2.close();
   });
 
   console.log('erreurs de page/console :', errors.length, errors.slice(0, 10));

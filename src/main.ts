@@ -1,6 +1,5 @@
 /**
  * Point d'entrée : l'application autour du jeu (menu principal, mondes, réglages).
- * L'ancien constructeur 3D reste disponible dans legacy.html (src/legacy-main.ts).
  */
 import * as THREE from 'three';
 import { Sfx } from './audio/Sfx';
