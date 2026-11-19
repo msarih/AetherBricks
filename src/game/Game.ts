@@ -251,10 +251,10 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
   /** Hasard purement visuel (cadrans affolés dans le Nether), distinct de celui du jeu. */
   private readonly dialRng = dialNoise(0x5eed);
   private readonly heldMapState: HeldMap = { id: 0, colors: new Uint8Array(0), version: 0, markerX: 0, markerZ: 0, dirX: 0, dirZ: -1 };
-  /** Âge du monde en ticks (horloge interne). */
+  /** Âge du monde en ticks (l'heure du jour en découle sauf si doDaylightCycle vaut false). */
   time = 1000;
-  /** Horloge du cycle jour/nuit (gelée quand doDaylightCycle vaut false). */
-  skyTime = 1000;
+  /** Heure du jour figée (0..23999) quand doDaylightCycle vaut false, sinon -1. */
+  private frozenDayTime = -1;
   raining = false;
   thundering = false;
   rainLevel = 0;
@@ -418,8 +418,13 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     const num = (v: unknown, fallback: number): number => (typeof v === 'number' && Number.isFinite(v) ? v : fallback);
     if (st) {
       this.time = Math.max(0, Math.floor(num(st.time, 1000)));
-      this.skyTime = Math.max(0, Math.floor(num(st.skyTime, this.time)));
       loadGameRules(this.world.rules, st.gameRules);
+      this.frozenDayTime =
+        !this.world.rules.doDaylightCycle && typeof st.frozenDayTime === 'number' && Number.isFinite(st.frozenDayTime)
+          ? ((Math.floor(st.frozenDayTime) % DAY_TICKS) + DAY_TICKS) % DAY_TICKS
+          : !this.world.rules.doDaylightCycle
+            ? this.time % DAY_TICKS
+            : -1;
       this.raining = st.raining === true;
       this.thundering = st.thundering === true && this.raining;
       this.rainLevel = this.raining ? 1 : 0;
@@ -510,7 +515,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     info.state = {
       player: this.player.saveState(),
       time: this.time,
-      skyTime: this.skyTime,
+      ...(this.frozenDayTime >= 0 ? { frozenDayTime: this.frozenDayTime } : {}),
       gameRules: saveGameRules(this.world.rules),
       raining: this.raining,
       thundering: this.thundering,
@@ -843,7 +848,6 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     if (this.world.rules.doMobSpawning) this.spawner.tick(this);
     this.atlas.tick();
     this.time++;
-    if (this.world.rules.doDaylightCycle) this.skyTime++;
     p.addStat(STAT.PLAY_TIME);
     this.tickWeather();
     this.tickEnd();
@@ -1086,9 +1090,8 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     }
     if (++p.sleepTicks >= SLEEP_TICKS) {
       // le matin
-      const skip = (DAY_TICKS - this.dayTime) % DAY_TICKS;
-      this.time += skip;
-      this.skyTime += skip;
+      this.time += (DAY_TICKS - this.dayTime) % DAY_TICKS;
+      if (this.frozenDayTime >= 0) this.frozenDayTime = 0;
       p.addStat(STAT.SLEEP);
       this.raining = false;
       this.thundering = false;
@@ -1540,7 +1543,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
   // ------------------------------------------------------------------ GameApi
 
   get dayTime(): number {
-    return ((this.skyTime % DAY_TICKS) + DAY_TICKS) % DAY_TICKS;
+    return this.frozenDayTime >= 0 ? this.frozenDayTime : this.time % DAY_TICKS;
   }
 
   spawn(e: Entity): void {
@@ -2482,13 +2485,12 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
         }
         if (op === 'set') {
           const target = ((Math.floor(value) % DAY_TICKS) + DAY_TICKS) % DAY_TICKS;
-          const delta = target - this.dayTime;
-          this.skyTime = Math.max(0, this.skyTime + delta);
-          this.time = Math.max(0, this.time + delta);
+          this.time = this.time - (this.time % DAY_TICKS) + target;
+          if (this.frozenDayTime >= 0) this.frozenDayTime = target;
         } else {
           const delta = Math.floor(value);
-          this.skyTime = Math.max(0, this.skyTime + delta);
           this.time = Math.max(0, this.time + delta);
+          if (this.frozenDayTime >= 0) this.frozenDayTime = ((this.frozenDayTime + delta) % DAY_TICKS + DAY_TICKS) % DAY_TICKS;
         }
         this.updateSkyDarken();
         say(`Heure : ${this.dayTime}`);
@@ -2671,7 +2673,16 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
           say('Usage : /gamerule <règle> [true|false]');
           return;
         }
-        this.world.rules[rule] = val === 'true';
+        const enabled = val === 'true';
+        if (rule === 'doDaylightCycle') {
+          if (!enabled && this.frozenDayTime < 0) {
+            this.frozenDayTime = this.time % DAY_TICKS;
+          } else if (enabled && this.frozenDayTime >= 0) {
+            this.time += ((this.frozenDayTime - (this.time % DAY_TICKS)) + DAY_TICKS) % DAY_TICKS;
+            this.frozenDayTime = -1;
+          }
+        }
+        this.world.rules[rule] = enabled;
         say(`Règle ${rule} = ${this.world.rules[rule]}`);
         return;
       }
