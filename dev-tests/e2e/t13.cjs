@@ -303,8 +303,19 @@ async function reloadWorld(page) {
     }));
 
     await chat(page, '/gamerule keepInventory false');
+    // Le joueur réapparaît au point d'apparition du monde : s'il y meurt aussi, il ramasse aussitôt
+    // ses propres objets et le test échoue au hasard. On le fait donc mourir loin de ce point.
+    await ev(page, () => {
+      const g = window.__game;
+      for (const e of g.entities) if (e.kind === 'item') e.dead = true;
+      g.player.teleport(60.5, 4, 60.5);
+    });
+    await ticks(page, 3);
     await chat(page, '/kill');
     await ticks(page, 4);
+    const onGround = await ev(page, () => window.__game.entities
+      .filter((e) => e.kind === 'item' && !e.dead && e.stack.id === I.DIAMOND)
+      .reduce((n, e) => n + e.stack.count, 0));
     await page.waitForSelector('[data-mc="respawn"]', { timeout: 5000 });
     await sleep(1100);
     await click(page, 'respawn');
@@ -313,9 +324,10 @@ async function reloadWorld(page) {
       count: window.__game.player.inventory.count(I.DIAMOND),
       xp: window.__game.player.xpLevel,
     }));
+    await ev(page, () => { for (const e of window.__game.entities) if (e.kind === 'item') e.dead = true; });
     check('keepInventory : conserve inventaire et XP à true, les lâche à false',
-      kept.count === 5 && kept.xp === 7 && dropped.count === 0 && dropped.xp === 0,
-      JSON.stringify({ kept, dropped }));
+      kept.count === 5 && kept.xp === 7 && dropped.count === 0 && dropped.xp === 0 && onGround === 5,
+      JSON.stringify({ kept, dropped, onGround }));
 
     // doDaylightCycle false -> dayTime gelé pendant que le jeu continue
     await chat(page, '/time set noon');
