@@ -4,7 +4,7 @@
  * caractères renvoient à une palette (k = contour, d = ombre, b = base, h = clair, w = reflet).
  * Lumière venant du haut-gauche. Module pur (pas de DOM).
  */
-import { COLOR_HEX, COLOR_NAMES } from '../../world/Ids';
+import { COLOR_HEX, COLOR_NAMES, MUSIC_DISCS } from '../../world/Ids';
 import { ARMOR_KINDS, ARMOR_MATERIALS, TOOL_KINDS, TOOL_MATERIALS, type TileName } from '../../world/Tiles';
 import { luma, mix, shade, type Color, type Painter, type Px } from './PixelCanvas';
 
@@ -1246,30 +1246,55 @@ def(
 // ---------------------------------------------------------------------------
 // Objets posables (portes, lit)
 // ---------------------------------------------------------------------------
-def(
-  'door_item',
-  spr(
-    [
-      '................',
-      '...kkkkkkkkkk...',
-      '...khhhhhhhbk...',
-      '...kh..bh..bk...',
-      '...kh..bh..bk...',
-      '...khbbbbbbbk...',
-      '...kh..bh..bk...',
-      '...kh..bh..bk...',
-      '...khbbbbbbbk...',
-      '...khbbbbbybk...',
-      '...khddbbddbk...',
-      '...khddbbddbk...',
-      '...khddbbddbk...',
-      '...khbbbbbbdk...',
-      '...kkkkkkkkkk...',
-      '................',
-    ],
-    { k: 0x3a2a12, d: 0x7a5c30, b: 0xa07c46, h: 0xc29a5c, y: 0x2c2110 }
-  )
-);
+const DOOR_ROWS = [
+  '................',
+  '...kkkkkkkkkk...',
+  '...khhhhhhhbk...',
+  '...kh..bh..bk...',
+  '...kh..bh..bk...',
+  '...khbbbbbbbk...',
+  '...kh..bh..bk...',
+  '...kh..bh..bk...',
+  '...khbbbbbbbk...',
+  '...khbbbbbybk...',
+  '...khddbbddbk...',
+  '...khddbbddbk...',
+  '...khddbbddbk...',
+  '...khbbbbbbdk...',
+  '...kkkkkkkkkk...',
+  '................',
+];
+const SOLID_DOOR_ROWS = [
+  '................',
+  '...kkkkkkkkkk...',
+  '...khhhhhhhbk...',
+  '...khddbbddbk...',
+  '...khyyyyyybk...',
+  '...khbbbbbbbk...',
+  '...khddbbddbk...',
+  '...khddbbddbk...',
+  '...khbbbbbbbk...',
+  '...khbbbbbybk...',
+  '...khddbbddbk...',
+  '...khddbbddbk...',
+  '...khyyyyyybk...',
+  '...khbbbbbbdk...',
+  '...kkkkkkkkkk...',
+  '................',
+];
+def('door_item', spr(DOOR_ROWS, { k: 0x3a2a12, d: 0x7a5c30, b: 0xa07c46, h: 0xc29a5c, y: 0x2c2110 }));
+const woodDoorPal = (base: Color, accent: Color): Pal => ({
+  k: shade(base, 0.35),
+  d: shade(base, 0.72),
+  b: base,
+  h: shade(base, 1.2),
+  y: accent,
+});
+def('spruce_door_item', spr(SOLID_DOOR_ROWS, woodDoorPal(0x7a5a34, 0x45454a)));
+def('birch_door_item', spr(DOOR_ROWS, woodDoorPal(0xd7c185, 0x3b3526)));
+def('jungle_door_item', spr(DOOR_ROWS, woodDoorPal(0xb1805c, 0x2f2414)));
+def('acacia_door_item', spr(DOOR_ROWS, woodDoorPal(0xba6337, 0x3a2214)));
+def('dark_oak_door_item', spr(SOLID_DOOR_ROWS, woodDoorPal(0x4a2f18, 0xc7a34b)));
 
 def(
   'iron_door_item',
@@ -2186,3 +2211,100 @@ def(
     { k: 0x26282e, s: 0x9aa0a8, d: 0x5c6068 },
   ),
 );
+
+def(
+  'painting',
+  spr(
+    [
+      '................',
+      '.kkkkkkkkkkkkkk.',
+      '.khhhhhhhhhhhbk.',
+      '.khbbbbbbbbbbdk.',
+      '.khbssssssssbdk.',
+      '.khbsyyyysssbdk.',
+      '.khbsssggsssbdk.',
+      '.khbsggmmggsbdk.',
+      '.khbgggmmgggbdk.',
+      '.khbggggggggbdk.',
+      '.khbddddddddbdk.',
+      '.khbbbbbbbbbbdk.',
+      '.kbdddddddddddk.',
+      '.kkkkkkkkkkkkkk.',
+      '................',
+      '................',
+    ],
+    {
+      k: 0x3b2410,
+      h: 0x8e6437,
+      b: 0x734e27,
+      d: 0x523418,
+      s: 0x7ab4e0,
+      y: 0xf4cf48,
+      g: 0x458b3a,
+      m: 0x7c5a38,
+    },
+  ),
+);
+
+def(
+  'item_frame',
+  spr(
+    [
+      '................',
+      '.kkkkkkkkkkkkkk.',
+      '.khhhhhhhhhhhbk.',
+      '.khbbbbbbbbbbdk.',
+      '.khbllllllllbdk.',
+      '.khblooooooobdk.',
+      '.khblooooooobdk.',
+      '.khblooooooobdk.',
+      '.khblooooooobdk.',
+      '.khblooooooobdk.',
+      '.khblooooooobdk.',
+      '.khbllllllllbdk.',
+      '.kbdddddddddddk.',
+      '.kkkkkkkkkkkkkk.',
+      '................',
+      '................',
+    ],
+    {
+      k: 0x3b2410,
+      h: 0xd4b678,
+      b: 0xb69354,
+      d: 0x876733,
+      l: 0x995736,
+      o: 0xb46841,
+    },
+  ),
+);
+
+const DISC_ROWS = [
+  '................',
+  '................',
+  '.....kkkkkk.....',
+  '...kkddddddkk...',
+  '..kddhhhhhhddk..',
+  '.kddhddddddhddk.',
+  '.kddhdlllldhddk.',
+  'kddhdlcllcldhddk',
+  'kddhdlcllcldhddk',
+  '.kddhdlllldhddk.',
+  '.kddhddddddhddk.',
+  '..kddhhhhhhddk..',
+  '...kkddddddkk...',
+  '.....kkkkkk.....',
+  '................',
+  '................',
+];
+for (const disc of MUSIC_DISCS) {
+  def(
+    `music_disc_${disc.key}` as TileName,
+    spr(DISC_ROWS, {
+      k: 0x111216,
+      d: 0x25272e,
+      h: 0x434652,
+      l: disc.color,
+      c: shade(disc.color, 0.72),
+    }),
+  );
+}

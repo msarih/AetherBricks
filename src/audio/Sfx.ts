@@ -635,6 +635,59 @@ const MUSIC_SCALES = [
 /** Fondamentales possibles (notes MIDI, la2 .. fa3). */
 const MUSIC_ROOTS = [45, 48, 50, 52, 53];
 
+interface DiscTrack {
+  stepMs: number;
+  wave: OscillatorType;
+  bassWave: OscillatorType;
+  melody: readonly (number | null)[];
+  bass: readonly (number | null)[];
+}
+
+const DISC_TRACKS: Record<string, DiscTrack> = {
+  '13': {
+    stepMs: 360,
+    wave: 'sine',
+    bassWave: 'triangle',
+    melody: [62, null, 69, null, 65, null, null, 61, 62, null, null, 68, null, 64, null, null],
+    bass: [38, null, null, null, 38, null, null, null, 37, null, null, null, 41, null, null, null],
+  },
+  cat: {
+    stepMs: 220,
+    wave: 'triangle',
+    bassWave: 'sine',
+    melody: [60, 64, 67, 72, 71, 67, 64, null, 65, 69, 72, 71, 69, 67, 64, null],
+    bass: [48, null, 55, null, 45, null, 52, null, 41, null, 48, null, 43, null, 50, null],
+  },
+  blocks: {
+    stepMs: 200,
+    wave: 'square',
+    bassWave: 'triangle',
+    melody: [64, null, 67, 71, 72, null, 71, 67, 62, null, 65, 69, 71, null, 69, 65],
+    bass: [48, 48, null, 55, 48, 48, null, 55, 43, 43, null, 50, 43, 43, null, 50],
+  },
+  chirp: {
+    stepMs: 210,
+    wave: 'sawtooth',
+    bassWave: 'triangle',
+    melody: [69, 71, 72, null, 71, 69, 67, 64, 65, 67, 69, null, 67, 65, 64, null],
+    bass: [45, null, 52, null, 48, null, 55, null, 41, null, 48, null, 43, null, 50, null],
+  },
+  far: {
+    stepMs: 290,
+    wave: 'sine',
+    bassWave: 'sine',
+    melody: [67, null, 71, 74, null, 76, 74, null, 72, null, 71, 67, null, 69, 67, null],
+    bass: [43, null, null, 50, 48, null, null, 55, 45, null, null, 52, 43, null, null, 50],
+  },
+  wait: {
+    stepMs: 230,
+    wave: 'triangle',
+    bassWave: 'sawtooth',
+    melody: [60, 67, 72, 71, 67, 64, 69, 67, 60, 67, 74, 72, 71, 69, 67, null],
+    bass: [48, null, 55, null, 45, null, 52, null, 41, null, 48, null, 43, null, 50, null],
+  },
+};
+
 export class Sfx {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
@@ -656,6 +709,11 @@ export class Sfx {
   private musicScale = 0;
   private musicDegree = 4;
   private musicCount = 0;
+
+  private activeDisc: string | null = null;
+  private discTimer: ReturnType<typeof setTimeout> | null = null;
+  private discStep = 0;
+  private readonly discOscs = new Set<OscillatorNode>();
 
   private readonly lastStart = new Map<string, number>();
   private voiceEnds: number[] = [];
@@ -750,6 +808,7 @@ export class Sfx {
 
   stopMusic(): void {
     try {
+      this.stopDisc();
       this.musicOn = false;
       if (this.musicTimer !== null) {
         clearTimeout(this.musicTimer);
@@ -951,13 +1010,102 @@ export class Sfx {
   private musicTick(): void {
     this.musicTimer = null;
     if (!this.musicOn) return;
-    try {
-      const ctx = this.ctx;
-      if (ctx && ctx.state === 'running' && this.musicIn) this.musicPhrase(ctx.currentTime + 0.1);
-    } catch {
-      // Une phrase ratée n'arrête pas la musique.
+    if (!this.activeDisc) {
+      try {
+        const ctx = this.ctx;
+        if (ctx && ctx.state === 'running' && this.musicIn) this.musicPhrase(ctx.currentTime + 0.1);
+      } catch {
+        // Une phrase ratée n'arrête pas la musique.
+      }
     }
     this.musicTimer = setTimeout(() => this.musicTick(), 2600 + Math.random() * 4800);
+  }
+
+  get playingDisc(): string | null {
+    return this.activeDisc;
+  }
+
+  /** Démarre la lecture d'un disque du jukebox en boucle. */
+  playDisc(key: string): void {
+    this.stopDisc();
+    if (!DISC_TRACKS[key]) return;
+    this.activeDisc = key;
+    this.discStep = 0;
+    this.discTick();
+  }
+
+  /** Arrête immédiatement la lecture du disque en cours. */
+  stopDisc(): void {
+    this.activeDisc = null;
+    if (this.discTimer !== null) {
+      clearTimeout(this.discTimer);
+      this.discTimer = null;
+    }
+    const ctx = this.ctx;
+    if (ctx) {
+      for (const osc of this.discOscs) {
+        try {
+          osc.stop(ctx.currentTime + 0.04);
+        } catch {
+          // Déjà arrêtée.
+        }
+      }
+    }
+    this.discOscs.clear();
+  }
+
+  private discTick(): void {
+    this.discTimer = null;
+    if (!this.activeDisc) return;
+    const track = DISC_TRACKS[this.activeDisc];
+    if (!track) {
+      this.activeDisc = null;
+      return;
+    }
+    try {
+      const ctx = this.ctx;
+      const dest = this.musicIn;
+      if (ctx && ctx.state === 'running' && dest) {
+        const i = this.discStep % track.melody.length;
+        const m = track.melody[i];
+        const b = track.bass[i];
+        const now = ctx.currentTime + 0.02;
+        if (m !== null) this.discVoice(ctx, dest, now, midiHz(m), track.wave, 0.22, (track.stepMs / 1000) * 1.35);
+        if (b !== null) this.discVoice(ctx, dest, now, midiHz(b), track.bassWave, 0.16, (track.stepMs / 1000) * 1.8);
+      }
+    } catch {
+      // Silencieux si l'audio est indisponible.
+    }
+    this.discStep++;
+    this.discTimer = setTimeout(() => this.discTick(), track.stepMs);
+  }
+
+  private discVoice(
+    ctx: AudioContext,
+    dest: AudioNode,
+    t: number,
+    freq: number,
+    wave: OscillatorType,
+    gain: number,
+    dur: number,
+  ): void {
+    const amp = ctx.createGain();
+    const g = amp.gain;
+    g.setValueAtTime(FLOOR, t);
+    g.linearRampToValueAtTime(gain, t + 0.015);
+    g.exponentialRampToValueAtTime(FLOOR, t + dur);
+    amp.connect(dest);
+    const osc = ctx.createOscillator();
+    osc.type = wave;
+    osc.frequency.value = freq;
+    osc.connect(amp);
+    this.discOscs.add(osc);
+    osc.start(t);
+    osc.stop(t + dur + 0.03);
+    osc.onended = () => {
+      amp.disconnect();
+      this.discOscs.delete(osc);
+    };
   }
 
   /** Une phrase : silence, note isolée, petit motif ou accord égrené, parfois soutenu par une nappe grave. */

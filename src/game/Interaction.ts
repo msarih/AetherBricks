@@ -6,6 +6,7 @@
  */
 import { Living, type Entity, type GameApi } from '../entity/Entity';
 import { tryBuildGolem } from '../entity/Creatures';
+import { ItemFrame, Painting, hangingFits } from '../entity/Hanging';
 import { LEASH_BREAK, Mob, isLeashPost, notifyTamedWolves } from '../entity/Mobs';
 import { Arrow, EyeOfEnder, FishingBobber, Thrown, ThrownPearl, ThrownPotion } from '../entity/Objects';
 import { Boat, Minecart } from '../entity/Vehicles';
@@ -42,16 +43,19 @@ import {
   isFluid,
   isLeaves,
   particleTile,
+  woodDoorItem,
+  woodFenceGateItem,
+  woodFenceItem,
 } from '../world/Blocks';
 import { CHUNK_HEIGHT, FACE_DOWN, FACE_DX, FACE_DY, FACE_DZ, FACE_EAST, FACE_NORTH, FACE_SOUTH, FACE_UP, FACE_WEST } from '../world/Constants';
 import { blockDrops, canHarvest, miningSpeed, type Drop } from '../world/Drops';
 import { enchantLevel } from '../world/Enchants';
-import { B, I } from '../world/Ids';
+import { B, I, isMusicDisc } from '../world/Ids';
 import type { BlockEntity } from '../world/World';
 import { getItem, isTool } from '../world/Items';
 import { cloneStackWithCount, makeStack } from '../world/ItemStack';
 import { newRayHit, rayBoxDistance, raycast } from '../world/Raycast';
-import { getBrewingStand, getChest, getDaylight, getDispenser, getFurnace, getHopper } from './BlockEntities';
+import { getBrewingStand, getChest, getDaylight, getDispenser, getFurnace, getHopper, getJukebox } from './BlockEntities';
 import { AnvilMenu, BrewingMenu, ChestMenu, CraftingMenu, DispenserMenu, EnchantMenu, FurnaceMenu, HOTBAR_SIZE, HopperMenu, type Menu, type XpHost } from './Inventory';
 import { applyPotionVariant } from '../world/Potions';
 
@@ -76,6 +80,8 @@ export interface InteractionHost extends GameApi {
   openSignEditor(x: number, y: number, z: number): void;
   /** Fort vers lequel vole un œil de l'Ender lancé, ou null si ce monde n'en a pas à cet endroit. */
   strongholdTarget(): { x: number; y: number; z: number } | null;
+  playJukebox?(x: number, y: number, z: number, discId: number): void;
+  stopJukebox?(x: number, y: number, z: number): void;
 }
 
 /** Ticks entre deux lancers de perle de l'Ender (Minecraft : une seconde). */
@@ -168,8 +174,13 @@ export class Interaction {
     for (const e of g.entities) {
       // sa propre monture ne gêne pas la visée
       if (e === p || e === p.vehicle || e.dead || !e.pickable) continue;
-      const hw = e.width / 2 + 0.1;
-      const d = rayBoxDistance(ex, ey, ez, l.x, l.y, l.z, e.x - hw, e.y - 0.1, e.z - hw, e.x + hw, e.y + e.height + 0.1, e.z + hw, best);
+      let d: number;
+      if (e.pickBounds(this.boxes)) {
+        d = rayBoxDistance(ex, ey, ez, l.x, l.y, l.z, this.boxes[0], this.boxes[1], this.boxes[2], this.boxes[3], this.boxes[4], this.boxes[5], best);
+      } else {
+        const hw = e.width / 2 + 0.1;
+        d = rayBoxDistance(ex, ey, ez, l.x, l.y, l.z, e.x - hw, e.y - 0.1, e.z - hw, e.x + hw, e.y + e.height + 0.1, e.z + hw, best);
+      }
       if (d >= 0 && d <= best) {
         best = d;
         found = e;
@@ -667,6 +678,35 @@ export class Interaction {
       triggerNoteBlock(w, x, y, z, nextNote);
       return true;
     }
+    if (id === B.JUKEBOX) {
+      if (!this.freshClick) return false;
+      const jb = getJukebox(w, x, y, z);
+      if (jb.disc > 0) {
+        const discId = jb.disc;
+        jb.disc = 0;
+        w.markBlockEntityDirty(jb);
+        w.setMeta(x, y, z, 0);
+        updateRedstoneAround(w, x, y, z);
+        g.stopJukebox?.(x, y, z);
+        const drop = g.dropItem(x + 0.5, y + 1.05, z + 0.5, discId, 1);
+        drop.vy = 0.18;
+        g.sound('pop', x + 0.5, y + 0.9, z + 0.5, 0.6, 1.1);
+        return true;
+      }
+      const hand = isMusicDisc(p.heldItemId) ? 'main' : isMusicDisc(p.offhandItemId) ? 'offhand' : null;
+      if (hand) {
+        const discId = hand === 'main' ? p.heldItemId : p.offhandItemId;
+        jb.disc = discId;
+        w.markBlockEntityDirty(jb);
+        w.setMeta(x, y, z, 1);
+        updateRedstoneAround(w, x, y, z);
+        p.consumeHand(hand);
+        g.playJukebox?.(x, y, z, discId);
+        g.particles('note', x + 0.5, y + 1.2, z + 0.5, 2, 0.2);
+        return true;
+      }
+      return false;
+    }
     if (id === B.CRAFTING_TABLE) {
       g.openMenu(new CraftingMenu(p.inventory));
       return true;
@@ -881,7 +921,8 @@ export class Interaction {
     }
 
     if (held === I.SIGN) return this.placeSign();
-    if (item.places >= 0) return this.place(item.places);
+    if (held === I.PAINTING || held === I.ITEM_FRAME) return this.placeHanging(held === I.ITEM_FRAME);
+    if (item.places >= 0) return this.place(item.places, item.placeMeta);
     return false;
   }
 
@@ -1130,7 +1171,7 @@ export class Interaction {
   }
 
   /** Pose le bloc `id` contre le bloc visé, orienté selon la face cliquée et le regard. */
-  private place(id: number): boolean {
+  private place(id: number, itemMeta = 0): boolean {
     const g = this.game;
     const w = g.world;
     const h = this.hit;
@@ -1198,7 +1239,7 @@ export class Interaction {
         break;
       }
       case SHAPE.DOOR:
-        return this.placeDoor(x, y, z, id, pf);
+        return this.placeDoor(x, y, z, id, pf, itemMeta);
       case SHAPE.BED:
         return this.placeBed(x, y, z, pf);
       case SHAPE.TRAPDOOR: {
@@ -1224,8 +1265,14 @@ export class Interaction {
         if (meta < 0) return false;
         break;
       }
+      case SHAPE.FENCE:
+        meta = id === B.OAK_FENCE ? itemMeta & 7 : 0;
+        break;
       case SHAPE.FENCE_GATE:
-        meta = pf;
+        meta = pf | ((itemMeta & 7) << 3);
+        break;
+      case SHAPE.CARPET:
+        meta = itemMeta & 15;
         break;
       case SHAPE.RAIL:
         // Raccordement automatique des rails (droite, virage, montée)
@@ -1250,6 +1297,7 @@ export class Interaction {
         } else if (def.rot === ROT.AXIS) meta = face === FACE_UP || face === FACE_DOWN || !onto ? 0 : face === FACE_WEST || face === FACE_EAST ? 1 : 2;
         else if (def.rot === ROT.FACING) meta = opposite(pf);
         else if (isLeaves(id)) meta = 1;
+        else if (id === B.STAINED_GLASS) meta = itemMeta & 15;
         break;
     }
 
@@ -1299,7 +1347,29 @@ export class Interaction {
     return true;
   }
 
-  private placeDoor(x: number, y: number, z: number, id: number, pf: number): boolean {
+  private placeHanging(isFrame: boolean): boolean {
+    const g = this.game;
+    const h = this.hit;
+    const side = faceFacing(h.face);
+    if (side < 0 || BLOCK_REPLACEABLE[h.id] === 1) return false;
+    const ax = h.x + FACE_DX[h.face];
+    const ay = h.y + FACE_DY[h.face];
+    const az = h.z + FACE_DZ[h.face];
+    let entity: Painting | ItemFrame | null;
+    if (isFrame) {
+      if (!hangingFits(g.world, g.entities, ax, ay, az, side, 1, 1)) return false;
+      entity = new ItemFrame(ax, ay, az, side);
+    } else {
+      entity = Painting.tryCreate(g.world, g.entities, ax, ay, az, side, g.rng);
+      if (!entity) return false;
+    }
+    g.spawn(entity);
+    g.blockSound('place', B.OAK_PLANKS, ax + 0.5, ay + 0.5, az + 0.5);
+    g.player.consumeHand(this.activeHand);
+    return true;
+  }
+
+  private placeDoor(x: number, y: number, z: number, id: number, pf: number, wood = 0): boolean {
     const w = this.game.world;
     if (!this.replaceable(x, y + 1, z) || !topSolid(w, x, y - 1, z)) return false;
     // charnière : à gauche par défaut ; à droite si une porte est déjà à gauche ou s'il y a plus de murs à droite
@@ -1314,7 +1384,7 @@ export class Interaction {
     const right = solid(rx, y, rz) + solid(rx, y + 1, rz);
     const doorLeft = w.getBlock(lx, y, lz) === id;
     const doorRight = w.getBlock(rx, y, rz) === id;
-    let meta = pf;
+    let meta = pf | (id === B.OAK_DOOR ? (wood & 7) << 5 : 0);
     if ((doorLeft && !doorRight) || right > left) meta |= META_DOOR_HINGE_RIGHT;
     if (!this.cellFree(x, y, z, id, meta) || !this.cellFree(x, y + 1, z, id, meta | META_DOOR_UPPER)) return false;
     w.setBlock(x, y, z, id, meta, false);
@@ -1342,15 +1412,29 @@ export class Interaction {
 
   /** Clic milieu : sélectionne dans la barre le bloc visé (en créatif, le fait apparaître). */
   pickBlock(): void {
-    if (!this.hasBlock || this.entity) return;
     const p = this.game.player;
     const inv = p.inventory;
-    let id = this.hit.id;
-    if (id === B.WHEAT) id = I.WHEAT_SEEDS;
-    else if (id === B.CARROTS) id = I.CARROT;
-    else if (id === B.POTATOES) id = I.POTATO;
-    else if (id === B.FURNACE_LIT) id = B.FURNACE;
-    else if (!BLOCKS[id].hasItem) return;
+    let id = 0;
+    if (this.entity) {
+      if (this.entity instanceof Painting) id = I.PAINTING;
+      else if (this.entity instanceof ItemFrame) id = this.entity.itemId > 0 ? this.entity.itemId : I.ITEM_FRAME;
+      else return;
+    } else if (this.hasBlock) {
+      id = this.hit.id;
+      const hmeta = this.hit.meta;
+      if (id === B.WHEAT) id = I.WHEAT_SEEDS;
+      else if (id === B.CARROTS) id = I.CARROT;
+      else if (id === B.POTATOES) id = I.POTATO;
+      else if (id === B.FURNACE_LIT) id = B.FURNACE;
+      else if (id === B.STAINED_GLASS) id = I.WHITE_STAINED_GLASS + (hmeta & 15);
+      else if (id === B.CARPET) id = I.WHITE_CARPET + (hmeta & 15);
+      else if (id === B.OAK_DOOR) id = woodDoorItem((hmeta >> 5) & 7);
+      else if (id === B.OAK_FENCE) id = woodFenceItem(hmeta & 7);
+      else if (id === B.FENCE_GATE) id = woodFenceGateItem((hmeta >> 3) & 7);
+      else if (!BLOCKS[id].hasItem) return;
+    } else {
+      return;
+    }
 
     const inBar = inv.find(id, 0, HOTBAR_SIZE);
     if (inBar >= 0) {

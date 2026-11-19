@@ -100,6 +100,24 @@ export interface SignEntity extends BlockEntity {
   lines: string[];
 }
 
+export interface JukeboxEntity extends BlockEntity {
+  type: 'jukebox';
+  /** Identifiant de l'objet disque inséré (0 = vide). */
+  disc: number;
+}
+
+export function getJukebox(w: World, x: number, y: number, z: number): JukeboxEntity {
+  const be = w.getBlockEntity(x, y, z) as (BlockEntity & { disc?: unknown }) | undefined;
+  if (be && be.type === 'jukebox') {
+    const jb = be as JukeboxEntity;
+    jb.disc = typeof jb.disc === 'number' && jb.disc > 0 ? Math.floor(jb.disc) : 0;
+    return jb;
+  }
+  const jb: JukeboxEntity = { type: 'jukebox', x, y, z, disc: 0 };
+  w.setBlockEntity(jb);
+  return jb;
+}
+
 /** Lignes d'un panneau (Minecraft : 4 lignes de 15 caractères au plus, sans caractère de contrôle). */
 export const SIGN_LINES = 4;
 export const SIGN_LINE_MAX = 15;
@@ -455,8 +473,13 @@ export function tickBlockEntities(w: World): void {
 
 /** Piles contenues dans une entité de bloc (pour les lâcher quand le bloc est cassé). */
 export function blockEntityItems(be: BlockEntity): ItemStack[] {
-  const items = (be as BlockEntity & { items?: unknown }).items;
   const out: ItemStack[] = [];
+  if (be.type === 'jukebox') {
+    const disc = (be as JukeboxEntity).disc;
+    if (typeof disc === 'number' && disc > 0) out.push(makeStack(disc, 1));
+    return out;
+  }
+  const items = (be as BlockEntity & { items?: unknown }).items;
   if (!Array.isArray(items)) return out;
   for (const s of items as Slot[]) {
     if (s && typeof s.id === 'number' && s.count > 0) out.push(s);

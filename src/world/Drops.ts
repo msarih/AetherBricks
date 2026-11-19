@@ -3,7 +3,7 @@
  * Module pur (pas de DOM ni de Three.js) : partagé avec les workers.
  */
 import { B, I } from './Ids';
-import { BLOCKS, SHAPE, isDoor, isLeaves, isSlab, isWool } from './Blocks';
+import { BLOCKS, SHAPE, isDoor, isLeaves, isSlab, isWool, woodDoorItem, woodFenceGateItem, woodFenceItem } from './Blocks';
 import { getItem } from './Items';
 
 export interface Drop {
@@ -89,6 +89,8 @@ export function blockDrops(id: number, meta: number, tool: number, rng: () => nu
       case B.GLOWSTONE:
       case B.BOOKSHELF:
         return one(id);
+      case B.STAINED_GLASS:
+        return one(I.WHITE_STAINED_GLASS + (meta & 15));
     }
   }
 
@@ -112,7 +114,7 @@ export function blockDrops(id: number, meta: number, tool: number, rng: () => nu
   if (isSlab(id)) return one(id, (meta & 3) === 2 ? 2 : 1);
 
   // --- Portes : seule la moitié basse rend l'objet ---
-  if (isDoor(id)) return meta & 8 ? [] : one(id);
+  if (isDoor(id)) return meta & 8 ? [] : one(id === B.OAK_DOOR ? woodDoorItem((meta >> 5) & 7) : id);
 
   switch (id) {
     // --- Terrain ---
@@ -165,6 +167,7 @@ export function blockDrops(id: number, meta: number, tool: number, rng: () => nu
     case B.CAKE:
       return [];
     case B.GLASS:
+    case B.STAINED_GLASS:
     case B.GLASS_PANE:
     case B.ICE:
     case B.SPAWNER:
@@ -173,6 +176,12 @@ export function blockDrops(id: number, meta: number, tool: number, rng: () => nu
     case B.LAVA:
     case B.BEDROCK:
       return [];
+    case B.CARPET:
+      return one(I.WHITE_CARPET + (meta & 15));
+    case B.OAK_FENCE:
+      return one(woodFenceItem(meta & 7));
+    case B.FENCE_GATE:
+      return one(woodFenceGateItem((meta >> 3) & 7));
 
     // --- Végétation ---
     case B.TALL_GRASS:

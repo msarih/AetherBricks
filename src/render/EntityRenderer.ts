@@ -12,7 +12,9 @@
 import * as THREE from 'three';
 import type { Atlas } from './Atlas';
 import { createModelMaterial, lightColor, passGeometry, worldUniforms } from './ChunkMaterials';
+import { getPaintingTexture } from './PaintingArt';
 import type { EntityView } from '../entity/EntityView';
+import { PAINTINGS } from '../entity/Hanging';
 import {
   DRAGON_NECK_SEGMENTS, DRAGON_TAIL_SEGMENTS, DRAGON_WING_SPAN, getHorseModel, getMobModel, getOcelotModel, getSheepModel, getVillagerModel,
   getWolfModel, type MobKind, type MobModel,
@@ -294,7 +296,7 @@ export class ItemModel {
   /** Modèle d'un objet d'inventaire : mini-bloc si `getItem(id).tile < 0`, sprite extrudé sinon. */
   static forItem(atlas: Atlas, itemId: number): ItemModel {
     const def = getItem(itemId);
-    if (def.tile < 0) return ItemModel.forBlock(atlas, def.places >= 0 ? def.places : itemId, 0);
+    if (def.tile < 0) return ItemModel.forBlock(atlas, def.places >= 0 ? def.places : itemId, def.placeMeta);
     return ItemModel.forTile(atlas, def.tile, itemTint(itemId));
   }
 
@@ -727,6 +729,10 @@ function visualKey(e: EntityView): string {
       return 'boat';
     case 'minecart':
       return 'minecart';
+    case 'painting':
+      return `p:${e.variant}`;
+    case 'item_frame':
+      return `if:${e.itemId}`;
   }
 }
 
@@ -1710,6 +1716,94 @@ class MinecartVisual implements Visual {
   }
 }
 
+class PaintingVisual implements Visual {
+  readonly root = new THREE.Group();
+  stamp = 0;
+  private readonly mesh: THREE.Mesh;
+  private readonly matFront: THREE.MeshBasicMaterial;
+  private readonly matWood = new THREE.MeshBasicMaterial({ color: 0x6c4926 });
+  private readonly color = new THREE.Color();
+
+  constructor(readonly key: string, e: EntityView) {
+    const motif = PAINTINGS[e.variant] ?? PAINTINGS[0];
+    this.matFront = new THREE.MeshBasicMaterial({ map: getPaintingTexture(e.variant) });
+    this.mesh = new THREE.Mesh(new THREE.BoxGeometry(motif.w, motif.h, 1 / 16), [
+      this.matWood,
+      this.matWood,
+      this.matWood,
+      this.matWood,
+      this.matFront,
+      this.matWood,
+    ]);
+    this.mesh.position.y = motif.h * 0.5;
+    this.root.add(this.mesh);
+  }
+
+  update(e: EntityView, alpha: number): void {
+    placeRoot(this.root, e, alpha);
+    this.root.rotation.y = e.yaw;
+    lightColor(e.skyLight, e.blockLight, worldUniforms.uSkyLight.value, this.color);
+    this.matFront.color.copy(this.color);
+    this.matWood.color.setHex(0x6c4926).multiply(this.color);
+  }
+
+  dispose(): void {
+    this.mesh.geometry.dispose();
+    this.matFront.dispose();
+    this.matWood.dispose();
+  }
+}
+
+class ItemFrameVisual implements Visual {
+  readonly root = new THREE.Group();
+  stamp = 0;
+  private readonly board: THREE.Group;
+  private readonly outerMesh: THREE.Mesh;
+  private readonly backMesh: THREE.Mesh;
+  private readonly matFrame = new THREE.MeshBasicMaterial({ color: 0xb69354 });
+  private readonly matBack = new THREE.MeshBasicMaterial({ color: 0x995736 });
+  private readonly itemModel: ItemModel | null = null;
+  private readonly itemHolder = new THREE.Group();
+  private readonly color = new THREE.Color();
+
+  constructor(readonly key: string, atlas: Atlas, e: EntityView) {
+    this.board = new THREE.Group();
+    this.outerMesh = new THREE.Mesh(new THREE.BoxGeometry(12 / 16, 12 / 16, 1 / 16), this.matFrame);
+    this.backMesh = new THREE.Mesh(new THREE.BoxGeometry(10 / 16, 10 / 16, 1 / 32), this.matBack);
+    this.backMesh.position.z = 0.02;
+    this.board.position.y = 0.5;
+    this.board.add(this.outerMesh, this.backMesh);
+    if (e.itemId > 0) {
+      this.itemModel = ItemModel.forItem(atlas, e.itemId);
+      const mesh = this.itemModel.instance();
+      const s = this.itemModel.isBlock ? 0.36 : 0.52;
+      mesh.scale.set(s, s, this.itemModel.isBlock ? 0.16 : 0.45);
+      this.itemHolder.position.set(0, 0, this.itemModel.isBlock ? 0.06 : 0.05);
+      this.itemHolder.add(mesh);
+      this.board.add(this.itemHolder);
+    }
+    this.root.add(this.board);
+  }
+
+  update(e: EntityView, alpha: number): void {
+    placeRoot(this.root, e, alpha);
+    this.root.rotation.y = e.yaw;
+    this.itemHolder.rotation.z = -(e.variant & 7) * (PI / 4);
+    lightColor(e.skyLight, e.blockLight, worldUniforms.uSkyLight.value, this.color);
+    this.matFrame.color.setHex(0xb69354).multiply(this.color);
+    this.matBack.color.setHex(0x995736).multiply(this.color);
+    if (this.itemModel) this.itemModel.setLight(e.skyLight, e.blockLight);
+  }
+
+  dispose(): void {
+    this.outerMesh.geometry.dispose();
+    this.backMesh.geometry.dispose();
+    this.matFrame.dispose();
+    this.matBack.dispose();
+    if (this.itemModel) this.itemModel.dispose();
+  }
+}
+
 export class EntityRenderer {
   private readonly root = new THREE.Group();
   private readonly visuals = new Map<number, Visual>();
@@ -1774,6 +1868,10 @@ export class EntityRenderer {
         return new BoatVisual(key);
       case 'minecart':
         return new MinecartVisual(key);
+      case 'painting':
+        return new PaintingVisual(key, e);
+      case 'item_frame':
+        return new ItemFrameVisual(key, this.atlas, e);
     }
   }
 

@@ -3,6 +3,7 @@
  */
 import type { Entity, EntityData } from './Entity';
 import { EndCrystal } from './EndMobs';
+import { ItemFrame, Painting } from './Hanging';
 import { loadMob } from './Mobs';
 import { Arrow, FallingBlock, Fireball, ItemEntity, Tnt } from './Objects';
 import { Boat, Minecart } from './Vehicles';
@@ -36,6 +37,10 @@ export function createEntity(data: unknown): Entity | null {
         return Boat.load(data);
       case 'minecart':
         return Minecart.load(data);
+      case 'painting':
+        return Painting.load(data);
+      case 'item_frame':
+        return ItemFrame.load(data);
       default:
         return null;
     }

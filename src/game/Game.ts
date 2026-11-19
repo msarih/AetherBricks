@@ -40,7 +40,7 @@ import { BLOCKS, BLOCK_REPLACEABLE, BLOCK_SHAPE, BLOCK_SOLID, FACING_DX, FACING_
 import type { Chunk } from '../world/Chunk';
 import { ChunkManager, type ChunkHooks } from '../world/ChunkManager';
 import { CHUNK_HEIGHT, DAY_TICKS, TICKS_PER_SECOND, chunkKey, skyDayFactor, type Dimension, type GameMode } from '../world/Constants';
-import { B, I } from '../world/Ids';
+import { B, I, MUSIC_DISCS, musicDiscInfo } from '../world/Ids';
 import { ITEMS, getItem, itemLabel } from '../world/Items';
 import { cloneStack, cloneStackWithCount, makeStack, maxDamage, type ItemStack } from '../world/ItemStack';
 import { applyBonemeal, fireCanStay } from '../world/Behavior';
@@ -252,6 +252,8 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
   /** Dernière note jouée par un bloc musical (utilisé aussi par les contrôles). */
   lastNote: { x: number; y: number; z: number; instrument: string; note: number; pitch: number; count: number } | null = null;
   private noteCount = 0;
+  /** Jukebox en cours de lecture (coordonnées, disque et titre), ou null. */
+  playingJukebox: { x: number; y: number; z: number; disc: number; key: string; title: string } | null = null;
 
   private readonly renderer: THREE.WebGLRenderer;
   private readonly atlas: Atlas;
@@ -543,6 +545,8 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     this.entityRenderer.dispose();
     this.signRenderer.dispose();
     this.hand.dispose();
+    this.playingJukebox = null;
+    this.sfx.stopDisc();
     this.sfx.stopMusic();
     this.sfx.setRain(0);
     this.sfx.setUnderwater(false);
@@ -1637,6 +1641,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       },
       effect: (kind, x, y, z, a, b) => this.worldEffect(kind, x, y, z, a ?? 0, b ?? 0),
       blockEntityRemoved: (be: BlockEntity) => {
+        if (be.type === 'jukebox') this.stopJukebox(be.x, be.y, be.z);
         resolveLoot(be, this.world.seed);
         for (const s of blockEntityItems(be)) this.dropStack(be.x + 0.5, be.y + 0.3, be.z + 0.5, s);
       },
@@ -2119,6 +2124,11 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       map = new Map<string, number>();
       for (const it of ITEMS) if (it) map.set(it.name, it.id);
       map.set('note_block', B.NOTE_BLOCK);
+      map.set('fence_gate', B.FENCE_GATE);
+      for (const disc of MUSIC_DISCS) {
+        map.set(`record_${disc.key}`, disc.id);
+        map.set(`disc_${disc.key}`, disc.id);
+      }
       this.itemNames = map;
     }
     return map;
@@ -2150,6 +2160,23 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
   strongholdTarget(): { x: number; y: number; z: number } | null {
     const s = this.nearest('stronghold');
     return s ? { x: s.x + 0.5, y: s.y, z: s.z + 0.5 } : null;
+  }
+
+  /** Démarre la lecture d'un disque sur le jukebox (x, y, z). */
+  playJukebox(x: number, y: number, z: number, discId: number): void {
+    const info = musicDiscInfo(discId);
+    if (!info) return;
+    this.playingJukebox = { x, y, z, disc: discId, key: info.key, title: info.title };
+    this.sfx.playDisc(info.key);
+    this.ui.actionBar(`Lecture en cours : C418 - ${info.title}`);
+  }
+
+  /** Arrête le jukebox en (x, y, z) s'il est en train de jouer. */
+  stopJukebox(x: number, y: number, z: number): void {
+    if (this.playingJukebox && this.playingJukebox.x === x && this.playingJukebox.y === y && this.playingJukebox.z === z) {
+      this.playingJukebox = null;
+      this.sfx.stopDisc();
+    }
   }
 
   /** Centre du portail du fort le plus proche (cellule du milieu de l'anneau de cadres), ou null. */

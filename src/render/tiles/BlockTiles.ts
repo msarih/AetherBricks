@@ -33,6 +33,7 @@ const WOODS: Record<string, WoodPalette> = {
   birch: { planks: 0xd7c185, bark: 0xd8d7d0, barkDark: 0x2c2a26, barkLight: 0xf1f0ea, heart: 0xc8b77a },
   jungle: { planks: 0xb1805c, bark: 0x58461c, barkDark: 0x3e3212, barkLight: 0x6c5a26, heart: 0xa67a52 },
   acacia: { planks: 0xba6337, bark: 0x6b655c, barkDark: 0x514c45, barkLight: 0x7f786e, heart: 0xb05d38 },
+  dark_oak: { planks: 0x4a2f18, bark: 0x2c1d10, barkDark: 0x1c1209, barkLight: 0x3b2817, heart: 0x4e321a },
 };
 
 // ---------------------------------------------------------------------------
@@ -498,7 +499,7 @@ def('lapis_block', (p) => {
 // ---------------------------------------------------------------------------
 // Bois
 // ---------------------------------------------------------------------------
-for (const name of ['oak', 'spruce', 'birch', 'jungle', 'acacia'] as const) {
+for (const name of ['oak', 'spruce', 'birch', 'jungle', 'acacia', 'dark_oak'] as const) {
   const w = WOODS[name];
   def(`${name}_log`, logSide(w, name === 'birch'));
   def(`${name}_log_top`, logTop(w));
@@ -580,6 +581,34 @@ def('glass', (p) => {
   p.set(11, 12, 0xe9fbff);
   p.set(12, 11, 0xe9fbff);
   p.set(10, 13, 0xd3eef4);
+});
+
+COLOR_NAMES.forEach((name, i) => {
+  const base = COLOR_HEX[i];
+  def(`stained_glass_${name}`, (p) => {
+    const body = mix(base, 0xffffff, 0.14);
+    const border = shade(base, 0.85);
+    const hi = mix(base, 0xffffff, 0.55);
+    for (let y = 0; y < TS; y++) {
+      for (let x = 0; x < TS; x++) {
+        p.set(x, y, body, 118);
+      }
+    }
+    for (let i = 0; i < TS; i++) {
+      p.set(i, 0, i % 3 === 0 ? hi : border, 220);
+      p.set(0, i, i % 3 === 0 ? hi : border, 220);
+      p.set(i, 15, shade(base, 0.72), 220);
+      p.set(15, i, shade(base, 0.72), 220);
+    }
+    p.set(3, 4, hi, 185);
+    p.set(4, 3, hi, 185);
+    p.set(5, 2, hi, 185);
+    p.set(3, 6, hi, 155);
+    p.set(4, 5, hi, 155);
+    p.set(11, 12, hi, 185);
+    p.set(12, 11, hi, 185);
+    p.set(10, 13, hi, 155);
+  });
 });
 
 def('bricks', (p) => {
@@ -898,6 +927,66 @@ def('oak_door_top', door(0xa88450, true, false));
 def('oak_door_bottom', door(0xa88450, false, false));
 def('iron_door_top', door(0xc4c4c4, true, true));
 def('iron_door_bottom', door(0xc4c4c4, false, true));
+
+function solidDoor(base: Color, top: boolean, strap: Color | null = null): Painter {
+  return (p) => {
+    const f = p.field(2, 8);
+    p.each((x, y) => shade(base, 0.92 + f(x, y) * 0.14));
+    const dark = shade(base, 0.58);
+    const light = shade(base, 1.16);
+    for (let y = 0; y < TS; y++) {
+      p.set(0, y, dark);
+      p.set(15, y, dark);
+      p.set(1, y, light);
+      p.set(7, y, shade(base, 0.78));
+      p.set(8, y, shade(base, 0.85));
+    }
+    if (top) {
+      for (let x = 0; x < TS; x++) p.set(x, 0, dark);
+      p.frame(2, 2, 12, 12, shade(base, 0.72));
+      p.set(12, 14, 0x3b3b3b);
+      p.set(13, 14, 0x626262);
+    } else {
+      for (let x = 0; x < TS; x++) p.set(x, 15, dark);
+      p.frame(2, 2, 12, 12, shade(base, 0.72));
+    }
+    if (strap !== null) {
+      const sy = top ? 5 : 10;
+      p.rect(1, sy, 14, 2, strap);
+      p.set(2, sy, shade(strap, 1.3));
+      p.set(13, sy, shade(strap, 1.3));
+    }
+  };
+}
+
+function barDoor(base: Color, top: boolean, slats: number): Painter {
+  return (p) => {
+    door(base, top, false)(p);
+    if (top) {
+      for (let y = 3; y < 14; y++) {
+        for (let x = 3; x < 13; x++) p.clear(x, y);
+      }
+      for (let s = 0; s < slats; s++) {
+        const x = 4 + Math.round((s * 7) / Math.max(1, slats - 1));
+        for (let y = 3; y < 14; y++) p.set(x, y, shade(base, 0.75));
+      }
+      p.frame(2, 2, 12, 12, shade(base, 0.6));
+      p.set(12, 14, 0x2e2416);
+      p.set(13, 14, 0x4a3a22);
+    }
+  };
+}
+
+def('spruce_door_top', solidDoor(WOODS.spruce.planks, true, 0x3f3f44));
+def('spruce_door_bottom', solidDoor(WOODS.spruce.planks, false, 0x3f3f44));
+def('birch_door_top', barDoor(WOODS.birch.planks, true, 3));
+def('birch_door_bottom', solidDoor(WOODS.birch.planks, false));
+def('jungle_door_top', barDoor(WOODS.jungle.planks, true, 2));
+def('jungle_door_bottom', door(WOODS.jungle.planks, false, false));
+def('acacia_door_top', barDoor(WOODS.acacia.planks, true, 4));
+def('acacia_door_bottom', barDoor(WOODS.acacia.planks, false, 4));
+def('dark_oak_door_top', solidDoor(WOODS.dark_oak.planks, true, 0xc7a34b));
+def('dark_oak_door_bottom', solidDoor(WOODS.dark_oak.planks, false));
 
 def('trapdoor', (p) => {
   planks(0xa07a44)(p);
@@ -2027,6 +2116,24 @@ def('noteblock', (p) => {
   // motif note / grille au centre
   p.rect(5, 5, 6, 6, 0x2b170c);
   p.rect(7, 6, 2, 4, 0x8f5938);
+});
+
+def('jukebox_side', (p) => {
+  p.rough([0x59311d, 0x663922, 0x734128], 4, 4, 0.45);
+  p.frame(0, 0, 16, 16, 0x361c10);
+  p.frame(1, 1, 14, 14, 0x472616);
+  p.rect(5, 5, 6, 6, 0x29150b);
+  p.frame(5, 5, 6, 6, 0x855034);
+});
+
+def('jukebox_top', (p) => {
+  p.rough([0x59311d, 0x663922, 0x734128], 4, 4, 0.45);
+  p.frame(0, 0, 16, 16, 0x361c10);
+  p.frame(1, 1, 14, 14, 0x472616);
+  // fente d'insertion du disque au centre
+  p.rect(4, 7, 8, 2, 0x121216);
+  p.rect(5, 6, 6, 1, 0x361c10);
+  p.rect(5, 9, 6, 1, 0x7c4a2e);
 });
 
 def('nether_portal', (p) => {

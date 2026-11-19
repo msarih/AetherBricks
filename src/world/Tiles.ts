@@ -87,15 +87,37 @@ const FRAME_IDS = [
   '16', '17', '18', '19', '20', '21', '22', '23', '24', '25', '26', '27', '28', '29', '30', '31',
 ] as const;
 
+const EXTRA_WOODS = ['spruce', 'birch', 'jungle', 'acacia', 'dark_oak'] as const;
+const DECOR_ITEM_TILES = [
+  'painting', 'item_frame',
+  'jukebox_top', 'jukebox_side',
+  'music_disc_13', 'music_disc_cat', 'music_disc_blocks', 'music_disc_chirp', 'music_disc_far', 'music_disc_wait',
+] as const;
+
 type BaseTile = (typeof BASE_TILES)[number];
 type WoolTile = `wool_${(typeof COLOR_NAMES)[number]}`;
 type DyeTile = `dye_${(typeof COLOR_NAMES)[number]}`;
 type TerracottaTile = `terracotta_${(typeof COLOR_NAMES)[number]}`;
+type StainedGlassTile = `stained_glass_${(typeof COLOR_NAMES)[number]}`;
+type DarkOakTile = 'dark_oak_log' | 'dark_oak_log_top' | 'dark_oak_planks';
+type WoodDoorTile = `${(typeof EXTRA_WOODS)[number]}_door_${'top' | 'bottom' | 'item'}`;
+type DecorItemTile = (typeof DECOR_ITEM_TILES)[number];
 type ToolTile = `${(typeof TOOL_MATERIALS)[number]}_${(typeof TOOL_KINDS)[number]}`;
 type ArmorTile = `${(typeof ARMOR_MATERIALS)[number]}_${(typeof ARMOR_KINDS)[number]}`;
 type DialTile = `${'compass' | 'clock'}_${(typeof FRAME_IDS)[number]}`;
 
-export type TileName = BaseTile | WoolTile | DyeTile | TerracottaTile | ToolTile | ArmorTile | DialTile;
+export type TileName =
+  | BaseTile
+  | WoolTile
+  | DyeTile
+  | TerracottaTile
+  | StainedGlassTile
+  | DarkOakTile
+  | WoodDoorTile
+  | DecorItemTile
+  | ToolTile
+  | ArmorTile
+  | DialTile;
 
 function buildTileNames(): TileName[] {
   const names: TileName[] = [...BASE_TILES];
@@ -107,6 +129,10 @@ function buildTileNames(): TileName[] {
   for (const f of FRAME_IDS) names.push(`clock_${f}`);
   // ajoutées en fin de liste : les couches existantes gardent leur index
   for (const c of COLOR_NAMES) names.push(`terracotta_${c}`);
+  for (const c of COLOR_NAMES) names.push(`stained_glass_${c}`);
+  names.push('dark_oak_log', 'dark_oak_log_top', 'dark_oak_planks');
+  for (const w of EXTRA_WOODS) names.push(`${w}_door_top`, `${w}_door_bottom`, `${w}_door_item`);
+  for (const t of DECOR_ITEM_TILES) names.push(t);
   return names;
 }
 
