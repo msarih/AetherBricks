@@ -124,7 +124,13 @@ export function canStay(w: World, x: number, y: number, z: number, id: number, m
     case B.WHEAT:
     case B.CARROTS:
     case B.POTATOES:
+    case B.PUMPKIN_STEM:
+    case B.MELON_STEM:
       return below === B.FARMLAND;
+    case B.COCOA: {
+      const f = meta & 3;
+      return w.getBlock(x + FACING_DX[f], y, z + FACING_DZ[f]) === B.JUNGLE_LOG;
+    }
     case B.NETHER_WART:
       return below === B.SOUL_SAND;
     case B.TORCH:
@@ -621,6 +627,36 @@ export function randomTick(w: World, x: number, y: number, z: number, id: number
       if (rng() < (wet ? 0.5 : 0.17)) w.setBlock(x, y, z, id, stage + 1, false);
       return;
     }
+    case B.PUMPKIN_STEM:
+    case B.MELON_STEM: {
+      if (w.getLight(x, y + 1, z) < 9) return;
+      const stage = meta & 7;
+      const wet = w.getMeta(x, y - 1, z) > 0;
+      if (stage < 7) {
+        if (rng() < (wet ? 0.5 : 0.17)) w.setBlock(x, y, z, id, stage + 1, false);
+        return;
+      }
+      // Tige mûre : vérifie si un fruit est déjà rattaché, sinon tente d'en faire pousser un à côté
+      const fruit = id === B.PUMPKIN_STEM ? B.PUMPKIN : B.MELON;
+      for (let f = 0; f < 4; f++) {
+        if (w.getBlock(x + FACING_DX[f], y, z + FACING_DZ[f]) === fruit) return;
+      }
+      if (rng() >= (wet ? 0.5 : 0.17)) return;
+      const f = Math.floor(rng() * 4);
+      const fx = x + FACING_DX[f];
+      const fz = z + FACING_DZ[f];
+      if (w.getBlock(fx, y, fz) !== B.AIR) return;
+      const soil = w.getBlock(fx, y - 1, fz);
+      if (soil === B.FARMLAND || soil === B.DIRT || soil === B.GRASS) {
+        w.setBlock(fx, y, fz, fruit, fruit === B.PUMPKIN ? Math.floor(rng() * 4) : 0);
+      }
+      return;
+    }
+    case B.COCOA: {
+      const stage = (meta >> 2) & 3;
+      if (stage < 2 && rng() < 0.2) w.setBlock(x, y, z, id, (meta & 3) | ((stage + 1) << 2), false);
+      return;
+    }
     case B.NETHER_WART:
       // pousse dans le noir comme en pleine lumière, sans eau : un stade sur dix ticks aléatoires
       if ((meta & 3) < 3 && rng() < 0.1) w.setBlock(x, y, z, id, (meta & 3) + 1, false);
@@ -665,6 +701,13 @@ export function applyBonemeal(w: World, x: number, y: number, z: number): boolea
   const rng = w.rng;
   if (isSapling(id)) {
     if (rng() < 0.45) growTree(w, x, y, z, id, rng);
+    w.host.effect('grow', x, y, z);
+    return true;
+  }
+  if (id === B.COCOA) {
+    const stage = (meta >> 2) & 3;
+    if (stage >= 2) return false;
+    w.setBlock(x, y, z, id, (meta & 3) | ((stage + 1) << 2), false);
     w.host.effect('grow', x, y, z);
     return true;
   }

@@ -92,6 +92,9 @@ const DECOR_ITEM_TILES = [
   'painting', 'item_frame',
   'jukebox_top', 'jukebox_side',
   'music_disc_13', 'music_disc_cat', 'music_disc_blocks', 'music_disc_chirp', 'music_disc_far', 'music_disc_wait',
+  'stem_straight', 'stem_bent',
+  'cocoa_0', 'cocoa_1', 'cocoa_2',
+  'pumpkin_seeds', 'melon_seeds',
 ] as const;
 
 type BaseTile = (typeof BASE_TILES)[number];

@@ -224,6 +224,11 @@ export const B = {
   DARK_OAK_PLANKS: 208,
   /** Jukebox (méta 0 = vide, 1 = contient un disque). */
   JUKEBOX: 209,
+  /** Tiges de citrouille et de pastèque (méta 0..7 = stade). */
+  PUMPKIN_STEM: 210,
+  MELON_STEM: 211,
+  /** Cabosse de cacao sur bûche d'acajou (méta = direction 0..3 | (stade 0..2 << 2)). */
+  COCOA: 212,
 } as const;
 
 /** Nombre maximal d'identifiants de blocs (les objets commencent à 256). */
@@ -451,6 +456,10 @@ export const I = {
   MUSIC_DISC_CHIRP: 459,
   MUSIC_DISC_FAR: 460,
   MUSIC_DISC_WAIT: 461,
+
+  /** Graines de cucurbitacées. */
+  PUMPKIN_SEEDS: 462,
+  MELON_SEEDS: 463,
 } as const;
 
 export const ITEM_ID_LIMIT = 470;

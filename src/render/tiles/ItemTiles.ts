@@ -2308,3 +2308,25 @@ for (const disc of MUSIC_DISCS) {
     }),
   );
 }
+
+const SEEDS_PATTERN: Rows = [
+  '................',
+  '................',
+  '................',
+  '.......kk.......',
+  '......khbk......',
+  '......kbdk..kk..',
+  '..kk...kk..khbk.',
+  '.khbk......kbdk.',
+  '.kbdk..kk...kk..',
+  '..kk..khbk......',
+  '......kbdk......',
+  '...kk..kk..kk...',
+  '..khbk....khbk..',
+  '..kbdk....kbdk..',
+  '...kk......kk...',
+  '................',
+];
+
+def('pumpkin_seeds', spr(SEEDS_PATTERN, { k: 0x7a6544, d: 0xb89c6a, b: 0xdec28c, h: 0xf4dfb4 }));
+def('melon_seeds', spr(SEEDS_PATTERN, { k: 0x1e1810, d: 0x3a2e1e, b: 0x564630, h: 0x76644a }));

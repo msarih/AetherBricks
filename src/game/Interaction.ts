@@ -920,6 +920,19 @@ export class Interaction {
       return true;
     }
 
+    if (held === I.DYE_BROWN && h.id === B.JUNGLE_LOG && h.face >= FACE_NORTH && h.face <= FACE_EAST) {
+      const cx = h.x + FACE_DX[h.face];
+      const cy = h.y;
+      const cz = h.z + FACE_DZ[h.face];
+      if (!this.replaceable(cx, cy, cz)) return false;
+      const facingToLog = opposite(faceFacing(h.face));
+      if (!canStay(w, cx, cy, cz, B.COCOA, facingToLog) || !this.cellFree(cx, cy, cz, B.COCOA, facingToLog)) return false;
+      if (!w.setBlock(cx, cy, cz, B.COCOA, facingToLog)) return false;
+      this.placed(cx, cy, cz, B.COCOA);
+      p.consumeHand(this.activeHand);
+      return true;
+    }
+
     if (held === I.SIGN) return this.placeSign();
     if (held === I.PAINTING || held === I.ITEM_FRAME) return this.placeHanging(held === I.ITEM_FRAME);
     if (item.places >= 0) return this.place(item.places, item.placeMeta);
@@ -1423,6 +1436,9 @@ export class Interaction {
       id = this.hit.id;
       const hmeta = this.hit.meta;
       if (id === B.WHEAT) id = I.WHEAT_SEEDS;
+      else if (id === B.PUMPKIN_STEM) id = I.PUMPKIN_SEEDS;
+      else if (id === B.MELON_STEM) id = I.MELON_SEEDS;
+      else if (id === B.COCOA) id = I.DYE_BROWN;
       else if (id === B.CARROTS) id = I.CARROT;
       else if (id === B.POTATOES) id = I.POTATO;
       else if (id === B.FURNACE_LIT) id = B.FURNACE;

@@ -315,6 +315,9 @@ COLOR_NAMES.forEach((_, i) => {
 // Nourriture, papier, livres
 // ---------------------------------------------------------------------------
 shaped(['###'], { '#': I.WHEAT }, I.BREAD);
+shaped(['#'], { '#': B.PUMPKIN }, I.PUMPKIN_SEEDS, 4);
+shaped(['#'], { '#': I.MELON_SLICE }, I.MELON_SEEDS, 1);
+shaped(['WCW'], { W: I.WHEAT, C: I.DYE_BROWN }, I.COOKIE, 8);
 shapeless([B.SUGAR_CANE], I.SUGAR);
 shaped(['###'], { '#': B.SUGAR_CANE }, I.PAPER, 3);
 shapeless([I.PAPER, I.PAPER, I.PAPER, I.LEATHER], I.BOOK);
