@@ -192,6 +192,6 @@ main().catch((err: unknown) => {
   console.error(err);
   const box = document.createElement('pre');
   box.style.cssText = 'position:fixed;inset:0;margin:0;padding:24px;color:#fff;background:#300;font:14px monospace;white-space:pre-wrap;z-index:99';
-  box.textContent = `AetherBricks n'a pas pu démarrer.\n\n${err instanceof Error ? (err.stack ?? err.message) : String(err)}`;
+  box.textContent = `SarihBricks n'a pas pu démarrer.\n\n${err instanceof Error ? (err.stack ?? err.message) : String(err)}`;
   document.body.appendChild(box);
 });

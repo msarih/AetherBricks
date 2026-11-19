@@ -464,7 +464,7 @@ const FONT: Record<string, string[]> = {
   S: ['.####', '#....', '#....', '.###.', '....#', '....#', '####.'],
 };
 
-export const LOGO_TEXT = 'AETHERBRICKS';
+export const LOGO_TEXT = 'SARIHBRICKS';
 const LOGO_CELL = 4;
 /** Taille du logo en pixels d'image (1 pixel d'image = 1 pixel d'interface). */
 export const LOGO_WIDTH = (LOGO_TEXT.length * 6 - 1) * LOGO_CELL + 2;

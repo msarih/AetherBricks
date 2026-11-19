@@ -482,7 +482,7 @@ const dbg = (page) => ev(page, () => { const d = window.__game.debugLines(); ret
       const foreign = path.join(dir, 'autre.aetherworld');
       fs.writeFileSync(foreign, 'Ceci est un simple fichier texte, pas un monde.');
       const r2 = await refused(foreign);
-      check('import : un fichier étranger est refusé, sans créer de monde', /pas un monde AetherBricks/.test(r2.error) && r2.names.length === 1, JSON.stringify(r2));
+      check('import : un fichier étranger est refusé, sans créer de monde', /pas un monde SarihBricks/.test(r2.error) && r2.names.length === 1, JSON.stringify(r2));
       const damaged = path.join(dir, 'abime.aetherworld');
       const copy = Buffer.from(bytes);
       for (let i = Math.floor(copy.length / 2); i < Math.floor(copy.length / 2) + 4096 && i < copy.length; i++) copy[i] = 0xff;

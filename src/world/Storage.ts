@@ -238,6 +238,7 @@ export function rleDecode(data: Uint8Array, length: number): Uint8Array {
 // Enregistrements et outils communs aux deux stockages
 // ---------------------------------------------------------------------------------------
 
+// Identifiant conservé volontairement en « aetherbricks » pour garder lisibles les mondes déjà sauvegardés.
 const DB_NAME = 'aetherbricks-voxel';
 const DB_VERSION = 1;
 const STORE_WORLDS = 'worlds';
@@ -1001,6 +1002,7 @@ export interface Settings {
   keybinds: Keybinds;
 }
 
+// Clé conservée volontairement en « aetherbricks » pour conserver les réglages existants des joueurs.
 const SETTINGS_KEY = 'aetherbricks.settings';
 
 /** Valeurs par défaut (objet gelé : passer par `loadSettings()` ou une copie pour modifier). */

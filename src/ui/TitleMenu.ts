@@ -179,7 +179,7 @@ export class TitleMenu implements Screen {
     logo.style.width = u(LOGO_WIDTH);
     logo.style.height = u(LOGO_HEIGHT);
     logo.setAttribute('role', 'img');
-    logo.setAttribute('aria-label', 'AetherBricks');
+    logo.setAttribute('aria-label', 'SarihBricks');
     el('div', 'mc-splash', logoBox, 'Fait de blocs !');
     el('div', 'mc-gap mc-gap-big', this.el);
     sized(button(host, 'Jouer', () => this.show('worlds'), 'play', this.el), 200);
@@ -192,7 +192,7 @@ export class TitleMenu implements Screen {
     el('span', 'mc-btn-label', legacy, 'Ancienne version (constructeur 3D)');
     this.warning(this.el);
     this.errorEl = el('div', 'mc-error', this.el, this.error);
-    el('div', 'mc-footer', this.el, 'AetherBricks');
+    el('div', 'mc-footer', this.el, 'SarihBricks');
   }
 
   private renderWorlds(): void {
