@@ -2224,3 +2224,64 @@ def('dragon_egg', (p) => {
   p.rough([0x0a0810, 0x110d1a, 0x18122a, 0x1f1836], 4, 4, 0.5);
   for (let i = 0; i < 12; i++) p.set(p.int(TS), p.int(TS), p.rnd() < 0.5 ? 0x5a2f8f : 0x3a1f66);
 });
+
+// ---------------------------------------------------------------------------
+// Cucurbitacées (tiges droite et courbée) et cabosses de cacao
+// ---------------------------------------------------------------------------
+def('stem_straight', (p) => {
+  // Dessin en niveaux de gris teinté selon le stade dans ChunkMesher (bourgeon en haut pour le rognage progressif).
+  for (let y = 0; y < TS; y++) {
+    p.set(7, y, y % 2 === 0 ? 0xf2f2f2 : 0xd4d4d4);
+    p.set(8, y, y % 2 === 1 ? 0xe0e0e0 : 0xb8b8b8);
+  }
+  const leaves: Array<[number, number, number]> = [
+    [6, 1, 0xe8e8e8], [9, 1, 0xe8e8e8],
+    [5, 2, 0xd8d8d8], [6, 2, 0xf6f6f6], [9, 2, 0xf2f2f2], [10, 2, 0xc8c8c8],
+    [4, 4, 0xc4c4c4], [5, 4, 0xebebeb], [6, 4, 0xd8d8d8],
+    [10, 5, 0xebebeb], [11, 5, 0xc4c4c4], [9, 5, 0xd0d0d0],
+    [5, 8, 0xd8d8d8], [6, 8, 0xe6e6e6],
+    [9, 10, 0xd8d8d8], [10, 10, 0xc0c0c0],
+  ];
+  for (const [x, y, c] of leaves) p.set(x, y, c);
+});
+
+def('stem_bent', (p) => {
+  // Tige partant du centre bas (x=7..8, y=15) et se courbant vers la droite (x=15, y=6..8).
+  for (let y = 7; y < TS; y++) {
+    p.set(7, y, 0xe6e6e6);
+    p.set(8, y, 0xc4c4c4);
+  }
+  for (let x = 8; x < TS; x++) {
+    const cy = x < 11 ? 6 : 7;
+    p.set(x, cy, 0xf0f0f0);
+    p.set(x, cy + 1, 0xcacaca);
+  }
+  p.set(6, 6, 0xd8d8d8);
+  p.set(5, 7, 0xc2c2c2);
+  p.set(9, 5, 0xdedede);
+  p.set(12, 6, 0xd8d8d8);
+});
+
+const COCOA_PALETTES: Array<readonly [number, number, number, number]> = [
+  // stade 0 : jeune bourgeon vert-olive
+  [0x3c521c, 0x5c7c2a, 0x769c38, 0x4b6422],
+  // stade 1 : cabosse intermédiaire olive doré
+  [0x544d19, 0x7a7026, 0x9c9032, 0x645c1e],
+  // stade 2 : cabosse mûre brun-orangé
+  [0x5a280c, 0x8f4318, 0xb85c24, 0x723210],
+];
+
+for (let stage = 0; stage < 3; stage++) {
+  def(`cocoa_${stage}` as TileName, (p) => {
+    const [dark, mid, light, rib] = COCOA_PALETTES[stage];
+    p.fill(mid);
+    p.frame(0, 0, TS, TS, dark);
+    for (let x = 3; x < TS - 2; x += 4) {
+      for (let y = 1; y < TS - 1; y++) {
+        p.set(x, y, rib);
+        if (x + 1 < TS - 1) p.set(x + 1, y, light);
+      }
+    }
+    p.rect(2, 2, 3, 2, light);
+  });
+}

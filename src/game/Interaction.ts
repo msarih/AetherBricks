@@ -193,7 +193,7 @@ export class Interaction {
   frame(alpha: number): void {
     const g = this.game;
     const p = g.player;
-    if (!p.alive || p.sleeping || g.ui.modal) {
+    if (!p.alive || p.sleeping || p.spectator || g.ui.modal) {
       g.selection.hide();
       return;
     }
@@ -232,7 +232,7 @@ export class Interaction {
     const rightClick = input.presses[2] > 0;
     input.presses[0] = input.presses[1] = input.presses[2] = 0;
 
-    if (!p.alive || p.sleeping || g.ui.modal) {
+    if (!p.alive || p.sleeping || p.spectator || g.ui.modal) {
       this.reset();
       return;
     }
@@ -252,7 +252,7 @@ export class Interaction {
     }
 
     // un clic bref (bouton déjà relâché au tick suivant) compte aussi : casse immédiate en créatif, herbes, torches…
-    if ((input.buttons[0] || leftClick) && p.useKind === 'none' && this.hasBlock && !this.entity) this.mine(leftClick);
+    if ((input.buttons[0] || leftClick) && p.useKind === 'none' && this.hasBlock && !this.entity && p.gameMode !== 'adventure') this.mine(leftClick);
     else {
       this.mining = false;
       this.breakProgress = 0;
@@ -789,6 +789,7 @@ export class Interaction {
     const g = this.game;
     const w = g.world;
     const p = g.player;
+    if (p.gameMode === 'adventure' || p.spectator) return false;
     const h = this.hit;
     const item = getItem(held);
 
@@ -920,6 +921,19 @@ export class Interaction {
       return true;
     }
 
+    if (held === I.DYE_BROWN && h.id === B.JUNGLE_LOG && h.face >= FACE_NORTH && h.face <= FACE_EAST) {
+      const cx = h.x + FACE_DX[h.face];
+      const cy = h.y;
+      const cz = h.z + FACE_DZ[h.face];
+      if (!this.replaceable(cx, cy, cz)) return false;
+      const facingToLog = opposite(faceFacing(h.face));
+      if (!canStay(w, cx, cy, cz, B.COCOA, facingToLog) || !this.cellFree(cx, cy, cz, B.COCOA, facingToLog)) return false;
+      if (!w.setBlock(cx, cy, cz, B.COCOA, facingToLog)) return false;
+      this.placed(cx, cy, cz, B.COCOA);
+      p.consumeHand(this.activeHand);
+      return true;
+    }
+
     if (held === I.SIGN) return this.placeSign();
     if (held === I.PAINTING || held === I.ITEM_FRAME) return this.placeHanging(held === I.ITEM_FRAME);
     if (item.places >= 0) return this.place(item.places, item.placeMeta);
@@ -938,7 +952,7 @@ export class Interaction {
     const ey = p.y + p.eyeHeight;
     const ez = p.z;
 
-    if (held === I.BUCKET) {
+    if (p.gameMode !== 'adventure' && held === I.BUCKET) {
       const f = this.fluidHit;
       if (!raycast(w, ex, ey, ez, l.x, l.y, l.z, this.reach(), f, false, true)) return false;
       if ((f.id !== B.WATER && f.id !== B.LAVA) || f.meta !== 0) return false;
@@ -949,7 +963,7 @@ export class Interaction {
       return true;
     }
 
-    if (held === I.WATER_BUCKET || held === I.LAVA_BUCKET) {
+    if (p.gameMode !== 'adventure' && (held === I.WATER_BUCKET || held === I.LAVA_BUCKET)) {
       if (!this.hasBlock) return false;
       const h = this.hit;
       let x = h.x;
@@ -1000,7 +1014,7 @@ export class Interaction {
       return true;
     }
 
-    if (held === B.LILY_PAD) {
+    if (p.gameMode !== 'adventure' && held === B.LILY_PAD) {
       const f = this.fluidHit;
       if (!raycast(w, ex, ey, ez, l.x, l.y, l.z, this.reach(), f, false, true)) return false;
       if (f.id !== B.WATER && f.id !== B.ICE) return false;
@@ -1423,6 +1437,9 @@ export class Interaction {
       id = this.hit.id;
       const hmeta = this.hit.meta;
       if (id === B.WHEAT) id = I.WHEAT_SEEDS;
+      else if (id === B.PUMPKIN_STEM) id = I.PUMPKIN_SEEDS;
+      else if (id === B.MELON_STEM) id = I.MELON_SEEDS;
+      else if (id === B.COCOA) id = I.DYE_BROWN;
       else if (id === B.CARROTS) id = I.CARROT;
       else if (id === B.POTATOES) id = I.POTATO;
       else if (id === B.FURNACE_LIT) id = B.FURNACE;
@@ -1465,7 +1482,7 @@ export class Interaction {
     const p = this.game.player;
     const inv = p.inventory;
     const held = inv.slots[inv.selected];
-    if (!held || !p.alive) return;
+    if (!held || !p.alive || p.spectator) return;
     if (p.useKind !== 'none') p.stopUsing();
     if (all || held.count <= 1) {
       inv.slots[inv.selected] = null;

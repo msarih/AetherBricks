@@ -276,6 +276,11 @@ export function collisionBoxes(id: number, meta: number, nb: NeighborFn, out: nu
     case SHAPE.COMPARATOR:
       out.push(0, 0, 0, 16, 2, 16);
       return;
+    case SHAPE.PUMPKIN_STEM:
+      return;
+    case SHAPE.COCOA:
+      cocoaBox(meta, out);
+      return;
     case SHAPE.HOPPER:
       out.push(0, 10, 0, 16, 16, 16, 4, 4, 4, 12, 10, 12, 6, 0, 6, 10, 4, 10);
       return;
@@ -363,6 +368,11 @@ export function collisionBoxes(id: number, meta: number, nb: NeighborFn, out: nu
     case SHAPE.COMPARATOR:
       out.push(0, 0, 0, 16, 2, 16);
       return;
+    case SHAPE.PUMPKIN_STEM:
+      return;
+    case SHAPE.COCOA:
+      cocoaBox(meta, out);
+      return;
     case SHAPE.HOPPER:
       out.push(0, 10, 0, 16, 16, 16, 4, 4, 4, 12, 10, 12, 6, 0, 6, 10, 4, 10);
       return;
@@ -420,6 +430,30 @@ function pistonHeadBoxes(meta: number, out: number[]): void {
   }
 }
 
+export function cocoaBox(meta: number, out: number[]): void {
+  const stage = Math.min(2, (meta >> 2) & 3);
+  const w = 4 + stage * 2;
+  const h = 5 + stage * 2;
+  const y0 = 12 - h;
+  const y1 = 12;
+  const a = 8 - w / 2;
+  const b = 8 + w / 2;
+  switch (meta & 3) {
+    case 0: // bûche au sud (+z)
+      out.push(a, y0, 15 - w, b, y1, 15);
+      return;
+    case 1: // bûche à l'ouest (-x)
+      out.push(1, y0, a, 1 + w, y1, b);
+      return;
+    case 2: // bûche au nord (-z)
+      out.push(a, y0, 1, b, y1, 1 + w);
+      return;
+    default: // bûche à l'est (+x)
+      out.push(15 - w, y0, a, 15, y1, b);
+      return;
+  }
+}
+
 function wallAttachBox(f: number, w: number, h: number, d: number, y0: number, out: number[]): void {
   const x0 = 8 - w / 2;
   const x1 = 8 + w / 2;
@@ -456,6 +490,12 @@ export function selectionBoxes(id: number, meta: number, nb: NeighborFn, out: nu
       return;
     case SHAPE.CROP:
       out.push(0, 0, 0, 16, 2 + (meta & 7) * 2, 16);
+      return;
+    case SHAPE.PUMPKIN_STEM:
+      out.push(6, 0, 6, 10, 2 + (meta & 7) * 2, 10);
+      return;
+    case SHAPE.COCOA:
+      cocoaBox(meta, out);
       return;
     case SHAPE.LADDER:
       edgeBox(meta & 3, 3, 0, 16, out);
@@ -536,6 +576,11 @@ export function selectionBoxes(id: number, meta: number, nb: NeighborFn, out: nu
     case SHAPE.REPEATER:
     case SHAPE.COMPARATOR:
       out.push(0, 0, 0, 16, 2, 16);
+      return;
+    case SHAPE.PUMPKIN_STEM:
+      return;
+    case SHAPE.COCOA:
+      cocoaBox(meta, out);
       return;
     case SHAPE.HOPPER:
       out.push(0, 10, 0, 16, 16, 16, 4, 4, 4, 12, 10, 12, 6, 0, 6, 10, 4, 10);

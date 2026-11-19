@@ -57,7 +57,7 @@ export const FACE_DY = [1, -1, 0, 0, 0, 0];
 export const FACE_DZ = [0, 0, -1, 1, 0, 0];
 export const FACE_OPPOSITE = [1, 0, 3, 2, 5, 4];
 
-export type GameMode = 'survival' | 'creative';
+export type GameMode = 'survival' | 'creative' | 'adventure' | 'spectator';
 export type WorldType = 'default' | 'flat';
 export type Dimension = 'overworld' | 'nether' | 'end';
 

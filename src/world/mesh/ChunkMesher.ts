@@ -14,7 +14,7 @@ import {
   woodPlankTile,
 } from '../Blocks';
 import {
-  CAULDRON_BOXES, DRAGON_EGG_BOXES, META_DOOR_HINGE_RIGHT, META_DOOR_UPPER, ccw, cw, doorNamedFacing, edgeBox, fenceBoxes, fenceConnections,
+  CAULDRON_BOXES, DRAGON_EGG_BOXES, META_DOOR_HINGE_RIGHT, META_DOOR_UPPER, ccw, cocoaBox, cw, doorNamedFacing, edgeBox, fenceBoxes, fenceConnections,
   fenceGateBoxes, fluidHeight, opposite, paneConnections, selectionBoxes, stairsBoxes, type NeighborFn,
 } from '../BlockModels';
 import type { MeshRequest, MeshResult, PassData } from './MeshTypes';
@@ -840,6 +840,63 @@ function meshCrop(id: number, meta: number): void {
   }
 }
 
+const STEM_TINTS = [0x00e210, 0x20df14, 0x40dc18, 0x60d81c, 0x80cf20, 0xa0c224, 0xbeb428, 0xd8a42c];
+
+function meshStem(id: number, meta: number): void {
+  const stage = meta & 7;
+  const fruit = id === B.PUMPKIN_STEM ? B.PUMPKIN : B.MELON;
+  let fruitDir = -1;
+  for (let f = 0; f < 4; f++) {
+    if ((nb(FACING_DX[f], 0, FACING_DZ[f]) & 255) === fruit) {
+      fruitDir = f;
+      break;
+    }
+  }
+  setColor(STEM_TINTS[stage]);
+  flatLight(1);
+  const lo = -1 / 16;
+  if (fruitDir >= 0) {
+    const dx = FACING_DX[fruitDir] * 0.5;
+    const dz = FACING_DZ[fruitDir] * 0.5;
+    const hi = lo + 1;
+    quad(0.5 - dx, lo, 0.5 - dz, 0.5 + dx, lo, 0.5 + dz, 0.5 + dx, hi, 0.5 + dz, 0.5 - dx, hi, 0.5 - dz);
+    uvRect(0, 0, 1, 1);
+    emit(opaquePass, T.stem_bent, -1, NOMIP, true);
+    return;
+  }
+  const h = (stage + 1) / 8;
+  const hi = lo + h;
+  const v1 = h;
+  quad(0.15, lo, 0.15, 0.85, lo, 0.85, 0.85, hi, 0.85, 0.15, hi, 0.15);
+  uvRect(0, 0, 1, v1);
+  emit(opaquePass, T.stem_straight, -1, NOMIP, true);
+  quad(0.15, lo, 0.85, 0.85, lo, 0.15, 0.85, hi, 0.15, 0.15, hi, 0.85);
+  uvRect(0, 0, 1, v1);
+  emit(opaquePass, T.stem_straight, -1, NOMIP, true);
+}
+
+function meshCocoa(meta: number): void {
+  tmpBoxes.length = 0;
+  cocoaBox(meta, tmpBoxes);
+  const stage = Math.min(2, (meta >> 2) & 3);
+  const tile = stage === 0 ? T.cocoa_0 : stage === 1 ? T.cocoa_1 : T.cocoa_2;
+  noTint();
+  boxAll(opaquePass, B.COCOA, tmpBoxes, 0, NOMIP, -1, tile);
+  // Pédoncule reliant la cabosse (y=12) au flanc de la bûche d'acajou
+  const f = meta & 3;
+  const dx = FACING_DX[f];
+  const dz = FACING_DZ[f];
+  tmpBoxes.length = 0;
+  if (dz !== 0) {
+    const z0 = dz > 0 ? 12 : 0;
+    tmpBoxes.push(7, 12, z0, 9, 16, z0 + 4);
+  } else {
+    const x0 = dx > 0 ? 12 : 0;
+    tmpBoxes.push(x0, 12, 7, x0 + 4, 16, 9);
+  }
+  boxAll(opaquePass, B.COCOA, tmpBoxes, 0, NOMIP, -1, T.cocoa_0);
+}
+
 function meshTorch(id: number, meta: number): void {
   const tile = id === B.REDSTONE_TORCH ? T.redstone_torch_on : id === B.REDSTONE_TORCH_OFF ? T.redstone_torch_off : T.torch;
   noTint();
@@ -1036,6 +1093,12 @@ function meshCell(id: number, meta: number): void {
       return;
     case SHAPE.CROP:
       meshCrop(id, meta);
+      return;
+    case SHAPE.PUMPKIN_STEM:
+      meshStem(id, meta);
+      return;
+    case SHAPE.COCOA:
+      meshCocoa(meta);
       return;
     case SHAPE.SLAB: {
       const top = BLOCK_TILES[id * 6];

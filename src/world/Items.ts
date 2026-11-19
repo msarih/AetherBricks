@@ -124,6 +124,8 @@ const SIMPLE_ITEMS: Array<[id: number, name: TileName, label: string, category: 
   [I.REDSTONE, 'redstone', 'Poudre de redstone', 'materiaux', { places: B.REDSTONE_WIRE }],
   [I.FLINT, 'flint', 'Silex', 'materiaux'],
   [I.WHEAT_SEEDS, 'wheat_seeds', 'Graines de blé', 'materiaux', { places: B.WHEAT }],
+  [I.PUMPKIN_SEEDS, 'pumpkin_seeds', 'Graines de citrouille', 'materiaux', { places: B.PUMPKIN_STEM }],
+  [I.MELON_SEEDS, 'melon_seeds', 'Graines de pastèque', 'materiaux', { places: B.MELON_STEM }],
   [I.WHEAT, 'wheat', 'Blé', 'materiaux'],
   [I.BONE, 'bone', 'Os', 'materiaux'],
   [I.BONE_MEAL, 'bone_meal', "Poudre d'os", 'materiaux'],

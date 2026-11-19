@@ -21,7 +21,7 @@ function isPlant(id: number): boolean {
   if (id === B.COBWEB) return false;
   const shape = BLOCKS[id].shape;
   return (
-    shape === SHAPE.CROSS || shape === SHAPE.CROP || shape === SHAPE.VINE || shape === SHAPE.LILY_PAD || shape === SHAPE.CACTUS ||
+    shape === SHAPE.CROSS || shape === SHAPE.CROP || shape === SHAPE.PUMPKIN_STEM || shape === SHAPE.VINE || shape === SHAPE.LILY_PAD || shape === SHAPE.CACTUS ||
     id === B.PUMPKIN || id === B.JACK_O_LANTERN || id === B.MELON
   );
 }
@@ -212,6 +212,12 @@ export function blockDrops(id: number, meta: number, tool: number, rng: () => nu
       return one(I.CARROT, (meta & 7) < 7 ? 1 : randInt(rng, 1, 4 + fortune));
     case B.POTATOES:
       return one(I.POTATO, (meta & 7) < 7 ? 1 : randInt(rng, 1, 4 + fortune));
+    case B.PUMPKIN_STEM:
+      return one(I.PUMPKIN_SEEDS, (meta & 7) >= 7 ? randInt(rng, 1, 3) : 1);
+    case B.MELON_STEM:
+      return one(I.MELON_SEEDS, (meta & 7) >= 7 ? randInt(rng, 1, 3) : 1);
+    case B.COCOA:
+      return one(I.DYE_BROWN, ((meta >> 2) & 3) >= 2 ? 3 : 1);
 
     case B.NETHER_WART:
       return one(I.NETHER_WART, (meta & 3) < 3 ? 1 : randInt(rng, 2, 4 + fortune));

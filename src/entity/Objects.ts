@@ -70,7 +70,7 @@ export class ItemEntity extends Entity {
     if (this.age % 20 === this.id % 20 && this.stack.count < maxStack(this.stack.id)) this.mergeNearby(game);
 
     const p = game.player;
-    if (this.pickupDelay === 0 && p.alive) {
+    if (this.pickupDelay === 0 && p.alive && p.gameMode !== 'spectator') {
       const hw = this.width / 2;
       if (p.intersects(this.x - hw - 1, this.y - 0.5, this.z - hw - 1, this.x + hw + 1, this.y + this.height + 0.5, this.z + hw + 1)) {
         const before = this.stack.count;
@@ -955,7 +955,7 @@ export class Fireball extends Entity {
       // boule de blaze : 5 de dégâts et le feu à la cible, ou une flamme là où elle s'écrase
       if (target) {
         if (target.hurt(game, 5, 'fire', this.owner) && target instanceof Living && !target.fireImmune) target.fireTicks = Math.max(target.fireTicks, 100);
-      } else {
+      } else if (game.world.rules.mobGriefing) {
         const bx = Math.floor(this.x);
         const by = Math.floor(this.y + 0.5);
         const bz = Math.floor(this.z);
@@ -968,7 +968,7 @@ export class Fireball extends Entity {
       const dmg = this.deflected && target.mobKind === 'ghast' ? 20 : 6;
       target.hurt(game, dmg, 'explosion', this.owner);
     }
-    game.explode(this.x, this.y + 0.5, this.z, 1.5, true, this.owner);
+    game.explode(this.x, this.y + 0.5, this.z, 1.5, true, this.owner, game.world.rules.mobGriefing);
   }
 
   save(): EntityData | null {

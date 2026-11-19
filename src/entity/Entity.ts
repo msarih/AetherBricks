@@ -94,8 +94,8 @@ export interface GameApi {
   openTrade?(villager: Entity): void;
   /** Ouvre la saisie du nom d'une créature (étiquette) ; absent hors du jeu complet. */
   openNameTag?(mob: Entity): void;
-  /** Explosion : détruit des blocs, blesse et repousse les entités. */
-  explode(x: number, y: number, z: number, power: number, fire: boolean, source: Entity | null): void;
+  /** Explosion : détruit des blocs (sauf si griefing vaut false), blesse et repousse les entités. */
+  explode(x: number, y: number, z: number, power: number, fire: boolean, source: Entity | null, griefing?: boolean): void;
   /** Entités dont la boîte coupe la boîte donnée. */
   entitiesInBox(x0: number, y0: number, z0: number, x1: number, y1: number, z1: number, except?: Entity | null): Entity[];
   /** Message dans le journal du joueur. */
@@ -556,8 +556,8 @@ export abstract class Living extends Entity {
       }
     }
 
-    if (this.touchesBlock(w, B.CACTUS)) this.hurt(game, 1, 'cactus');
-    if (this.y < -64) this.hurt(game, 4, 'void');
+    if (!this.noClip && this.touchesBlock(w, B.CACTUS)) this.hurt(game, 1, 'cactus');
+    if (!this.noClip && this.y < -64) this.hurt(game, 4, 'void');
   }
 
   // ------------------------------------------------------------------ déplacement

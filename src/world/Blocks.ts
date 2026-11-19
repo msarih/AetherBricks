@@ -62,6 +62,10 @@ export const SHAPE = {
   DAYLIGHT_DETECTOR: 39,
   /** Tapis de laine : nappe 1/16 sans collision. */
   CARPET: 40,
+  /** Tige de citrouille ou de pastèque : pousse de 0 à 7 puis s'incline vers le fruit voisin. */
+  PUMPKIN_STEM: 41,
+  /** Cabosse de cacao accrochée au flanc d'une bûche d'acajou (3 stades). */
+  COCOA: 42,
 } as const;
 
 export const TINT = { NONE: 0, GRASS: 1, FOLIAGE: 2, FIXED: 3 } as const;
@@ -505,6 +509,12 @@ reg(B.SPAWNER, 'spawner', 'Générateur de monstres', {
 });
 reg(B.CARROTS, 'carrots_crop', 'Carottes', { tiles: 'carrots_3', ...crop });
 reg(B.POTATOES, 'potatoes_crop', 'Pommes de terre', { tiles: 'potatoes_3', ...crop });
+reg(B.PUMPKIN_STEM, 'pumpkin_stem', 'Tige de citrouille', { tiles: 'stem_straight', ...crop, shape: SHAPE.PUMPKIN_STEM });
+reg(B.MELON_STEM, 'melon_stem', 'Tige de pastèque', { tiles: 'stem_straight', ...crop, shape: SHAPE.PUMPKIN_STEM });
+reg(B.COCOA, 'cocoa', 'Cabosse de cacao', {
+  tiles: 'cocoa_2', shape: SHAPE.COCOA, solid: true, opaque: false, hardness: 0.2, tool: 'axe', sound: 'wood',
+  needsSupport: true, randomTicks: true, hasItem: false, category: 'aucune',
+});
 reg(B.SPONGE, 'sponge', 'Éponge', { tiles: 'sponge', hardness: 0.6, tool: 'hoe', sound: 'grass', category: 'decoration' });
 reg(B.NETHERRACK, 'netherrack', 'Netherrack', { tiles: 'netherrack', hardness: 0.4, ...rock, category: 'nature' });
 reg(B.IRON_DOOR, 'iron_door', 'Porte en fer', {
@@ -730,7 +740,7 @@ export function woodFenceGateItem(wood: number): number {
   return v === 0 ? B.FENCE_GATE : I.SPRUCE_FENCE_GATE + v - 1;
 }
 export function isCrop(id: number): boolean {
-  return id === B.WHEAT || id === B.CARROTS || id === B.POTATOES;
+  return id === B.WHEAT || id === B.CARROTS || id === B.POTATOES || id === B.PUMPKIN_STEM || id === B.MELON_STEM;
 }
 export function isFlower(id: number): boolean {
   return id >= B.DANDELION && id <= B.CORNFLOWER;
@@ -788,6 +798,7 @@ export function particleTile(id: number, meta = 0): number {
   if (id === B.OAK_FENCE) return woodPlankTile(meta & 7);
   if (id === B.FENCE_GATE) return woodPlankTile((meta >> 3) & 7);
   if (id === B.OAK_DOOR) return T[`${WOOD_VARIANT_NAMES[clampWoodVariant((meta >> 5) & 7)]}_door_bottom` as TileName];
+  if (id === B.COCOA) return T[`cocoa_${Math.min(2, (meta >> 2) & 3)}` as TileName];
   return d.tiles[FACE_NORTH];
 }
 

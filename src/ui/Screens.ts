@@ -405,17 +405,20 @@ export class OptionsScreen implements Screen {
 
     const game = host.game;
     if (game) {
-      const diffText = (): string => `Difficulté : ${DIFFICULTIES[game.difficulty] ?? game.difficulty}`;
+      const diffText = (): string =>
+        game.hardcore ? 'Difficulté : Difficile (Extrême)' : `Difficulté : ${DIFFICULTIES[game.difficulty] ?? game.difficulty}`;
       const diff = button(
         host,
         diffText(),
         () => {
+          if (game.hardcore) return;
           game.difficulty = (Math.max(0, Math.round(game.difficulty)) + 1) % DIFFICULTIES.length;
           setButtonLabel(diff, diffText());
         },
         'difficulty',
         grid,
       );
+      if (game.hardcore) diff.disabled = true;
     }
     button(host, 'Contrôles…', () => this.showControls(), 'controls', grid);
 
@@ -714,11 +717,14 @@ export class DeathScreen implements Screen {
     const host = ctx.host;
     this.el = el('div', 'mc-screen mc-death mc-menu');
     this.el.dataset.mc = 'death';
-    el('div', 'mc-title mc-title-big', this.el, 'Vous êtes mort !');
+    const hardcore = host.game?.hardcore === true;
+    el('div', 'mc-title mc-title-big', this.el, hardcore ? 'Fin de partie !' : 'Vous êtes mort !');
     el('div', 'mc-death-message', this.el, message);
     el('div', 'mc-gap', this.el);
     this.buttons.push(
-      sized(button(host, 'Réapparaître', () => this.respawn(), 'respawn', this.el), 204),
+      hardcore
+        ? sized(button(host, 'Observer le monde', () => this.spectate(), 'spectate', this.el), 204)
+        : sized(button(host, 'Réapparaître', () => this.respawn(), 'respawn', this.el), 204),
       sized(button(host, 'Menu principal', () => this.quit(), 'title', this.el), 204),
     );
     this.error = el('div', 'mc-error', this.el);
@@ -744,6 +750,11 @@ export class DeathScreen implements Screen {
   private respawn(): void {
     this.ctx.closeScreen();
     this.ctx.host.game?.respawn();
+  }
+
+  private spectate(): void {
+    this.ctx.closeScreen();
+    this.ctx.host.game?.spectate();
   }
 
   private quit(): void {

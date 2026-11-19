@@ -157,7 +157,9 @@ function readInfo(raw: unknown, now: number): WorldInfo {
   const seed = raw.seed;
   if (typeof seed !== 'number' || !Number.isFinite(seed)) throw new Error(DAMAGED);
   const worldType: WorldType = raw.worldType === 'flat' ? 'flat' : 'default';
-  const gameMode: GameMode = raw.gameMode === 'creative' ? 'creative' : 'survival';
+  const rawMode = raw.gameMode;
+  const gameMode: GameMode =
+    rawMode === 'creative' || rawMode === 'adventure' || rawMode === 'spectator' ? rawMode : 'survival';
   const name = (typeof raw.name === 'string' ? raw.name.trim() : '').slice(0, MAX_NAME) || 'Monde importé';
   const info: WorldInfo = {
     id: createWorldId(),
@@ -169,6 +171,7 @@ function readInfo(raw: unknown, now: number): WorldInfo {
     lastPlayed: now,
     state: isRecord(raw.state) ? raw.state : null,
   };
+  if (raw.hardcore === true) info.hardcore = true;
   if (typeof raw.thumbnail === 'string' && raw.thumbnail.startsWith('data:image/')) info.thumbnail = raw.thumbnail;
   // le monde importé garde son générateur d'origine (au plus celui que ce jeu connaît)
   if (typeof raw.genVersion === 'number' && Number.isInteger(raw.genVersion) && raw.genVersion >= 1) {

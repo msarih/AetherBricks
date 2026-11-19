@@ -107,6 +107,7 @@ async function main(): Promise<void> {
         seed: parseSeed(options.seed),
         worldType: options.worldType,
         gameMode: options.gameMode,
+        ...(options.hardcore ? { hardcore: true } : {}),
         genVersion: GEN_VERSION,
         createdAt: now,
         lastPlayed: now,

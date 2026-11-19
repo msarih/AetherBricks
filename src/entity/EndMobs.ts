@@ -444,6 +444,7 @@ export class EnderDragon extends Living {
   /** Détruit les blocs fragiles qu'il traverse. */
   private smash(game: GameApi): void {
     const w = game.world;
+    if (!w.rules.mobGriefing) return;
     const x0 = Math.floor(this.x - 2);
     const y0 = Math.floor(this.y);
     const z0 = Math.floor(this.z - 2);

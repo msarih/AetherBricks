@@ -205,7 +205,7 @@ export class Hud {
     this.updateOverlays(g, dt);
     if (!this.visible) return;
 
-    const survival = g.gameMode !== 'creative';
+    const survival = g.gameMode === 'survival' || g.gameMode === 'adventure';
     if (this.changed('survival', survival)) {
       this.stats.style.display = survival ? '' : 'none';
       this.heldName.classList.toggle('mc-low', !survival);
@@ -240,6 +240,14 @@ export class Hud {
   }
 
   private updateOverlays(g: UiGame, dt: number): void {
+    if (g.gameMode === 'spectator') {
+      this.opacity('water', this.water, 0);
+      this.opacity('lava', this.lava, 0);
+      this.opacity('hurt', this.hurt, 0);
+      this.opacity('fire', this.fire, 0);
+      this.opacity('fade', this.fade, 0);
+      return;
+    }
     this.opacity('water', this.water, g.headInWater && !g.headInLava ? 1 : 0);
     this.opacity('lava', this.lava, g.headInLava ? 1 : 0);
     this.opacity('hurt', this.hurt, g.hurtTime > 0 ? 0.3 + 0.7 * Math.min(1, g.hurtTime / 10) : 0);
