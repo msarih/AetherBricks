@@ -138,7 +138,7 @@ Un joueur lance un serveur Node.js autoritaire sur son ordinateur ; ses amis le 
 ### Ouvrir un monde solo aux amis (par code)
 
 1. Lancez le serveur sur votre Mac : `npm run serveur` (ou ouvrez directement le jeu à l'adresse du serveur, par défaut `http://localhost:8080`).
-2. En jeu solo, ouvrez le menu de pause (`Échap`) et cliquez sur **Ouvrir aux amis**. Le monde est envoyé au serveur et un **code d'invitation** (ex. `SB-XXXXX-XXXXX-XXXXX-XXXXX`) s'affiche avec un bouton **Copier le code**.
+2. En jeu solo, ouvrez le menu de pause (`Échap`) et cliquez sur **Ouvrir aux amis**. La première fois, saisissez le **mot de passe du serveur** (il est ensuite mémorisé pour ce serveur). Le monde est envoyé au serveur et un **code d'invitation** (ex. `SB-XXXXX-XXXXX-XXXXX-XXXXX`) s'affiche avec un bouton **Copier le code**.
 3. Vos amis ouvrent **Multijoueur**, saisissent leur pseudo et **uniquement ce code** (insensible à la casse et aux tirets) : l'adresse et le port du serveur sont encodés dans le code.
 4. Cliquez sur **Fermer aux amis** (ou quittez la partie) pour invalider le code, renvoyer les amis au menu et récupérer toutes les modifications effectuées à plusieurs dans votre monde solo.
 

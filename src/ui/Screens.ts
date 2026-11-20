@@ -187,6 +187,9 @@ export class PauseScreen implements Screen {
   private buttons: HTMLButtonElement[] = [];
   private error!: HTMLDivElement;
   private busy = false;
+  private askingOpenPassword = false;
+  private openPasswordInput: HTMLInputElement | null = null;
+  private openPasswordError = '';
 
   constructor(private readonly ctx: UiContext) {
     this.el = el('div', 'mc-screen mc-screen-dim mc-menu');
@@ -210,8 +213,56 @@ export class PauseScreen implements Screen {
     this.buttons.push(resumeBtn, optsBtn, statsBtn);
 
     if (game && !game.isRemote && game.openToFriends) {
-      const openBtn = sized(button(host, 'Ouvrir aux amis', () => this.openToFriends(openBtn), 'open-friends', this.el), 204);
-      this.buttons.push(openBtn);
+      if (this.askingOpenPassword) {
+        const box = el('div', 'mc-invite-box', this.el);
+        box.style.display = 'flex';
+        box.style.flexDirection = 'column';
+        box.style.alignItems = 'center';
+        box.style.gap = u(4);
+        box.style.margin = `${u(4)} 0`;
+
+        const lbl = el('label', 'mc-field-label', box, 'Mot de passe du serveur');
+        lbl.style.textAlign = 'center';
+        const input = document.createElement('input');
+        input.type = 'password';
+        input.className = 'mc-input';
+        input.placeholder = 'Mot de passe du serveur';
+        input.dataset.mc = 'open-friends-password';
+        input.style.width = u(204);
+        input.maxLength = 64;
+        box.appendChild(input);
+        this.openPasswordInput = input;
+
+        const confirmBtn = sized(
+          button(host, 'Ouvrir aux amis', () => this.submitOpenPassword(confirmBtn), 'open-friends-confirm', box),
+          204,
+        );
+        input.addEventListener('keydown', (ev) => {
+          if (ev.key === 'Enter') {
+            ev.preventDefault();
+            this.submitOpenPassword(confirmBtn);
+          }
+        });
+        const cancelBtn = sized(
+          button(
+            host,
+            'Annuler',
+            () => {
+              this.askingOpenPassword = false;
+              this.openPasswordError = '';
+              this.render();
+            },
+            'open-friends-cancel',
+            box,
+          ),
+          204,
+        );
+        this.buttons.push(confirmBtn, cancelBtn);
+      } else {
+        this.openPasswordInput = null;
+        const openBtn = sized(button(host, 'Ouvrir aux amis', () => this.openToFriends(openBtn), 'open-friends', this.el), 204);
+        this.buttons.push(openBtn);
+      }
     } else if (game && game.isRemote && game.isHost) {
       if (game.inviteCode) {
         const box = el('div', 'mc-invite-box', this.el);
@@ -256,8 +307,11 @@ export class PauseScreen implements Screen {
     const quitBtn = sized(button(host, quitLabel, () => this.quit(quitBtn, quitLabel), 'quit', this.el), 204);
     this.buttons.push(quitBtn);
 
-    this.error = el('div', 'mc-error', this.el);
+    this.error = el('div', 'mc-error', this.el, this.openPasswordError);
     this.error.dataset.mc = 'pause-error';
+    if (this.askingOpenPassword && this.openPasswordInput) {
+      this.openPasswordInput.focus();
+    }
   }
 
   key(e: KeyboardEvent): boolean {
@@ -276,13 +330,25 @@ export class PauseScreen implements Screen {
     const game = this.ctx.host.game;
     if (!game?.openToFriends || this.busy) return;
     this.busy = true;
+    this.openPasswordError = '';
     this.error.textContent = '';
     for (const b of this.buttons) b.disabled = true;
-    setButtonLabel(btn, 'Envoi du monde…');
-    attempt(() => game.openToFriends!()).then(
-      () => {
-        this.busy = false;
-        if (this.ctx.isCurrent(this)) this.render();
+    setButtonLabel(btn, 'Connexion…');
+
+    const checkSaved = game.getSavedServerPassword ? game.getSavedServerPassword() : Promise.resolve(null);
+    attempt(() => checkSaved).then(
+      (savedPw) => {
+        if (!this.ctx.isCurrent(this)) {
+          this.busy = false;
+          return;
+        }
+        if (!savedPw) {
+          this.busy = false;
+          this.askingOpenPassword = true;
+          this.render();
+          return;
+        }
+        this.runOpenToFriends(btn, savedPw);
       },
       (err: unknown) => {
         this.busy = false;
@@ -290,6 +356,54 @@ export class PauseScreen implements Screen {
           for (const b of this.buttons) b.disabled = false;
           setButtonLabel(btn, 'Ouvrir aux amis');
           this.error.textContent = errorText(err);
+        }
+      },
+    );
+  }
+
+  private submitOpenPassword(btn: HTMLButtonElement): void {
+    if (this.busy || !this.openPasswordInput) return;
+    const pw = this.openPasswordInput.value;
+    if (!pw) {
+      this.error.textContent = 'Veuillez saisir le mot de passe du serveur.';
+      this.openPasswordInput.focus();
+      return;
+    }
+    this.busy = true;
+    this.openPasswordError = '';
+    this.error.textContent = '';
+    for (const b of this.buttons) b.disabled = true;
+    this.runOpenToFriends(btn, pw);
+  }
+
+  private runOpenToFriends(btn: HTMLButtonElement, password: string): void {
+    const game = this.ctx.host.game;
+    if (!game?.openToFriends) {
+      this.busy = false;
+      return;
+    }
+    setButtonLabel(btn, 'Envoi du monde…');
+    attempt(() => game.openToFriends!(password)).then(
+      () => {
+        this.busy = false;
+        this.askingOpenPassword = false;
+        this.openPasswordError = '';
+        if (this.ctx.isCurrent(this)) this.render();
+      },
+      (err: unknown) => {
+        this.busy = false;
+        if (this.ctx.isCurrent(this)) {
+          const msg = errorText(err);
+          const isAuthErr = /mot de passe|essais|requis/i.test(msg);
+          if (!this.askingOpenPassword && isAuthErr) {
+            this.askingOpenPassword = true;
+            this.openPasswordError = msg;
+            this.render();
+            return;
+          }
+          for (const b of this.buttons) b.disabled = false;
+          setButtonLabel(btn, 'Ouvrir aux amis');
+          this.error.textContent = msg;
         }
       },
     );

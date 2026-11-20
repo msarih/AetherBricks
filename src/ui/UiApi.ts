@@ -90,7 +90,8 @@ export interface UiGame {
   readonly isHost?: boolean;
   readonly inviteCode?: string | null;
   readonly tailscaleCode?: string | null;
-  openToFriends?(): Promise<{ inviteCode: string; tailscaleCode?: string | null }>;
+  openToFriends?(serverPassword?: string): Promise<{ inviteCode: string; tailscaleCode?: string | null }>;
+  getSavedServerPassword?(): Promise<string | null>;
   closeToFriends?(): Promise<void>;
 }
 

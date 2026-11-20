@@ -78,7 +78,7 @@ import type { MultiplayerClient, WelcomePacket } from '../net/Client';
 import { MultiplayerClient as NetClient } from '../net/Client';
 import type { SerializedSlot } from '../net/Protocol';
 import { RemotePlayerEntity } from '../net/RemotePlayer';
-import { loadLastPseudo, loadRecentServers } from '../net/RecentServers';
+import { loadLastPseudo, loadRecentServers, saveRecentServer } from '../net/RecentServers';
 import { exportWorld, replaceWorldFromArchive } from '../world/WorldFile';
 
 export interface GameOptions {
@@ -3135,11 +3135,25 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     );
   }
 
-  async openToFriends(): Promise<{ inviteCode: string; tailscaleCode?: string | null }> {
+  async getSavedServerPassword(): Promise<string | null> {
+    const serverUrl = await this.findLocalServer();
+    const host = new URL(serverUrl).host.toLowerCase();
+    const match = loadRecentServers().find((s) => s.address.toLowerCase() === host && s.password.length > 0);
+    return match ? match.password : null;
+  }
+
+  async openToFriends(serverPassword?: string): Promise<{ inviteCode: string; tailscaleCode?: string | null }> {
     if (this.isRemote || !this.storage) {
       throw new Error('Impossible d’ouvrir ce monde aux amis.');
     }
     const serverUrl = await this.findLocalServer();
+    const u = new URL(serverUrl);
+    const saved = loadRecentServers().find((s) => s.address.toLowerCase() === u.host.toLowerCase())?.password ?? '';
+    const password = serverPassword ?? saved;
+    if (!password) {
+      throw new Error('Mot de passe du serveur requis.');
+    }
+
     await this.writeSave();
     const blob = await exportWorld(this.storage, this.info.id);
     const bytes = new Uint8Array(await blob.arrayBuffer());
@@ -3147,7 +3161,10 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     const hostName = (loadLastPseudo() || 'Hote').trim().slice(0, 16) || 'Hote';
     const res = await fetch(`${serverUrl}/api/open-world?name=${encodeURIComponent(hostName)}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/octet-stream' },
+      headers: {
+        'Content-Type': 'application/octet-stream',
+        'X-Server-Password': password,
+      },
       body: bytes,
     });
     const json = (await res.json()) as {
@@ -3162,9 +3179,9 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     }
 
     const client = new NetClient();
-    const u = new URL(serverUrl);
     const welcome = await client.connect(`${u.hostname}:${u.port || (u.protocol === 'https:' ? '443' : '80')}`, hostName, '', undefined, json.hostToken);
 
+    saveRecentServer({ address: u.host, name: hostName, password });
     this.net = client;
     this.remoteId = welcome.id;
     this.isHost = true;
