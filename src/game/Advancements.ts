@@ -4,8 +4,16 @@
  * avec une notification visuelle, une phrase d'explication et un rappel du prochain objectif.
  */
 import type { Player } from '../player/Player';
+import type { Dimension, WorldType } from '../world/Constants';
 import { B, I } from '../world/Ids';
 import { STAT, killedKey } from './Stats';
+
+export interface AdvancementContext {
+  worldType: WorldType;
+  genVersion: number;
+  dimension: Dimension;
+  endVisited: boolean;
+}
 
 export interface Advancement {
   id: string;
@@ -16,6 +24,8 @@ export interface Advancement {
   goal: string;
   icon: number;
   check: (p: Player) => boolean;
+  /** Condition pour afficher cet objectif dans le bandeau guidé (par défaut : surface uniquement). */
+  available?: (ctx: AdvancementContext) => boolean;
 }
 
 function hasAny(p: Player, ids: readonly number[], minCount = 1): boolean {
@@ -28,8 +38,8 @@ function hasAny(p: Player, ids: readonly number[], minCount = 1): boolean {
   return total >= minCount;
 }
 
-const LOG_IDS = [B.OAK_LOG, B.SPRUCE_LOG, B.BIRCH_LOG, B.JUNGLE_LOG, B.ACACIA_LOG];
-const PLANK_IDS = [B.OAK_PLANKS, B.SPRUCE_PLANKS, B.BIRCH_PLANKS, B.JUNGLE_PLANKS, B.ACACIA_PLANKS];
+const LOG_IDS = [B.OAK_LOG, B.SPRUCE_LOG, B.BIRCH_LOG, B.JUNGLE_LOG, B.ACACIA_LOG, B.DARK_OAK_LOG];
+const PLANK_IDS = [B.OAK_PLANKS, B.SPRUCE_PLANKS, B.BIRCH_PLANKS, B.JUNGLE_PLANKS, B.ACACIA_PLANKS, B.DARK_OAK_PLANKS];
 
 export const ADVANCEMENTS: readonly Advancement[] = [
   {
@@ -151,6 +161,7 @@ export const ADVANCEMENTS: readonly Advancement[] = [
     goal: 'Objectif : bâtissez un portail du Nether (cadre d’obsidienne de 4 × 5, allumé au briquet), trouvez une forteresse et tuez un blaze pour son bâton',
     icon: I.BLAZE_ROD,
     check: (p) => hasAny(p, [I.BLAZE_ROD, I.BLAZE_POWDER, I.ENDER_EYE]),
+    available: (ctx) => ctx.genVersion >= 2 && ctx.dimension !== 'end',
   },
   {
     id: 'ender_eye',
@@ -159,6 +170,7 @@ export const ADVANCEMENTS: readonly Advancement[] = [
     goal: 'Objectif : tuez des endermen pour leurs perles et fabriquez un œil de l’Ender (1 perle + 1 poudre de blaze). Il en faudra une douzaine',
     icon: I.ENDER_EYE,
     check: (p) => hasAny(p, [I.ENDER_EYE]) || (p.stats[STAT.END_VISITS] ?? 0) > 0,
+    available: (ctx) => ctx.genVersion >= 3 && ctx.dimension !== 'end',
   },
   {
     id: 'the_end',
@@ -167,6 +179,7 @@ export const ADVANCEMENTS: readonly Advancement[] = [
     goal: 'Objectif : dans le fort, trouvez la salle du portail, posez un œil de l’Ender sur chacun des 12 cadres et sautez dans le portail',
     icon: B.END_STONE,
     check: (p) => (p.stats[STAT.END_VISITS] ?? 0) > 0,
+    available: (ctx) => ctx.genVersion >= 3 && ctx.dimension === 'overworld',
   },
   {
     id: 'dragon',
@@ -175,8 +188,21 @@ export const ADVANCEMENTS: readonly Advancement[] = [
     goal: 'Objectif : détruisez les cristaux (une flèche suffit), puis abattez le dragon ; il se pose par moments sur la fontaine centrale',
     icon: B.DRAGON_EGG,
     check: (p) => (p.stats[killedKey('ender_dragon')] ?? 0) > 0,
+    available: (ctx) => ctx.dimension === 'end' || (ctx.dimension === 'overworld' && ctx.endVisited),
   },
 ];
+
+/**
+ * Indique si l'objectif guidé d'un progrès est réalisable dans le monde et la dimension actuels.
+ * En monde plat, le terrain ne contient ni bois, ni pierre, ni minerai, ni structure : aucun
+ * objectif guidé n'est affiché (comme dans Minecraft 1.12, les progrès restent toutefois
+ * déblocables si le joueur obtient l'objet autrement).
+ */
+export function isAdvancementAvailable(adv: Advancement, ctx: AdvancementContext): boolean {
+  if (ctx.worldType === 'flat') return false;
+  if (adv.available) return adv.available(ctx);
+  return ctx.dimension === 'overworld';
+}
 
 /** Remplace les repères de touche (`{inv}`) d'un texte de progrès par le nom affiché de la touche. */
 export function advancementText(text: string, inventoryKey: string): string {

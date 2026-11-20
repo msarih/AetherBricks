@@ -119,29 +119,40 @@ async function reloadWorld(page) {
       planted.notOnStone && planted.pStem && planted.mStem,
       JSON.stringify(planted));
 
-    // Poudre d'os jusqu'au stade 7 sans faire apparaître directement de fruit
-    await ev(page, () => { window.__game.player.inventory.selected = 2; });
-    for (let i = 0; i < 6; i++) {
-      await ev(page, () => {
-        window.__game.player.teleport(10.5, 4, 12.2);
-        T.aim(10.5, 4.2, 10.5);
-      });
-      await rclick(page);
-      await ev(page, () => {
-        window.__game.player.teleport(14.5, 4, 12.2);
-        T.aim(14.5, 4.2, 10.5);
-      });
-      await rclick(page);
-    }
+    // Poudre d'os jusqu'au stade 7 sans faire apparaître directement de fruit :
+    // appels synchrones à interaction.tick pour éviter qu'un tick aléatoire naturel ne fasse pousser un fruit entre-temps.
     const afterBonemeal = await ev(page, () => {
-      const w = window.__game.world;
-      const pStage = w.getMeta(10, 4, 10);
-      const mStage = w.getMeta(14, 4, 10);
-      const pNoFruit = w.getBlock(11, 4, 10) === B.AIR;
-      return { pStage, mStage, pNoFruit, mealUsed: window.__game.player.inventory.slots[2].count < 32 };
+      const g = window.__game, w = g.world, p = g.player;
+      p.inventory.selected = 2;
+      const before = p.inventory.slots[2].count;
+      const useBoneMeal = (px, tx) => {
+        p.teleport(px, 4, 12.2);
+        T.aim(tx, 4.2, 10.5);
+        g.input.presses[2]++;
+        g.interaction.tick(g.input);
+      };
+      for (let i = 0; i < 6; i++) {
+        useBoneMeal(10.5, 10.5);
+        useBoneMeal(14.5, 14.5);
+      }
+      const atMature = p.inventory.slots[2].count;
+      // Un clic de plus sur la tige déjà au stade 7 ne doit ni créer de fruit ni consommer d'engrais
+      useBoneMeal(10.5, 10.5);
+      useBoneMeal(14.5, 14.5);
+      const freeAround = (sx) => [[sx + 1, 10], [sx - 1, 10], [sx, 9], [sx, 11]]
+        .every(([bx, bz]) => w.getBlock(bx, 4, bz) === B.AIR);
+      return {
+        pStage: w.getMeta(10, 4, 10),
+        mStage: w.getMeta(14, 4, 10),
+        pNoFruit: freeAround(10),
+        mNoFruit: freeAround(14),
+        mealUsed: atMature < before,
+        noExtraConsume: p.inventory.slots[2].count === atMature,
+      };
     });
     check('tiges : la poudre d’os fait pousser jusqu’au stade 7 sans créer directement de fruit',
-      afterBonemeal.pStage === 7 && afterBonemeal.mStage === 7 && afterBonemeal.pNoFruit && afterBonemeal.mealUsed,
+      afterBonemeal.pStage === 7 && afterBonemeal.mStage === 7 && afterBonemeal.pNoFruit
+      && afterBonemeal.mNoFruit && afterBonemeal.mealUsed && afterBonemeal.noExtraConsume,
       JSON.stringify(afterBonemeal));
 
     // Ticks aléatoires sur tiges mûres -> apparition du fruit à côté ; puis casse du fruit & de la tige

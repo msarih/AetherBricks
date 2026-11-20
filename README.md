@@ -47,7 +47,7 @@ npm run build    # version de production dans dist/
   - Le **dragon de l'Ender** (100 cœurs, barre de vie en haut de l'écran) tourne autour des piliers, crache des boules qui laissent un nuage brûlant, fonce sur le joueur, et vient par moments se poser sur la fontaine centrale : c'est là que l'épée l'atteint (posé, ses écailles renvoient les flèches).
   - À sa mort, la fontaine devient le **portail de sortie**, un œuf de dragon apparaît à son sommet et le joueur reçoit une montagne d'expérience. Le portail ramène à la surface, au point de réapparition, avec un écran de fin la première fois. Le portail du fort reste ouvert : on peut retourner dans l'End.
   - Mourir dans le Nether ou dans l'End fait réapparaître à la surface.
-  - En survie, les objectifs guidés mènent jusqu'au dragon (bâton de blaze, œil de l'Ender, entrée dans l'End, victoire).
+  - En survie sur un monde normal, les objectifs guidés mènent jusqu'au dragon (bâton de blaze, œil de l'Ender, entrée dans l'End, victoire) ; ils sont masqués en monde plat et filtrés selon la dimension et les lieux présents dans le monde.
 - **Modes** : survie et créatif (vol par double appui sur Espace, casse instantanée).
 - **Mondes** : plusieurs mondes sauvegardés dans le navigateur (IndexedDB) — créer, renommer, supprimer ; sauvegarde automatique et à la fermeture. Un monde s'exporte dans un fichier `.aetherworld` et s'importe depuis ce fichier (sauvegarde externe, passage d'un navigateur ou d'un appareil à l'autre).
 - **Commandes** (touche `/`) : `/help`, `/gamemode`, `/time`, `/weather`, `/give`, `/tp`, `/kill`, `/seed`, `/difficulty`, `/summon`, `/clear`, `/spawnpoint`, `/locate`, `/gamerule`, `/setblock`, `/fill`.
