@@ -63,8 +63,11 @@ async function useOnGround(page, x, z) {
   let s = await state(page);
   console.log('état initial', JSON.stringify(s));
   check('apparition au sol du monde plat', s.onGround && Math.abs(s.pos[1] - 4) < 0.01, `pos ${s.pos}`);
-  const initialGoal = await page.evaluate(() => { const e = document.querySelector('[data-mc="guide"]'); return e ? e.textContent : ''; });
-  check('progression guidée : objectif initial affiché en survie', initialGoal.includes('bois'), initialGoal);
+  const initialGoal = await page.evaluate(() => {
+    const e = document.querySelector('[data-mc="guide"]');
+    return { text: e ? e.textContent : '', visible: e ? getComputedStyle(e).display !== 'none' : false };
+  });
+  check('progression guidée : aucun objectif impossible affiché en survie sur monde plat', !initialGoal.visible && initialGoal.text === '', JSON.stringify(initialGoal));
   await ev(page, () => { window.__game.difficulty = 0; }); // paisible le temps des tests de mouvement
   await shot(page, '10-plat');
 
@@ -231,17 +234,9 @@ async function useOnGround(page, x, z) {
     }));
     const keyText = await ev(page, async () => {
       const A = await import('/src/game/Advancements.ts');
-      const g = window.__game;
-      const saved = new Set(g.player.advancements);
-      const kb = g.settings.keybinds.inventory;
-      g.player.advancements.clear();
-      g.player.advancements.add('wood');
-      const base = g.guideGoal;
-      g.settings.keybinds.inventory = 'KeyI';
-      const remapped = g.guideGoal;
-      g.settings.keybinds.inventory = kb;
-      g.player.advancements.clear();
-      for (const id of saved) g.player.advancements.add(id);
+      const planks = A.ADVANCEMENTS.find((a) => a.id === 'planks');
+      const base = A.advancementText(planks.goal, 'E');
+      const remapped = A.advancementText(planks.goal, 'I');
       const raw = A.ADVANCEMENTS.filter((a) => /\bE\b/.test(a.goal + ' ' + a.detail)).map((a) => a.id);
       return { base, remapped, raw, count: A.ADVANCEMENTS.length };
     });
@@ -252,7 +247,7 @@ async function useOnGround(page, x, z) {
       advInfo.advs.includes('wood') && advInfo.advs.includes('planks') && advInfo.advs.includes('cobblestone') && advInfo.toastShown,
       JSON.stringify(advInfo));
     check('progression guidée : une étape avancée valide aussi les étapes précédentes sans notification',
-      advInfo.advs.includes('crafting_table') && advInfo.advs.includes('wooden_pickaxe') && advInfo.goal.includes('fourneau') && !advInfo.msgs.some((m) => m.includes('Première pioche')),
+      advInfo.advs.includes('crafting_table') && advInfo.advs.includes('wooden_pickaxe') && !advInfo.advs.includes('furnace') && advInfo.goal === '' && !advInfo.msgs.some((m) => m.includes('Première pioche')),
       JSON.stringify(advInfo));
     await shot(page, '14c-progres-toast');
     } finally {
