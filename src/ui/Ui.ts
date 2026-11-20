@@ -33,6 +33,8 @@ export class GameUi implements UiApi {
   private readonly hud: Hud;
   private readonly ctx: UiContext;
   private readonly observer: ResizeObserver | null;
+  private readonly noticeEl: HTMLDivElement;
+  private noticeTimer = 0;
   private screen: Screen | null = null;
   /** Instant d'ouverture de l'écran courant : une touche plus ancienne ne le concerne pas. */
   private openedAt = 0;
@@ -49,6 +51,10 @@ export class GameUi implements UiApi {
     root.classList.add('mc-ui');
     installSprites(root);
     this.hud = new Hud(host, root);
+    this.noticeEl = document.createElement('div');
+    this.noticeEl.className = 'mc-platform-notice';
+    this.noticeEl.dataset.mc = 'platform-notice';
+    root.appendChild(this.noticeEl);
 
     const chatHistory: string[] = [];
     this.ctx = {
@@ -88,6 +94,7 @@ export class GameUi implements UiApi {
     this.root.removeEventListener('dragstart', this.prevent);
     this.root.removeEventListener('selectstart', this.onSelectStart);
     this.hud.el.remove();
+    this.noticeEl.remove();
     this.root.classList.remove('mc-ui');
   }
 
@@ -166,6 +173,16 @@ export class GameUi implements UiApi {
     this.hud.actionBar(text);
   }
 
+  notifyPlatform(text: string): void {
+    this.noticeEl.textContent = text;
+    this.noticeEl.classList.add('mc-shown');
+    this.noticeTimer = 3.5;
+    if (this.host.game) {
+      this.hud.actionBar(text);
+      this.hud.addMessage(text);
+    }
+  }
+
   showAdvancement(title: string, detail: string, iconId: number): void {
     this.hud.showAdvancement(title, detail, iconId);
   }
@@ -181,6 +198,13 @@ export class GameUi implements UiApi {
   update(dt: number): void {
     if (this.disposed) return;
     if (this.host.settings.guiScale !== this.guiScale) this.layout();
+    this.root.classList.toggle('mc-touch-ui', this.host.touchActive);
+    if (this.noticeTimer > 0) {
+      this.noticeTimer -= dt;
+      if (this.noticeTimer <= 0) {
+        this.noticeEl.classList.remove('mc-shown');
+      }
+    }
     const s = this.screen;
     this.hud.update(dt, !(s && s.opaque));
     s?.update?.(dt);
@@ -244,6 +268,8 @@ export class GameUi implements UiApi {
     const fit = Math.max(1, Math.min(4, Math.floor(Math.min(w / 320, h / 240))));
     // échelle choisie par le joueur, bornée à ce que l'écran peut afficher (320×240 au minimum)
     const scale = wanted >= 1 ? Math.max(1, Math.min(Math.round(wanted), fit)) : fit;
+    const portrait = w < 560 && h > w;
+    this.root.classList.toggle('mc-portrait', portrait);
     this.guiScale = wanted;
     if (scale === this.scaleValue && w === this.width && h === this.height) return;
     this.scaleValue = scale;

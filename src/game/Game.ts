@@ -26,6 +26,7 @@ import { tickSpawners } from '../entity/BlockSpawner';
 import { Spawner } from '../entity/Spawner';
 import { Input } from '../player/Input';
 import { Player } from '../player/Player';
+import { TouchLookController, isTouchActive } from '../player/Touch';
 import type { Atlas } from '../render/Atlas';
 import { END_AMBIENT, NETHER_AMBIENT, OVERWORLD_AMBIENT, worldUniforms } from '../render/ChunkMaterials';
 import { ChunkRenderer } from '../render/ChunkRenderer';
@@ -232,6 +233,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
   readonly interaction: Interaction;
   readonly spawner = new Spawner();
   readonly input: Input;
+  private readonly touchLook: TouchLookController;
   readonly ui: UiApi;
   readonly rng: () => number;
   readonly info: WorldInfo;
@@ -275,7 +277,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
   private readonly renderer: THREE.WebGLRenderer;
   private readonly atlas: Atlas;
   private readonly sfx: Sfx;
-  private readonly settings: Settings;
+  readonly settings: Settings;
   private readonly storage: Storage;
   private readonly pending: Entity[] = [];
   /** Chunk où chaque entité sauvegardable a été vue pour la dernière fois. */
@@ -308,6 +310,20 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
   private freshSpawn = false;
   /** Appui bref sur Espace entre deux ticks : le saut est quand même pris en compte. */
   private jumpTapped = false;
+  /** Accroupissement basculé par le bouton tactile. */
+  private touchSneaking = false;
+  private touchForward = 0;
+  private touchStrafe = 0;
+  private touchJumpDown = false;
+  private padForward = 0;
+  private padStrafe = 0;
+  private padJumpDown = false;
+  private padSneakDown = false;
+  private padSprintDown = false;
+  private padAttackDown = false;
+  private padUseDown = false;
+  private prevPadAttack = false;
+  private prevPadUse = false;
   /** Triangles du monde à la dernière image (le rendu de la main remet le compteur à zéro). */
   private triangles = 0;
   private deathShown = false;
@@ -456,6 +472,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     this.input = new Input(canvas);
     this.input.blocked = () => this.ui.modal;
     this.input.active = () => this.ready && !this.disposed;
+    this.input.touchActive = () => isTouchActive(this.settings);
     this.input.onKey = (code, repeat, key) => this.onKey(code, repeat, key);
     this.input.onWheel = (direction) => {
       if (this.ui.modal || !player.alive) return;
@@ -463,10 +480,20 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       inv.selected = (inv.selected + direction + HOTBAR_SIZE) % HOTBAR_SIZE;
     };
     this.input.onLockLost = () => {
-      if (this.ready && !this.ui.modal) this.pause();
+      if (this.ready && !this.ui.modal && !isTouchActive(this.settings)) this.pause();
     };
 
     this.interaction = new Interaction(this);
+    this.touchLook = new TouchLookController({
+      canvas,
+      input: this.input,
+      isTouchActive: () => isTouchActive(this.settings),
+      hasTargetEntity: () => {
+        const p = this.player;
+        this.interaction.aimNow(p.x, p.y + p.eyeHeight, p.z);
+        return this.interaction.entity !== null;
+      },
+    });
     this.applySettings();
     (window as unknown as { __game?: Game }).__game = this;
   }
@@ -498,6 +525,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     this.sky.setCloudsVisible(s.clouds);
     this.sfx.volume = s.soundVolume;
     this.sfx.musicVolume = s.musicVolume;
+    this.ui.update(0);
   }
 
   /** Sauvegarde le monde (état global, joueur, chunks modifiés). Les appels simultanés partagent la même écriture. */
@@ -564,6 +592,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     cancelAnimationFrame(this.raf);
     this.raf = 0;
     this.input.unlock();
+    this.touchLook.dispose();
     this.input.dispose();
     this.chunks.dispose();
     this.chunkRenderer.dispose();
@@ -762,11 +791,16 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     const pi = p.input;
     const kb = this.settings.keybinds;
     if (free) {
-      pi.forward = (input.isDown(kb.forward) || input.isDown('ArrowUp') ? 1 : 0) - (input.isDown(kb.backward) || input.isDown('ArrowDown') ? 1 : 0);
-      pi.strafe = (input.isDown(kb.right) || input.isDown('ArrowRight') ? 1 : 0) - (input.isDown(kb.left) || input.isDown('ArrowLeft') ? 1 : 0);
-      pi.jump = input.isDown(kb.jump) || this.jumpTapped;
-      pi.sneak = input.isDown(kb.sneak) || input.isDown('ShiftRight');
-      pi.sprint = input.isDown(kb.sprint);
+      const kbFwd = (input.isDown(kb.forward) || input.isDown('ArrowUp') ? 1 : 0) - (input.isDown(kb.backward) || input.isDown('ArrowDown') ? 1 : 0);
+      const kbStr = (input.isDown(kb.right) || input.isDown('ArrowRight') ? 1 : 0) - (input.isDown(kb.left) || input.isDown('ArrowLeft') ? 1 : 0);
+      const aFwd = Math.abs(this.touchForward) >= Math.abs(this.padForward) ? this.touchForward : this.padForward;
+      const aStr = Math.abs(this.touchStrafe) >= Math.abs(this.padStrafe) ? this.touchStrafe : this.padStrafe;
+      pi.forward = Math.max(-1, Math.min(1, kbFwd !== 0 ? kbFwd : aFwd !== 0 ? aFwd : input.analogForward));
+      pi.strafe = Math.max(-1, Math.min(1, kbStr !== 0 ? kbStr : aStr !== 0 ? aStr : input.analogStrafe));
+      pi.jump = input.isDown(kb.jump) || this.jumpTapped || this.touchJumpDown || this.padJumpDown || input.virtualJump;
+      if (p.flying && this.touchJumpDown && this.touchSneaking) this.touchSneaking = false;
+      pi.sneak = input.isDown(kb.sneak) || input.isDown('ShiftRight') || this.touchSneaking || this.padSneakDown || input.virtualSneak;
+      pi.sprint = input.isDown(kb.sprint) || this.padSprintDown || input.virtualSprint;
     } else {
       pi.forward = 0;
       pi.strafe = 0;
@@ -2001,6 +2035,114 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
   get fade(): number {
     const p = this.player;
     return p.sleeping ? Math.min(1, p.sleepTicks / SLEEP_TICKS) : 0;
+  }
+
+  get sneaking(): boolean {
+    return this.player.sneaking || this.touchSneaking;
+  }
+
+  openInventory(): void {
+    const p = this.player;
+    if (!this.ready || this.ui.modal || !p.alive || p.sleeping || p.spectator) return;
+    this.openMenu(p.creative ? new CreativeMenu(p.inventory) : new InventoryMenu(p.inventory));
+  }
+
+  pauseGame(): void {
+    if (!this.ready || this.ui.modal) return;
+    this.pause();
+  }
+
+  cycleViewMode(): void {
+    if (!this.ready || this.ui.modal) return;
+    this.viewMode = (this.viewMode + 1) % 3;
+  }
+
+  tapJump(): void {
+    const p = this.player;
+    if (!this.ready || this.ui.modal || !p.alive) return;
+    if (p.sleeping) this.wake();
+    else {
+      this.jumpTapped = true;
+      p.tapJump();
+    }
+  }
+
+  toggleSneak(): void {
+    if (!this.ready || this.ui.modal || !this.player.alive) return;
+    this.touchSneaking = !this.touchSneaking;
+  }
+
+  setTouchMove(forward: number, strafe: number): void {
+    this.touchForward = forward;
+    this.touchStrafe = strafe;
+  }
+
+  setTouchJump(down: boolean): void {
+    this.touchJumpDown = down;
+  }
+
+  applyGamepadState(state: {
+    forward: number;
+    strafe: number;
+    lookDX: number;
+    lookDY: number;
+    jumpDown: boolean;
+    jumpPressed: boolean;
+    sneakDown: boolean;
+    sprintDown: boolean;
+    sprintPressed: boolean;
+    attackDown: boolean;
+    attackPressed: boolean;
+    useDown: boolean;
+    usePressed: boolean;
+    dropPressed: boolean;
+    inventoryPressed: boolean;
+    pausePressed: boolean;
+    wheelDelta: number;
+  }): void {
+    if (!this.ready || this.disposed) return;
+    this.padForward = state.forward;
+    this.padStrafe = state.strafe;
+    this.padJumpDown = state.jumpDown;
+    this.padSneakDown = state.sneakDown;
+    this.padSprintDown = state.sprintDown;
+
+    if (this.ui.modal) {
+      if (this.prevPadAttack) this.input.buttons[0] = false;
+      if (this.prevPadUse) this.input.buttons[2] = false;
+      this.prevPadAttack = false;
+      this.prevPadUse = false;
+      return;
+    }
+
+    if (state.lookDX !== 0 || state.lookDY !== 0) {
+      this.input.mouseDX += state.lookDX;
+      this.input.mouseDY += state.lookDY;
+    }
+    if (state.jumpPressed) this.tapJump();
+    if (state.attackPressed) this.input.presses[0]++;
+    if (state.usePressed) this.input.presses[2]++;
+    if (state.attackDown !== this.prevPadAttack) {
+      this.input.buttons[0] = state.attackDown;
+      this.prevPadAttack = state.attackDown;
+    }
+    if (state.useDown !== this.prevPadUse) {
+      this.input.buttons[2] = state.useDown;
+      this.prevPadUse = state.useDown;
+    }
+    if (state.dropPressed && !this.player.sleeping) {
+      this.interaction.dropHeld(false);
+    }
+    if (state.inventoryPressed) {
+      this.openInventory();
+    }
+    if (state.pausePressed) {
+      this.pauseGame();
+    }
+    if (state.wheelDelta !== 0 && this.player.alive) {
+      const inv = this.player.inventory;
+      inv.selected = (inv.selected + state.wheelDelta + HOTBAR_SIZE) % HOTBAR_SIZE;
+    }
   }
 
   get stats(): Stats {

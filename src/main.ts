@@ -4,6 +4,8 @@
 import * as THREE from 'three';
 import { Sfx } from './audio/Sfx';
 import { Game } from './game/Game';
+import { GamepadController } from './player/Gamepad';
+import { initTouchDetection, isTouchActive } from './player/Touch';
 import { Atlas } from './render/Atlas';
 import { ItemIcons } from './render/ItemIcons';
 import { GameUi } from './ui/Ui';
@@ -85,6 +87,18 @@ async function main(): Promise<void> {
     settings,
     game: null as UiGame | null,
     persistent: storage.persistent,
+    get touchActive(): boolean {
+      return isTouchActive(settings);
+    },
+    openChat(initial = ''): void {
+      ui.openChat(initial);
+    },
+    setTouchMove(forward: number, strafe: number): void {
+      game?.setTouchMove(forward, strafe);
+    },
+    setTouchJump(down: boolean): void {
+      game?.setTouchJump(down);
+    },
     iconUrl: (itemId: number): string => {
       // boussole et horloge : l'image suit la direction ou l'heure de la partie en cours
       const tile = host.game && DYNAMIC_ICON_ITEMS.has(itemId) ? host.game.dynamicTile(itemId) : -1;
@@ -159,8 +173,62 @@ async function main(): Promise<void> {
     },
   };
 
-  const ui = new GameUi(document.getElementById('ui') as HTMLElement, host satisfies UiHost);
+  const uiRoot = document.getElementById('ui') as HTMLElement;
+  const ui = new GameUi(uiRoot, host satisfies UiHost);
+  initTouchDetection(() => {
+    if (isTouchActive(settings)) game?.input.unlock();
+  });
+  const gamepad = new GamepadController({
+    settings,
+    isModal: () => ui.modal,
+    isInGame: () => game !== null && game.ready && !ui.modal,
+    uiRoot,
+    notify: (text) => ui.notifyPlatform(text),
+    setGamepadState: (state) => game?.applyGamepadState(state),
+  });
   ui.showTitle();
+
+  // Enregistrement du service worker (PWA hors ligne)
+  if ('serviceWorker' in navigator) {
+    const genWorkerUrl = new URL('./world/gen/gen.worker.ts', import.meta.url).href;
+    const meshWorkerUrl = new URL('./world/mesh/mesh.worker.ts', import.meta.url).href;
+    const warmSwCache = (): void => {
+      const ctrl = navigator.serviceWorker.controller;
+      if (!ctrl) return;
+      const resUrls = performance
+        .getEntriesByType('resource')
+        .map((e) => e.name)
+        .filter((u) => u.startsWith(location.origin));
+      ctrl.postMessage({
+        type: 'WARM_CACHE',
+        urls: [location.href, '/manifest.webmanifest', '/icon-192.png', '/icon-512.png', genWorkerUrl, meshWorkerUrl, ...resUrls],
+      });
+    };
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      warmSwCache();
+    });
+    navigator.serviceWorker
+      .register('/sw.js')
+      .then((reg) => {
+        if (navigator.serviceWorker.controller) warmSwCache();
+        else if (reg.active) {
+          reg.active.postMessage({
+            type: 'WARM_CACHE',
+            urls: [location.href, '/manifest.webmanifest', '/icon-192.png', '/icon-512.png', genWorkerUrl, meshWorkerUrl],
+          });
+        }
+        reg.addEventListener('updatefound', () => {
+          const installing = reg.installing;
+          if (!installing) return;
+          installing.addEventListener('statechange', () => {
+            if (installing.state === 'installed' && navigator.serviceWorker.controller) {
+              ui.notifyPlatform('Nouvelle version disponible : rechargez la page');
+            }
+          });
+        });
+      })
+      .catch(() => undefined);
+  }
 
   window.addEventListener('resize', () => {
     renderer.setSize(window.innerWidth, window.innerHeight, false);
@@ -181,6 +249,7 @@ async function main(): Promise<void> {
   const frame = (t: number): void => {
     const dt = Math.min(0.1, (t - last) / 1000);
     last = t;
+    gamepad.update(dt);
     if (!game) ui.update(dt);
     requestAnimationFrame(frame);
   };

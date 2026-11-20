@@ -79,6 +79,8 @@ function runScript(scriptPath) {
     await runScript(path.join(__dirname, 't13.cjs'));
     console.log('\n=== Exécution de t14.cjs (Progression guidée : monde plat, monde normal, genVersion, dimensions, chêne noir) ===');
     await runScript(path.join(__dirname, 't14.cjs'));
+    console.log('\n=== Exécution de t15.cjs (Plateforme : commandes tactiles, PWA hors ligne, manette) ===');
+    await runScript(path.join(__dirname, 't15.cjs'));
     console.log('\nTous les tests E2E sont passés avec succès.');
   } catch (err) {
     console.error('\nÉchec des tests E2E :', err.message);

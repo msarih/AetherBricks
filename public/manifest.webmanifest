@@ -1,0 +1,26 @@
+{
+  "name": "SarihBricks",
+  "short_name": "SarihBricks",
+  "description": "Jeu de blocs en 3D dans le navigateur, jouable hors ligne.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#1c1611",
+  "theme_color": "#3c8527",
+  "lang": "fr",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

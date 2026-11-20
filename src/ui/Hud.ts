@@ -48,6 +48,7 @@ export class Hud {
   private readonly items: ItemView[] = [];
   private readonly offhandBox: HTMLDivElement;
   private readonly offhandView: ItemView;
+  private readonly invBtn: HTMLButtonElement;
   private readonly selection: HTMLDivElement;
   private readonly heldName: HTMLDivElement;
   private readonly action: HTMLDivElement;
@@ -61,6 +62,13 @@ export class Hud {
   private readonly bossName: HTMLDivElement;
   private readonly bossFill: HTMLDivElement;
   private readonly effectsBox: HTMLDivElement;
+  private readonly touchControls: HTMLDivElement;
+  private readonly touchStick: HTMLDivElement;
+  private readonly touchKnob: HTMLDivElement;
+  private readonly touchJump: HTMLButtonElement;
+  private readonly touchSneak: HTMLButtonElement;
+  private stickTouchId: number | null = null;
+  private jumpTouchId: number | null = null;
   private readonly toast: HTMLDivElement;
   private readonly toastIcon: ItemView;
   private readonly toastTitle: HTMLDivElement;
@@ -119,10 +127,24 @@ export class Hud {
     this.xpLevel = el('div', 'mc-xp-level', this.stats);
 
     const hotbar = el('div', 'mc-hotbar', bar);
+    hotbar.dataset.mc = 'hotbar';
     for (let i = 0; i < HOTBAR_SIZE; i++) {
       const view = new ItemView(host, hotbar);
       view.el.style.left = u(3 + i * 20);
       view.el.style.top = u(3);
+      view.el.dataset.mc = `hotbar-slot-${i}`;
+      const slotIndex = i;
+      const selectSlot = (e: Event): void => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (this.host.game) {
+          this.host.game.inventory.selected = slotIndex;
+        }
+      };
+      view.el.addEventListener('touchstart', selectSlot, { passive: false });
+      view.el.addEventListener('mousedown', (e) => {
+        if (this.host.touchActive) selectSlot(e);
+      });
       this.items.push(view);
     }
     this.selection = el('div', 'mc-hotbar-sel', hotbar);
@@ -130,6 +152,18 @@ export class Hud {
     this.offhandView = new ItemView(host, this.offhandBox);
     this.offhandView.el.style.left = u(2);
     this.offhandView.el.style.top = u(2);
+    this.invBtn = el('button', 'mc-touch-inv-btn', hotbar, '⋯');
+    this.invBtn.type = 'button';
+    this.invBtn.dataset.mc = 'touch-inventory';
+    this.invBtn.title = 'Inventaire';
+    const onInv = (e: Event): void => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.host.click();
+      this.host.game?.openInventory();
+    };
+    this.invBtn.addEventListener('touchstart', onInv, { passive: false });
+    this.invBtn.addEventListener('click', onInv);
 
     this.chat = el('div', 'mc-chatlog', this.main);
     this.debug = el('div', 'mc-debug', this.main);
@@ -153,6 +187,54 @@ export class Hud {
     el('div', 'mc-toast-head', toastText, 'Progrès accompli !');
     this.toastTitle = el('div', 'mc-toast-title', toastText);
     this.toastDetail = el('div', 'mc-toast-detail', toastText);
+
+    // Commandes tactiles (visibles uniquement en mode tactile)
+    this.touchControls = el('div', 'mc-touch-controls', this.main);
+    this.touchControls.dataset.mc = 'touch-controls';
+    const topBar = el('div', 'mc-touch-top', this.touchControls);
+    const makeTopBtn = (label: string, id: string, title: string, action: () => void): HTMLButtonElement => {
+      const b = el('button', 'mc-touch-top-btn', topBar, label);
+      b.type = 'button';
+      b.dataset.mc = id;
+      b.title = title;
+      const fire = (e: Event): void => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.host.click();
+        action();
+      };
+      b.addEventListener('touchstart', fire, { passive: false });
+      b.addEventListener('click', fire);
+      return b;
+    };
+    makeTopBtn('⏸', 'touch-pause', 'Pause', () => this.host.game?.pauseGame());
+    makeTopBtn('💬', 'touch-chat', 'Discussion / Commandes (/)', () => this.host.openChat?.('/'));
+    makeTopBtn('👁', 'touch-view', 'Changer de vue (1re / 3e personne)', () => this.host.game?.cycleViewMode());
+
+    this.touchStick = el('div', 'mc-touch-stick', this.touchControls);
+    this.touchStick.dataset.mc = 'touch-joystick';
+    this.touchKnob = el('div', 'mc-touch-knob', this.touchStick);
+    this.touchKnob.dataset.mc = 'touch-knob';
+    this.setupJoystick();
+
+    const rightPad = el('div', 'mc-touch-right', this.touchControls);
+    this.touchJump = el('button', 'mc-touch-action-btn mc-touch-jump', rightPad, '▲');
+    this.touchJump.type = 'button';
+    this.touchJump.dataset.mc = 'touch-jump';
+    this.touchJump.title = 'Sauter (double appui : voler en créatif)';
+    this.setupJumpButton();
+
+    this.touchSneak = el('button', 'mc-touch-action-btn mc-touch-sneak', rightPad, '▼');
+    this.touchSneak.type = 'button';
+    this.touchSneak.dataset.mc = 'touch-sneak';
+    this.touchSneak.title = 'S’accroupir / descendre en vol';
+    const onSneak = (e: Event): void => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.host.game?.toggleSneak();
+    };
+    this.touchSneak.addEventListener('touchstart', onSneak, { passive: false });
+    this.touchSneak.addEventListener('click', onSneak);
 
     this.fade = el('div', 'mc-ov mc-ov-fade', this.el);
   }
@@ -225,6 +307,7 @@ export class Hud {
     this.updateGuideAndToast(g, dt);
     this.updateBoss(g);
     this.updateEffects(g);
+    this.updateTouch(g);
 
     if (this.actionTimer > 0) {
       this.actionTimer -= dt;
@@ -469,5 +552,150 @@ export class Hud {
         this.toast.classList.remove('mc-shown');
       }
     }
+  }
+
+  private updateTouch(g: UiGame): void {
+    const touch = this.host.touchActive;
+    if (this.changed('touchActive', touch)) {
+      this.el.classList.toggle('mc-touch-on', touch);
+      this.touchControls.style.display = touch ? 'block' : 'none';
+      this.invBtn.style.display = touch ? 'flex' : 'none';
+    }
+    if (touch) {
+      const sneaking = g.sneaking;
+      if (this.changed('touchSneak', sneaking)) {
+        this.touchSneak.classList.toggle('mc-active', sneaking);
+      }
+    }
+  }
+
+  private setupJoystick(): void {
+    const stick = this.touchStick;
+    const knob = this.touchKnob;
+    const updateFromPoint = (clientX: number, clientY: number): void => {
+      const r = stick.getBoundingClientRect();
+      const cx = r.left + r.width / 2;
+      const cy = r.top + r.height / 2;
+      const maxR = Math.max(20, r.width / 2 - 14);
+      let dx = clientX - cx;
+      let dy = clientY - cy;
+      const dist = Math.hypot(dx, dy);
+      if (dist > maxR) {
+        dx = (dx / dist) * maxR;
+        dy = (dy / dist) * maxR;
+      }
+      knob.style.transform = `translate(${Math.round(dx)}px, ${Math.round(dy)}px)`;
+      const nx = Math.abs(dx / maxR) < 0.12 ? 0 : Math.max(-1, Math.min(1, dx / maxR));
+      const ny = Math.abs(dy / maxR) < 0.12 ? 0 : Math.max(-1, Math.min(1, -dy / maxR));
+      this.host.setTouchMove?.(ny, nx);
+    };
+    const release = (): void => {
+      this.stickTouchId = null;
+      knob.style.transform = 'translate(0px, 0px)';
+      stick.classList.remove('mc-active');
+      this.host.setTouchMove?.(0, 0);
+    };
+    stick.addEventListener(
+      'touchstart',
+      (e: TouchEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (this.stickTouchId !== null || e.changedTouches.length === 0) return;
+        const t = e.changedTouches[0];
+        this.stickTouchId = t.identifier;
+        stick.classList.add('mc-active');
+        updateFromPoint(t.clientX, t.clientY);
+      },
+      { passive: false },
+    );
+    const onMove = (e: TouchEvent): void => {
+      if (this.stickTouchId === null) return;
+      e.preventDefault();
+      e.stopPropagation();
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        const t = e.changedTouches[i];
+        if (t.identifier === this.stickTouchId) {
+          updateFromPoint(t.clientX, t.clientY);
+          return;
+        }
+      }
+      if (e.touches.length > 0) {
+        updateFromPoint(e.touches[0].clientX, e.touches[0].clientY);
+      }
+    };
+    stick.addEventListener('touchmove', onMove, { passive: false });
+    window.addEventListener('touchmove', onMove, { passive: false });
+    const onEnd = (e: TouchEvent): void => {
+      if (this.stickTouchId === null) return;
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        if (e.changedTouches[i].identifier === this.stickTouchId) {
+          e.preventDefault();
+          e.stopPropagation();
+          release();
+          return;
+        }
+      }
+      if (e.touches.length === 0) {
+        e.preventDefault();
+        release();
+      }
+    };
+    stick.addEventListener('touchend', onEnd, { passive: false });
+    stick.addEventListener('touchcancel', onEnd, { passive: false });
+    window.addEventListener('touchend', onEnd, { passive: false });
+    window.addEventListener('touchcancel', onEnd, { passive: false });
+  }
+
+  private setupJumpButton(): void {
+    const btn = this.touchJump;
+    btn.addEventListener(
+      'touchstart',
+      (e: TouchEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (this.jumpTouchId !== null || e.changedTouches.length === 0) return;
+        this.jumpTouchId = e.changedTouches[0].identifier;
+        btn.classList.add('mc-active');
+        this.host.setTouchJump?.(true);
+        this.host.game?.tapJump();
+      },
+      { passive: false },
+    );
+    const onEnd = (e: TouchEvent): void => {
+      if (this.jumpTouchId === null) return;
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        if (e.changedTouches[i].identifier === this.jumpTouchId) {
+          e.preventDefault();
+          e.stopPropagation();
+          this.jumpTouchId = null;
+          btn.classList.remove('mc-active');
+          this.host.setTouchJump?.(false);
+          return;
+        }
+      }
+      if (e.touches.length === 0) {
+        this.jumpTouchId = null;
+        btn.classList.remove('mc-active');
+        this.host.setTouchJump?.(false);
+      }
+    };
+    btn.addEventListener('touchend', onEnd, { passive: false });
+    btn.addEventListener('touchcancel', onEnd, { passive: false });
+    window.addEventListener('touchend', onEnd, { passive: false });
+    window.addEventListener('touchcancel', onEnd, { passive: false });
+    btn.addEventListener('mousedown', (e) => {
+      if (!this.host.touchActive) return;
+      e.preventDefault();
+      e.stopPropagation();
+      btn.classList.add('mc-active');
+      this.host.setTouchJump?.(true);
+      this.host.game?.tapJump();
+    });
+    window.addEventListener('mouseup', () => {
+      if (btn.classList.contains('mc-active') && this.jumpTouchId === null) {
+        btn.classList.remove('mc-active');
+        this.host.setTouchJump?.(false);
+      }
+    });
   }
 }

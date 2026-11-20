@@ -73,6 +73,18 @@ export interface UiGame {
   chat(text: string): void;
   /** Propositions de complétion pour une commande en cours de saisie (touche Tab). */
   complete(text: string): string[];
+  /** Le joueur est-il accroupi ? */
+  readonly sneaking: boolean;
+  /** Ouvre l'inventaire du joueur. */
+  openInventory(): void;
+  /** Met le jeu en pause. */
+  pauseGame(): void;
+  /** Change la vue (1re / 3e personne). */
+  cycleViewMode(): void;
+  /** Saut bref (et double appui pour voler en créatif). */
+  tapJump(): void;
+  /** Bascule l'accroupissement (tactile). */
+  toggleSneak(): void;
 }
 
 /** Une offre d'un villageois, telle que l'écran d'échange l'affiche. */
@@ -119,6 +131,14 @@ export interface UiHost {
   readonly game: UiGame | null;
   /** Faux si les mondes ne survivront pas au rechargement de la page (IndexedDB indisponible). */
   readonly persistent: boolean;
+  /** Les commandes tactiles sont-elles actives ? */
+  readonly touchActive: boolean;
+  /** Ouvre le chat avec un texte initial (ex. '/' pour une commande). */
+  openChat?(initial?: string): void;
+  /** Met à jour le déplacement du joystick tactile (forward -1..1, strafe -1..1). */
+  setTouchMove?(forward: number, strafe: number): void;
+  /** Met à jour l'état du bouton de saut tactile. */
+  setTouchJump?(down: boolean): void;
 
   /** Image d'un objet (data URL PNG, à afficher en `image-rendering: pixelated`) ; chaîne vide pour l'id 0. */
   iconUrl(itemId: number): string;
@@ -179,6 +199,8 @@ export interface UiApi {
   addMessage(text: string): void;
   /** Message bref au-dessus de la barre d'objets (« Vous ne pouvez dormir que la nuit »). */
   actionBar(text: string): void;
+  /** Notification de plateforme (manette connectée, nouvelle version disponible…). */
+  notifyPlatform?(text: string): void;
   /** Notification de progrès accompli en haut à droite de l'écran. */
   showAdvancement(title: string, detail: string, iconId: number): void;
   /** Affiche ou cache l'écran de débogage (F3). */
