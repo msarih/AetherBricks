@@ -109,7 +109,7 @@ function countAnimals(game: GameApi, x: number, z: number): number {
   let n = 0;
   const rSq = ANIMAL_RADIUS * ANIMAL_RADIUS;
   for (const e of game.entities) {
-    if ((e instanceof Animal || (e.kind === 'mob' && PASSIVE_KINDS.includes((e as Mob).mobKind))) && !e.dead) {
+    if (e instanceof Animal && !e.dead) {
       const dx = e.x - x;
       const dz = e.z - z;
       if (dx * dx + dz * dz <= rSq) n++;
