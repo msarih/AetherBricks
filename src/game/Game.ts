@@ -874,11 +874,11 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       pi.sprint = false;
     }
     this.jumpTapped = false;
+    this.interaction.tick();
     if (this.isRemote) {
       this.tickRemote();
       return;
     }
-    this.interaction.tick();
 
     // --- entités ---
     const list = this.entities;
