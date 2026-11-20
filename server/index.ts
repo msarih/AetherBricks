@@ -821,10 +821,33 @@ function start(): void {
     sendJson(sender.ws, { type: 'chat', text: `Commande inconnue : /${cmd}. Tapez /help.` });
   }
 
-  function corsHeaders(res: http.ServerResponse): void {
-    res.setHeader('Access-Control-Allow-Origin', '*');
+  function isAllowedOrigin(origin: string, req: http.IncomingMessage): boolean {
+    let u: URL;
+    try {
+      u = new URL(origin);
+    } catch {
+      return false;
+    }
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
+    if (origin === 'http://localhost:5173' || origin === 'http://127.0.0.1:5173') return true;
+    const hostHeader = req.headers.host;
+    if (hostHeader && (origin === `http://${hostHeader}` || origin === `https://${hostHeader}`)) return true;
+    const reqPort = u.port || (u.protocol === 'https:' ? '443' : '80');
+    if (reqPort !== String(port)) return false;
+    if (u.hostname === 'localhost' || u.hostname === '127.0.0.1') return true;
+    const { lan, tailscale } = listNetworkAddresses();
+    return lan.includes(u.hostname) || tailscale.includes(u.hostname);
+  }
+
+  function applyCorsHeaders(req: http.IncomingMessage, res: http.ServerResponse): boolean {
+    const originHeader = req.headers.origin;
+    if (!originHeader) return true;
+    if (!isAllowedOrigin(originHeader, req)) return false;
+    res.setHeader('Access-Control-Allow-Origin', originHeader);
+    res.setHeader('Vary', 'Origin');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Host-Token');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Host-Token, X-Server-Password');
+    return true;
   }
 
   // Serveur HTTP (dist/ + /api/*)
@@ -835,24 +858,78 @@ function start(): void {
     const urlPath = urlObj.pathname;
 
     if (method === 'OPTIONS' && urlPath.startsWith('/api/')) {
-      corsHeaders(res);
+      if (!applyCorsHeaders(req, res)) {
+        res.writeHead(403);
+        res.end();
+        return;
+      }
       res.writeHead(204);
       res.end();
       return;
     }
 
     if (method === 'GET' && urlPath === '/api/ping') {
-      corsHeaders(res);
+      applyCorsHeaders(req, res);
+      const pwHeader = req.headers['x-server-password'];
+      const hasValidPw = typeof pwHeader === 'string' && pwHeader.length > 0 && safeEqualString(pwHeader, password);
+      const payload: Record<string, unknown> = { ok: true, hosting: inviteSecretHex !== null, port };
+      if (hasValidPw) payload.name = worldName;
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-      res.end(JSON.stringify({ ok: true, hosting: inviteSecretHex !== null, name: worldName, port }));
+      res.end(JSON.stringify(payload));
       return;
     }
 
     if (method === 'POST' && urlPath === '/api/open-world') {
-      corsHeaders(res);
+      if (!applyCorsHeaders(req, res)) {
+        res.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ ok: false, error: 'Origine non autorisée.' }));
+        return;
+      }
+
+      const clientIp = normalizeIp(req.socket.remoteAddress);
+      const waitSec = checkRateLimit(clientIp);
+      if (waitSec > 0) {
+        res.writeHead(429, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ ok: false, error: `Trop d’essais ratés. Veuillez patienter ${waitSec} s.` }));
+        return;
+      }
+
+      const pwHeader = req.headers['x-server-password'];
+      const suppliedPw = typeof pwHeader === 'string' ? pwHeader : '';
+      if (!suppliedPw || !safeEqualString(suppliedPw, password)) {
+        const lockSec = recordAuthFailure(clientIp);
+        const status = lockSec > 0 ? 429 : 401;
+        const error =
+          lockSec > 0
+            ? `Trop d’essais ratés. Veuillez patienter ${lockSec} s.`
+            : suppliedPw
+              ? 'Mot de passe du serveur incorrect.'
+              : 'Mot de passe du serveur requis.';
+        res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ ok: false, error }));
+        return;
+      }
+      clearAuthFailure(clientIp);
+
+      if (inviteSecretHex !== null) {
+        res.writeHead(409, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ ok: false, error: 'Un monde est déjà ouvert aux amis : fermez-le d’abord.' }));
+        return;
+      }
+
       try {
         const body = await readRequestBody(req, MAX_HTTP_UPLOAD_BYTES);
         const archive = parseWorldArchive(body);
+
+        // Sauvegarder tout monde déjà présent sur disque (ex. import CLI) avant de le remplacer
+        if (fs.existsSync(worldDir)) {
+          saveAll();
+          const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+          const backupDir = path.join(dataDir, 'backups', `world-${stamp}`);
+          fs.mkdirSync(path.dirname(backupDir), { recursive: true });
+          fs.renameSync(worldDir, backupDir);
+          console.log(`[Hôte] Ancien monde sauvegardé dans ${backupDir}`);
+        }
 
         // Fermer d'éventuels joueurs précédents
         for (const p of Array.from(players.values())) {
@@ -861,7 +938,6 @@ function start(): void {
         }
         players.clear();
 
-        fs.rmSync(worldDir, { recursive: true, force: true });
         fs.mkdirSync(chunksDir, { recursive: true });
         fs.mkdirSync(playersDir, { recursive: true });
 
@@ -941,7 +1017,11 @@ function start(): void {
     }
 
     if (method === 'POST' && urlPath === '/api/close-world') {
-      corsHeaders(res);
+      if (!applyCorsHeaders(req, res)) {
+        res.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ ok: false, error: 'Origine non autorisée.' }));
+        return;
+      }
       const token = (req.headers['x-host-token'] as string | undefined) ?? urlObj.searchParams.get('token') ?? '';
       if (!hostToken || !safeEqualString(token, hostToken)) {
         res.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8' });
