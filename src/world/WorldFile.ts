@@ -17,6 +17,8 @@
 import { CHUNK_AREA, CHUNK_VOLUME, GEN_VERSION, type GameMode, type WorldType } from './Constants';
 import { createWorldId, endStorageId, netherStorageId, rleDecode, rleEncode, type SavedChunk, type Storage, type WorldInfo } from './Storage';
 
+// Extension et signature conservées volontairement sous l'ancien nom « aetherbricks »
+// pour garder la compatibilité avec les archives déjà exportées.
 export const WORLD_FILE_EXTENSION = '.aetherworld';
 const SIGNATURE = 'AEBWORLD';
 const FORMAT_VERSION = 2;
@@ -224,7 +226,7 @@ export async function importWorld(storage: Storage, data: ArrayBuffer, onProgres
   } catch {
     signature = '';
   }
-  if (signature !== SIGNATURE) throw new Error('ce fichier n’est pas un monde AetherBricks');
+  if (signature !== SIGNATURE) throw new Error('ce fichier n’est pas un monde SarihBricks');
   const version = r.u32();
   if (version !== 1 && version !== FORMAT_VERSION) throw new Error(`version de fichier non prise en charge (${version})`);
   const header = r.json();

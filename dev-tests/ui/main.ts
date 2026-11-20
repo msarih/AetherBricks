@@ -221,7 +221,7 @@ const game = {
   debugLines(): { left: string[]; right: string[] } {
     return {
       left: [
-        'AetherBricks 0.1 (page de test)',
+        'SarihBricks 0.1 (page de test)',
         `${fps} fps, 12 mises à jour de chunks`,
         'C : 96/441, E : 14, P : 37',
         '',

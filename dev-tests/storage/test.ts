@@ -12,6 +12,7 @@ interface Report {
   logs: string[];
 }
 
+// Conservé en « aetherbricks » volontairement pour la compatibilité des sauvegardes existantes.
 const DB = 'aetherbricks-voxel';
 const PERSIST_ID = 'monde-persistant';
 const gen = new WorldGen(1337, 'default');

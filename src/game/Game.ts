@@ -2036,7 +2036,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     const block = w.getBlockLight(bx, by, bz);
     const weather = this.thunderLevel > 0.5 ? 'orage' : this.rainLevel > 0.2 ? 'pluie' : 'dégagé';
     const left = [
-      'AetherBricks 3D',
+      'SarihBricks 3D',
       `${this.fps} ips, ${this.chunkRenderer.count} chunks affichés, ${this.triangles} triangles`,
       `Chunks : ${stats.loaded} chargés, ${stats.generating} en génération, ${stats.meshing} en maillage`,
       `Entités : ${this.entities.length}`,

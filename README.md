@@ -1,8 +1,6 @@
-# AetherBricks 3D 🧱✨
+# SarihBricks 3D 🧱✨
 
 Un jeu de blocs en 3D dans le navigateur, au plus près de *Minecraft* : monde infini généré par graine, survie et créatif, minage, fabrication, créatures, cycle jour/nuit et météo. Écrit en TypeScript avec Three.js, sans aucune ressource externe (textures et sons sont générés par le code).
-
-> La première version du projet — le constructeur architectural en briques blanches — est conservée telle quelle : elle s'ouvre par le bouton « Ancienne version » du menu principal, ou directement sur `/legacy.html` (code dans `src/legacy-main.ts`). Sa description d'origine figure plus bas.
 
 ## 🚀 Installation & Lancement
 
@@ -104,64 +102,4 @@ Les touches sont repérées par leur position sur le clavier : sur un clavier QW
 - Construction et décoration, écarts avec Minecraft : le chêne noir (`dark_oak_log`, `dark_oak_planks`) n'est pas encore présent dans la génération naturelle du terrain (accessible par `/give` ou en créatif pour fabriquer les variantes en chêne noir) ; 10 tableaux sont inclus (formats 1×1, 2×1, 1×2 et 2×2) ; 6 disques de musique sur les 12 de la 1.12 (`13`, `cat`, `blocks`, `chirp`, `far`, `wait`, joués par synthèse Web Audio sans banque d'échantillons externe) ; les vitres teintées, les dalles/escaliers en chêne noir et la terre cuite émaillée ne sont pas inclus.
 - Ferme et règles du monde, écarts avec Minecraft : le cacao ne se génère pas à l'état naturel dans la jungle (teinture brune accessible via `/give` ou le menu créatif) ; les règles `/gamerule` portent sur les 6 règles booléennes principales (`keepInventory`, `doDaylightCycle`, `doMobSpawning`, `mobGriefing`, `doFireTick`, `naturalRegeneration`) ; en mode `adventure`, les balises d'exception NBT (`CanDestroy`/`CanPlaceOn`) ne sont pas prises en charge ; `/fill` accepte la syntaxe simple par bloc et mode (sans filtre `replace <blocFiltre>`).
 - Testé sur Chrome uniquement.
-
----
-
-# Version d'origine : le constructeur en briques blanches (`/legacy.html`)
-
-Un jeu vidéo 3D de construction architecturale inspiré de *Minecraft*, avec un rendu graphique haute qualité (**PBR**, **ombres douces 4K**, **ACES Filmic Tone Mapping**, **Bloom**, et **briques cubiques chanfreinées à textures procédurales HD**).
-
-On démarre sur un grand **terrain plat** épuré avec des **briques cubiques de couleur blanche** (maçonnerie blanche mate, béton blanc lisse, marbre de Carrare, blanc albâtre, brique lumineuse blanche et verre dépoli blanc).
-
----
-
-## ✨ Fonctionnalités Principales
-
-- **Rendu 3D Haute Fidélité (Three.js + Post-Processing)** :
-  - Cubes avec chanfreins subtils (`RoundedBoxGeometry`) qui accrochent la lumière et dessinent les joints entre chaque brique blanche.
-  - Textures PBR générées procéduralement en haute définition (Albédo, Normal/Bump map, Roughness map).
-  - Ombres portées temps réel 4096×4096 (`PCFSoftShadowMap`) et 4 ambiances solaires (*Matin Pur*, *Zénith*, *Golden Hour*, *Nuit Claire*).
-- **Gameplay & Physique** :
-  - Vue à la première personne fluide avec collisions AABB sur le terrain plat et sur les briques posées.
-  - **Mode Marche** (avec gravité, saut et sprint) et **Mode Vol Libre (`F`)** pour bâtir en hauteur sans limite.
-  - Aperçu fantôme (Ghost Cube) temps réel sur la face visée + particules d'éclats lors de la pose et de la destruction.
-  - Synthétiseur audio **Web Audio API** intégré (bruitages de pose en céramique/pierre, destruction, pas).
-- **Outils de Studio** :
-  - **Undo / Redo** (`Ctrl+Z` / `Ctrl+Y`).
-  - **Sauvegarde automatique** (`localStorage`) + **Export / Import JSON**.
-  - **Scènes pré-construites** : Terrain Plat Vierge, Socle Initial, Pavillon Minimaliste Blanc, Arche Brutaliste.
-
----
-
-## 🎮 Contrôles
-
-| Touche / Souris | Action |
-| :--- | :--- |
-| **Clic Gauche** | Poser une brique blanche sur la face visée |
-| **Clic Droit** *(ou Alt + Clic)* | Supprimer la brique visée |
-| **Clic Molette** *(ou `P`)* | Pipette (sélectionner la finition de la brique visée) |
-| **ZQSD / WASD / Flèches** | Se déplacer |
-| **Espace** | Sauter (Marche) / Monter (Mode Vol) |
-| **Shift / C** | Sprinter (Marche) / Descendre (Mode Vol) |
-| **F** | Activer / Désactiver le **Mode Vol** |
-| **T** | Changer l'heure du soleil & l'ambiance lumineuse |
-| **1 – 6** *(ou Molette)* | Choisir la finition de brique blanche |
-| **Ctrl + Z / Ctrl + Y** | Annuler / Rétablir |
-| **Échap** | Ouvrir le Menu Studio |
-
----
-
-## 🚀 Installation & Lancement
-
-```bash
-npm install
-npm run dev
-```
-
-Pour compiler la version de production :
-```bash
-npm run build
-```
-
-Consultez [SPEC.md](./SPEC.md) pour la spécification fonctionnelle et technique détaillée.
 

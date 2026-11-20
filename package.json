@@ -1,7 +1,7 @@
 {
-  "name": "aetherbricks-3d",
+  "name": "sarihbricks-3d",
   "version": "1.0.0",
-  "description": "Jeu de construction 3D haute fidélité (PBR) en briques cubiques blanches sur terrain plat",
+  "description": "Jeu de blocs 3D dans le navigateur",
   "type": "module",
   "scripts": {
     "dev": "vite",
