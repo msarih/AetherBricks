@@ -74,6 +74,8 @@ import { MapStore, type MapData } from './Maps';
 import { STAT, type Stats } from './Stats';
 import { Interaction, particleTile, particleTint, type InteractionHost } from './Interaction';
 import { CreativeMenu, HOTBAR_SIZE, InventoryMenu, type Inventory, type Menu } from './Inventory';
+import type { MultiplayerClient, WelcomePacket } from '../net/Client';
+import { RemotePlayerEntity } from '../net/RemotePlayer';
 
 export interface GameOptions {
   canvas: HTMLCanvasElement;
@@ -82,10 +84,14 @@ export interface GameOptions {
   ui: UiApi;
   sfx: Sfx;
   settings: Settings;
-  storage: Storage;
+  storage: Storage | null;
   info: WorldInfo;
   /** Clés des chunks déjà sauvegardés de ce monde. */
   savedKeys: Set<number>;
+  /** Session réseau (présente uniquement en multijoueur). */
+  net?: MultiplayerClient;
+  welcome?: WelcomePacket;
+  onDisconnected?: (reason: string) => void;
 }
 
 /** Rayon (en chunks) qui doit être maillé avant d'entrer dans le monde. */
@@ -278,7 +284,19 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
   private readonly atlas: Atlas;
   private readonly sfx: Sfx;
   readonly settings: Settings;
-  private readonly storage: Storage;
+  private readonly storage: Storage | null;
+  net: MultiplayerClient | null = null;
+  private remoteId = 0;
+  private readonly remotePlayers = new Map<number, RemotePlayerEntity>();
+  private readonly requestedChunks = new Set<number>();
+  private lastSentX = Number.NaN;
+  private lastSentY = Number.NaN;
+  private lastSentZ = Number.NaN;
+  private lastSentYaw = Number.NaN;
+  private lastSentPitch = Number.NaN;
+  private lastSentSneak = false;
+  private lastSentSwing = 0;
+  private onDisconnected: ((reason: string) => void) | null = null;
   private readonly pending: Entity[] = [];
   /** Chunk où chaque entité sauvegardable a été vue pour la dernière fois. */
   private readonly homes = new Map<Entity, number>();
@@ -361,6 +379,8 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     this.settings = o.settings;
     this.storage = o.storage;
     this.info = o.info;
+    this.net = o.net ?? null;
+    this.onDisconnected = o.onDisconnected ?? null;
     const info = o.info;
     const canvas = o.canvas;
 
@@ -385,7 +405,8 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       storage: o.storage,
       worldId: info.id,
       savedKeys: o.savedKeys,
-      viewDistance: o.settings.renderDistance,
+      viewDistance: o.welcome ? Math.min(o.settings.renderDistance, o.welcome.viewDistance) : o.settings.renderDistance,
+      remoteMode: Boolean(o.net),
     });
     this.chunks.hooks = this;
 
@@ -458,7 +479,17 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     if (this.hardcore) this.level = 3;
     if (this.weatherTimer <= 0) this.weatherTimer = 12000 + Math.floor(Math.random() * 168000);
     const savedPlayer = st?.player;
-    if (savedPlayer && typeof savedPlayer === 'object') {
+    if (o.welcome && o.net) {
+      this.remoteId = o.welcome.id;
+      this.time = o.welcome.time;
+      this.spawnPoint = o.welcome.spawn;
+      player.teleport(o.welcome.x, o.welcome.y, o.welcome.z);
+      player.yaw = player.pYaw = player.headYaw = player.pHeadYaw = o.welcome.yaw;
+      player.headPitch = player.pHeadPitch = o.welcome.pitch;
+      this.needSettle = false;
+      this.freshSpawn = false;
+      this.attachNetHandlers(o.net);
+    } else if (savedPlayer && typeof savedPlayer === 'object') {
       player.loadState(savedPlayer as Record<string, unknown>);
     } else {
       player.setPosition(this.spawnPoint.x, this.spawnPoint.y, this.spawnPoint.z);
@@ -528,8 +559,13 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     this.ui.update(0);
   }
 
+  get isRemote(): boolean {
+    return this.net !== null;
+  }
+
   /** Sauvegarde le monde (état global, joueur, chunks modifiés). Les appels simultanés partagent la même écriture. */
   save(): Promise<void> {
+    if (this.isRemote) return Promise.resolve();
     if (this.saving) return this.saving;
     const run = this.writeSave().finally(() => {
       this.saving = null;
@@ -539,6 +575,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
   }
 
   private async writeSave(): Promise<void> {
+    if (!this.storage) return;
     const info = this.info;
     info.state = {
       player: this.player.saveState(),
@@ -591,6 +628,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     this.disposed = true;
     cancelAnimationFrame(this.raf);
     this.raf = 0;
+    this.net?.close();
     this.input.unlock();
     this.touchLook.dispose();
     this.input.dispose();
@@ -627,6 +665,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     if (this.dimensionSwitching) return;
     const p = this.player;
     this.chunks.update(p.x, p.z);
+    if (this.isRemote) this.requestMissingChunks();
 
     this.fpsFrames++;
     this.fpsTime += dt;
@@ -637,17 +676,21 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     }
 
     if (!this.ready) {
-      const radius = Math.min(this.chunks.viewDistance, READY_RADIUS);
+      const radius = Math.min(this.chunks.viewDistance, this.isRemote ? 2 : READY_RADIUS);
       if (!this.chunks.isReady(p.x, p.z, radius)) {
-        this.ui.showLoading('Chargement du monde', 'Génération du terrain…', this.chunks.progress(p.x, p.z, radius));
+        this.ui.showLoading(
+          this.isRemote ? 'Connexion au serveur' : 'Chargement du monde',
+          this.isRemote ? 'Construction du terrain…' : 'Génération du terrain…',
+          this.chunks.progress(p.x, p.z, radius),
+        );
         this.ui.update(dt);
         return;
       }
       this.enterWorld();
     }
 
-    const paused = this.ui.pausing;
-    const loaded = this.areaLoaded();
+    const paused = !this.isRemote && this.ui.pausing;
+    const loaded = this.isRemote || this.areaLoaded();
     if (loaded && this.needSettle) {
       this.needSettle = false;
       this.settle();
@@ -694,7 +737,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     this.sfx.setRain(this.rainVolume);
     this.sfx.setUnderwater(this.headInWater);
 
-    if (!paused && loaded && !this.deathShown) {
+    if (!this.isRemote && !paused && loaded && !this.deathShown) {
       this.autosave += dt;
       if (this.autosave >= AUTOSAVE_SECONDS) void this.save().catch((err: unknown) => this.saveFailed(err));
     }
@@ -809,6 +852,10 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       pi.sprint = false;
     }
     this.jumpTapped = false;
+    if (this.isRemote) {
+      this.tickRemote();
+      return;
+    }
     this.interaction.tick();
 
     // --- entités ---
@@ -2185,10 +2232,10 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     const block = w.getBlockLight(bx, by, bz);
     const weather = this.thunderLevel > 0.5 ? 'orage' : this.rainLevel > 0.2 ? 'pluie' : 'dégagé';
     const left = [
-      'SarihBricks 3D',
+      this.isRemote ? 'SarihBricks 3D (Multijoueur)' : 'SarihBricks 3D',
       `${this.fps} ips, ${this.chunkRenderer.count} chunks affichés, ${this.triangles} triangles`,
       `Chunks : ${stats.loaded} chargés, ${stats.generating} en génération, ${stats.meshing} en maillage`,
-      `Entités : ${this.entities.length}`,
+      this.isRemote ? `Joueurs visibles : ${this.remotePlayers.size + 1}` : `Entités : ${this.entities.length}`,
       '',
       `XYZ : ${fmt(p.x)} / ${fmt(p.y)} / ${fmt(p.z)}`,
       `Bloc : ${bx} ${by} ${bz}`,
@@ -2202,7 +2249,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       `Graine : ${this.info.seed}`,
       `Mode : ${this.hardcore ? 'Extrême' : p.gameMode === 'creative' ? 'créatif' : p.gameMode === 'adventure' ? 'aventure' : p.gameMode === 'spectator' ? 'spectateur' : 'survie'}`,
       `Difficulté : ${DIFFICULTY_LABELS[this.difficulty] ?? this.difficulty}`,
-      `Sauvegarde : ${this.storage.persistent ? 'sur disque' : 'en mémoire'}`,
+      `Sauvegarde : ${this.storage ? (this.storage.persistent ? 'sur disque' : 'en mémoire') : 'serveur'}`,
     ];
     if (this.chunks.saveError) right.push(`Erreur de sauvegarde : ${this.chunks.saveError}`);
     const it = this.interaction;
@@ -2309,6 +2356,11 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
   // ------------------------------------------------------------------ chat et commandes
 
   chat(text: string): void {
+    if (this.net) {
+      const s = text.trim();
+      if (s) this.net.sendChat(s);
+      return;
+    }
     if (!text.startsWith('/')) {
       this.ui.addMessage(`<Vous> ${text}`);
       return;
@@ -2867,6 +2919,10 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     const parts = text.slice(1).split(' ');
     const last = parts[parts.length - 1].toLowerCase();
     const pick = (list: readonly string[]): string[] => list.filter((s) => s.startsWith(last));
+    if (this.isRemote) {
+      if (parts.length === 1) return pick(['help', 'tp', 'time', 'gamemode']);
+      return [];
+    }
     if (parts.length === 1) return pick(COMMANDS);
     const cmd = parts[0].toLowerCase();
     if (parts.length === 2) {
@@ -2911,5 +2967,115 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       if (parts.length === 9) return pick(FILL_MODES);
     }
     return [];
+  }
+
+  // ------------------------------------------------------------------ multijoueur
+
+  private attachNetHandlers(client: MultiplayerClient): void {
+    client.setHandlers({
+      onChunk: (cx, cz, blocks, meta, biomes, tints) => {
+        this.chunks.receiveRemoteChunk(cx, cz, blocks, meta, biomes, tints);
+      },
+      onPlayers: (list) => {
+        const seen = new Set<number>();
+        for (const s of list) {
+          if (s.id === this.remoteId) continue;
+          seen.add(s.id);
+          const existing = this.remotePlayers.get(s.id);
+          if (existing) {
+            existing.applyServerState(s);
+          } else {
+            const rp = new RemotePlayerEntity(s);
+            this.remotePlayers.set(s.id, rp);
+            this.entities.push(rp);
+          }
+        }
+        for (const [id, rp] of this.remotePlayers) {
+          if (!seen.has(id)) {
+            this.remotePlayers.delete(id);
+            const idx = this.entities.indexOf(rp);
+            if (idx >= 0) this.entities.splice(idx, 1);
+          }
+        }
+      },
+      onPlayerLeave: (id) => {
+        const rp = this.remotePlayers.get(id);
+        if (rp) {
+          this.remotePlayers.delete(id);
+          const idx = this.entities.indexOf(rp);
+          if (idx >= 0) this.entities.splice(idx, 1);
+        }
+      },
+      onChat: (text) => {
+        this.ui.addMessage(text);
+      },
+      onTime: (t) => {
+        this.time = t;
+      },
+      onGameMode: (mode) => {
+        this.player.gameMode = mode;
+        this.ui.actionBar(`Mode de jeu : ${mode}`);
+      },
+      onTeleport: (x, y, z) => {
+        this.player.teleport(x, y, z);
+      },
+      onDisconnect: (reason) => {
+        if (this.disposed) return;
+        this.onDisconnected?.(reason);
+      },
+    });
+  }
+
+  private requestMissingChunks(): void {
+    if (!this.net) return;
+    const pcx = Math.floor(this.player.x) >> 4;
+    const pcz = Math.floor(this.player.z) >> 4;
+    const r = this.chunks.viewDistance + 1;
+    const missing: Array<[number, number]> = [];
+    for (let dz = -r; dz <= r; dz++) {
+      for (let dx = -r; dx <= r; dx++) {
+        if (dx * dx + dz * dz > (r + 0.5) * (r + 0.5)) continue;
+        const cx = pcx + dx;
+        const cz = pcz + dz;
+        const key = chunkKey(cx, cz);
+        if (!this.world.chunks.has(key) && !this.requestedChunks.has(key)) {
+          this.requestedChunks.add(key);
+          missing.push([cx, cz]);
+        }
+      }
+    }
+    if (missing.length > 0) this.net.sendNeedChunks(missing);
+  }
+
+  private tickRemote(): void {
+    const p = this.player;
+    this.time = (this.time + 1) % DAY_TICKS;
+    const cx = Math.floor(p.x) >> 4;
+    const cz = Math.floor(p.z) >> 4;
+    if (this.world.chunks.has(chunkKey(cx, cz))) {
+      p.tick(this);
+    }
+    for (const rp of this.remotePlayers.values()) {
+      rp.tick(this);
+    }
+    if (
+      this.net &&
+      (p.x !== this.lastSentX ||
+        p.y !== this.lastSentY ||
+        p.z !== this.lastSentZ ||
+        p.yaw !== this.lastSentYaw ||
+        p.headPitch !== this.lastSentPitch ||
+        p.sneaking !== this.lastSentSneak ||
+        p.swing !== this.lastSentSwing)
+    ) {
+      this.lastSentX = p.x;
+      this.lastSentY = p.y;
+      this.lastSentZ = p.z;
+      this.lastSentYaw = p.yaw;
+      this.lastSentPitch = p.headPitch;
+      this.lastSentSneak = p.sneaking;
+      this.lastSentSwing = p.swing;
+      this.net.sendMove(p.x, p.y, p.z, p.yaw, p.headPitch, p.sneaking, p.onGround, p.swing);
+    }
   }
 }
