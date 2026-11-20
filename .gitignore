@@ -3,4 +3,10 @@ dist/
 .DS_Store
 *.local
 dev-tests/e2e/shots/
+release/
+*.keystore
+*.jks
+android/keystore.properties
+android/.version-code
+
 

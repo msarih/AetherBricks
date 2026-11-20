@@ -83,6 +83,54 @@ npm run build    # version de production dans dist/
   - Sur ordinateur (Chrome / Edge : icône « Installer SarihBricks » dans la barre d'adresse) ou sur téléphone/tablette (« Ajouter à l'écran d'accueil »), le jeu s'installe comme une application plein écran autonome (`display: standalone`).
   - Une fois ouvert une première fois en ligne, **le jeu démarre et se joue entièrement hors ligne** (création de mondes, génération et maillage dans les *workers*, sauvegarde IndexedDB et rechargement). Lorsqu'une nouvelle version est déployée, le cache est mis à jour et un message prévient si une mise à jour attend un rechargement.
 
+## 🤖 Application Android (.apk, hors Play Store)
+
+Le jeu peut être emballé dans une vraie application Android autonome (via **Capacitor**), qui embarque la version de production (`dist/`), fonctionne **100 % hors ligne** sans serveur, s'affiche en plein écran (portrait ou paysage, écran maintenu allumé en jeu) et prend en charge les commandes tactiles, la manette et le bouton **Retour** d'Android (ouvre la pause en jeu ou revient en arrière dans un menu).
+
+### Fabriquer le fichier `.apk`
+
+Prérequis sur la machine de build : Node.js, le SDK Android (`ANDROID_HOME`, par défaut `~/Library/Android/sdk`) et Java 21 (`JAVA_HOME`, par défaut le JDK inclus dans Android Studio).
+
+```bash
+npm run android:apk
+```
+
+Cette commande construit le jeu (`npm run build`), synchronise le projet Android (`npx cap sync android`), incrémente automatiquement le `versionCode` (stocké dans `android/.version-code`, non commité), assemble et signe l'APK, puis place le fichier final dans `release/SarihBricks.apk` (non commité).
+
+Pour forcer un numéro de version précis :
+
+```bash
+SARIHBRICKS_VERSION_CODE=10 SARIHBRICKS_VERSION_NAME=1.0.1 npm run android:apk
+```
+
+### Clé de signature locale et sauvegarde
+
+La signature de l'APK repose sur deux fichiers locaux **non commités** (ignorés par Git) :
+
+- `android/sarihbricks-release.keystore` : la clé de signature (créée au premier lancement si absente).
+- `android/keystore.properties` : le fichier contenant `storePassword`, `keyAlias` et `keyPassword` (les variables d'environnement `SARIHBRICKS_KEYSTORE_PASSWORD`, `SARIHBRICKS_KEY_ALIAS` et `SARIHBRICKS_KEY_PASSWORD` restent prioritaires si définies).
+
+**Sauvegardez ces deux fichiers hors du Mac** (coffre-fort de mots de passe, disque externe chiffré, etc.) : tant que les nouvelles versions sont signées avec la même clé, elles s'installent par-dessus l'application existante **sans perdre vos mondes**. Si la clé est perdue, il faudra désinstaller l'application avant d'installer un nouvel APK (ce qui efface les mondes non exportés).
+
+Pour reconstruire l'APK sur une autre machine, copiez `sarihbricks-release.keystore` et `keystore.properties` dans `android/` avant de lancer `npm run android:apk`.
+
+### Installer sur un téléphone Android
+
+1. Copiez `release/SarihBricks.apk` sur votre téléphone (câble USB, AirDrop/Nearby Share, email, Google Drive, etc.).
+2. Ouvrez l'application **Fichiers** (ou **Mes fichiers**) sur le téléphone et appuyez sur `SarihBricks.apk`.
+3. Si Android demande l'autorisation d'installer des applications inconnues depuis cette source, ouvrez **Paramètres** et activez **Autoriser cette source**, puis revenez en arrière.
+4. Appuyez sur **Installer**, puis sur **Ouvrir** (l'icône **SarihBricks** apparaît ensuite sur votre écran d'accueil).
+
+### Mettre à jour l'application
+
+Fabriquez un nouvel APK avec `npm run android:apk` (en utilisant la même clé `android/sarihbricks-release.keystore`), copiez-le sur le téléphone et ouvrez-le : Android propose **Mettre à jour** et conserve tous vos mondes et réglages.
+
+### Limites de l'application Android
+
+- Installation manuelle par fichier `.apk` (pas de mise à jour automatique via Google Play).
+- Les mondes sont stockés dans le stockage interne de l'application (IndexedDB) : utilisez l'export `.aetherworld` si vous voulez une sauvegarde externe ou transférer un monde vers un autre appareil.
+- Les mêmes limites de jouabilité que la version navigateur (pas de multijoueur, pas de vibrations manette).
+
 ## 🎮 Contrôles
 
 Les touches sont repérées par leur position sur le clavier : sur un clavier QWERTY, `Z Q S D` se lisent `W A S D` et « A » est la touche `Q`.

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">SarihBricks</string>
+    <string name="title_activity_main">SarihBricks</string>
+    <string name="package_name">com.sarih.sarihbricks</string>
+    <string name="custom_url_scheme">com.sarih.sarihbricks</string>
+</resources>
