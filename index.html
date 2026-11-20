@@ -2,7 +2,14 @@
 <html lang="fr">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#3c8527" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="SarihBricks" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
     <title>SarihBricks 3D</title>
     <style>
       html,
@@ -11,6 +18,11 @@
         height: 100%;
         overflow: hidden;
         background: #000;
+        touch-action: none;
+        overscroll-behavior: none;
+        -webkit-touch-callout: none;
+        -webkit-user-select: none;
+        user-select: none;
       }
       #game {
         position: fixed;
@@ -29,6 +41,29 @@
   <body>
     <canvas id="game" tabindex="-1"></canvas>
     <div id="ui"></div>
+    <script>
+      // En mode développement hors ligne (ex. test PWA avec setOfflineMode), évite les erreurs console du client WebSocket de Vite
+      if (typeof WebSocket !== 'undefined') {
+        const NativeWS = WebSocket;
+        window.WebSocket = function (url, protocols) {
+          if (!navigator.onLine) {
+            return {
+              readyState: 3,
+              send() {},
+              close() {},
+              addEventListener() {},
+              removeEventListener() {},
+            };
+          }
+          return protocols !== undefined ? new NativeWS(url, protocols) : new NativeWS(url);
+        };
+        window.WebSocket.prototype = NativeWS.prototype;
+        window.WebSocket.CONNECTING = NativeWS.CONNECTING;
+        window.WebSocket.OPEN = NativeWS.OPEN;
+        window.WebSocket.CLOSING = NativeWS.CLOSING;
+        window.WebSocket.CLOSED = NativeWS.CLOSED;
+      }
+    </script>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
