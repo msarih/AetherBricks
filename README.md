@@ -129,7 +129,41 @@ Fabriquez un nouvel APK avec `npm run android:apk` (en utilisant la même clé `
 
 - Installation manuelle par fichier `.apk` (pas de mise à jour automatique via Google Play).
 - Les mondes sont stockés dans le stockage interne de l'application (IndexedDB) : utilisez l'export `.aetherworld` si vous voulez une sauvegarde externe ou transférer un monde vers un autre appareil.
-- Les mêmes limites de jouabilité que la version navigateur (pas de multijoueur, pas de vibrations manette).
+- Les mêmes limites de jouabilité que la version navigateur (pas de vibrations manette, limites du multijoueur jalon 1).
+
+## 🌐 Multijoueur (Wi-Fi local et Tailscale — Jalon 1)
+
+Un joueur lance un serveur Node.js autoritaire sur son ordinateur ; ses amis le rejoignent depuis un navigateur (ordinateur ou téléphone) ou depuis l'application Android.
+
+### Lancer le serveur
+
+Un **mot de passe est obligatoire** pour démarrer le serveur (pour protéger la partie sur un Wi-Fi partagé).
+
+```bash
+npm run serveur -- --password monsecret
+```
+
+Options utiles :
+- `--port 8080` : port HTTP et WebSocket (8080 par défaut) ;
+- `--flat` : monde plat (normal par défaut) ;
+- `--seed 1337` : graine du monde ;
+- `--gamemode creative` : mode de jeu par défaut (`survival` par défaut) ;
+- ou un fichier `server-data/config.json` (non commité) contenant `{ "password": "monsecret" }`.
+
+Au démarrage, le serveur affiche les adresses à partager :
+- **Wi-Fi local** : `http://192.168.x.x:8080`
+- **Tailscale** (si actif) : `http://100.x.x.x:8080`
+
+### Rejoindre la partie
+
+1. **Depuis un autre ordinateur ou téléphone** (sur le même Wi-Fi ou via Tailscale) : ouvrir l'adresse affichée (`http://192.168.x.x:8080`) dans le navigateur, cliquer sur **Multijoueur**, saisir son pseudo, l'adresse (`192.168.x.x:8080`) et le mot de passe.
+2. **Depuis l'application Android** : ouvrir l'application, cliquer sur **Multijoueur**, saisir l'adresse (`192.168.x.x:8080` ou `100.x.x.x:8080`), son pseudo et le mot de passe. Le jeu mémorise les serveurs récents et leur mot de passe sur l'appareil.
+
+### Limites du jalon 1
+
+- **Casse et pose de blocs désactivées** en multijoueur (elles seront partagées et sauvegardées au jalon 2).
+- Pas encore de créatures, de coffres, de combat ni de changement de dimension en multijoueur ; un seul monde actif par serveur.
+- Commandes disponibles : `/help`, `/tp`, `/time`, `/gamemode`.
 
 ## 🎮 Contrôles
 
@@ -165,7 +199,7 @@ Les touches sont repérées par leur position sur le clavier : sur un clavier QW
 
 ## ⚠️ Limites connues
 
-- Pas de multijoueur.
+- Multijoueur (jalon 1) : connexion, monde, déplacements synchronisés, joueurs visibles avec pseudo, chat et commandes (`/help`, `/tp`, `/time`, `/gamemode`) ; la casse/pose de blocs, les créatures, les conteneurs et le combat arriveront aux jalons suivants.
 - L'End : les forts n'existent que dans les mondes créés à partir de cette version (un monde plus ancien garde son terrain ; en créatif, 12 cadres garnis d'yeux y ouvrent quand même un portail). Écarts avec Minecraft : un fort par case de 768 blocs, au moins à 320 blocs de l'origine, au lieu des anneaux autour de l'origine ; fort sur un seul niveau, sans portes ni blocs infestés ; l'orientation des cadres posés à la main n'est pas vérifiée ; pas d'îles extérieures ni de cités de l'End ; le pourtour de l'île est aplani pour qu'on la rejoigne à pied depuis la dalle d'arrivée ; le dragon n'a qu'une zone de touche (pas de dégâts doublés à la tête) et sa ronde est un cercle ; on ne peut pas le faire revenir avec des cristaux ; l'œuf se ramasse à la pioche ; l'écran de fin tient en trois lignes ; ni le dragon ni le poisson d'argent n'ont de cri propre.
 - Lieux à découvrir : uniquement dans les mondes créés à partir de cette version. Écarts avec Minecraft : l'échange avec un villageois se fait en cliquant sur une offre (pas de cases à remplir) ; les zombies n'attaquent pas les villageois ; le temple de la jungle n'a pas de piège à flèches ; dans les mines, les coffres sont posés au sol et les cages donnent des araignées ordinaires ; la forteresse a un plan plus simple, sans escaliers.
 - Transport, écarts avec Minecraft : une seule essence de bateau (chêne) ; pas de wagonnet à coffre, à fourneau ni à TNT ; un seul passager à la fois dans un bateau.
