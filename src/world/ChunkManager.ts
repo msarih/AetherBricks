@@ -66,6 +66,7 @@ export class ChunkManager {
 
   private readonly genWorkers: WorkerSlot[] = [];
   private readonly meshWorkers: WorkerSlot[] = [];
+  private readonly remoteMode: boolean;
   /** Clés des chunks dont les données sont en route (génération ou lecture). */
   private readonly loading = new Set<number>();
   private storageLoads = 0;
@@ -92,7 +93,7 @@ export class ChunkManager {
   constructor(
     world: World,
     sink: ChunkSink,
-    options: { seed: number; worldType: WorldType; genVersion?: number; dimension?: Dimension; storage: Storage | null; worldId: string; savedKeys: Set<number>; viewDistance: number },
+    options: { seed: number; worldType: WorldType; genVersion?: number; dimension?: Dimension; storage: Storage | null; worldId: string; savedKeys: Set<number>; viewDistance: number; remoteMode?: boolean },
   ) {
     this.world = world;
     this.sink = sink;
@@ -101,6 +102,7 @@ export class ChunkManager {
     this.seed = options.seed;
     this.worldType = options.worldType;
     this.genVersion = options.genVersion ?? 1;
+    this.remoteMode = options.remoteMode ?? false;
     const dim = options.dimension ?? 'overworld';
     this.worldId = dimensionStorageId(options.worldId, dim);
     this.savedKeys = options.savedKeys;
@@ -109,18 +111,20 @@ export class ChunkManager {
     const cores = navigator.hardwareConcurrency || 4;
     const genCount = cores >= 8 ? 3 : cores >= 4 ? 2 : 1;
     const meshCount = cores >= 4 ? 2 : 1;
-    for (let i = 0; i < genCount; i++) {
-      const worker = new Worker(new URL('./gen/gen.worker.ts', import.meta.url), { type: 'module' });
-      const slot: WorkerSlot = { worker, busy: 0 };
-      worker.onmessage = (e: MessageEvent) => {
-        const res = e.data as GenResponse;
-        if (res.epoch !== undefined && res.epoch !== this.epoch) return;
-        slot.busy = Math.max(0, slot.busy - 1);
-        this.onGenerated(res);
-      };
-      const init: GenRequest = { type: 'init', seed: options.seed, worldType: options.worldType, dimension: dim, genVersion: this.genVersion };
-      worker.postMessage(init);
-      this.genWorkers.push(slot);
+    if (!this.remoteMode) {
+      for (let i = 0; i < genCount; i++) {
+        const worker = new Worker(new URL('./gen/gen.worker.ts', import.meta.url), { type: 'module' });
+        const slot: WorkerSlot = { worker, busy: 0 };
+        worker.onmessage = (e: MessageEvent) => {
+          const res = e.data as GenResponse;
+          if (res.epoch !== undefined && res.epoch !== this.epoch) return;
+          slot.busy = Math.max(0, slot.busy - 1);
+          this.onGenerated(res);
+        };
+        const init: GenRequest = { type: 'init', seed: options.seed, worldType: options.worldType, dimension: dim, genVersion: this.genVersion };
+        worker.postMessage(init);
+        this.genWorkers.push(slot);
+      }
     }
     for (let i = 0; i < meshCount; i++) {
       const worker = new Worker(new URL('./mesh/mesh.worker.ts', import.meta.url), { type: 'module' });
@@ -251,8 +255,27 @@ export class ChunkManager {
     return best;
   }
 
+  /** Intègre un chunk reçu du serveur multijoueur pour le mailler localement. */
+  receiveRemoteChunk(
+    cx: number,
+    cz: number,
+    blocks: Uint8Array,
+    meta: Uint8Array,
+    biomes: Uint8Array,
+    tints: Uint8Array,
+  ): void {
+    if (this.disposed) return;
+    const key = chunkKey(cx, cz);
+    if (this.world.chunks.has(key)) return;
+    const heightmap = new Uint8Array(CHUNK_AREA);
+    computeHeightmap(blocks, heightmap);
+    const chunk = new Chunk(cx, cz, blocks, meta, biomes, heightmap, tints);
+    this.world.addChunk(chunk);
+    this.chunkArrived(chunk);
+  }
+
   private requestLoads(): void {
-    if (this.loadScanDone) return;
+    if (this.remoteMode || this.loadScanDone) return;
     const o = this.offsets;
     let pendingLeft = false;
     for (let i = 0; i < o.length; i += 2) {
