@@ -5,6 +5,7 @@
 import type { GameMode, WorldType } from '../world/Constants';
 import type { WorldInfo } from '../world/Storage';
 import { WORLD_FILE_EXTENSION } from '../world/WorldFile';
+import { loadLastPseudo, loadRecentServers, removeRecentServer, type RecentServer } from '../net/RecentServers';
 import { button, el, setButtonLabel, u } from './dom';
 import { attempt, errorText, type Screen, type TitlePage, type UiContext } from './Screen';
 import { sized } from './Screens';
@@ -58,6 +59,9 @@ export class TitleMenu implements Screen {
   private nameInput: HTMLInputElement | null = null;
   private fileInput: HTMLInputElement | null = null;
   private seedInput: HTMLInputElement | null = null;
+  private mpNameInput: HTMLInputElement | null = null;
+  private mpAddressInput: HTMLInputElement | null = null;
+  private mpPasswordInput: HTMLInputElement | null = null;
   private focusFirst: HTMLElement | null = null;
   private newModeIndex = 0;
   private newType: WorldType = 'default';
@@ -95,6 +99,11 @@ export class TitleMenu implements Screen {
         this.rename();
         return true;
       }
+      if (this.page === 'multiplayer') {
+        e.preventDefault();
+        this.joinMultiplayer();
+        return true;
+      }
       if (this.page === 'worlds' && !(e.target instanceof HTMLButtonElement) && this.current()) {
         e.preventDefault();
         this.play();
@@ -112,7 +121,7 @@ export class TitleMenu implements Screen {
 
   private goBack(): void {
     if (this.page === 'main') return;
-    this.show(this.page === 'worlds' ? 'main' : 'worlds');
+    this.show(this.page === 'worlds' || this.page === 'multiplayer' ? 'main' : 'worlds');
   }
 
   // ------------------------------------------------------------------ pages
@@ -132,6 +141,9 @@ export class TitleMenu implements Screen {
     this.pageButtons = [];
     this.nameInput = null;
     this.seedInput = null;
+    this.mpNameInput = null;
+    this.mpAddressInput = null;
+    this.mpPasswordInput = null;
     this.focusFirst = null;
     this.busy = false;
     this.el.dataset.page = this.page;
@@ -147,6 +159,9 @@ export class TitleMenu implements Screen {
         break;
       case 'delete':
         this.renderDelete();
+        break;
+      case 'multiplayer':
+        this.renderMultiplayer();
         break;
       default:
         this.renderMain();
@@ -183,6 +198,7 @@ export class TitleMenu implements Screen {
     el('div', 'mc-splash', logoBox, 'Fait de blocs !');
     el('div', 'mc-gap mc-gap-big', this.el);
     sized(button(host, 'Jouer', () => this.show('worlds'), 'play', this.el), 200);
+    sized(button(host, 'Multijoueur', () => this.show('multiplayer'), 'multiplayer', this.el), 200);
     sized(button(host, 'Options…', () => this.ctx.openOptions(() => this.ctx.openTitle('main'), false), 'options', this.el), 200);
     this.warning(this.el);
     this.errorEl = el('div', 'mc-error', this.el, this.error);
@@ -514,5 +530,105 @@ export class TitleMenu implements Screen {
       this.worlds = null;
       this.show('worlds');
     });
+  }
+
+  // ------------------------------------------------------------------ multijoueur
+
+  private renderMultiplayer(): void {
+    const { host } = this.ctx;
+    const recents = loadRecentServers();
+    const last = recents[0];
+    this.el.className = 'mc-screen mc-screen-dirt mc-page';
+    el('div', 'mc-page-head', this.el, 'Multijoueur (Wi-Fi / Tailscale)');
+    const body = el('div', 'mc-page-body', this.el);
+    const form = el('div', 'mc-form', body);
+
+    el('label', 'mc-field-label', form, 'Pseudo');
+    this.mpNameInput = this.field(form, last?.name || loadLastPseudo() || 'Joueur', 'mp-name', 16);
+
+    el('label', 'mc-field-label', form, 'Adresse du serveur');
+    const defaultAddr = last?.address || (typeof location !== 'undefined' && location.hostname && location.hostname !== 'localhost' ? `${location.hostname}:8080` : '127.0.0.1:8080');
+    this.mpAddressInput = this.field(form, defaultAddr, 'mp-address', 128);
+    this.mpAddressInput.placeholder = '192.168.1.x:8080';
+
+    el('label', 'mc-field-label', form, 'Mot de passe');
+    this.mpPasswordInput = this.field(form, last?.password || '', 'mp-password', 64);
+    this.mpPasswordInput.type = 'password';
+
+    if (recents.length > 0) {
+      el('label', 'mc-field-label', form, 'Serveurs récents');
+      const recBox = el('div', 'mc-list', form);
+      recBox.dataset.mc = 'mp-recents';
+      recBox.style.maxHeight = u(80);
+      recBox.style.marginTop = u(4);
+      for (const s of recents) {
+        const item = el('button', 'mc-world', recBox);
+        item.type = 'button';
+        item.style.display = 'flex';
+        item.style.justifyContent = 'space-between';
+        item.style.alignItems = 'center';
+        const left = el('div', '', item);
+        el('div', 'mc-world-name', left, s.address);
+        el('div', 'mc-world-meta', left, `Pseudo : ${s.name}`);
+        item.addEventListener('click', () => {
+          host.click();
+          if (this.mpAddressInput) this.mpAddressInput.value = s.address;
+          if (this.mpNameInput) this.mpNameInput.value = s.name;
+          if (this.mpPasswordInput) this.mpPasswordInput.value = s.password;
+          this.setError('');
+        });
+        const del = el('span', 'mc-world-meta', item, '✕');
+        del.title = 'Retirer de la liste';
+        del.style.padding = `0 ${u(6)}`;
+        del.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          removeRecentServer(s.address);
+          this.render();
+        });
+      }
+    }
+
+    this.errorEl = el('div', 'mc-error', this.el, this.error);
+    this.errorEl.dataset.mc = 'mp-error';
+
+    const foot = el('div', 'mc-page-foot', this.el);
+    const joinBtn = sized(button(host, 'Rejoindre', () => this.joinMultiplayer(), 'mp-join', foot), 150);
+    const backBtn = sized(button(host, 'Retour', () => this.show('main'), 'back', foot), 150);
+    this.pageButtons = [joinBtn, backBtn];
+    this.focusFirst = this.mpAddressInput;
+  }
+
+  private joinMultiplayer(): void {
+    if (this.busy || !this.mpNameInput || !this.mpAddressInput || !this.mpPasswordInput) return;
+    const name = this.mpNameInput.value.trim();
+    const address = this.mpAddressInput.value.trim();
+    const password = this.mpPasswordInput.value;
+    if (!name) {
+      this.setError('Veuillez saisir un pseudo.');
+      return;
+    }
+    if (!address) {
+      this.setError('Veuillez saisir l’adresse du serveur.');
+      return;
+    }
+    if (!password) {
+      this.setError('Veuillez saisir le mot de passe du serveur.');
+      return;
+    }
+    this.setError('');
+    this.setBusy(true);
+    attempt(() => this.ctx.host.joinMultiplayer({ address, name, password })).then(
+      () => {
+        if (this.ctx.isCurrent(this)) this.setBusy(false);
+      },
+      (err) => {
+        if (this.ctx.isCurrent(this)) {
+          this.setBusy(false);
+          this.setError(errorText(err));
+        } else {
+          this.ctx.fail(errorText(err));
+        }
+      },
+    );
   }
 }

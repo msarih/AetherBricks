@@ -4,6 +4,9 @@
 import * as THREE from 'three';
 import { Sfx } from './audio/Sfx';
 import { Game } from './game/Game';
+import { RemoteGame } from './game/RemoteGame';
+import { MultiplayerClient } from './net/Client';
+import { saveRecentServer } from './net/RecentServers';
 import { GamepadController } from './player/Gamepad';
 import { initTouchDetection, isTouchActive } from './player/Touch';
 import { Atlas } from './render/Atlas';
@@ -60,7 +63,7 @@ async function main(): Promise<void> {
     return url;
   }
 
-  let game: Game | null = null;
+  let game: Game | RemoteGame | null = null;
 
   /** Arrête la partie en cours sans la sauvegarder. */
   function closeGame(): void {
@@ -77,6 +80,31 @@ async function main(): Promise<void> {
     ui.showLoading('Chargement du monde', 'Ouverture de la sauvegarde…', 0);
     const savedKeys = await storage.chunkKeys(dimensionStorageId(info.id, readDimension(info.state?.dimension)));
     const g = new Game({ canvas, renderer, atlas, ui, sfx, settings, storage, info, savedKeys });
+    game = g;
+    host.game = g;
+    g.resize(window.innerWidth, window.innerHeight);
+    g.start();
+  }
+
+  async function launchMultiplayer(options: { address: string; name: string; password: string }): Promise<void> {
+    const client = new MultiplayerClient();
+    const welcome = await client.connect(options.address, options.name, options.password);
+    saveRecentServer({ address: options.address, name: welcome.name, password: options.password });
+    closeGame();
+    const g = new RemoteGame({
+      canvas,
+      renderer,
+      atlas,
+      ui,
+      sfx,
+      settings,
+      client,
+      welcome,
+      onDisconnected: (reason) => {
+        closeGame();
+        ui.showTitle('multiplayer', reason);
+      },
+    });
     game = g;
     host.game = g;
     g.resize(window.innerWidth, window.innerHeight);
@@ -160,6 +188,9 @@ async function main(): Promise<void> {
       const info = await importWorld(storage, await file.arrayBuffer());
       return info.id;
     },
+    async joinMultiplayer(options: { address: string; name: string; password: string }): Promise<void> {
+      await launchMultiplayer(options);
+    },
     async quitToTitle(): Promise<void> {
       if (game) await game.save();
       closeGame();
@@ -188,9 +219,9 @@ async function main(): Promise<void> {
   });
   ui.showTitle();
 
-  // Enregistrement du service worker (PWA hors ligne, désactivé dans l'application Android embarquée)
+  // Enregistrement du service worker (PWA hors ligne, uniquement en production navigateur)
   const isNativeApp = Boolean((window as unknown as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor?.isNativePlatform?.());
-  if ('serviceWorker' in navigator && isNativeApp) {
+  if ('serviceWorker' in navigator && (isNativeApp || import.meta.env.DEV)) {
     navigator.serviceWorker
       .getRegistrations()
       .then((regs) => Promise.all(regs.map((r) => r.unregister())))

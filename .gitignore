@@ -1,5 +1,6 @@
 node_modules/
 dist/
+dist-server/
 .DS_Store
 *.local
 dev-tests/e2e/shots/
@@ -8,5 +9,6 @@ release/
 *.jks
 android/keystore.properties
 android/.version-code
+server-data/
 
 

@@ -41,29 +41,6 @@
   <body>
     <canvas id="game" tabindex="-1"></canvas>
     <div id="ui"></div>
-    <script>
-      // En mode développement hors ligne (ex. test PWA avec setOfflineMode), évite les erreurs console du client WebSocket de Vite
-      if (typeof WebSocket !== 'undefined') {
-        const NativeWS = WebSocket;
-        window.WebSocket = function (url, protocols) {
-          if (!navigator.onLine) {
-            return {
-              readyState: 3,
-              send() {},
-              close() {},
-              addEventListener() {},
-              removeEventListener() {},
-            };
-          }
-          return protocols !== undefined ? new NativeWS(url, protocols) : new NativeWS(url);
-        };
-        window.WebSocket.prototype = NativeWS.prototype;
-        window.WebSocket.CONNECTING = NativeWS.CONNECTING;
-        window.WebSocket.OPEN = NativeWS.OPEN;
-        window.WebSocket.CLOSING = NativeWS.CLOSING;
-        window.WebSocket.CLOSED = NativeWS.CLOSED;
-      }
-    </script>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

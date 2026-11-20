@@ -1,0 +1,123 @@
+/**
+ * Protocole réseau multijoueur (Jalon 1) : messages JSON et paquets binaires RLE.
+ *
+ * Module pur (aucune dépendance DOM ni Three.js) : partagé entre le serveur Node.js et le client.
+ */
+import { CHUNK_AREA, CHUNK_VOLUME, type GameMode, type WorldType } from '../world/Constants';
+import { rleDecode, rleEncode } from '../world/Storage';
+
+export const CHUNK_TINTS = CHUNK_AREA * 9;
+export const BINARY_CHUNK_TAG = 0x01;
+
+export interface RemotePlayerState {
+  id: number;
+  name: string;
+  x: number;
+  y: number;
+  z: number;
+  yaw: number;
+  pitch: number;
+  sneaking: boolean;
+  swing: number;
+  gameMode: GameMode;
+}
+
+export type ClientMessage =
+  | { type: 'join'; name: string; password: string }
+  | { type: 'move'; x: number; y: number; z: number; yaw: number; pitch: number; sneaking: boolean; onGround: boolean; swing: number }
+  | { type: 'chat'; text: string }
+  | { type: 'needChunks'; keys: Array<[number, number]> };
+
+export type ErrorCode = 'bad_password' | 'name_taken' | 'bad_name' | 'server_full' | 'bad_request';
+
+export type ServerMessage =
+  | {
+      type: 'welcome';
+      id: number;
+      name: string;
+      seed: number;
+      worldType: WorldType;
+      gameMode: GameMode;
+      time: number;
+      spawn: { x: number; y: number; z: number };
+      viewDistance: number;
+      x: number;
+      y: number;
+      z: number;
+      yaw: number;
+      pitch: number;
+    }
+  | { type: 'error'; code: ErrorCode; message: string }
+  | { type: 'players'; list: RemotePlayerState[] }
+  | { type: 'playerLeave'; id: number; name: string }
+  | { type: 'chat'; text: string; sender?: string }
+  | { type: 'time'; time: number }
+  | { type: 'gamemode'; gameMode: GameMode }
+  | { type: 'teleport'; x: number; y: number; z: number };
+
+/** Encode un chunk en paquet binaire RLE (tag + cx + cz + blocksRLE + metaRLE + biomes + tints). */
+export function encodeChunkPacket(
+  cx: number,
+  cz: number,
+  blocks: Uint8Array,
+  meta: Uint8Array,
+  biomes: Uint8Array,
+  tints: Uint8Array,
+): Uint8Array {
+  const bEnc = rleEncode(blocks);
+  const mEnc = rleEncode(meta);
+  const total = 1 + 4 + 4 + 4 + bEnc.length + 4 + mEnc.length + CHUNK_AREA + CHUNK_TINTS;
+  const out = new Uint8Array(total);
+  const view = new DataView(out.buffer);
+  let off = 0;
+  out[off++] = BINARY_CHUNK_TAG;
+  view.setInt32(off, cx, true);
+  off += 4;
+  view.setInt32(off, cz, true);
+  off += 4;
+  view.setUint32(off, bEnc.length, true);
+  off += 4;
+  out.set(bEnc, off);
+  off += bEnc.length;
+  view.setUint32(off, mEnc.length, true);
+  off += 4;
+  out.set(mEnc, off);
+  off += mEnc.length;
+  out.set(biomes.subarray(0, CHUNK_AREA), off);
+  off += CHUNK_AREA;
+  out.set(tints.subarray(0, CHUNK_TINTS), off);
+  return out;
+}
+
+/** Décode un paquet binaire RLE de chunk. */
+export function decodeChunkPacket(buf: ArrayBuffer | Uint8Array): {
+  cx: number;
+  cz: number;
+  blocks: Uint8Array;
+  meta: Uint8Array;
+  biomes: Uint8Array;
+  tints: Uint8Array;
+} | null {
+  const bytes = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
+  if (bytes.length < 17 || bytes[0] !== BINARY_CHUNK_TAG) return null;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let off = 1;
+  const cx = view.getInt32(off, true);
+  off += 4;
+  const cz = view.getInt32(off, true);
+  off += 4;
+  const bLen = view.getUint32(off, true);
+  off += 4;
+  if (off + bLen + 4 > bytes.length) return null;
+  const blocks = rleDecode(bytes.subarray(off, off + bLen), CHUNK_VOLUME);
+  off += bLen;
+  const mLen = view.getUint32(off, true);
+  off += 4;
+  if (off + mLen + CHUNK_AREA + CHUNK_TINTS > bytes.length) return null;
+  const meta = rleDecode(bytes.subarray(off, off + mLen), CHUNK_VOLUME);
+  off += mLen;
+  const biomes = bytes.slice(off, off + CHUNK_AREA);
+  off += CHUNK_AREA;
+  const tints = bytes.slice(off, off + CHUNK_TINTS);
+  return { cx, cz, blocks, meta, biomes, tints };
+}

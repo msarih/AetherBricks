@@ -110,8 +110,8 @@ export class GameUi implements UiApi {
 
   // ------------------------------------------------------------------ écrans
 
-  showTitle(): void {
-    this.openTitle('main');
+  showTitle(page: TitlePage = 'main', error?: string): void {
+    this.openTitle(page, error);
   }
 
   showLoading(title: string, detail: string, progress: number): void {
