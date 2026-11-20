@@ -199,7 +199,14 @@ export class Hud {
 
   update(dt: number, inGame: boolean): void {
     const g = inGame ? this.host.game : null;
-    if (this.changed('shown', g !== null)) this.el.style.display = g ? 'block' : '';
+    if (this.changed('shown', g !== null)) {
+      this.el.style.display = g ? 'block' : '';
+      if (!g) {
+        this.toastQueue.length = 0;
+        this.toastTimer = 0;
+        this.toast.classList.remove('mc-shown');
+      }
+    }
     if (!g) return;
 
     this.updateOverlays(g, dt);

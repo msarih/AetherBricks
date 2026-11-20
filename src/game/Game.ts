@@ -65,7 +65,7 @@ import { hash2, mulberry32 } from '../world/gen/Noise';
 import { locateStructure, structuresNear, type Structure, type StructureKind, type TerrainInfo } from '../world/gen/Structures';
 import { WorldGen } from '../world/gen/WorldGen';
 import { blockEntityItems, cleanSignLines, getDispenser, getSign, insertOneIntoContainer, resolveLoot, tickBlockEntities } from './BlockEntities';
-import { ADVANCEMENTS, advancementText } from './Advancements';
+import { ADVANCEMENTS, advancementText, isAdvancementAvailable } from './Advancements';
 import { Dial, bearing, clockTarget, dialNoise } from './Dials';
 import { EndFight } from './EndFight';
 import { explode as runExplosion } from './Explosion';
@@ -2009,8 +2009,15 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
 
   get guideGoal(): string {
     const p = this.player;
+    if (p.gameMode !== 'survival') return '';
+    const ctx = {
+      worldType: this.world.worldType,
+      genVersion: this.world.genVersion,
+      dimension: this.dimension,
+      endVisited: (p.stats[STAT.END_VISITS] ?? 0) > 0,
+    };
     for (const adv of ADVANCEMENTS) {
-      if (!p.advancements.has(adv.id)) return this.advText(adv.goal);
+      if (!p.advancements.has(adv.id) && isAdvancementAvailable(adv, ctx)) return this.advText(adv.goal);
     }
     return '';
   }
