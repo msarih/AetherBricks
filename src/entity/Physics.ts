@@ -472,7 +472,7 @@ export function travel(w: World, b: Body, strafe: number, forward: number, o: Tr
   if (b.collidedH && b.onLadder) b.vy = 0.2;
 
   // distance de chute : l'appelant applique les dégâts à l'atterrissage puis la remet à zéro
-  if (!b.onGround && b.y < yBefore) b.fallDistance += yBefore - b.y;
+  if (b.y < yBefore) b.fallDistance += yBefore - b.y;
 
   b.vy -= GRAVITY;
   b.vy *= DRAG;
