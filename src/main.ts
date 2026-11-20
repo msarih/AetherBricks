@@ -85,10 +85,14 @@ async function main(): Promise<void> {
     g.start();
   }
 
-  async function launchMultiplayer(options: { address: string; name: string; password: string }): Promise<void> {
+  async function launchMultiplayer(options: { address: string; name: string; password: string; code?: string }): Promise<void> {
     const client = new MultiplayerClient();
-    const welcome = await client.connect(options.address, options.name, options.password);
-    saveRecentServer({ address: options.address, name: welcome.name, password: options.password });
+    const welcome = await client.connect(options.address, options.name, options.password, options.code);
+    if (!options.code) {
+      saveRecentServer({ address: options.address, name: welcome.name, password: options.password });
+    } else {
+      saveRecentServer({ address: '', name: welcome.name, password: '' });
+    }
     closeGame();
     ui.showLoading('Connexion au serveur', 'Réception du monde…', 0);
     const now = Date.now();
@@ -203,7 +207,7 @@ async function main(): Promise<void> {
       const info = await importWorld(storage, await file.arrayBuffer());
       return info.id;
     },
-    async joinMultiplayer(options: { address: string; name: string; password: string }): Promise<void> {
+    async joinMultiplayer(options: { address: string; name: string; password: string; code?: string }): Promise<void> {
       await launchMultiplayer(options);
     },
     async quitToTitle(): Promise<void> {

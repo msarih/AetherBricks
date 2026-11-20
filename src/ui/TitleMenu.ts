@@ -60,6 +60,7 @@ export class TitleMenu implements Screen {
   private fileInput: HTMLInputElement | null = null;
   private seedInput: HTMLInputElement | null = null;
   private mpNameInput: HTMLInputElement | null = null;
+  private mpCodeInput: HTMLInputElement | null = null;
   private mpAddressInput: HTMLInputElement | null = null;
   private mpPasswordInput: HTMLInputElement | null = null;
   private focusFirst: HTMLElement | null = null;
@@ -142,6 +143,7 @@ export class TitleMenu implements Screen {
     this.nameInput = null;
     this.seedInput = null;
     this.mpNameInput = null;
+    this.mpCodeInput = null;
     this.mpAddressInput = null;
     this.mpPasswordInput = null;
     this.focusFirst = null;
@@ -546,12 +548,16 @@ export class TitleMenu implements Screen {
     el('label', 'mc-field-label', form, 'Pseudo');
     this.mpNameInput = this.field(form, last?.name || loadLastPseudo() || 'Joueur', 'mp-name', 16);
 
-    el('label', 'mc-field-label', form, 'Adresse du serveur');
+    el('label', 'mc-field-label', form, 'Code d’invitation (donné par un ami)');
+    this.mpCodeInput = this.field(form, '', 'mp-code', 48);
+    this.mpCodeInput.placeholder = 'SB-XXXXX-XXXXX-XXXXX-XXXXX';
+
+    el('label', 'mc-field-label', form, 'Ou adresse du serveur (si pas de code)');
     const defaultAddr = last?.address || (typeof location !== 'undefined' && location.hostname && location.hostname !== 'localhost' ? `${location.hostname}:8080` : '127.0.0.1:8080');
     this.mpAddressInput = this.field(form, defaultAddr, 'mp-address', 128);
     this.mpAddressInput.placeholder = '192.168.1.x:8080';
 
-    el('label', 'mc-field-label', form, 'Mot de passe');
+    el('label', 'mc-field-label', form, 'Mot de passe (si pas de code)');
     this.mpPasswordInput = this.field(form, last?.password || '', 'mp-password', 64);
     this.mpPasswordInput.type = 'password';
 
@@ -595,29 +601,30 @@ export class TitleMenu implements Screen {
     const joinBtn = sized(button(host, 'Rejoindre', () => this.joinMultiplayer(), 'mp-join', foot), 150);
     const backBtn = sized(button(host, 'Retour', () => this.show('main'), 'back', foot), 150);
     this.pageButtons = [joinBtn, backBtn];
-    this.focusFirst = this.mpAddressInput;
+    this.focusFirst = this.mpCodeInput;
   }
 
   private joinMultiplayer(): void {
-    if (this.busy || !this.mpNameInput || !this.mpAddressInput || !this.mpPasswordInput) return;
+    if (this.busy || !this.mpNameInput || !this.mpCodeInput || !this.mpAddressInput || !this.mpPasswordInput) return;
     const name = this.mpNameInput.value.trim();
+    const code = this.mpCodeInput.value.trim();
     const address = this.mpAddressInput.value.trim();
     const password = this.mpPasswordInput.value;
     if (!name) {
       this.setError('Veuillez saisir un pseudo.');
       return;
     }
-    if (!address) {
-      this.setError('Veuillez saisir l’adresse du serveur.');
+    if (!code && !address) {
+      this.setError('Veuillez saisir un code d’invitation ou l’adresse du serveur.');
       return;
     }
-    if (!password) {
+    if (!code && !password) {
       this.setError('Veuillez saisir le mot de passe du serveur.');
       return;
     }
     this.setError('');
     this.setBusy(true);
-    attempt(() => this.ctx.host.joinMultiplayer({ address, name, password })).then(
+    attempt(() => this.ctx.host.joinMultiplayer({ address, name, password, code: code || undefined })).then(
       () => {
         if (this.ctx.isCurrent(this)) this.setBusy(false);
       },

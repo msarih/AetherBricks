@@ -75,8 +75,11 @@ import { STAT, type Stats } from './Stats';
 import { Interaction, particleTile, particleTint, type InteractionHost } from './Interaction';
 import { CreativeMenu, HOTBAR_SIZE, InventoryMenu, type Inventory, type Menu } from './Inventory';
 import type { MultiplayerClient, WelcomePacket } from '../net/Client';
+import { MultiplayerClient as NetClient } from '../net/Client';
 import type { SerializedSlot } from '../net/Protocol';
 import { RemotePlayerEntity } from '../net/RemotePlayer';
+import { loadLastPseudo, loadRecentServers } from '../net/RecentServers';
+import { exportWorld, replaceWorldFromArchive } from '../world/WorldFile';
 
 export interface GameOptions {
   canvas: HTMLCanvasElement;
@@ -299,6 +302,11 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
   private lastSentSwing = 0;
   private lastSentSlot = -1;
   private onDisconnected: ((reason: string) => void) | null = null;
+  isHost = false;
+  inviteCode: string | null = null;
+  tailscaleCode: string | null = null;
+  private hostToken: string | null = null;
+  private hostServerUrl: string | null = null;
   private readonly pending: Entity[] = [];
   /** Chunk où chaque entité sauvegardable a été vue pour la dernière fois. */
   private readonly homes = new Map<Entity, number>();
@@ -483,6 +491,8 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     const savedPlayer = st?.player;
     if (o.welcome && o.net) {
       this.remoteId = o.welcome.id;
+      this.isHost = o.welcome.isHost;
+      this.inviteCode = o.welcome.inviteCode ?? null;
       this.time = o.welcome.time;
       this.raining = o.welcome.raining;
       this.thundering = o.welcome.thundering;
@@ -573,8 +583,11 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
   }
 
   /** Sauvegarde le monde (état global, joueur, chunks modifiés). Les appels simultanés partagent la même écriture. */
-  save(): Promise<void> {
-    if (this.isRemote) return Promise.resolve();
+  async save(): Promise<void> {
+    if (this.isHost) {
+      await this.closeToFriends().catch(() => undefined);
+    }
+    if (this.isRemote) return;
     if (this.saving) return this.saving;
     const run = this.writeSave().finally(() => {
       this.saving = null;
@@ -3083,6 +3096,127 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
 
   netPlaceBlock(x: number, y: number, z: number, face: number, id: number, meta: number, slot: number): void {
     this.net?.sendPlaceBlock(x, y, z, face, id, meta, slot);
+  }
+
+  private async findLocalServer(): Promise<string> {
+    const candidates: string[] = [];
+    if (typeof location !== 'undefined' && location.protocol.startsWith('http')) {
+      const p = location.port || (location.protocol === 'https:' ? '443' : '80');
+      if (p !== '5173' && p !== '5174' && p !== '5175') {
+        candidates.push(location.origin);
+      }
+    }
+    candidates.push('http://localhost:8080', 'http://127.0.0.1:8080');
+    for (const s of loadRecentServers()) {
+      const raw = s.address.trim();
+      if (!raw) continue;
+      const base = raw.startsWith('http://') || raw.startsWith('https://') ? raw : `http://${raw}`;
+      if (!candidates.includes(base)) candidates.push(base);
+    }
+
+    for (const base of candidates) {
+      try {
+        const ctrl = new AbortController();
+        const timer = window.setTimeout(() => ctrl.abort(), 1200);
+        const res = await fetch(`${base}/api/ping`, { signal: ctrl.signal });
+        window.clearTimeout(timer);
+        if (res.ok) {
+          const data = (await res.json()) as { ok?: boolean };
+          if (data?.ok) return base;
+        }
+      } catch {
+        // essayer suivant
+      }
+    }
+    throw new Error(
+      'Aucun serveur SarihBricks trouvé. Lancez « npm run serveur » dans un terminal ou ouvrez le jeu à l’adresse du serveur (http://localhost:8080).',
+    );
+  }
+
+  async openToFriends(): Promise<{ inviteCode: string; tailscaleCode?: string | null }> {
+    if (this.isRemote || !this.storage) {
+      throw new Error('Impossible d’ouvrir ce monde aux amis.');
+    }
+    const serverUrl = await this.findLocalServer();
+    await this.writeSave();
+    const blob = await exportWorld(this.storage, this.info.id);
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+
+    const hostName = (loadLastPseudo() || 'Hote').trim().slice(0, 16) || 'Hote';
+    const res = await fetch(`${serverUrl}/api/open-world?name=${encodeURIComponent(hostName)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body: bytes,
+    });
+    const json = (await res.json()) as {
+      ok?: boolean;
+      error?: string;
+      inviteCode?: string;
+      tailscaleCode?: string | null;
+      hostToken?: string;
+    };
+    if (!res.ok || !json.ok || !json.inviteCode || !json.hostToken) {
+      throw new Error(json.error || 'Le serveur a refusé d’ouvrir le monde.');
+    }
+
+    const client = new NetClient();
+    const u = new URL(serverUrl);
+    const welcome = await client.connect(`${u.hostname}:${u.port || (u.protocol === 'https:' ? '443' : '80')}`, hostName, '', undefined, json.hostToken);
+
+    this.net = client;
+    this.remoteId = welcome.id;
+    this.isHost = true;
+    this.inviteCode = json.inviteCode;
+    this.tailscaleCode = json.tailscaleCode ?? null;
+    this.hostToken = json.hostToken;
+    this.hostServerUrl = serverUrl;
+    this.requestedChunks.clear();
+    this.chunks.setRemoteMode(true);
+    this.attachNetHandlers(client);
+    this.ui.addMessage(`Monde ouvert aux amis ! Code : ${json.inviteCode}`);
+    return { inviteCode: json.inviteCode, tailscaleCode: json.tailscaleCode ?? null };
+  }
+
+  async closeToFriends(): Promise<void> {
+    if (!this.isHost || !this.hostServerUrl || !this.hostToken) return;
+    const serverUrl = this.hostServerUrl;
+    const token = this.hostToken;
+
+    this.isHost = false;
+    this.inviteCode = null;
+    this.tailscaleCode = null;
+    this.hostToken = null;
+    this.hostServerUrl = null;
+
+    let archiveBuf: ArrayBuffer | null = null;
+    try {
+      const res = await fetch(`${serverUrl}/api/close-world`, {
+        method: 'POST',
+        headers: { 'X-Host-Token': token },
+      });
+      if (res.ok) {
+        archiveBuf = await res.arrayBuffer();
+      }
+    } catch {
+      // ignorer si déjà fermé
+    }
+
+    if (this.net) {
+      this.net.close();
+      this.net = null;
+    }
+    for (const rp of this.remotePlayers.values()) {
+      const idx = this.entities.indexOf(rp);
+      if (idx >= 0) this.entities.splice(idx, 1);
+    }
+    this.remotePlayers.clear();
+    this.requestedChunks.clear();
+
+    if (archiveBuf && this.storage) {
+      await replaceWorldFromArchive(this.storage, this.info.id, archiveBuf);
+    }
+    this.chunks.setRemoteMode(false);
+    this.ui.addMessage('Partie fermée aux amis. Le monde solo est à jour.');
   }
 
   private applyRemoteInventory(slots: Array<SerializedSlot | null>, selected: number): void {
