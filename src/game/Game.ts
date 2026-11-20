@@ -3050,6 +3050,8 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       },
       onBlockUpdate: (x, y, z, id, meta) => {
         this.world.setBlock(x, y, z, id, meta, false);
+        const c = this.world.chunkAt(x, z);
+        if (c) c.saveDirty = false;
       },
       onInventory: (slots, selected) => {
         this.applyRemoteInventory(slots, selected);

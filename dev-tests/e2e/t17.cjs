@@ -336,8 +336,8 @@ async function waitServerReady(url, getLogs) {
       const closedErr = await pageB.evaluate(() => document.querySelector('[data-mc="mp-error"]')?.textContent ?? '');
       check('le code ne marche plus après fermeture', closedErr.toLowerCase().includes('invalide') || closedErr.toLowerCase().includes('expiré'), closedErr);
 
-      // A quitte et rouvre son monde solo -> contient le bloc posé par B !
-      await pageA.click('[data-mc="quit"]');
+      // A recharge la page (sans « Sauvegarder et quitter ») et rouvre son monde solo -> doit déjà contenir le bloc de B via replaceWorldFromArchive !
+      await pageA.goto(url, { waitUntil: 'networkidle0' });
       await pageA.waitForSelector('[data-mc="title"]', { timeout: 15000 });
       await pageA.click('[data-mc="play"]');
       await pageA.waitForSelector('[data-mc="world-play"]', { timeout: 10000 });
