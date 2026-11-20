@@ -20,6 +20,15 @@ export class Input {
   /** Déplacement de la souris accumulé depuis la dernière lecture (pixels). */
   mouseDX = 0;
   mouseDY = 0;
+  /** Déplacement analogique (tactile / manette) : -1..1. */
+  analogForward = 0;
+  analogStrafe = 0;
+  /** États virtuels maintenus (tactile / manette). */
+  virtualJump = false;
+  virtualSneak = false;
+  virtualSprint = false;
+  /** Le mode tactile est-il actif ? (empêche le verrouillage du pointeur). */
+  touchActive: () => boolean = () => false;
   /** Boutons maintenus : 0 gauche, 1 milieu, 2 droit. */
   readonly buttons = [false, false, false];
   /** Nombre d'appuis depuis la dernière lecture (un clic bref entre deux ticks n'est pas perdu). */
@@ -55,6 +64,7 @@ export class Input {
 
     on(canvas, 'mousedown', (e: MouseEvent) => {
       if (this.blocked() || !this.active()) return;
+      if (this.touchActive()) return;
       e.preventDefault();
       if (!this.locked) {
         this.lock();
@@ -107,7 +117,7 @@ export class Input {
 
   /** Demande la capture de la souris (doit suivre un geste de l'utilisateur ; peut échouer en silence). */
   lock(): void {
-    if (this.locked) return;
+    if (this.locked || this.touchActive()) return;
     try {
       const p = this.canvas.requestPointerLock() as unknown as Promise<void> | undefined;
       if (p && typeof p.catch === 'function') p.catch(() => undefined);
@@ -134,6 +144,8 @@ export class Input {
     this.buttons[0] = this.buttons[1] = this.buttons[2] = false;
     this.presses[0] = this.presses[1] = this.presses[2] = 0;
     this.mouseDX = this.mouseDY = 0;
+    this.analogForward = this.analogStrafe = 0;
+    this.virtualJump = this.virtualSneak = this.virtualSprint = false;
     this.wheelRest = 0;
   }
 

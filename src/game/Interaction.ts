@@ -161,6 +161,11 @@ export class Interaction {
     return this.game.player.creative ? REACH_CREATIVE : REACH_SURVIVAL;
   }
 
+  /** Met à jour la cible visée (bloc ou entité) depuis la position de l'œil. */
+  aimNow(ex: number, ey: number, ez: number): void {
+    this.updateTarget(ex, ey, ez);
+  }
+
   private updateTarget(ex: number, ey: number, ez: number): void {
     const g = this.game;
     const p = g.player;

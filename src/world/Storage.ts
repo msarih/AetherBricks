@@ -895,6 +895,7 @@ export class Storage {
 // ---------------------------------------------------------------------------------------
 
 export type KeyboardLayout = 'azerty' | 'qwerty';
+export type TouchMode = 'auto' | 'on' | 'off';
 
 export interface Keybinds {
   forward: string;
@@ -998,6 +999,10 @@ export interface Settings {
   guiScale: number;
   /** Disposition des libellés du clavier : AZERTY (défaut) ou QWERTY. */
   keyboardLayout: KeyboardLayout;
+  /** Mode tactile : 'auto' (détection), 'on' (forcé), 'off' (coupé). */
+  touchMode: TouchMode;
+  /** Sensibilité de la manette (multiplicateur), 0.1..2, défaut 1. */
+  gamepadSensitivity: number;
   /** Raccourcis clavier (par code physique `event.code`). */
   keybinds: Keybinds;
 }
@@ -1020,6 +1025,8 @@ export const DEFAULT_SETTINGS: Settings = Object.freeze({
   showFps: false,
   guiScale: 0,
   keyboardLayout: 'azerty',
+  touchMode: 'auto',
+  gamepadSensitivity: 1,
   keybinds: { ...DEFAULT_KEYBINDS },
 });
 
@@ -1051,6 +1058,7 @@ function sanitizeSettings(raw: unknown): Settings {
   // Échelle d'interface : 0 (ou moins) = automatique, sinon un entier de 1 à 4.
   const scale = Math.round(boundedNumber(r.guiScale, 0, 4, d.guiScale));
   const layout: KeyboardLayout = r.keyboardLayout === 'qwerty' ? 'qwerty' : 'azerty';
+  const touchMode: TouchMode = r.touchMode === 'on' || r.touchMode === 'off' ? r.touchMode : 'auto';
   return {
     renderDistance: Math.round(boundedNumber(r.renderDistance, 2, 16, d.renderDistance)),
     fov: boundedNumber(r.fov, 30, 110, d.fov),
@@ -1065,6 +1073,8 @@ function sanitizeSettings(raw: unknown): Settings {
     showFps: flag(r.showFps, d.showFps),
     guiScale: scale,
     keyboardLayout: layout,
+    touchMode,
+    gamepadSensitivity: boundedNumber(r.gamepadSensitivity, 0.1, 2, d.gamepadSensitivity),
     keybinds: sanitizeKeybinds(r.keybinds),
   };
 }

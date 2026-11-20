@@ -2,7 +2,7 @@
  * Écrans simples : pause, options (et page « Contrôles »), chat, mort, chargement.
  * Chacun construit son DOM, traite ses touches et prévient le jeu ou l'application.
  */
-import { DEFAULT_KEYBINDS, formatKeyCode, type KeybindAction, type Settings } from '../world/Storage';
+import { DEFAULT_KEYBINDS, formatKeyCode, type KeybindAction, type Settings, type TouchMode } from '../world/Storage';
 import { button, el, setButtonLabel, slider, u } from './dom';
 import { attempt, errorText, type Screen, type UiContext } from './Screen';
 
@@ -403,6 +403,23 @@ export class OptionsScreen implements Screen {
       grid,
     );
 
+    const touchLabels: Record<TouchMode, string> = { auto: 'auto', on: 'activé', off: 'désactivé' };
+    const touchOrder: TouchMode[] = ['auto', 'on', 'off'];
+    const touchText = (): string => `Commandes tactiles : ${touchLabels[s.touchMode] ?? 'auto'}`;
+    const touchBtn = button(
+      host,
+      touchText(),
+      () => {
+        const idx = touchOrder.indexOf(s.touchMode);
+        s.touchMode = touchOrder[(idx + 1) % touchOrder.length];
+        setButtonLabel(touchBtn, touchText());
+        this.change();
+      },
+      'touchMode',
+      grid,
+    );
+    this.range(grid, 'gamepadSensitivity', 0.1, 2, 0.05, (v) => `Sensibilité manette : ${Math.round(v * 100)} %`);
+
     const game = host.game;
     if (game) {
       const diffText = (): string =>
@@ -555,6 +572,22 @@ export class ChatScreen implements Screen {
     this.input.spellcheck = false;
     this.input.autocomplete = 'off';
     this.input.value = initial;
+    const sendBtn = el('button', 'mc-btn mc-chat-send', bar);
+    sendBtn.type = 'button';
+    sendBtn.dataset.mc = 'chat-send';
+    el('span', 'mc-btn-label', sendBtn, 'Envoyer');
+    sendBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.submit();
+    });
+    const closeBtn = el('button', 'mc-btn mc-chat-close', bar);
+    closeBtn.type = 'button';
+    closeBtn.dataset.mc = 'chat-close';
+    el('span', 'mc-btn-label', closeBtn, '✕');
+    closeBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.cancel();
+    });
     this.historyAt = ctx.chatHistory.length;
     this.input.addEventListener('input', () => this.clearProposals());
     this.el.addEventListener('mousedown', (e) => {

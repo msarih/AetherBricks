@@ -116,6 +116,19 @@ export class SlotScreen implements Screen {
     this.el.dataset.mc = `menu-${menu.type}`;
     this.win = el('div', 'mc-window', this.el);
     el('div', 'mc-panel-bg', this.win);
+    const closeBtn = el('button', 'mc-btn mc-slot-close', this.win);
+    closeBtn.type = 'button';
+    closeBtn.dataset.mc = 'slot-close';
+    closeBtn.title = 'Fermer';
+    el('span', 'mc-btn-label', closeBtn, '✕');
+    const onClose = (e: Event): void => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.ctx.host.click();
+      this.close();
+    };
+    closeBtn.addEventListener('touchstart', onClose, { passive: false });
+    closeBtn.addEventListener('click', onClose);
     this.slotEls = new Array<HTMLDivElement | null>(menu.slots.length).fill(null);
     this.views = new Array<ItemView | null>(menu.slots.length).fill(null);
 
@@ -160,6 +173,9 @@ export class SlotScreen implements Screen {
     this.el.addEventListener('mouseleave', this.onLeave);
     this.el.addEventListener('wheel', this.onWheel, { passive: false });
     this.el.addEventListener('auxclick', (e) => e.preventDefault());
+    this.el.addEventListener('touchstart', this.onTouchStart, { passive: false });
+    this.el.addEventListener('touchmove', this.onTouchMove, { passive: false });
+    this.el.addEventListener('touchend', this.onTouchEnd, { passive: false });
     window.addEventListener('mouseup', this.onUp, true);
     this.refresh();
   }
@@ -167,6 +183,57 @@ export class SlotScreen implements Screen {
   dispose(): void {
     window.removeEventListener('mouseup', this.onUp, true);
   }
+
+  private readonly onTouchStart = (e: TouchEvent): void => {
+    const target = e.target as Element;
+    if (target.closest('input') || target.closest('button')) return;
+    if (e.changedTouches.length === 0) return;
+    e.preventDefault();
+    const t = e.changedTouches[0];
+    this.onDown({
+      target: document.elementFromPoint(t.clientX, t.clientY) ?? target,
+      button: 0,
+      buttons: 1,
+      clientX: t.clientX,
+      clientY: t.clientY,
+      shiftKey: false,
+      preventDefault: () => {},
+    } as unknown as MouseEvent);
+  };
+
+  private readonly onTouchMove = (e: TouchEvent): void => {
+    const target = e.target as Element;
+    if (target.closest('input') || target.closest('button')) return;
+    if (e.changedTouches.length === 0) return;
+    e.preventDefault();
+    const t = e.changedTouches[0];
+    this.onMove({
+      target: document.elementFromPoint(t.clientX, t.clientY) ?? target,
+      button: 0,
+      buttons: 1,
+      clientX: t.clientX,
+      clientY: t.clientY,
+      shiftKey: false,
+      preventDefault: () => {},
+    } as unknown as MouseEvent);
+  };
+
+  private readonly onTouchEnd = (e: TouchEvent): void => {
+    const target = e.target as Element;
+    if (target.closest('input') || target.closest('button')) return;
+    if (e.changedTouches.length === 0) return;
+    e.preventDefault();
+    const t = e.changedTouches[0];
+    this.onUp({
+      target: document.elementFromPoint(t.clientX, t.clientY) ?? target,
+      button: 0,
+      buttons: 0,
+      clientX: t.clientX,
+      clientY: t.clientY,
+      shiftKey: false,
+      preventDefault: () => {},
+    } as unknown as MouseEvent);
+  };
 
   // ------------------------------------------------------------------ construction des fenêtres
 
