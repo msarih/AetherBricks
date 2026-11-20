@@ -230,22 +230,68 @@ async function reload(page) {
     // on choisit un villageois, on se place devant lui avec de quoi payer la première offre
     const who = await ev(page, async () => {
       const { makeStack } = await import('/src/world/ItemStack.ts');
+      const { raycast } = await import('/src/world/Raycast.ts');
       const { I } = await import('/src/world/Ids.ts');
-      const g = window.__game, p = g.player;
-      const v = T.mobs('villager')[0];
+      const g = window.__game, p = g.player, w = g.world;
+      const villagers = T.mobs('villager');
+
+      // cherche un villageois avec un emplacement dégagé pour le joueur à portée d'interaction
+      let chosen = null, bestPos = null;
+      for (const v of villagers) {
+        if (!v.alive || !v.offers || v.offers.length === 0) continue;
+        for (const angle of [0, Math.PI / 2, Math.PI, -Math.PI / 2, Math.PI / 4, 3 * Math.PI / 4, -Math.PI / 4, -3 * Math.PI / 4]) {
+          for (const dist of [1.6, 1.3, 1.9]) {
+            const px = v.x + Math.sin(angle) * dist;
+            const pz = v.z + Math.cos(angle) * dist;
+            for (const dy of [0, 1, -1]) {
+              const py = v.y + dy;
+              if (w.isSolid(Math.floor(px), Math.floor(py), Math.floor(pz))) continue;
+              if (w.isSolid(Math.floor(px), Math.floor(py + 1), Math.floor(pz))) continue;
+              if (!w.isSolid(Math.floor(px), Math.floor(py - 0.1), Math.floor(pz))) continue;
+              const eyeY = py + p.eyeHeight;
+              const targetY = v.y + 1.3;
+              const dx = v.x - px, ddy = targetY - eyeY, dz = v.z - pz;
+              const totalDist = Math.hypot(dx, ddy, dz);
+              const hit = { x: 0, y: 0, z: 0, face: 0, dist: 0, id: 0 };
+              const hasBlock = raycast(w, px, eyeY, pz, dx / totalDist, ddy / totalDist, dz / totalDist, totalDist, hit);
+              if (!hasBlock || hit.dist >= totalDist - 0.2) {
+                chosen = v;
+                bestPos = { x: px, y: py, z: pz };
+                break;
+              }
+            }
+            if (chosen) break;
+          }
+          if (chosen) break;
+        }
+        if (chosen) break;
+      }
+      if (!chosen) {
+        chosen = villagers[0];
+        bestPos = { x: chosen.x, y: chosen.y, z: chosen.z + 1.6 };
+      }
+
+      const v = chosen;
       window.__v = v;
       const o = v.offers[0];
       p.inventory.clear();
       p.inventory.slots[0] = makeStack(o.buy, o.buyCount * 2);
       if (o.buy2) p.inventory.slots[1] = makeStack(o.buy2, o.buy2Count * 2);
       p.inventory.selected = 8;
-      p.teleport(v.x, v.y, v.z + 1.8);
-      T.aim(v.x, v.y + 1.4, v.z);
+      p.teleport(bestPos.x, bestPos.y, bestPos.z);
+      p.vx = p.vy = p.vz = 0;
+      p.fallDistance = 0;
+      T.aim(v.x, v.y + 1.3, v.z);
       return { profession: v.profession, title: v.title, tier: v.tier, offers: v.offers.length, offer: o, emeralds: I.EMERALD };
     });
     check('un villageois a un métier et des offres de premier palier', who.tier === 1 && who.offers >= 1 && typeof who.title === 'string', JSON.stringify({ metier: who.title, offres: who.offers }));
     await ticks(page, 1);
-    await ev(page, () => { const v = window.__v; T.aim(v.x, v.y + 1.4, v.z); window.__game.input.presses[2]++; });
+    await ev(page, () => {
+      const v = window.__v, p = window.__game.player;
+      p.vx = p.vy = p.vz = 0;
+      T.aim(v.x, v.y + 1.3, v.z);
+      window.__game.input.presses[2]++;
+    });
     await ticks(page, 3);
     await page.waitForSelector('[data-mc="trade"]', { timeout: 5000 }).catch(() => {});
     const open = await page.$('[data-mc="trade"]');
