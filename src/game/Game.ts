@@ -45,7 +45,7 @@ import { CHUNK_HEIGHT, DAY_TICKS, TICKS_PER_SECOND, chunkKey, skyDayFactor, type
 import { GAME_RULE_NAMES, loadGameRules, resolveGameRule, saveGameRules } from '../world/GameRules';
 import { B, I, MUSIC_DISCS, musicDiscInfo } from '../world/Ids';
 import { ITEMS, getItem, itemLabel } from '../world/Items';
-import { cloneStack, cloneStackWithCount, makeStack, maxDamage, type ItemStack } from '../world/ItemStack';
+import { cloneStack, cloneStackWithCount, loadSlots, makeStack, maxDamage, saveSlots, type ItemStack } from '../world/ItemStack';
 import { applyBonemeal, fireCanStay } from '../world/Behavior';
 import { updateRedstoneAround } from '../world/Redstone';
 import { POTION_COMPLETIONS, POTION_GIVE_HELP, potionLabel, resolvePotionKind } from '../world/Potions';
@@ -75,6 +75,7 @@ import { STAT, type Stats } from './Stats';
 import { Interaction, particleTile, particleTint, type InteractionHost } from './Interaction';
 import { CreativeMenu, HOTBAR_SIZE, InventoryMenu, type Inventory, type Menu } from './Inventory';
 import type { MultiplayerClient, WelcomePacket } from '../net/Client';
+import type { SerializedSlot } from '../net/Protocol';
 import { RemotePlayerEntity } from '../net/RemotePlayer';
 
 export interface GameOptions {
@@ -296,6 +297,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
   private lastSentPitch = Number.NaN;
   private lastSentSneak = false;
   private lastSentSwing = 0;
+  private lastSentSlot = -1;
   private onDisconnected: ((reason: string) => void) | null = null;
   private readonly pending: Entity[] = [];
   /** Chunk où chaque entité sauvegardable a été vue pour la dernière fois. */
@@ -482,10 +484,17 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     if (o.welcome && o.net) {
       this.remoteId = o.welcome.id;
       this.time = o.welcome.time;
+      this.raining = o.welcome.raining;
+      this.thundering = o.welcome.thundering;
+      this.rainLevel = this.raining ? 1 : 0;
+      this.thunderLevel = this.thundering ? 1 : 0;
       this.spawnPoint = o.welcome.spawn;
       player.teleport(o.welcome.x, o.welcome.y, o.welcome.z);
       player.yaw = player.pYaw = player.headYaw = player.pHeadYaw = o.welcome.yaw;
       player.headPitch = player.pHeadPitch = o.welcome.pitch;
+      if (o.welcome.health !== undefined) player.health = o.welcome.health;
+      if (o.welcome.hunger !== undefined) player.hunger = o.welcome.hunger;
+      if (o.welcome.inventory) this.applyRemoteInventory(o.welcome.inventory.slots, o.welcome.inventory.selected);
       this.needSettle = false;
       this.freshSpawn = false;
       this.attachNetHandlers(o.net);
@@ -2268,6 +2277,9 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       this.menu = null;
       menu.close();
       if (menu.type === 'chest') this.sfx.play('chest_close', { volume: 0.6, pitch: 0.9 + Math.random() * 0.2 });
+      if (this.net) {
+        this.net.sendInvSync(saveSlots(this.player.inventory.slots) as Array<SerializedSlot | null>, this.player.inventory.selected);
+      }
     }
     this.input.lock();
   }
@@ -3012,12 +3024,30 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       onTime: (t) => {
         this.time = t;
       },
+      onWeather: (raining, thundering) => {
+        this.raining = raining;
+        this.thundering = thundering;
+      },
       onGameMode: (mode) => {
         this.player.gameMode = mode;
         this.ui.actionBar(`Mode de jeu : ${mode}`);
       },
       onTeleport: (x, y, z) => {
         this.player.teleport(x, y, z);
+      },
+      onBlockUpdate: (x, y, z, id, meta) => {
+        this.world.setBlock(x, y, z, id, meta, false);
+      },
+      onInventory: (slots, selected) => {
+        this.applyRemoteInventory(slots, selected);
+      },
+      onVitals: (health, hunger) => {
+        this.player.health = health;
+        this.player.hunger = hunger;
+      },
+      onWorldClosed: (reason) => {
+        if (this.disposed) return;
+        this.onDisconnected?.(reason);
       },
       onDisconnect: (reason) => {
         if (this.disposed) return;
@@ -3047,9 +3077,32 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     if (missing.length > 0) this.net.sendNeedChunks(missing);
   }
 
+  netBreakBlock(x: number, y: number, z: number): void {
+    this.net?.sendBreakBlock(x, y, z);
+  }
+
+  netPlaceBlock(x: number, y: number, z: number, face: number, id: number, meta: number, slot: number): void {
+    this.net?.sendPlaceBlock(x, y, z, face, id, meta, slot);
+  }
+
+  private applyRemoteInventory(slots: Array<SerializedSlot | null>, selected: number): void {
+    const inv = this.player.inventory;
+    inv.slots = loadSlots(slots, inv.slots.length);
+    if (Number.isInteger(selected) && selected >= 0 && selected < HOTBAR_SIZE) {
+      inv.selected = selected;
+      this.lastSentSlot = selected;
+    }
+  }
+
   private tickRemote(): void {
     const p = this.player;
     this.time = (this.time + 1) % DAY_TICKS;
+    this.rainLevel = approach(this.rainLevel, this.raining ? 1 : 0, 0.01);
+    this.thunderLevel = approach(this.thunderLevel, this.thundering ? 1 : 0, 0.01);
+    const light = skyDayFactor(this.dayTime) * (1 - (this.rainLevel * 5) / 16) * (1 - (this.thunderLevel * 5) / 16);
+    this.world.skyDarken = Math.round((1 - light) * 11);
+    this.world.raining = this.rainLevel > 0.2;
+
     const cx = Math.floor(p.x) >> 4;
     const cz = Math.floor(p.z) >> 4;
     if (this.world.chunks.has(chunkKey(cx, cz))) {
@@ -3057,6 +3110,10 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     }
     for (const rp of this.remotePlayers.values()) {
       rp.tick(this);
+    }
+    if (this.net && p.inventory.selected !== this.lastSentSlot) {
+      this.lastSentSlot = p.inventory.selected;
+      this.net.sendSelectSlot(p.inventory.selected);
     }
     if (
       this.net &&

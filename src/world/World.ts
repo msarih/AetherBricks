@@ -54,6 +54,8 @@ export interface WorldHost {
   playNote?(x: number, y: number, z: number, instrument: string, note: number, pitch: number): void;
   /** Aspire un objet posé sur un entonnoir ; retourne true si au moins un exemplaire a été pris. */
   pullItemForHopper?(x: number, y: number, z: number, accept: (stack: { id: number; count: number; damage: number; enchants?: Record<string, number>; potion?: string }) => boolean): boolean;
+  /** Notifie qu'un bloc a changé dans le monde (utilisé par le serveur multijoueur). */
+  blockChanged?(x: number, y: number, z: number, id: number, meta: number): void;
 }
 
 const NO_HOST: WorldHost = {
@@ -244,6 +246,7 @@ export class World {
     if (old === id && c.meta[i] === meta) return true;
     c.set(lx, y, lz, id, meta);
     this.markDirty(c, lx, lz);
+    this.host.blockChanged?.(x, y, z, id, meta);
 
     if (old !== id && hasBlockEntity(old) && !(hasBlockEntity(id) && (old === B.FURNACE || old === B.FURNACE_LIT) && (id === B.FURNACE || id === B.FURNACE_LIT))) {
       const k = posKey(x, y, z);
