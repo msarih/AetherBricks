@@ -2,8 +2,36 @@
 // 49. Commandes tactiles (téléphone en paysage et en portrait, tablette, joystick, regard, appui long/court, barre, inventaire, boutons) ;
 // 50. Installation PWA & mode hors ligne (manifeste, service worker, démarrage hors ligne, création et sauvegarde d'un monde) ;
 // 51. Manette de jeu (API Gamepad : déplacement, regard, gâchettes, saut, accroupi, jeter, inventaire, pause, navigation menus, branchement/débranchement).
+const net = require('net');
+const http = require('http');
+const path = require('path');
+const fs = require('fs');
+const { spawn, execSync } = require('child_process');
 const { sleep, launch, openPage, click, createWorld, shot, ticks, URL } = require('./lib.cjs');
 const { results, check, install, ev, chat, pos, section } = require('./h.cjs');
+
+/** Trouve un port libre différent de 5173 et 5174. */
+function findFreePort() {
+  return new Promise((resolve, reject) => {
+    const srv = net.createServer();
+    srv.listen(0, '127.0.0.1', () => {
+      const { port } = srv.address();
+      srv.close(() => {
+        if (port === 5173 || port === 5174) resolve(findFreePort());
+        else resolve(port);
+      });
+    });
+    srv.on('error', reject);
+  });
+}
+
+function checkHttpOk(url) {
+  return new Promise((resolve) => {
+    const req = http.get(url, (res) => { res.resume(); resolve(res.statusCode === 200); });
+    req.on('error', () => resolve(false));
+    req.setTimeout(1000, () => { req.destroy(); resolve(false); });
+  });
+}
 
 /** Geste tactile continu : touchStart -> touchMove (en plusieurs étapes) -> maintien -> touchEnd. */
 async function touchDragHold(page, x0, y0, x1, y1, { steps = 5, holdTicks = 0, holdMs = 0 } = {}) {
@@ -525,107 +553,126 @@ async function centerOf(page, selector) {
       disconnectNotice);
   });
 
-  // ========================================================================= 4. PWA & Hors ligne
+  // ========================================================================= 4. PWA & Hors ligne (sur build de production via vite preview)
   await section('50. Installation PWA, manifeste, service worker et jeu hors ligne', async () => {
-    // Vérifie le manifeste et la présence d'un service worker actif
-    const pwaStatus = await page.evaluate(async () => {
-      const link = document.querySelector('link[rel="manifest"]');
-      const href = link ? link.getAttribute('href') : null;
-      const res = href ? await fetch(href) : null;
-      const manifest = res && res.ok ? await res.json() : null;
-      const reg = await navigator.serviceWorker.getRegistration();
-      // Attend que le service worker contrôle la page et ait pré-rempli son cache
-      if (reg && reg.active && !navigator.serviceWorker.controller) {
-        reg.active.postMessage({ type: 'SKIP_WAITING' });
+    const rootDir = path.resolve(__dirname, '../..');
+    if (!fs.existsSync(path.join(rootDir, 'dist', 'index.html'))) {
+      execSync('npm run build', { cwd: rootDir, stdio: 'inherit' });
+    }
+    const previewPort = await findFreePort();
+    const previewUrl = `http://127.0.0.1:${previewPort}/`;
+    const previewProc = spawn('npx', ['vite', 'preview', '--host', '127.0.0.1', '--port', String(previewPort), '--strictPort'], {
+      cwd: rootDir,
+      stdio: 'ignore',
+    });
+
+    try {
+      let ready = false;
+      for (let i = 0; i < 40; i++) {
+        await sleep(250);
+        if (await checkHttpOk(previewUrl)) { ready = true; break; }
       }
-      return {
-        href,
-        manifest,
-        swActive: !!(reg && reg.active),
-        icon192Ok: (await fetch('/icon-192.png')).status === 200,
-        icon512Ok: (await fetch('/icon-512.png')).status === 200,
-      };
-    });
-    check('PWA : manifeste valide (nom « SarihBricks », icônes 192/512, display standalone)',
-      pwaStatus.manifest?.name === 'SarihBricks'
-      && (pwaStatus.manifest?.display === 'standalone' || pwaStatus.manifest?.display === 'fullscreen')
-      && Array.isArray(pwaStatus.manifest?.icons)
-      && pwaStatus.manifest.icons.length >= 2
-      && pwaStatus.icon192Ok
-      && pwaStatus.icon512Ok
-      && pwaStatus.swActive,
-      JSON.stringify(pwaStatus));
+      if (!ready) throw new Error('Impossible de démarrer vite preview sur ' + previewUrl);
 
-    // Laisse au service worker le temps de mettre en cache tous les modules (y compris les workers)
-    await sleep(800);
+      const pwaPage = await browser.newPage();
+      await pwaPage.setViewport({ width: 1280, height: 720 });
+      pwaPage.on('pageerror', (e) => { errors.push('pageerror: ' + e.message); console.log('  pageerror', e.message); });
+      pwaPage.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') { const t = m.text(); if (!/404|favicon/.test(t)) { errors.push('console.' + m.type() + ': ' + t); console.log('  console.' + m.type(), t.slice(0, 300)); } } });
+      await pwaPage.goto(previewUrl, { waitUntil: 'networkidle0' });
+      await pwaPage.waitForSelector('[data-mc="title"]', { timeout: 20000 });
 
-    // Retour au menu principal avant de passer hors ligne
-    await page.keyboard.press('Escape');
-    await page.waitForSelector('[data-mc="pause"]', { timeout: 5000 });
-    await click(page, 'quit');
-    await page.waitForSelector('[data-mc="title"]', { timeout: 30000 });
-    await sleep(400);
+      // Vérifie le manifeste et la présence d'un service worker actif
+      const pwaStatus = await pwaPage.evaluate(async () => {
+        const link = document.querySelector('link[rel="manifest"]');
+        const href = link ? link.getAttribute('href') : null;
+        const res = href ? await fetch(href) : null;
+        const manifest = res && res.ok ? await res.json() : null;
+        const reg = await navigator.serviceWorker.getRegistration();
+        // Attend que le service worker contrôle la page et ait pré-rempli son cache
+        if (reg && reg.active && !navigator.serviceWorker.controller) {
+          reg.active.postMessage({ type: 'SKIP_WAITING' });
+        }
+        return {
+          href,
+          manifest,
+          swActive: !!(reg && reg.active),
+          icon192Ok: (await fetch('/icon-192.png')).status === 200,
+          icon512Ok: (await fetch('/icon-512.png')).status === 200,
+        };
+      });
+      check('PWA : manifeste valide (nom « SarihBricks », icônes 192/512, display standalone)',
+        pwaStatus.manifest?.name === 'SarihBricks'
+        && (pwaStatus.manifest?.display === 'standalone' || pwaStatus.manifest?.display === 'fullscreen')
+        && Array.isArray(pwaStatus.manifest?.icons)
+        && pwaStatus.manifest.icons.length >= 2
+        && pwaStatus.icon192Ok
+        && pwaStatus.icon512Ok
+        && pwaStatus.swActive,
+        JSON.stringify(pwaStatus));
 
-    // Passage en mode hors ligne de Puppeteer puis rechargement complet de la page (sans cache HTTP pour solliciter le Service Worker)
-    await page.setCacheEnabled(false);
-    await page.setOfflineMode(true);
-    await page.reload({ waitUntil: 'domcontentloaded', timeout: 30000 });
-    await page.waitForSelector('[data-mc="title"]', { timeout: 20000 });
+      // Laisse au service worker le temps de mettre en cache tous les modules (y compris les workers)
+      await sleep(800);
 
-    const offlineTitle = await page.evaluate(async () => {
-      let cachedRoot = false;
-      try {
-        const cache = await caches.open('sarihbricks-pwa-v1');
-        const hit = (await cache.match('/')) || (await cache.match('/index.html'));
-        cachedRoot = !!hit;
-      } catch {
-        cachedRoot = false;
-      }
-      return {
-        titleShown: document.querySelector('[data-mc="title"]') !== null,
-        online: navigator.onLine,
-        swControlled: navigator.serviceWorker?.controller !== null,
-        cachedRoot,
-      };
-    });
-    check('hors ligne : après passage en mode hors ligne et rechargement, le menu principal s’affiche',
-      offlineTitle.titleShown === true && offlineTitle.online === false && offlineTitle.swControlled === true && offlineTitle.cachedRoot === true,
-      JSON.stringify(offlineTitle));
+      // Passage en mode hors ligne de Puppeteer puis rechargement complet de la page (sans cache HTTP pour solliciter le Service Worker)
+      await pwaPage.setCacheEnabled(false);
+      await pwaPage.setOfflineMode(true);
+      await pwaPage.reload({ waitUntil: 'domcontentloaded', timeout: 30000 });
+      await pwaPage.waitForSelector('[data-mc="title"]', { timeout: 20000 });
 
-    // Création d'un monde hors ligne, jeu, sauvegarde et rechargement hors ligne
-    await createWorld(page, { name: 'MondeHorsLigne', seed: '2026', flat: true });
-    await install(page);
-    await ticks(page, 10);
+      const offlineTitle = await pwaPage.evaluate(async () => {
+        let cachedRoot = false;
+        try {
+          const cache = await caches.open('sarihbricks-pwa-v1');
+          const hit = (await cache.match('/')) || (await cache.match('/index.html'));
+          cachedRoot = !!hit;
+        } catch {
+          cachedRoot = false;
+        }
+        return {
+          titleShown: document.querySelector('[data-mc="title"]') !== null,
+          online: navigator.onLine,
+          swControlled: navigator.serviceWorker?.controller !== null,
+          cachedRoot,
+        };
+      });
+      check('hors ligne : après passage en mode hors ligne et rechargement, le menu principal s’affiche',
+        offlineTitle.titleShown === true && offlineTitle.online === false && offlineTitle.swControlled === true && offlineTitle.cachedRoot === true,
+        JSON.stringify(offlineTitle));
 
-    await shot(page, 't15_hors_ligne');
+      // Création d'un monde hors ligne, jeu, sauvegarde et rechargement hors ligne
+      await createWorld(pwaPage, { name: 'MondeHorsLigne', seed: '2026', flat: true });
+      await ticks(pwaPage, 10);
 
-    const placedOffline = await ev(page, async () => {
-      const { B } = await import('/src/world/Ids.ts');
-      const g = window.__game;
-      g.world.setBlock(2, 4, 2, B.GOLD_BLOCK, 0);
-      await g.save();
-      return g.world.getBlock(2, 4, 2) === B.GOLD_BLOCK;
-    });
-    await page.reload({ waitUntil: 'domcontentloaded', timeout: 30000 });
-    await page.waitForSelector('[data-mc="title"]', { timeout: 20000 });
-    await click(page, 'play');
-    await page.waitForSelector('[data-mc="world-play"]', { timeout: 10000 });
-    await click(page, 'world-play');
-    await page.waitForFunction('window.__game && window.__game.ready === true', { timeout: 120000 });
-    await ticks(page, 6);
-    const reloadedOffline = await ev(page, async () => {
-      const { B } = await import('/src/world/Ids.ts');
-      return {
+      await shot(pwaPage, 't15_hors_ligne');
+
+      const GOLD_BLOCK = 29;
+      const placedOffline = await ev(pwaPage, async (blockId) => {
+        const g = window.__game;
+        g.world.setBlock(2, 4, 2, blockId, 0);
+        await g.save();
+        return g.world.getBlock(2, 4, 2) === blockId;
+      }, GOLD_BLOCK);
+      await pwaPage.reload({ waitUntil: 'domcontentloaded', timeout: 30000 });
+      await pwaPage.waitForSelector('[data-mc="title"]', { timeout: 20000 });
+      await click(pwaPage, 'play');
+      await pwaPage.waitForSelector('[data-mc="world-play"]', { timeout: 10000 });
+      await click(pwaPage, 'world-play');
+      await pwaPage.waitForFunction('window.__game && window.__game.ready === true', { timeout: 120000 });
+      await ticks(pwaPage, 6);
+      const reloadedOffline = await ev(pwaPage, (blockId) => ({
         name: window.__game.info.name,
-        goldPresent: window.__game.world.getBlock(2, 4, 2) === B.GOLD_BLOCK,
-      };
-    });
-    check('hors ligne : un monde se crée, se sauvegarde et se recharge intégralement sans réseau',
-      placedOffline && reloadedOffline.name === 'MondeHorsLigne' && reloadedOffline.goldPresent,
-      JSON.stringify(reloadedOffline));
+        goldPresent: window.__game.world.getBlock(2, 4, 2) === blockId,
+      }), GOLD_BLOCK);
+      check('hors ligne : un monde se crée, se sauvegarde et se recharge intégralement sans réseau',
+        placedOffline && reloadedOffline.name === 'MondeHorsLigne' && reloadedOffline.goldPresent,
+        JSON.stringify(reloadedOffline));
 
-    await page.setOfflineMode(false);
-    await page.setCacheEnabled(true);
+      await pwaPage.setOfflineMode(false);
+      await pwaPage.setCacheEnabled(true);
+      await pwaPage.close();
+    } finally {
+      previewProc.kill();
+    }
   });
 
   console.log('erreurs de page/console :', errors.length, errors.slice(0, 10));

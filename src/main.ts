@@ -188,9 +188,9 @@ async function main(): Promise<void> {
   });
   ui.showTitle();
 
-  // Enregistrement du service worker (PWA hors ligne, désactivé dans l'application Android embarquée)
+  // Enregistrement du service worker (PWA hors ligne, uniquement en production navigateur)
   const isNativeApp = Boolean((window as unknown as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor?.isNativePlatform?.());
-  if ('serviceWorker' in navigator && isNativeApp) {
+  if ('serviceWorker' in navigator && (isNativeApp || import.meta.env.DEV)) {
     navigator.serviceWorker
       .getRegistrations()
       .then((regs) => Promise.all(regs.map((r) => r.unregister())))

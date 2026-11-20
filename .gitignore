@@ -8,5 +8,6 @@ release/
 *.jks
 android/keystore.properties
 android/.version-code
+server-data/
 
 
