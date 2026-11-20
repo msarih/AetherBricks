@@ -188,8 +188,14 @@ async function main(): Promise<void> {
   });
   ui.showTitle();
 
-  // Enregistrement du service worker (PWA hors ligne)
-  if ('serviceWorker' in navigator) {
+  // Enregistrement du service worker (PWA hors ligne, désactivé dans l'application Android embarquée)
+  const isNativeApp = Boolean((window as unknown as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor?.isNativePlatform?.());
+  if ('serviceWorker' in navigator && isNativeApp) {
+    navigator.serviceWorker
+      .getRegistrations()
+      .then((regs) => Promise.all(regs.map((r) => r.unregister())))
+      .catch(() => undefined);
+  } else if ('serviceWorker' in navigator) {
     const genWorkerUrl = new URL('./world/gen/gen.worker.ts', import.meta.url).href;
     const meshWorkerUrl = new URL('./world/mesh/mesh.worker.ts', import.meta.url).href;
     const warmSwCache = (): void => {
@@ -229,6 +235,14 @@ async function main(): Promise<void> {
       })
       .catch(() => undefined);
   }
+
+  // Bouton « Retour » d'Android : ouvre la pause en jeu ou revient en arrière dans un menu
+  (window as unknown as { __sarihBack?: () => boolean }).__sarihBack = (): boolean => {
+    const titleEl = document.querySelector<HTMLElement>('[data-mc="title"]');
+    if (!game && titleEl && titleEl.dataset.page === 'main') return false;
+    document.dispatchEvent(new KeyboardEvent('keydown', { code: 'Escape', key: 'Escape', bubbles: true, cancelable: true }));
+    return true;
+  };
 
   window.addEventListener('resize', () => {
     renderer.setSize(window.innerWidth, window.innerHeight, false);
