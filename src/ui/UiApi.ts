@@ -157,6 +157,8 @@ export interface UiHost {
   exportWorld(id: string): Promise<void>;
   /** Ajoute comme nouveau monde celui que contient le fichier ; rend son identifiant. */
   importWorld(file: File): Promise<string>;
+  /** Rejoint un serveur multijoueur. */
+  joinMultiplayer(options: { address: string; name: string; password: string }): Promise<void>;
   /** Sauvegarde la partie en cours et revient au menu principal. */
   quitToTitle(): Promise<void>;
   /** À appeler après toute modification de `settings` : applique et enregistre. */
@@ -171,7 +173,7 @@ export interface UiApi {
   readonly pausing: boolean;
 
   /** Menu principal (liste des mondes, création, options). Cache le HUD et tout autre écran. */
-  showTitle(): void;
+  showTitle(page?: 'main' | 'worlds' | 'create' | 'multiplayer', error?: string): void;
   /** Écran de chargement plein écran. `progress` : 0..1. */
   showLoading(title: string, detail: string, progress: number): void;
   /** Cache le menu principal et l'écran de chargement, affiche le HUD : la partie commence. */

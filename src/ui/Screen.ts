@@ -20,7 +20,7 @@ export interface Screen {
   dispose?(): void;
 }
 
-export type TitlePage = 'main' | 'worlds' | 'create';
+export type TitlePage = 'main' | 'worlds' | 'create' | 'multiplayer';
 
 export interface UiContext {
   readonly host: UiHost;
