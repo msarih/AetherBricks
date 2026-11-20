@@ -7,12 +7,16 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "test:e2e": "node dev-tests/e2e/run.cjs"
+    "test:e2e": "node dev-tests/e2e/run.cjs",
+    "android:apk": "bash scripts/build-apk.sh"
   },
   "dependencies": {
+    "@capacitor/android": "7.6.10",
+    "@capacitor/core": "7.6.10",
     "three": "^0.181.0"
   },
   "devDependencies": {
+    "@capacitor/cli": "7.6.10",
     "@types/three": "^0.181.0",
     "puppeteer-core": "^25.17.0",
     "typescript": "^5.7.0",
