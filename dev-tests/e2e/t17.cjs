@@ -28,6 +28,38 @@ function findFreePort() {
   });
 }
 
+function httpRequest(targetUrl, { method = 'GET', headers = {}, body = null } = {}) {
+  return new Promise((resolve, reject) => {
+    const u = new URL(targetUrl);
+    const req = http.request(
+      {
+        hostname: u.hostname,
+        port: u.port,
+        path: u.pathname + u.search,
+        method,
+        headers,
+      },
+      (res) => {
+        const chunks = [];
+        res.on('data', (c) => chunks.push(c));
+        res.on('end', () => {
+          resolve({
+            status: res.statusCode ?? 0,
+            headers: res.headers,
+            body: Buffer.concat(chunks).toString('utf8'),
+          });
+        });
+      },
+    );
+    req.on('error', reject);
+    req.setTimeout(5000, () => {
+      req.destroy(new Error('HTTP timeout'));
+    });
+    if (body) req.write(body);
+    req.end();
+  });
+}
+
 function checkHttpOk(url) {
   return new Promise((resolve) => {
     const req = http.get(url, (res) => {
@@ -52,6 +84,7 @@ async function openIsolatedPage(context, url, errors) {
   page.on('console', (m) => {
     if (m.type() === 'error' || m.type() === 'warning') {
       const t = m.text();
+      if (page.__allow401 && /status of 401/.test(t)) return;
       if (!/404|favicon|WebSocket connection to/.test(t)) {
         errors.push('console.' + m.type() + ': ' + t);
         console.log('  console.' + m.type(), t.slice(0, 300));
@@ -108,7 +141,39 @@ async function waitServerReady(url, getLogs) {
     const pageA = await openIsolatedPage(ctxA, url, errors);
     const pageB = await openIsolatedPage(ctxB, url, errors);
 
-    await section('J2a. Monde solo de A, pose d’un bloc, « Ouvrir aux amis » et code', async () => {
+    await section('J2-sec. Sécurité HTTP : CORS, ping sans fuite, open-world authentifié et anti-bruteforce', async () => {
+      const worldJsonPath = path.join(tmpDataDir, 'worlds', 'default', 'world.json');
+      const worldBefore = fs.readFileSync(worldJsonPath, 'utf8');
+
+      // 1. GET /api/ping ne révèle pas le nom du monde sans mot de passe, ni CORS pour origine tierce
+      const pingAnon = await httpRequest(`${url}api/ping`, { headers: { Origin: 'http://exemple.test' } });
+      const pingJson = JSON.parse(pingAnon.body);
+      check('GET /api/ping sans mot de passe ne révèle pas le nom du monde', pingAnon.status === 200 && pingJson.ok === true && pingJson.name === undefined, pingAnon.body);
+      check('GET /api/ping refuse CORS pour origine tierce', pingAnon.headers['access-control-allow-origin'] === undefined, String(pingAnon.headers['access-control-allow-origin']));
+
+      // 2. POST /api/open-world depuis origine non autorisée -> 403 avant lecture du corps
+      const badOriginRes = await httpRequest(`${url}api/open-world`, {
+        method: 'POST',
+        headers: { Origin: 'http://exemple.test', 'X-Server-Password': password },
+        body: Buffer.from('corps-factice'),
+      });
+      check('POST /api/open-world avec Origin http://exemple.test -> 403', badOriginRes.status === 403 && badOriginRes.headers['access-control-allow-origin'] === undefined, `status=${badOriginRes.status}`);
+
+      // 3. POST /api/open-world sans mot de passe -> 401 et monde intact
+      const noPwRes = await httpRequest(`${url}api/open-world`, { method: 'POST', body: Buffer.from('corps-factice') });
+      check('POST /api/open-world sans mot de passe -> 401', noPwRes.status === 401, `status=${noPwRes.status}`);
+      check('monde sur disque intact après 401', fs.readFileSync(worldJsonPath, 'utf8') === worldBefore);
+
+      // 4. Mauvais mot de passe -> 401
+      const badPwRes = await httpRequest(`${url}api/open-world`, {
+        method: 'POST',
+        headers: { 'X-Server-Password': 'mauvais-mot-de-passe' },
+        body: Buffer.from('corps-factice'),
+      });
+      check('POST /api/open-world avec mauvais mot de passe -> 401', badPwRes.status === 401, `status=${badPwRes.status}`);
+    });
+
+    await section('J2a. Monde solo de A, pose d’un bloc, « Ouvrir aux amis » (mot de passe + code)', async () => {
       await createWorld(pageA, { name: 'MondeA', seed: '1337', creative: false, flat: true });
       await ticks(pageA, 8);
 
@@ -131,15 +196,56 @@ async function waitServerReady(url, getLogs) {
       const blockOnA = await ev(pageA, (x, y, z) => window.__game.world.getBlock(x, y, z), blockAX, blockAY, blockAZ);
       check('A pose un bloc dans son monde solo', blockOnA !== 0, `block=${blockOnA}`);
 
-      // A ouvre la pause et clique sur « Ouvrir aux amis »
+      // A ouvre la pause et clique sur « Ouvrir aux amis » -> demande le mot de passe la 1re fois
       await pageA.keyboard.press('Escape');
       await pageA.waitForSelector('[data-mc="open-friends"]', { timeout: 10000 });
       await shot(pageA, 't17_pause_ouvrir');
       await pageA.click('[data-mc="open-friends"]');
+      await pageA.waitForSelector('[data-mc="open-friends-password"]', { timeout: 10000 });
+
+      // Mauvais mot de passe dans l'interface -> message clair
+      pageA.__allow401 = true;
+      await pageA.type('[data-mc="open-friends-password"]', 'faux-mdp');
+      await pageA.click('[data-mc="open-friends-confirm"]');
+      await pageA.waitForFunction(
+        () => (document.querySelector('[data-mc="pause-error"]')?.textContent ?? '').trim().length > 0,
+        { timeout: 10000 },
+      );
+      pageA.__allow401 = false;
+      const wrongPwUiErr = await pageA.evaluate(() => document.querySelector('[data-mc="pause-error"]')?.textContent ?? '');
+      check('mauvais mot de passe dans « Ouvrir aux amis » affiche une erreur claire', wrongPwUiErr.toLowerCase().includes('incorrect'), wrongPwUiErr);
+
+      // Bon mot de passe -> ouverture et mémorisation
+      await pageA.evaluate((pw) => {
+        const el = document.querySelector('[data-mc="open-friends-password"]');
+        el.value = pw;
+      }, password);
+      await pageA.click('[data-mc="open-friends-confirm"]');
       await pageA.waitForSelector('[data-mc="invite-code"]', { timeout: 15000 });
       inviteCode = await pageA.evaluate(() => document.querySelector('[data-mc="invite-code"]')?.textContent?.trim() ?? '');
       await shot(pageA, 't17_code_affiche');
       check('code d’invitation généré et affiché (format SB-...)', /^SB-[2-9A-HJ-KM-NP-Z]{5}-[2-9A-HJ-KM-NP-Z]{5}-[2-9A-HJ-KM-NP-Z]{5}-[2-9A-HJ-KM-NP-Z]{5}$/.test(inviteCode), inviteCode);
+
+      const memorized = await pageA.evaluate((p, pw) => {
+        const raw = localStorage.getItem('sarihbricks.servers');
+        if (!raw) return false;
+        const list = JSON.parse(raw);
+        return Array.isArray(list) && list.some((s) => s.address === `127.0.0.1:${p}` && s.password === pw);
+      }, port, password);
+      check('mot de passe mémorisé avec le serveur après ouverture', memorized);
+
+      // Deuxième ouverture pendant qu'un monde est déjà ouvert -> 409 et premier monde intact
+      const secondOpenRes = await httpRequest(`${url}api/open-world`, {
+        method: 'POST',
+        headers: { 'X-Server-Password': password },
+        body: Buffer.from('autre-monde'),
+      });
+      const pingWhileHosting = await httpRequest(`${url}api/ping`, {
+        headers: { 'X-Server-Password': password },
+      });
+      const pingWhileHostingJson = JSON.parse(pingWhileHosting.body);
+      check('deuxième POST /api/open-world pendant hébergement -> 409', secondOpenRes.status === 409 && secondOpenRes.body.toLowerCase().includes('déjà ouvert'), `status=${secondOpenRes.status}, body=${secondOpenRes.body}`);
+      check('premier monde toujours actif après refus 409', pingWhileHostingJson.hosting === true && pingWhileHostingJson.name === 'MondeA', pingWhileHosting.body);
 
       // A reprend le jeu
       await pageA.click('[data-mc="resume"]');
@@ -381,6 +487,21 @@ async function waitServerReady(url, getLogs) {
       const persistedMode = await ev(pageB, () => window.__game.player.gameMode);
       const persistedInv = await ev(pageB, () => window.__game.player.inventory.slots.some((s) => s !== null));
       check('après redémarrage serveur, le monde et l’état/inventaire de B sont retrouvés', persistedBlock !== 0 && persistedMode === 'survival' && persistedInv, `block=${persistedBlock}, mode=${persistedMode}, hasInv=${persistedInv}`);
+
+      // Limitation d'essais par IP sur POST /api/open-world
+      let locked = false;
+      for (let i = 1; i <= 7; i++) {
+        const badPwRes = await httpRequest(`${url}api/open-world`, {
+          method: 'POST',
+          headers: { 'X-Server-Password': 'mauvais-mot-de-passe' },
+          body: Buffer.from('corps-factice'),
+        });
+        if (badPwRes.status === 429 && badPwRes.body.toLowerCase().includes('patienter')) {
+          locked = true;
+          break;
+        }
+      }
+      check('POST /api/open-world limite les essais ratés par IP (429 + attente)', locked);
     });
 
     console.log('erreurs de page/console :', errors.length, errors.slice(0, 10));
