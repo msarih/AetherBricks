@@ -206,9 +206,12 @@ const dbg = (page) => ev(page, () => { const d = window.__game.debugLines(); ret
         const calves1 = g.entities.filter((e) => e.kind === 'mob' && e.mobKind === 'cow' && !e.dead && e.baby);
         // Contrôle inverse : avec 24 animaux dans le rayon de 32 blocs, aucun nouveau petit ne naît
         const inRadius = () => g.entities.filter((e) => isAnimal(e) && Math.hypot(e.x - (s.x + 0.5), e.z - (s.z + 0.5)) <= M.ANIMAL_RADIUS).length;
-        while (inRadius() < M.ANIMAL_CAP) {
+        const sheepX = s.x + 6;
+        const sheepZ = s.z + 6;
+        const sheepY = Math.max(2, w.heightAt(sheepX, sheepZ));
+        while (inRadius() < M.ANIMAL_CAP + 2) {
           const m = M.createMob('sheep', g.rng);
-          m.setPosition(s.x + 0.5, s.y, s.z + 0.5);
+          m.setPosition(sheepX + 0.5, sheepY, sheepZ + 0.5);
           g.spawn(m);
           spawned.push(m);
         }
@@ -216,7 +219,7 @@ const dbg = (page) => ev(page, () => { const d = window.__game.debugLines(); ret
         const c3 = M.createMob('cow', g.rng);
         const c4 = M.createMob('cow', g.rng);
         c3.setPosition(s.x + 0.5, s.y, s.z + 0.5);
-        c4.setPosition(s.x + 1.0, s.y, s.z + 0.5);
+        c4.setPosition(s.x + 0.9, s.y, s.z + 0.5);
         g.spawn(c3);
         g.spawn(c4);
         spawned.push(c3, c4);
@@ -236,13 +239,20 @@ const dbg = (page) => ev(page, () => { const d = window.__game.debugLines(); ret
       check('plafond local : avec 24 animaux dans le rayon (32 blocs), aucun petit ne naît',
         breedNormal.localAtCap >= 24 && breedNormal.fed3 && breedNormal.fed4 && breedNormal.bredBlocked && breedNormal.calves2 === 1,
         JSON.stringify(breedNormal));
+      await ev(page, () => { window.__game.player.inventory.selected = 0; });
     }
   });
 
   await section('chute', async () => {
-    // paisible : un monstre qui frappe pendant la chute rend le joueur invulnérable 10 ticks et fausse la mesure
-    await chat(page, '/difficulty peaceful');
-    await ticks(page, 12);
+    // élimine les monstres et créatures proches pour éviter d'être frappé ou poussé pendant la chute
+    await ev(page, (s) => {
+      const g = window.__game;
+      const from = s ? { x: s.x + 0.5, y: s.y, z: s.z + 0.5 } : { x: g.player.x, y: g.player.y, z: g.player.z };
+      for (const e of g.entities) {
+        if (e !== g.player && Math.hypot(e.x - from.x, e.z - from.z) < 6) e.dead = true;
+      }
+    }, spot);
+    await ticks(page, 5);
     // on repart du terrain dégagé : les animaux du test précédent ont pu pousser le joueur sous un arbre,
     // et il retomberait alors sur le feuillage, de moins haut
     const fall = await ev(page, (s) => {
@@ -250,16 +260,16 @@ const dbg = (page) => ev(page, () => { const d = window.__game.debugLines(); ret
       const from = s ? { x: s.x + 0.5, y: s.y, z: s.z + 0.5 } : { x: p.x, y: p.y, z: p.z };
       const drift = Math.hypot(p.x - from.x, p.z - from.z);
       p.health = 20; p.invulnerable = 0;
-      // faim à 17 : pas de régénération naturelle entre l'atterrissage et la mesure (elle rendrait un point de vie)
+      // faim à 17 avec difficulté normale (> 0) : pas de régénération naturelle entre l'atterrissage et la mesure
       window.__hungerBeforeFall = p.hunger;
       p.hunger = 17;
       p.teleport(from.x, from.y + 12, from.z);
+      p.vx = p.vy = p.vz = 0;
       return { drift: +drift.toFixed(2), ground: from.y };
     }, spot);
     await ticks(page, 3);
     check('le joueur tombe', await ev(page, () => !window.__game.player.onGround));
     await page.waitForFunction(() => window.__game.player.onGround, { timeout: 10000 });
-    await ticks(page, 2);
     const h = (await state(page)).health;
     const landed = await ev(page, () => +window.__game.player.y.toFixed(2));
     await ev(page, () => { window.__game.player.hunger = window.__hungerBeforeFall; });
@@ -396,7 +406,13 @@ const dbg = (page) => ev(page, () => { const d = window.__game.debugLines(); ret
       check('orage actif', await ev(page, () => window.__game.raining && window.__game.thundering));
     } finally {
       await chat(page, '/weather clear').catch(() => undefined);
-      await ev(page, () => { window.__game.player.flying = false; }).catch(() => undefined);
+      await ev(page, () => {
+        const p = window.__game.player;
+        p.flying = false;
+        const groundY = Math.max(2, window.__game.world.heightAt(Math.floor(p.x), Math.floor(p.z)));
+        p.teleport(p.x, groundY, p.z);
+        p.vx = p.vy = p.vz = 0;
+      }).catch(() => undefined);
     }
   });
 
@@ -408,6 +424,10 @@ const dbg = (page) => ev(page, () => { const d = window.__game.debugLines(); ret
       const M = await import('/src/entity/Mobs.ts');
       const { makeStack } = await import('/src/world/ItemStack.ts');
       const g = window.__game, p = g.player;
+      p.flying = false;
+      const groundY = Math.max(2, g.world.heightAt(Math.floor(p.x), Math.floor(p.z)));
+      p.teleport(p.x, groundY, p.z);
+      p.vx = p.vy = p.vz = 0;
       const m = { x: Math.floor(p.x) + 2, y: Math.min(120, Math.floor(p.y) + 3), z: Math.floor(p.z) };
       g.world.setBlock(m.x, m.y, m.z, B.DIAMOND_BLOCK);
       p.inventory.slots[8] = makeStack(I.DIAMOND_PICKAXE, 1, 2, { fortune: 2 });
