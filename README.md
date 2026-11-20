@@ -57,6 +57,32 @@ npm run build    # version de production dans dist/
 - **Construction et décoration** : verre teinté (16 couleurs), terre cuite colorée (16 couleurs), tapis de laine (16 couleurs, franchissables sans bloquer ni le joueur ni les créatures), portes, barrières et portillons dans les six essences (chêne, sapin, bouleau, acajou, acacia, chêne noir), tableaux muraux (10 motifs de 1×1 à 2×2), cadres à accrocher (exposition et rotation de tout objet au clic droit) et jukebox avec 6 disques de musique synthétisés (`13` et `cat` trouvés dans les coffres des donjons).
 - **Ferme et règles du monde** : graines de citrouille et de pastèque (tiges de stades 0 à 7 s'inclinant vers le fruit apparu à côté, poudre d'os), cacao en 3 stades sur les bûches d'acajou et recette des cookies, `/gamerule` (`keepInventory`, `doDaylightCycle`, `doMobSpawning`, `mobGriefing`, `doFireTick`, `naturalRegeneration` sauvegardées avec le monde), modes de jeu `adventure` (aucune casse ni pose de blocs, portes/coffres/leviers et combat actifs), `spectator` (vol libre sans collision ni dégâts, invisible aux créatures) et `Extrême` (hardcore : survie difficile verrouillée, passage en spectateur à la mort), plus `/setblock` et `/fill` (`replace`, `hollow`, `outline`, `destroy`, `keep` jusqu'à 32 768 blocs).
 
+## 📱 Plateforme (tactile, manette et application hors ligne)
+
+- **Téléphone et tablette (commandes tactiles)** :
+  - Détection automatique dès le premier contact tactile ou sur un écran `pointer: coarse`, avec un réglage dans **Options → Commandes tactiles** (`auto` / `activé` / `désactivé`).
+  - **Déplacement** : joystick virtuel en bas à gauche.
+  - **Regard** : glisser le doigt sur le reste de l'écran.
+  - **Sauter et voler** : bouton **▲** à droite (en créatif, un double appui active ou coupe le vol).
+  - **S'accroupir** : bouton **▼** à droite (maintient l'accroupissement ou fait descendre en vol).
+  - **Casser / poser / attaquer** : un **appui long** maintenu casse le bloc visé (avec la même progression de casse qu'à la souris) ; un **appui court** pose le bloc tenu, active le bloc visé (porte, coffre, établi…) ou attaque la créature visée.
+  - **Barre d'objets et inventaire** : toucher une case de la barre la sélectionne ; le bouton **⋯** à droite de la barre ouvre l'inventaire. Dans tous les écrans de cases (inventaire, coffre, établi, fourneau…), toucher une case prend la pile, toucher une autre la dépose, et le bouton **✕** referme la fenêtre.
+  - **Barre supérieure** : boutons **⏸** (pause), **💬** (discussion / commandes pré-remplies avec `/`) et **👁** (vue 1re / 3e personne).
+  - L'interface s'adapte en mode **portrait** (téléphone) et **paysage** (téléphone et tablette), sans zoom ni défilement parasite.
+- **Manette de jeu (Xbox / PlayStation, API Gamepad standard)** :
+  - **Stick gauche** : se déplacer ; **clic du stick gauche (L3)** : courir (sprint).
+  - **Stick droit** : tourner le regard (sensibilité dédiée dans **Options → Sensibilité manette**, avec zone morte).
+  - **Gâchette droite (RT / R2)** : casser / attaquer ; **gâchette gauche (LT / L2)** : poser / utiliser.
+  - **A / Croix** : sauter (double appui : voler en créatif) ; **B / Rond** : s'accroupir ; **X / Carré** : jeter l'objet tenu ; **Y / Triangle** : ouvrir l'inventaire.
+  - **Gâchettes hautes (LB / RB ou L1 / R1)** : case précédente / suivante dans la barre d'objets.
+  - **Start / Options** : mettre en pause.
+  - **Dans les menus et inventaires** : croix directionnelle ou stick gauche pour déplacer le curseur jaune d'un bouton ou d'une case à l'autre, **A / Croix** pour valider, **B / Rond** pour revenir ou fermer.
+  - Branchement et débranchement à chaud signalés à l'écran.
+- **Installation comme application et jeu hors ligne (PWA)** :
+  - Le jeu fournit un manifeste Web (`manifest.webmanifest`), des icônes 192×192 et 512×512 et un *service worker* (`sw.js`).
+  - Sur ordinateur (Chrome / Edge : icône « Installer SarihBricks » dans la barre d'adresse) ou sur téléphone/tablette (« Ajouter à l'écran d'accueil »), le jeu s'installe comme une application plein écran autonome (`display: standalone`).
+  - Une fois ouvert une première fois en ligne, **le jeu démarre et se joue entièrement hors ligne** (création de mondes, génération et maillage dans les *workers*, sauvegarde IndexedDB et rechargement). Lorsqu'une nouvelle version est déployée, le cache est mis à jour et un message prévient si une mise à jour attend un rechargement.
+
 ## 🎮 Contrôles
 
 Les touches sont repérées par leur position sur le clavier : sur un clavier QWERTY, `Z Q S D` se lisent `W A S D` et « A » est la touche `Q`.
@@ -101,5 +127,6 @@ Les touches sont repérées par leur position sur le clavier : sur un clavier QW
 - Équipement, écarts avec Minecraft : le bouclier n'a pas de motif de bannière ni d'étourdissement par hache ; l'alambic n'affiche pas les fioles en 3D sur ses bras ; les potions disponibles sont eau, étrange, soin (I/II), rapidité (I/II/allongée), vision nocturne (normale/allongée), force (I/II/allongée), résistance au feu (normale/allongée), poison (I/II/allongé), régénération (I/II/allongée) et jetables (pas d'œil d'araignée fermenté, de respiration aquatique, d'invisibilité ni de potion persistante) et partagent une icône de fiole bleue (le type est indiqué dans l'infobulle et la barre) ; la vision nocturne ne clignote pas en fin d'effet ; le chaudron ne teint pas les armures en cuir.
 - Construction et décoration, écarts avec Minecraft : le chêne noir (`dark_oak_log`, `dark_oak_planks`) n'est pas encore présent dans la génération naturelle du terrain (accessible par `/give` ou en créatif pour fabriquer les variantes en chêne noir) ; 10 tableaux sont inclus (formats 1×1, 2×1, 1×2 et 2×2) ; 6 disques de musique sur les 12 de la 1.12 (`13`, `cat`, `blocks`, `chirp`, `far`, `wait`, joués par synthèse Web Audio sans banque d'échantillons externe) ; les vitres teintées, les dalles/escaliers en chêne noir et la terre cuite émaillée ne sont pas inclus.
 - Ferme et règles du monde, écarts avec Minecraft : le cacao ne se génère pas à l'état naturel dans la jungle (teinture brune accessible via `/give` ou le menu créatif) ; les règles `/gamerule` portent sur les 6 règles booléennes principales (`keepInventory`, `doDaylightCycle`, `doMobSpawning`, `mobGriefing`, `doFireTick`, `naturalRegeneration`) ; en mode `adventure`, les balises d'exception NBT (`CanDestroy`/`CanPlaceOn`) ne sont pas prises en charge ; `/fill` accepte la syntaxe simple par bloc et mode (sans filtre `replace <blocFiltre>`).
+- Plateforme (tactile, manette, hors ligne), écarts avec Minecraft : en tactile, la visée reste au réticule central (comme le mode « réticule divisé / split controls » de l'édition Bedrock, sans casse déportée sous le doigt hors du centre) et le déplacement utilise un joystick virtuel plutôt qu'une croix directionnelle à 5 touches ; dans l'inventaire au doigt ou à la manette, un appui prend ou pose toute la pile d'un coup (pas de jauge d'appui long pour diviser une pile au doigt, ni de raccourci de transfert rapide par bouton Y/Triangle dans les conteneurs) ; les boutons de la manette suivent la disposition standard du navigateur sans écran de remappage individuel des boutons de manette ni vibrations.
 - Testé sur Chrome uniquement.
 
