@@ -115,6 +115,7 @@ async function joinWithCode(page, name, code) {
 }
 
 async function lookAtBlock(page, bx, by, bz) {
+  await page.bringToFront();
   await ev(page, (x, y, z) => {
     const g = window.__game;
     const p = g.player;
@@ -149,8 +150,10 @@ async function stopServer(srv, dir) {
 }
 
 async function tpPlayer(hostPage, targetName, x, y, z, targetPage = null) {
+  await hostPage.bringToFront();
   await ev(hostPage, (cmd) => window.__game.chat(cmd), `/tp ${targetName} ${x} ${y} ${z}`);
   if (targetPage) {
+    await targetPage.bringToFront();
     await targetPage.waitForFunction(
       (tx, tz) => Math.hypot(window.__game.player.x - tx, window.__game.player.z - tz) < 0.5,
       { timeout: 10000 },
@@ -161,6 +164,7 @@ async function tpPlayer(hostPage, targetName, x, y, z, targetPage = null) {
 }
 
 async function tpSelf(page, x, y, z) {
+  await page.bringToFront();
   await ev(page, (cmd) => window.__game.chat(cmd), `/tp ${x} ${y} ${z}`);
   await page.waitForFunction(
     (tx, tz) => Math.hypot(window.__game.player.x - tx, window.__game.player.z - tz) < 0.5,
@@ -171,6 +175,7 @@ async function tpSelf(page, x, y, z) {
 }
 
 async function lookAtEntity(page, remoteId) {
+  await page.bringToFront();
   await ev(page, (rid) => {
     const g = window.__game;
     const p = g.player;
