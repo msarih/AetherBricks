@@ -242,7 +242,7 @@ async function openIsolatedPage(context, url, errors, { waitTitle = true } = {})
         });
         ws.on('close', (code) => resolve({ code, errMsg }));
       });
-      check('signal WebRTC refusé avant authentification', res.code === 1008 && res.errMsg.length > 0, JSON.stringify(res));
+      check('signal WebRTC refusé avant authentification', res.code === 1008 && res.errMsg.includes('Authentification requise'), JSON.stringify(res));
     });
 
     await section('J3d. Audio et vidéo WebRTC directs (micro, sourdine, caméra en vignette)', async () => {

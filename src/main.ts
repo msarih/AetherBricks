@@ -215,27 +215,7 @@ async function main(): Promise<void> {
     async quitToTitle(): Promise<void> {
       if (game) await game.save();
       closeGame();
-      const initialInviteCode = extractInviteCodeFromUrl(window.location.href);
-  if (initialInviteCode) {
-    ui.showTitle('multiplayer', '', initialInviteCode);
-  } else {
-    ui.showTitle();
-  }
-
-  // Liens profonds Android (`sarihbricks://rejoindre/<code>`)
-  const handleDeepLink = (rawUrl: string | null | undefined): void => {
-    if (!rawUrl) return;
-    const code = extractInviteCodeFromUrl(rawUrl);
-    if (!code) return;
-    closeGame();
-    ui.showTitle('multiplayer', '', code);
-  };
-  App.getLaunchUrl()
-    .then((res) => handleDeepLink(res?.url))
-    .catch(() => undefined);
-  App.addListener('appUrlOpen', (ev) => {
-    handleDeepLink(ev?.url);
-  }).catch(() => undefined);
+      ui.showTitle();
     },
     settingsChanged(): void {
       sfx.volume = settings.soundVolume;
