@@ -3520,8 +3520,14 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
 
     if (archiveBuf && this.storage) {
       await replaceWorldFromArchive(this.storage, this.info.id, archiveBuf);
+      const keys = await this.storage.chunkKeys(this.info.id);
+      this.entities.length = 0;
+      this.entities.push(this.player);
+      this.homes.clear();
+      this.chunks.setRemoteMode(false, keys);
+    } else {
+      this.chunks.setRemoteMode(false);
     }
-    this.chunks.setRemoteMode(false);
     this.ui.addMessage('Partie fermée aux amis. Le monde solo est à jour.');
   }
 
