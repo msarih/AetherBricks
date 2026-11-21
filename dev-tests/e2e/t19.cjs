@@ -283,6 +283,7 @@ async function lookAtEntity(page, remoteId) {
         check('A et B restent synchronisés sur la position de la créature', distMove < 1.5, `dist=${distMove.toFixed(2)}`);
 
         // A frappe et tue l'animal (12 coups espacés de 11 ticks pour passer l'invulnérabilité)
+        let lastMobPos = { x: mobA.x, y: mobA.y, z: mobA.z };
         for (let k = 0; k < 14; k++) {
           const alive = await ev(pageA, (id) => {
             const m = window.__game.entities.find((e) => e.remoteId === id);
@@ -294,6 +295,7 @@ async function lookAtEntity(page, remoteId) {
             return m ? { x: m.x, y: m.y, z: m.z } : null;
           }, mobA.id);
           if (mPos) {
+            lastMobPos = mPos;
             await ev(pageA, (cmd) => window.__game.chat(cmd), `/tp ${mPos.x - 1.5} ${mPos.y} ${mPos.z}`);
             await ticks(pageA, 3);
           }
@@ -305,14 +307,27 @@ async function lookAtEntity(page, remoteId) {
         await ticks(pageB, 22);
 
         const stillOnB = await ev(pageB, (id) => window.__game.entities.some((e) => e.remoteId === id && e.deathTime === 0), mobA.id);
-        const lootOrPicked = await ev(pageB, () => {
-          const hasItem = window.__game.entities.some((e) => e.kind === 'item');
-          const invHas = window.__game.player.inventory.slots.some((s) => s !== null);
-          return hasItem || invHas;
-        });
-        const lootOnA = await ev(pageA, () => window.__game.entities.some((e) => e.kind === 'item') || window.__game.player.inventory.slots.some((s) => s !== null));
+        const lootTable = {
+          pig: ['porkchop'],
+          cow: ['beef', 'leather'],
+          sheep: ['mutton', 'wool_white'],
+          chicken: ['chicken', 'feather'],
+        };
+        const expectedLootKeys = lootTable[mobA.mobKind] ?? ['porkchop', 'beef', 'mutton', 'chicken'];
+        const checkLootOn = async (page) =>
+          ev(
+            page,
+            ({ keys, pos }) => {
+              const ids = keys.map((k) => window.__game.itemsByName?.get(k)?.id ?? window.__game.blocksByName?.get(k)?.id).filter(Boolean);
+              const items = window.__game.entities.filter((e) => e.kind === 'item');
+              return items.some((e) => (ids.length === 0 || ids.includes(e.itemId)) && Math.hypot(e.x - pos.x, e.z - pos.z) < 4);
+            },
+            { keys: expectedLootKeys, pos: lastMobPos },
+          );
+        const lootOnA = await checkLootOn(pageA);
+        const lootOnB = await checkLootOn(pageB);
         check('A tue la créature : elle disparaît chez B', !stillOnB);
-        check('le butin de la créature tombe au sol chez les deux', lootOrPicked || lootOnA);
+        check('le butin de la créature tombe au sol chez les deux', lootOnA && lootOnB, `A=${lootOnA}, B=${lootOnB}`);
       }
     });
 
@@ -370,8 +385,33 @@ async function lookAtEntity(page, remoteId) {
         await pageA.keyboard.press('KeyQ');
         await ticks(pageA, 8);
         await ticks(pageB, 8);
-        const droppedSeenByB = await ev(pageB, (id) => window.__game.entities.some((e) => e.kind === 'item' && e.itemId === id), hadItemA);
-        check('objet lâché par un joueur vu au sol par l’autre', droppedSeenByB);
+        const droppedSeenByB = await ev(pageB, (id) => window.__game.entities.find((e) => e.kind === 'item' && e.itemId === id)?.remoteId ?? 0, hadItemA);
+        check('objet lâché par un joueur vu au sol par l’autre', droppedSeenByB > 0);
+
+        // Double pickupItem envoyé directement par WebSocket pour le même objet
+        if (droppedSeenByB > 0) {
+          const dropPos = await ev(pageB, (id) => {
+            const e = window.__game.entities.find((x) => x.remoteId === id);
+            return e ? { x: e.x, y: e.y, z: e.z } : null;
+          }, droppedSeenByB);
+          await tpSelf(pageA, 24.5, 4, 24.5);
+          if (dropPos) {
+            await tpPlayer(pageA, 'JoueurB', dropPos.x + 1.5, dropPos.y, dropPos.z);
+          }
+          await ticks(pageA, 38);
+          await ticks(pageB, 38);
+          const countBeforeDup = await ev(pageB, (id) => window.__game.player.inventory.slots.reduce((n, s) => n + (s && s.id === id ? s.count : 0), 0), hadItemA);
+          await ev(pageB, (entityId) => {
+            const net = window.__game.net;
+            if (net && typeof net.sendPickupItem === 'function') {
+              net.sendPickupItem(entityId);
+              net.sendPickupItem(entityId);
+            }
+          }, droppedSeenByB);
+          await ticks(pageB, 6);
+          const countAfterDup = await ev(pageB, (id) => window.__game.player.inventory.slots.reduce((n, s) => n + (s && s.id === id ? s.count : 0), 0), hadItemA);
+          check('double pickupItem WebSocket sur le même objet : un seul exemplaire reçu', countAfterDup === countBeforeDup + 1, `before=${countBeforeDup}, after=${countAfterDup}`);
+        }
       }
     });
 
@@ -470,11 +510,16 @@ async function lookAtEntity(page, remoteId) {
       check('B prend l’objet du coffre : il disparaît chez A', chestSlot0OnA === null);
 
       // B remet ses cobbles dans le coffre pour tester la persistance après redémarrage
-      await ev(pageB, () => {
+      await pageB.waitForFunction(
+        (cobbleId) => window.__game.menu?.slots.some((s) => (s.group === 'hotbar' || s.group === 'main') && s.stack?.id === cobbleId),
+        { timeout: 5000 },
+        ids.cobble,
+      );
+      await ev(pageB, (cobbleId) => {
         const m = window.__game.menu;
-        const idx = m.slots.findIndex((s) => (s.group === 'hotbar' || s.group === 'main') && s.stack);
+        const idx = m.slots.findIndex((s) => (s.group === 'hotbar' || s.group === 'main') && s.stack?.id === cobbleId);
         if (idx >= 0) m.click(idx, 0, true);
-      });
+      }, ids.cobble);
       await pageB.waitForFunction(() => Boolean(window.__game.menu?.slots[0]?.stack), { timeout: 5000 });
       await pageB.keyboard.press('Escape');
       await pageA.keyboard.press('Escape');
@@ -573,7 +618,12 @@ async function lookAtEntity(page, remoteId) {
 
     await section('J4f. Redémarrage serveur (persistance créatures/coffre/fourneau) et retour au solo', async () => {
       // Sauvegarder une référence du nombre de créatures avant redémarrage
-      const countBefore = await ev(pageB, () => window.__game.entities.filter((e) => e.kind === 'mob').length);
+      const mobsBefore = await ev(pageB, () =>
+        window.__game.entities
+          .filter((e) => e.kind === 'mob')
+          .map((e) => ({ mobKind: e.mobKind, x: e.x, y: e.y, z: e.z })),
+      );
+      const countBefore = mobsBefore.length;
 
       // Redémarrer le serveur proprement (SIGINT déclenche saveAll())
       srv.proc.kill('SIGINT');
@@ -601,8 +651,20 @@ async function lookAtEntity(page, remoteId) {
       await pageB2.waitForFunction('window.__game && window.__game.ready === true', { timeout: 60000 });
       await ticks(pageB2, 10);
 
-      const countAfter = await ev(pageB2, () => window.__game.entities.filter((e) => e.kind === 'mob').length);
-      check('créatures retrouvées après redémarrage serveur', countBefore === 0 || countAfter > 0, `before=${countBefore}, after=${countAfter}`);
+      const mobsAfter = await ev(pageB2, () =>
+        window.__game.entities
+          .filter((e) => e.kind === 'mob')
+          .map((e) => ({ mobKind: e.mobKind, x: e.x, y: e.y, z: e.z })),
+      );
+      const countAfter = mobsAfter.length;
+      const matchedMobs = mobsBefore.filter((b) =>
+        mobsAfter.some((a) => a.mobKind === b.mobKind && Math.hypot(a.x - b.x, a.z - b.z) < 6),
+      ).length;
+      check(
+        'créatures retrouvées après redémarrage serveur',
+        countBefore > 0 && matchedMobs >= Math.min(3, countBefore),
+        `before=${countBefore}, after=${countAfter}, matched=${matchedMobs}`,
+      );
 
       // Vérifier le coffre (32, 4, 32) et le fourneau (33, 4, 32) après redémarrage
       await ev(pageB2, (cmd) => window.__game.chat(cmd), '/tp 30.5 4 34.5');
