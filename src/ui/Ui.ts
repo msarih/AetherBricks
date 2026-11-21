@@ -110,8 +110,8 @@ export class GameUi implements UiApi {
 
   // ------------------------------------------------------------------ écrans
 
-  showTitle(page: TitlePage = 'main', error?: string): void {
-    this.openTitle(page, error);
+  showTitle(page: TitlePage = 'main', error?: string, prefillCode = ''): void {
+    this.openTitle(page, error, prefillCode);
   }
 
   showLoading(title: string, detail: string, progress: number): void {
@@ -212,7 +212,7 @@ export class GameUi implements UiApi {
 
   // ------------------------------------------------------------------ interne
 
-  private openTitle(page: TitlePage, error?: string): void {
+  private openTitle(page: TitlePage, error?: string, prefillCode = ''): void {
     let message = error ?? '';
     if (message) {
       this.lastError = message;
@@ -221,7 +221,7 @@ export class GameUi implements UiApi {
       // l'application rappelle showTitle() juste après un échec : le message ne doit pas disparaître
       message = this.lastError;
     }
-    this.setScreen(new TitleMenu(this.ctx, page, message));
+    this.setScreen(new TitleMenu(this.ctx, page, message, prefillCode));
   }
 
   private fail(message: string): void {

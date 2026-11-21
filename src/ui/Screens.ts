@@ -296,6 +296,69 @@ export class PauseScreen implements Screen {
           204,
         );
         this.buttons.push(copyBtn);
+
+        if (game.inviteUrl) {
+          const urlEl = el('div', 'mc-world-meta', box, game.inviteUrl);
+          urlEl.dataset.mc = 'invite-url';
+          urlEl.style.userSelect = 'text';
+          urlEl.style.wordBreak = 'break-all';
+          const copyLinkBtn = sized(
+            button(
+              host,
+              'Copier le lien d’invitation',
+              () => {
+                const link = game.inviteUrl ?? '';
+                navigator.clipboard?.writeText(link).catch(() => undefined);
+                setButtonLabel(copyLinkBtn, 'Lien copié !');
+                window.setTimeout(() => setButtonLabel(copyLinkBtn, 'Copier le lien d’invitation'), 1500);
+              },
+              'copy-link',
+              this.el,
+            ),
+            204,
+          );
+          this.buttons.push(copyLinkBtn);
+        }
+
+        if (game.tailscaleUrl) {
+          const tsUrlEl = el('div', 'mc-world-meta', box, `Lien Tailscale : ${game.tailscaleUrl}`);
+          tsUrlEl.dataset.mc = 'invite-url-tailscale';
+          tsUrlEl.style.userSelect = 'text';
+          tsUrlEl.style.wordBreak = 'break-all';
+          const copyTsLinkBtn = sized(
+            button(
+              host,
+              'Copier le lien Tailscale',
+              () => {
+                const link = game.tailscaleUrl ?? '';
+                navigator.clipboard?.writeText(link).catch(() => undefined);
+                setButtonLabel(copyTsLinkBtn, 'Lien Tailscale copié !');
+                window.setTimeout(() => setButtonLabel(copyTsLinkBtn, 'Copier le lien Tailscale'), 1500);
+              },
+              'copy-link-tailscale',
+              this.el,
+            ),
+            204,
+          );
+          this.buttons.push(copyTsLinkBtn);
+        }
+
+        if (game.inviteUrl && typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+          const shareBtn = sized(
+            button(
+              host,
+              'Partager le lien',
+              () => {
+                const url = game.tailscaleUrl ?? game.inviteUrl ?? '';
+                navigator.share({ title: 'SarihBricks 3D', text: 'Rejoins ma partie SarihBricks !', url }).catch(() => undefined);
+              },
+              'share-link',
+              this.el,
+            ),
+            204,
+          );
+          this.buttons.push(shareBtn);
+        }
       }
       if (game.closeToFriends) {
         const closeBtn = sized(button(host, 'Fermer aux amis', () => this.closeToFriends(closeBtn), 'close-friends', this.el), 204);
@@ -476,6 +539,7 @@ const KEYBIND_ROWS: ReadonlyArray<readonly [KeybindAction, string]> = [
   ['chat', 'Chat'],
   ['command', 'Commande'],
   ['perspective', 'Vue à la 3ᵉ personne'],
+  ['pushToTalk', 'Appuyer pour parler (micro)'],
 ];
 
 const FIXED_CONTROLS: ReadonlyArray<readonly [string, string]> = [
@@ -600,6 +664,8 @@ export class OptionsScreen implements Screen {
     this.toggle(grid, 'invertY', 'Inverser la souris');
     this.range(grid, 'soundVolume', 0, 1, 0.05, percent('Sons'));
     this.range(grid, 'musicVolume', 0, 1, 0.05, percent('Musique'));
+    this.range(grid, 'voiceVolume', 0, 1, 0.05, percent('Volume des voix'));
+    this.toggle(grid, 'pushToTalk', 'Appuyer pour parler');
     this.toggle(grid, 'fancyGraphics', 'Graphismes', 'détaillés', 'rapides');
     this.toggle(grid, 'smoothLighting', 'Éclairage adouci');
     this.toggle(grid, 'clouds', 'Nuages');

@@ -36,7 +36,8 @@ import { Particles, type ParticleKind, type ParticleWorld } from '../render/Part
 import { Selection } from '../render/Selection';
 import { SignRenderer } from '../render/SignRenderer';
 import { Sky, type SkyEnvironment } from '../render/Sky';
-import type { TradeView, UiApi, UiGame } from '../ui/UiApi';
+import type { TradeView, UiApi, UiGame, VoiceStatusView } from '../ui/UiApi';
+import { VoiceVideoManager } from '../net/VoiceVideo';
 import { BLOCKS, BLOCK_REPLACEABLE, BLOCK_SHAPE, BLOCK_SOLID, FACING_DX, FACING_DZ, PISTON_DX, PISTON_DY, PISTON_DZ, SHAPE, isLeaves, isLog } from '../world/Blocks';
 import { blockDrops } from '../world/Drops';
 import type { Chunk } from '../world/Chunk';
@@ -304,9 +305,14 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
   private onDisconnected: ((reason: string) => void) | null = null;
   isHost = false;
   inviteCode: string | null = null;
+  inviteUrl: string | null = null;
   tailscaleCode: string | null = null;
+  tailscaleUrl: string | null = null;
   private hostToken: string | null = null;
   private hostServerUrl: string | null = null;
+  private voice: VoiceVideoManager | null = null;
+  private touchPttDown = false;
+  private padPttDown = false;
   private readonly pending: Entity[] = [];
   /** Chunk où chaque entité sauvegardable a été vue pour la dernière fois. */
   private readonly homes = new Map<Entity, number>();
@@ -493,6 +499,9 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       this.remoteId = o.welcome.id;
       this.isHost = o.welcome.isHost;
       this.inviteCode = o.welcome.inviteCode ?? null;
+      this.inviteUrl = o.welcome.inviteUrl ?? null;
+      this.tailscaleCode = o.welcome.tailscaleCode ?? null;
+      this.tailscaleUrl = o.welcome.tailscaleUrl ?? null;
       this.time = o.welcome.time;
       this.raining = o.welcome.raining;
       this.thundering = o.welcome.thundering;
@@ -575,6 +584,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     this.sky.setCloudsVisible(s.clouds);
     this.sfx.volume = s.soundVolume;
     this.sfx.musicVolume = s.musicVolume;
+    this.voice?.applySettings();
     this.ui.update(0);
   }
 
@@ -650,6 +660,8 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     this.disposed = true;
     cancelAnimationFrame(this.raf);
     this.raf = 0;
+    this.voice?.dispose();
+    this.voice = null;
     this.net?.close();
     this.input.unlock();
     this.touchLook.dispose();
@@ -850,6 +862,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     const input = this.input;
     this.ticking = true;
     this.breakFx = 0;
+    this.syncPushToTalk();
 
     // --- commandes du joueur ---
     const free = !this.ui.modal && p.alive && !p.sleeping;
@@ -2167,6 +2180,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     dropPressed: boolean;
     inventoryPressed: boolean;
     pausePressed: boolean;
+    pttDown?: boolean;
     wheelDelta: number;
   }): void {
     if (!this.ready || this.disposed) return;
@@ -2175,6 +2189,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     this.padJumpDown = state.jumpDown;
     this.padSneakDown = state.sneakDown;
     this.padSprintDown = state.sprintDown;
+    this.padPttDown = Boolean(state.pttDown);
 
     if (this.ui.modal) {
       if (this.prevPadAttack) this.input.buttons[0] = false;
@@ -2212,6 +2227,52 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       const inv = this.player.inventory;
       inv.selected = (inv.selected + state.wheelDelta + HOTBAR_SIZE) % HOTBAR_SIZE;
     }
+    this.syncPushToTalk();
+  }
+
+  private syncPushToTalk(): void {
+    if (!this.voice) return;
+    const keyPtt = !this.ui.modal && this.input.isDown(this.settings.keybinds.pushToTalk);
+    void this.voice.setPushToTalkActive(keyPtt || this.touchPttDown || this.padPttDown);
+  }
+
+  get voiceStatus(): VoiceStatusView | null {
+    if (!this.voice) return null;
+    return {
+      secure: this.voice.isSecureContextAvailable(),
+      micEnabled: this.voice.micEnabled,
+      camEnabled: this.voice.camEnabled,
+      pttMode: this.settings.pushToTalk,
+      pttActive: this.voice.pttActive,
+      selfSpeaking: this.voice.selfSpeaking,
+      videosHidden: this.voice.videosHidden,
+      error: this.voice.lastError,
+      peers: this.voice.getPeerViews(),
+    };
+  }
+
+  toggleMic(): Promise<boolean> {
+    if (!this.voice) return Promise.resolve(false);
+    return this.voice.toggleMic();
+  }
+
+  toggleCam(): Promise<boolean> {
+    if (!this.voice) return Promise.resolve(false);
+    return this.voice.toggleCam();
+  }
+
+  toggleVideosHidden(): boolean {
+    if (!this.voice) return false;
+    return this.voice.toggleVideosHidden();
+  }
+
+  setPeerMuted(id: number, muted: boolean): void {
+    this.voice?.setPeerMuted(id, muted);
+  }
+
+  setPushToTalkActive(active: boolean): void {
+    this.touchPttDown = active;
+    this.syncPushToTalk();
   }
 
   get stats(): Stats {
@@ -2997,6 +3058,10 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
   // ------------------------------------------------------------------ multijoueur
 
   private attachNetHandlers(client: MultiplayerClient): void {
+    this.voice?.dispose();
+    this.voice = new VoiceVideoManager(this.remoteId, client, this.settings, () => {
+      this.ui.update(0);
+    });
     client.setHandlers({
       onChunk: (cx, cz, blocks, meta, biomes, tints) => {
         this.chunks.receiveRemoteChunk(cx, cz, blocks, meta, biomes, tints);
@@ -3022,6 +3087,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
             if (idx >= 0) this.entities.splice(idx, 1);
           }
         }
+        this.voice?.syncPeers(list);
       },
       onPlayerLeave: (id) => {
         const rp = this.remotePlayers.get(id);
@@ -3030,6 +3096,13 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
           const idx = this.entities.indexOf(rp);
           if (idx >= 0) this.entities.splice(idx, 1);
         }
+        this.voice?.removePeer(id);
+      },
+      onRtcSignal: (from, kind, payload) => {
+        void this.voice?.handleSignal(from, kind, payload);
+      },
+      onRtcState: (id, mic, cam, speaking) => {
+        this.voice?.handleRemoteState(id, mic, cam, speaking);
       },
       onChat: (text) => {
         this.ui.addMessage(text);
@@ -3142,7 +3215,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     return match ? match.password : null;
   }
 
-  async openToFriends(serverPassword?: string): Promise<{ inviteCode: string; tailscaleCode?: string | null }> {
+  async openToFriends(serverPassword?: string): Promise<{ inviteCode: string; inviteUrl?: string | null; tailscaleCode?: string | null; tailscaleUrl?: string | null }> {
     if (this.isRemote || !this.storage) {
       throw new Error('Impossible d’ouvrir ce monde aux amis.');
     }
@@ -3171,7 +3244,9 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       ok?: boolean;
       error?: string;
       inviteCode?: string;
+      inviteUrl?: string | null;
       tailscaleCode?: string | null;
+      tailscaleUrl?: string | null;
       hostToken?: string;
     };
     if (!res.ok || !json.ok || !json.inviteCode || !json.hostToken) {
@@ -3186,14 +3261,21 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     this.remoteId = welcome.id;
     this.isHost = true;
     this.inviteCode = json.inviteCode;
+    this.inviteUrl = json.inviteUrl ?? null;
     this.tailscaleCode = json.tailscaleCode ?? null;
+    this.tailscaleUrl = json.tailscaleUrl ?? null;
     this.hostToken = json.hostToken;
     this.hostServerUrl = serverUrl;
     this.requestedChunks.clear();
     this.chunks.setRemoteMode(true);
     this.attachNetHandlers(client);
     this.ui.addMessage(`Monde ouvert aux amis ! Code : ${json.inviteCode}`);
-    return { inviteCode: json.inviteCode, tailscaleCode: json.tailscaleCode ?? null };
+    return {
+      inviteCode: json.inviteCode,
+      inviteUrl: this.inviteUrl,
+      tailscaleCode: this.tailscaleCode,
+      tailscaleUrl: this.tailscaleUrl,
+    };
   }
 
   async closeToFriends(): Promise<void> {
@@ -3203,9 +3285,13 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
 
     this.isHost = false;
     this.inviteCode = null;
+    this.inviteUrl = null;
     this.tailscaleCode = null;
+    this.tailscaleUrl = null;
     this.hostToken = null;
     this.hostServerUrl = null;
+    this.voice?.dispose();
+    this.voice = null;
 
     let archiveBuf: ArrayBuffer | null = null;
     try {

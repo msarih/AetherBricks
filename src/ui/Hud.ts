@@ -4,6 +4,7 @@
  * `update()` est appelée à chaque image : le DOM n'est modifié que lorsqu'une valeur change.
  */
 import { HOTBAR_SIZE } from '../game/Inventory';
+import { formatKeyCode } from '../world/Storage';
 import { I } from '../world/Ids';
 import { itemLabel } from '../world/Items';
 import { potionLabel } from '../world/Potions';
@@ -75,6 +76,25 @@ export class Hud {
   private readonly toastDetail: HTMLDivElement;
   private readonly toastQueue: Array<{ title: string; detail: string; iconId: number }> = [];
   private toastTimer = 0;
+
+  private readonly rtcPanel: HTMLDivElement;
+  private readonly rtcMicBtn: HTMLButtonElement;
+  private readonly rtcPttBtn: HTMLButtonElement;
+  private readonly rtcCamBtn: HTMLButtonElement;
+  private readonly rtcHideBtn: HTMLButtonElement;
+  private readonly rtcAlert: HTMLDivElement;
+  private readonly rtcSelf: HTMLDivElement;
+  private readonly rtcPeers: HTMLDivElement;
+  private readonly rtcPeerDom = new Map<
+    number,
+    {
+      card: HTMLDivElement;
+      nameEl: HTMLSpanElement;
+      speakEl: HTMLSpanElement;
+      muteBtn: HTMLButtonElement;
+      videoEl: HTMLVideoElement;
+    }
+  >();
 
   private readonly lines: ChatLine[] = [];
   private visible = true;
@@ -235,6 +255,64 @@ export class Hud {
     };
     this.touchSneak.addEventListener('touchstart', onSneak, { passive: false });
     this.touchSneak.addEventListener('click', onSneak);
+
+    // Panneau audio / vidéo multijoueur (coin haut droit)
+    this.rtcPanel = el('div', 'mc-rtc-panel', this.main);
+    this.rtcPanel.dataset.mc = 'rtc-panel';
+    const rtcBar = el('div', 'mc-rtc-bar', this.rtcPanel);
+    rtcBar.dataset.mc = 'rtc-bar';
+    const stopEvt = (e: Event): void => {
+      e.stopPropagation();
+    };
+    this.rtcPanel.addEventListener('mousedown', stopEvt);
+    this.rtcPanel.addEventListener('touchstart', stopEvt, { passive: true });
+
+    const makeRtcBtn = (label: string, id: string, title: string, onClick: () => void): HTMLButtonElement => {
+      const b = el('button', 'mc-rtc-btn', rtcBar, label);
+      b.type = 'button';
+      b.dataset.mc = id;
+      b.title = title;
+      b.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.host.click();
+        onClick();
+      });
+      return b;
+    };
+    this.rtcMicBtn = makeRtcBtn('🎤 Micro', 'rtc-mic', 'Activer ou couper le micro', () => {
+      void this.host.game?.toggleMic?.();
+    });
+    this.rtcPttBtn = makeRtcBtn('🎙 Parler', 'rtc-ptt', 'Maintenir pour parler', () => undefined);
+    const pttStart = (e: Event): void => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.host.game?.setPushToTalkActive?.(true);
+    };
+    const pttEnd = (e: Event): void => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.host.game?.setPushToTalkActive?.(false);
+    };
+    this.rtcPttBtn.addEventListener('mousedown', pttStart);
+    this.rtcPttBtn.addEventListener('mouseup', pttEnd);
+    this.rtcPttBtn.addEventListener('mouseleave', pttEnd);
+    this.rtcPttBtn.addEventListener('touchstart', pttStart, { passive: false });
+    this.rtcPttBtn.addEventListener('touchend', pttEnd, { passive: false });
+    this.rtcPttBtn.addEventListener('touchcancel', pttEnd, { passive: false });
+
+    this.rtcCamBtn = makeRtcBtn('📷 Caméra', 'rtc-cam', 'Activer ou couper la caméra', () => {
+      void this.host.game?.toggleCam?.();
+    });
+    this.rtcHideBtn = makeRtcBtn('👁 Masquer', 'rtc-toggle-videos', 'Masquer ou afficher les vignettes vidéo', () => {
+      this.host.game?.toggleVideosHidden?.();
+    });
+
+    this.rtcAlert = el('div', 'mc-rtc-alert', this.rtcPanel);
+    this.rtcSelf = el('div', 'mc-rtc-self', this.rtcPanel);
+    this.rtcSelf.dataset.mc = 'rtc-speaking-self';
+    this.rtcPeers = el('div', 'mc-rtc-peers', this.rtcPanel);
+    this.rtcPeers.dataset.mc = 'rtc-peers';
 
     this.fade = el('div', 'mc-ov mc-ov-fade', this.el);
   }
@@ -565,6 +643,122 @@ export class Hud {
       const sneaking = g.sneaking;
       if (this.changed('touchSneak', sneaking)) {
         this.touchSneak.classList.toggle('mc-active', sneaking);
+      }
+    }
+    this.updateVoice(g);
+  }
+
+  private updateVoice(g: UiGame): void {
+    const vs = g.isRemote ? g.voiceStatus ?? null : null;
+    if (!vs) {
+      if (this.changed('rtcVisible', false)) {
+        this.rtcPanel.style.display = 'none';
+      }
+      return;
+    }
+    if (this.changed('rtcVisible', true)) {
+      this.rtcPanel.style.display = 'flex';
+    }
+
+    const pttKeyLabel = formatKeyCode(this.host.settings.keybinds.pushToTalk, this.host.settings.keyboardLayout);
+    const micText = vs.pttMode
+      ? vs.micEnabled
+        ? `🎤 PTT (${pttKeyLabel})`
+        : `🎤 Micro coupé`
+      : vs.micEnabled
+        ? '🎤 Micro actif'
+        : '🎤 Micro coupé';
+    if (this.changed('rtcMicText', micText)) this.rtcMicBtn.textContent = micText;
+    if (this.changed('rtcMicOn', vs.micEnabled)) this.rtcMicBtn.classList.toggle('mc-rtc-on', vs.micEnabled);
+    if (this.changed('rtcMicDis', !vs.secure)) this.rtcMicBtn.disabled = !vs.secure;
+
+    if (this.changed('rtcPttShow', vs.pttMode)) this.rtcPttBtn.style.display = vs.pttMode ? 'inline-flex' : 'none';
+    if (this.changed('rtcPttOn', vs.pttActive)) this.rtcPttBtn.classList.toggle('mc-rtc-on', vs.pttActive);
+    if (this.changed('rtcPttDis', !vs.secure)) this.rtcPttBtn.disabled = !vs.secure;
+
+    const camText = vs.camEnabled ? '📷 Caméra active' : '📷 Caméra';
+    if (this.changed('rtcCamText', camText)) this.rtcCamBtn.textContent = camText;
+    if (this.changed('rtcCamOn', vs.camEnabled)) this.rtcCamBtn.classList.toggle('mc-rtc-on', vs.camEnabled);
+    if (this.changed('rtcCamDis', !vs.secure)) this.rtcCamBtn.disabled = !vs.secure;
+
+    const hideText = vs.videosHidden ? '👁 Afficher vidéos' : '👁 Masquer vidéos';
+    if (this.changed('rtcHideText', hideText)) this.rtcHideBtn.textContent = hideText;
+
+    const alertText = !vs.secure
+      ? 'Audio et vidéo indisponibles ici : utilisez l’application Android ou le lien Tailscale'
+      : vs.error;
+    if (this.changed('rtcAlert', `${vs.secure ? 'e' : 'i'}:${alertText}`)) {
+      this.rtcAlert.textContent = alertText;
+      this.rtcAlert.style.display = alertText ? 'block' : 'none';
+      this.rtcAlert.dataset.mc = !vs.secure ? 'rtc-insecure' : 'rtc-error';
+    }
+
+    const selfActive = vs.selfSpeaking || (vs.pttMode && vs.pttActive && vs.micEnabled);
+    if (this.changed('rtcSelf', selfActive)) {
+      this.rtcSelf.style.display = selfActive ? 'block' : 'none';
+      this.rtcSelf.textContent = '🔊 Vous parlez';
+    }
+
+    const seen = new Set<number>();
+    for (const peer of vs.peers) {
+      seen.add(peer.id);
+      let entry = this.rtcPeerDom.get(peer.id);
+      if (!entry) {
+        const card = el('div', 'mc-rtc-peer', this.rtcPeers);
+        card.dataset.mc = `rtc-peer-${peer.name}`;
+        const row = el('div', 'mc-rtc-peer-row', card);
+        const nameEl = el('span', 'mc-rtc-peer-name', row, peer.name);
+        const speakEl = el('span', 'mc-rtc-speak-badge', row, '🔊');
+        speakEl.dataset.mc = `rtc-speaking-${peer.name}`;
+        const muteBtn = el('button', 'mc-rtc-mute-btn', row, '🔊');
+        muteBtn.type = 'button';
+        muteBtn.dataset.mc = `rtc-mute-${peer.name}`;
+        muteBtn.title = 'Couper ou rétablir le son de ce joueur';
+        const peerId = peer.id;
+        muteBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const cur = this.host.game?.voiceStatus?.peers.find((p) => p.id === peerId);
+          this.host.game?.setPeerMuted?.(peerId, !(cur?.mutedByMe ?? false));
+        });
+        const videoEl = document.createElement('video');
+        videoEl.className = 'mc-rtc-video';
+        videoEl.autoplay = true;
+        videoEl.playsInline = true;
+        videoEl.muted = true;
+        videoEl.dataset.mc = `rtc-video-${peer.name}`;
+        card.appendChild(videoEl);
+        entry = { card, nameEl, speakEl, muteBtn, videoEl };
+        this.rtcPeerDom.set(peer.id, entry);
+      }
+
+      if (entry.nameEl.textContent !== peer.name) {
+        entry.nameEl.textContent = peer.name;
+        entry.card.dataset.mc = `rtc-peer-${peer.name}`;
+        entry.speakEl.dataset.mc = `rtc-speaking-${peer.name}`;
+        entry.muteBtn.dataset.mc = `rtc-mute-${peer.name}`;
+        entry.videoEl.dataset.mc = `rtc-video-${peer.name}`;
+      }
+      entry.card.classList.toggle('mc-rtc-speaking', peer.speaking);
+      entry.speakEl.style.display = peer.speaking ? 'inline' : 'none';
+      entry.muteBtn.textContent = peer.mutedByMe ? '🔇' : '🔊';
+      entry.muteBtn.classList.toggle('mc-rtc-muted', peer.mutedByMe);
+
+      const showVideo = Boolean(peer.videoStream && !vs.videosHidden);
+      entry.videoEl.style.display = showVideo ? 'block' : 'none';
+      if (showVideo && entry.videoEl.srcObject !== peer.videoStream) {
+        entry.videoEl.srcObject = peer.videoStream;
+        entry.videoEl.play().catch(() => undefined);
+      } else if (!showVideo && entry.videoEl.srcObject !== null) {
+        entry.videoEl.srcObject = null;
+      }
+    }
+
+    for (const [id, entry] of this.rtcPeerDom) {
+      if (!seen.has(id)) {
+        entry.videoEl.srcObject = null;
+        entry.card.remove();
+        this.rtcPeerDom.delete(id);
       }
     }
   }

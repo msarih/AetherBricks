@@ -73,6 +73,7 @@ export interface GamepadHost {
     dropPressed: boolean;
     inventoryPressed: boolean;
     pausePressed: boolean;
+    pttDown?: boolean;
     wheelDelta: number;
   }): void;
 }
@@ -225,6 +226,7 @@ export class GamepadController {
       dropPressed: justPressed[2],
       inventoryPressed: justPressed[3],
       pausePressed: justPressed[9],
+      pttDown: nowButtons[11],
       wheelDelta,
     });
   }

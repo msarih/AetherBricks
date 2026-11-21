@@ -1,10 +1,12 @@
 /**
  * Point d'entrée : l'application autour du jeu (menu principal, mondes, réglages).
  */
+import { App } from '@capacitor/app';
 import * as THREE from 'three';
 import { Sfx } from './audio/Sfx';
 import { Game } from './game/Game';
 import { MultiplayerClient } from './net/Client';
+import { extractInviteCodeFromUrl } from './net/InviteCode';
 import { saveRecentServer } from './net/RecentServers';
 import { GamepadController } from './player/Gamepad';
 import { initTouchDetection, isTouchActive } from './player/Touch';
@@ -213,7 +215,27 @@ async function main(): Promise<void> {
     async quitToTitle(): Promise<void> {
       if (game) await game.save();
       closeGame();
-      ui.showTitle();
+      const initialInviteCode = extractInviteCodeFromUrl(window.location.href);
+  if (initialInviteCode) {
+    ui.showTitle('multiplayer', '', initialInviteCode);
+  } else {
+    ui.showTitle();
+  }
+
+  // Liens profonds Android (`sarihbricks://rejoindre/<code>`)
+  const handleDeepLink = (rawUrl: string | null | undefined): void => {
+    if (!rawUrl) return;
+    const code = extractInviteCodeFromUrl(rawUrl);
+    if (!code) return;
+    closeGame();
+    ui.showTitle('multiplayer', '', code);
+  };
+  App.getLaunchUrl()
+    .then((res) => handleDeepLink(res?.url))
+    .catch(() => undefined);
+  App.addListener('appUrlOpen', (ev) => {
+    handleDeepLink(ev?.url);
+  }).catch(() => undefined);
     },
     settingsChanged(): void {
       sfx.volume = settings.soundVolume;
@@ -236,7 +258,27 @@ async function main(): Promise<void> {
     notify: (text) => ui.notifyPlatform(text),
     setGamepadState: (state) => game?.applyGamepadState(state),
   });
-  ui.showTitle();
+  const initialInviteCode = extractInviteCodeFromUrl(window.location.href);
+  if (initialInviteCode) {
+    ui.showTitle('multiplayer', '', initialInviteCode);
+  } else {
+    ui.showTitle();
+  }
+
+  // Liens profonds Android (`sarihbricks://rejoindre/<code>`)
+  const handleDeepLink = (rawUrl: string | null | undefined): void => {
+    if (!rawUrl) return;
+    const code = extractInviteCodeFromUrl(rawUrl);
+    if (!code) return;
+    closeGame();
+    ui.showTitle('multiplayer', '', code);
+  };
+  App.getLaunchUrl()
+    .then((res) => handleDeepLink(res?.url))
+    .catch(() => undefined);
+  App.addListener('appUrlOpen', (ev) => {
+    handleDeepLink(ev?.url);
+  }).catch(() => undefined);
 
   // Enregistrement du service worker (PWA hors ligne, uniquement en production navigateur)
   const isNativeApp = Boolean((window as unknown as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor?.isNativePlatform?.());

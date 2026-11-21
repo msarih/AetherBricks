@@ -911,6 +911,7 @@ export interface Keybinds {
   chat: string;
   command: string;
   perspective: string;
+  pushToTalk: string;
 }
 
 export type KeybindAction = keyof Keybinds;
@@ -929,6 +930,7 @@ export const DEFAULT_KEYBINDS: Readonly<Keybinds> = Object.freeze({
   chat: 'KeyT',
   command: 'Slash',
   perspective: 'F5',
+  pushToTalk: 'KeyV',
 });
 
 /** Libellé lisible d'un code de touche physique (`event.code`) selon la disposition AZERTY ou QWERTY. */
@@ -1003,6 +1005,10 @@ export interface Settings {
   touchMode: TouchMode;
   /** Sensibilité de la manette (multiplicateur), 0.1..2, défaut 1. */
   gamepadSensitivity: number;
+  /** Volume des voix en multijoueur, 0..1, défaut 1. */
+  voiceVolume: number;
+  /** Mode micro « appuyer pour parler » (sinon micro ouvert quand activé), défaut false. */
+  pushToTalk: boolean;
   /** Raccourcis clavier (par code physique `event.code`). */
   keybinds: Keybinds;
 }
@@ -1027,6 +1033,8 @@ export const DEFAULT_SETTINGS: Settings = Object.freeze({
   keyboardLayout: 'azerty',
   touchMode: 'auto',
   gamepadSensitivity: 1,
+  voiceVolume: 1,
+  pushToTalk: false,
   keybinds: { ...DEFAULT_KEYBINDS },
 });
 
@@ -1075,6 +1083,8 @@ function sanitizeSettings(raw: unknown): Settings {
     keyboardLayout: layout,
     touchMode,
     gamepadSensitivity: boundedNumber(r.gamepadSensitivity, 0.1, 2, d.gamepadSensitivity),
+    voiceVolume: boundedNumber(r.voiceVolume, 0, 1, d.voiceVolume),
+    pushToTalk: flag(r.pushToTalk, d.pushToTalk),
     keybinds: sanitizeKeybinds(r.keybinds),
   };
 }
