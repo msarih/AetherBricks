@@ -30,7 +30,8 @@ import {
 } from '../src/net/Protocol';
 import { Entity, Living, type GameApi } from '../src/entity/Entity';
 import { IronGolem } from '../src/entity/Creatures';
-import { LEASH_BREAK, Mob, Villager, isLeashPost, isProfession } from '../src/entity/Mobs';
+import { LEASH_BREAK, Mob, Villager, isLeashPost } from '../src/entity/Mobs';
+import { isProfession } from '../src/entity/Trades';
 import { ItemEntity } from '../src/entity/Objects';
 import { createEntity } from '../src/entity/Registry';
 import { Spawner } from '../src/entity/Spawner';
