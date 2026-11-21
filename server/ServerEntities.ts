@@ -1,15 +1,15 @@
 /**
  * Adaptateurs d'entités et de lumière pour le serveur multijoueur autoritaire.
  */
-import { Entity, Living, type DamageCause, type GameApi, type PlayerLike } from '../entity/Entity';
-import type { EntityKind } from '../entity/EntityView';
-import type { Inventory } from '../game/Inventory';
-import type { RemoteEntityState } from '../net/Protocol';
-import { xpNeeded } from '../player/Player';
-import { BLOCK_LIGHT } from '../world/Blocks';
-import type { Chunk } from '../world/Chunk';
-import { CHUNK_HEIGHT, type GameMode } from '../world/Constants';
-import { makeStack, type ItemStack } from '../world/ItemStack';
+import { Entity, Living, type DamageCause, type GameApi, type PlayerLike } from '../src/entity/Entity';
+import type { EntityKind } from '../src/entity/EntityView';
+import type { Inventory } from '../src/game/Inventory';
+import type { RemoteEntityState } from '../src/net/Protocol';
+import { xpNeeded } from '../src/player/Player';
+import { BLOCK_EMIT } from '../src/world/Blocks';
+import type { Chunk } from '../src/world/Chunk';
+import { CHUNK_HEIGHT, type GameMode } from '../src/world/Constants';
+import { makeStack, type ItemStack } from '../src/world/ItemStack';
 
 /** Joueur côté serveur exposé comme PlayerLike aux créatures et objets au sol. */
 export class ServerPlayerEntity extends Living implements PlayerLike {
@@ -135,7 +135,7 @@ export function computeServerChunkLight(chunk: Chunk): void {
       for (let y = 0; y < CHUNK_HEIGHT; y++) {
         const idx = (y << 8) | col;
         const sky = y >= top ? 15 : 0;
-        const blk = BLOCK_LIGHT[blocks[idx]] & 15;
+        const blk = BLOCK_EMIT[blocks[idx]] & 15;
         light[idx] = (sky << 4) | blk;
       }
     }
