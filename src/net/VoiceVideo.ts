@@ -353,10 +353,15 @@ export class VoiceVideoManager {
       }
     };
 
-    pc.onconnectionstatechange = () => {
-      peer.connected = pc.connectionState === 'connected';
+    const updateConn = (): void => {
+      peer.connected =
+        pc.connectionState === 'connected' ||
+        pc.iceConnectionState === 'connected' ||
+        pc.iceConnectionState === 'completed';
       this.onChange();
     };
+    pc.onconnectionstatechange = updateConn;
+    pc.oniceconnectionstatechange = updateConn;
 
     pc.onnegotiationneeded = async () => {
       try {

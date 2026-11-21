@@ -1106,7 +1106,7 @@ function start(): void {
       const hostHeader = req.headers.host ?? `127.0.0.1:${port}`;
       const baseUrl = `${proto}://${hostHeader}`;
 
-      res.writeHead(valid ? 200 : 410, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       if (method === 'HEAD') {
         res.end();
         return;
