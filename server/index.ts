@@ -21,22 +21,69 @@ import {
   decodeChunkPacket,
   encodeChunkPacket,
   type ClientMessage,
+  type ContainerKind,
+  type RemoteEntityState,
   type RemotePlayerState,
   type SerializedSlot,
   type ServerMessage,
+  type TradeOfferInfo,
 } from '../src/net/Protocol';
+import { Entity, Living, type GameApi } from '../src/entity/Entity';
+import { IronGolem } from '../src/entity/Creatures';
+import { LEASH_BREAK, Mob, Villager, isLeashPost, isProfession } from '../src/entity/Mobs';
+import { ItemEntity } from '../src/entity/Objects';
+import { createEntity } from '../src/entity/Registry';
+import { Spawner } from '../src/entity/Spawner';
+import {
+  blockEntityItems,
+  getBrewingStand,
+  getChest,
+  getDispenser,
+  getFurnace,
+  getHopper,
+  tickBlockEntities,
+  type BrewingStandEntity,
+  type ChestEntity,
+  type DispenserEntity,
+  type FurnaceEntity,
+  type HopperEntity,
+} from '../src/game/BlockEntities';
+import {
+  BrewingMenu,
+  ChestMenu,
+  DispenserMenu,
+  FurnaceMenu,
+  HopperMenu,
+  Inventory,
+  type Menu,
+} from '../src/game/Inventory';
+import { attackDamage } from '../src/player/Player';
 import { BLOCKS, BLOCK_REPLACEABLE, BLOCK_SOLID, isFluid } from '../src/world/Blocks';
 import { Chunk } from '../src/world/Chunk';
-import { CHUNK_AREA, CHUNK_HEIGHT, DAY_TICKS, GEN_VERSION, TICKS_PER_SECOND, chunkKey, type GameMode, type WorldType } from '../src/world/Constants';
+import {
+  CHUNK_AREA,
+  CHUNK_HEIGHT,
+  DAY_TICKS,
+  GEN_VERSION,
+  TICKS_PER_SECOND,
+  chunkKey,
+  skyDayFactor,
+  type GameMode,
+  type WorldType,
+} from '../src/world/Constants';
 import { blockDrops } from '../src/world/Drops';
-import { B } from '../src/world/Ids';
+import { enchantLevel } from '../src/world/Enchants';
+import { B, I } from '../src/world/Ids';
 import { getItem, maxStack } from '../src/world/Items';
-import { addToSlots, loadSlots, makeStack, saveSlots, type Slot } from '../src/world/ItemStack';
+import { addToSlots, cloneStackWithCount, loadSlots, makeStack, saveSlots, type ItemStack, type Slot } from '../src/world/ItemStack';
+import { computeDaylightPower, isBlockPowered, triggerNoteBlock, updateRedstoneAround, updateRepeaterState } from '../src/world/Redstone';
 import type { SavedChunk, WorldInfo } from '../src/world/Storage';
-import { World } from '../src/world/World';
+import { World, type BlockEntity } from '../src/world/World';
 import { buildWorldArchive, parseWorldArchive } from '../src/world/WorldFile';
-import { hashString } from '../src/world/gen/Noise';
+import type { GenSpawn } from '../src/world/gen/GenCanvas';
+import { hash2, hashString, mulberry32 } from '../src/world/gen/Noise';
 import { WorldGen, computeHeightmap } from '../src/world/gen/WorldGen';
+import { ServerPlayerEntity, computeServerChunkLight, serializeEntityState } from './ServerEntities';
 
 interface ServerConfig {
   password?: string;
@@ -97,6 +144,9 @@ interface ServerPlayer {
   hunger: number;
   slots: Slot[];
   selected: number;
+  entity: ServerPlayerEntity;
+  openContainer: { x: number; y: number; z: number; kind: ContainerKind; menu: Menu } | null;
+  openTradeEntityId: number | null;
   lastMoveMs: number;
   lastChunkX: number;
   lastChunkZ: number;
@@ -383,6 +433,12 @@ function start(): void {
       const [cx, cz] = chunkCoordsFromKey(c.key);
       const pkt = encodeChunkPacket(cx, cz, c.blocks, c.meta, c.biomes, c.tints);
       writeBinaryAtomic(path.join(chunksDir, `${cx}_${cz}.bin`), pkt);
+      if (c.blockEntities.length > 0 || c.entities.length > 0) {
+        writeJsonAtomic(path.join(chunksDir, `${cx}_${cz}.json`), {
+          blockEntities: c.blockEntities,
+          entities: c.entities,
+        });
+      }
     }
     console.log(`Monde importé depuis ${importPath} (${archive.chunks.length} chunk(s)).`);
   }
@@ -412,6 +468,13 @@ function start(): void {
   const players = new Map<number, ServerPlayer>();
   let nextPlayerId = 1;
   const authLimits = new Map<string, RateLimitEntry>();
+  const serverEntities: Entity[] = [];
+  const pendingEntities: Entity[] = [];
+  let entityTicking = false;
+  let spawner = new Spawner();
+  const fallbackPlayerEntity = new ServerPlayerEntity(new Inventory());
+  let tickMsAvg = 0;
+  let totalTickSamples = 0;
 
   function sendJson(ws: WebSocket, msg: ServerMessage): void {
     if (ws.readyState === WebSocket.OPEN) {
@@ -443,9 +506,144 @@ function start(): void {
     }
   }
 
+  function broadcastNear(x: number, y: number, z: number, radius: number, msg: ServerMessage): void {
+    const r2 = radius * radius;
+    const raw = JSON.stringify(msg);
+    for (const p of players.values()) {
+      if (p.ws.readyState !== WebSocket.OPEN) continue;
+      const dx = p.x - x;
+      const dy = p.y - y;
+      const dz = p.z - z;
+      if (dx * dx + dy * dy + dz * dz <= r2) {
+        p.ws.send(raw);
+      }
+    }
+  }
+
+  function spawnServerEntity(e: Entity): void {
+    if (entityTicking) pendingEntities.push(e);
+    else serverEntities.push(e);
+  }
+
+  function serverDropStack(
+    x: number,
+    y: number,
+    z: number,
+    stack: ItemStack,
+    pickupDelay = 10,
+    vx?: number,
+    vy?: number,
+    vz?: number,
+  ): ItemEntity {
+    const item = new ItemEntity(stack);
+    item.setPosition(x, y, z);
+    if (vx !== undefined && vy !== undefined && vz !== undefined) {
+      item.vx = vx;
+      item.vy = vy;
+      item.vz = vz;
+    } else {
+      const a = Math.random() * Math.PI * 2;
+      const s = 0.05 + Math.random() * 0.05;
+      item.vx = Math.cos(a) * s;
+      item.vy = 0.2;
+      item.vz = Math.sin(a) * s;
+    }
+    item.pickupDelay = pickupDelay;
+    spawnServerEntity(item);
+    return item;
+  }
+
+  function buildTradeOffers(v: Villager, p: ServerPlayer): TradeOfferInfo[] {
+    const creative = p.gameMode === 'creative';
+    return v.offers.map((o) => {
+      const affordable =
+        creative ||
+        (p.entity.inventory.count(o.buy) >= o.buyCount && (o.buy2 === 0 || p.entity.inventory.count(o.buy2) >= o.buy2Count));
+      return {
+        buy: o.buy,
+        buyCount: o.buyCount,
+        buy2: o.buy2,
+        buy2Count: o.buy2Count,
+        sell: o.sell,
+        sellCount: o.sellCount,
+        enchanted: o.enchants !== undefined,
+        soldOut: o.uses >= o.maxUses,
+        affordable,
+      };
+    });
+  }
+
+  function createServerGameApi(activePlayer?: ServerPlayer): GameApi {
+    return {
+      world,
+      player: activePlayer?.entity ?? fallbackPlayerEntity,
+      players: Array.from(players.values()).map((p) => p.entity),
+      entities: serverEntities,
+      rng: () => Math.random(),
+      dayTime: worldTime % DAY_TICKS,
+      difficulty: 2,
+      dimension: 'overworld',
+      spawn: (e) => spawnServerEntity(e),
+      sound: (name, x, y, z, volume, pitch) => {
+        broadcastNear(x, y, z, 32, { type: 'sound', name, x, y, z, volume, pitch });
+      },
+      blockSound: () => {},
+      particles: (kind, x, y, z, count, spread) => {
+        broadcastNear(x, y, z, 32, { type: 'particles', kind, x, y, z, count, spread });
+      },
+      blockParticles: () => {},
+      itemParticles: () => {},
+      dropItem: (x, y, z, id, count, damage = 0) => serverDropStack(x, y, z, makeStack(id, count, damage)),
+      dropStack: (x, y, z, stack) => serverDropStack(x, y, z, stack),
+      openTrade: (villager) => {
+        if (!activePlayer || !(villager instanceof Villager)) return;
+        villager.customer = activePlayer.entity;
+        activePlayer.openTradeEntityId = villager.id;
+        sendJson(activePlayer.ws, {
+          type: 'tradeOpen',
+          entityId: villager.id,
+          title: villager.title,
+          offers: buildTradeOffers(villager, activePlayer),
+        });
+      },
+      explode: () => {},
+      entitiesInBox: (x0, y0, z0, x1, y1, z1, except = null) => {
+        const out: Entity[] = [];
+        for (const e of serverEntities) {
+          if (e !== except && !e.dead && e.intersects(x0, y0, z0, x1, y1, z1)) out.push(e);
+        }
+        return out;
+      },
+      message: (text) => {
+        if (activePlayer) sendJson(activePlayer.ws, { type: 'chat', text });
+        else broadcastJson({ type: 'chat', text });
+      },
+    };
+  }
+
+  function spawnGenerated(s: GenSpawn): void {
+    if (s.kind === 'iron_golem') {
+      const golem = new IronGolem();
+      golem.setPosition(s.x, s.y, s.z);
+      golem.setRotation(0);
+      golem.setHome(s.x, s.z);
+      spawnServerEntity(golem);
+      return;
+    }
+    if (s.kind !== 'villager') return;
+    const rng = mulberry32(hash2(Math.floor(s.x), Math.floor(s.z), (world.seed ^ 0x51a6e7) >>> 0));
+    const v = new Villager(rng, isProfession(s.profession) ? s.profession : undefined);
+    v.setPosition(s.x, s.y, s.z);
+    v.setRotation(rng() * Math.PI * 2);
+    v.setHome(s.x, s.z);
+    spawnServerEntity(v);
+  }
+
   function attachWorldHost(w: World): void {
     w.host = {
-      dropItem: () => {},
+      dropItem: (x, y, z, id, count) => {
+        serverDropStack(x + 0.5, y + 0.3, z + 0.5, makeStack(id, count));
+      },
       spawnFallingBlock: (x, y, z, id, meta) => {
         let ly = y;
         while (ly > 0) {
@@ -458,7 +656,19 @@ function start(): void {
       },
       primeTnt: () => {},
       effect: () => {},
-      blockEntityRemoved: () => {},
+      blockEntityRemoved: (be: BlockEntity) => {
+        for (const s of blockEntityItems(be)) {
+          serverDropStack(be.x + 0.5, be.y + 0.3, be.z + 0.5, s);
+        }
+        for (const p of players.values()) {
+          if (p.openContainer && p.openContainer.x === be.x && p.openContainer.y === be.y && p.openContainer.z === be.z) {
+            p.openContainer.menu.close();
+            p.openContainer = null;
+            sendInventory(p);
+            sendJson(p.ws, { type: 'containerClose', x: be.x, y: be.y, z: be.z });
+          }
+        }
+      },
       blockChanged: (x, y, z, id, meta) => {
         broadcastBlockUpdate(x, y, z, id, meta);
       },
@@ -509,16 +719,35 @@ function start(): void {
         const hm = new Uint8Array(CHUNK_AREA);
         computeHeightmap(pkt.blocks, hm);
         const chunk = new Chunk(cx, cz, pkt.blocks, pkt.meta, pkt.biomes, hm, pkt.tints);
+        computeServerChunkLight(chunk);
         chunk.saveDirty = false;
         world.addChunk(chunk);
+        const metaData = readJsonFile<{ blockEntities?: BlockEntity[]; entities?: unknown[] }>(
+          path.join(chunksDir, `${cx}_${cz}.json`),
+        );
+        if (metaData) {
+          if (Array.isArray(metaData.blockEntities)) {
+            for (const be of metaData.blockEntities) world.setBlockEntity(be, true);
+          }
+          if (Array.isArray(metaData.entities)) {
+            for (const d of metaData.entities) {
+              const e = createEntity(d);
+              if (e) spawnServerEntity(e);
+            }
+          }
+        }
         return chunk;
       }
     }
 
     const g = gen.generateChunk(cx, cz);
     const chunk = new Chunk(cx, cz, g.blocks, g.meta, g.biomes, g.heightmap, g.tints);
+    computeServerChunkLight(chunk);
     chunk.saveDirty = false;
     world.addChunk(chunk);
+    for (const be of g.blockEntities) world.setBlockEntity(be, true);
+    spawner.populateChunk(createServerGameApi(), chunk);
+    for (const s of g.spawns) spawnGenerated(s);
     return chunk;
   }
 
@@ -538,12 +767,53 @@ function start(): void {
     writeJsonAtomic(worldSavePath, meta);
   }
 
+  function collectChunkAux(): {
+    beByChunk: Map<number, BlockEntity[]>;
+    entByChunk: Map<number, unknown[]>;
+  } {
+    const beByChunk = new Map<number, BlockEntity[]>();
+    for (const be of world.blockEntities.values()) {
+      const key = chunkKey(be.x >> 4, be.z >> 4);
+      let arr = beByChunk.get(key);
+      if (!arr) {
+        arr = [];
+        beByChunk.set(key, arr);
+      }
+      arr.push(be);
+    }
+    const entByChunk = new Map<number, unknown[]>();
+    for (const e of serverEntities) {
+      if (e.dead || e.roaming) continue;
+      const key = chunkKey(Math.floor(e.x) >> 4, Math.floor(e.z) >> 4);
+      const d = e.save();
+      if (!d) continue;
+      let arr = entByChunk.get(key);
+      if (!arr) {
+        arr = [];
+        entByChunk.set(key, arr);
+      }
+      arr.push(d);
+    }
+    return { beByChunk, entByChunk };
+  }
+
   function saveDirtyChunks(): void {
+    const { beByChunk, entByChunk } = collectChunkAux();
     for (const chunk of world.chunks.values()) {
-      if (!chunk.saveDirty) continue;
-      const pkt = encodeChunkPacket(chunk.cx, chunk.cz, chunk.blocks, chunk.meta, chunk.biomes, chunk.tints);
-      writeBinaryAtomic(path.join(chunksDir, `${chunk.cx}_${chunk.cz}.bin`), pkt);
-      chunk.saveDirty = false;
+      const bes = beByChunk.get(chunk.key) ?? [];
+      const ents = entByChunk.get(chunk.key) ?? [];
+      const metaPath = path.join(chunksDir, `${chunk.cx}_${chunk.cz}.json`);
+      const hadMeta = fs.existsSync(metaPath);
+      if (chunk.saveDirty || bes.length > 0 || ents.length > 0 || hadMeta) {
+        const pkt = encodeChunkPacket(chunk.cx, chunk.cz, chunk.blocks, chunk.meta, chunk.biomes, chunk.tints);
+        writeBinaryAtomic(path.join(chunksDir, `${chunk.cx}_${chunk.cz}.bin`), pkt);
+        chunk.saveDirty = false;
+        if (bes.length > 0 || ents.length > 0) {
+          writeJsonAtomic(metaPath, { blockEntities: bes, entities: ents });
+        } else if (hadMeta) {
+          fs.rmSync(metaPath, { force: true });
+        }
+      }
     }
   }
 
@@ -614,10 +884,22 @@ function start(): void {
   }
 
   function sendInventory(p: ServerPlayer): void {
+    const cur = p.entity.inventory.cursor;
     sendJson(p.ws, {
       type: 'inventory',
       slots: saveSlots(p.slots) as Array<SerializedSlot | null>,
       selected: p.selected,
+      cursor: cur ? (saveSlots([cur])[0] as SerializedSlot | null) : null,
+    });
+  }
+
+  function sendVitals(p: ServerPlayer): void {
+    sendJson(p.ws, {
+      type: 'vitals',
+      health: p.health,
+      hunger: p.hunger,
+      xpLevel: p.entity.xpLevel,
+      xpProgress: p.entity.xpProgress,
     });
   }
 
@@ -664,34 +946,41 @@ function start(): void {
     activeTailscaleUrl = null;
 
     // Collecter tous les chunks sauvegardés sur disque + en mémoire
+    const { beByChunk, entByChunk } = collectChunkAux();
     const chunkMap = new Map<number, SavedChunk>();
     if (fs.existsSync(chunksDir)) {
       for (const file of fs.readdirSync(chunksDir)) {
         if (!file.endsWith('.bin')) continue;
         const pkt = decodeChunkPacket(fs.readFileSync(path.join(chunksDir, file)));
         if (pkt) {
-          chunkMap.set(chunkKey(pkt.cx, pkt.cz), {
-            key: chunkKey(pkt.cx, pkt.cz),
+          const k = chunkKey(pkt.cx, pkt.cz);
+          const metaData = readJsonFile<{ blockEntities?: unknown[]; entities?: unknown[] }>(
+            path.join(chunksDir, `${pkt.cx}_${pkt.cz}.json`),
+          );
+          chunkMap.set(k, {
+            key: k,
             blocks: pkt.blocks,
             meta: pkt.meta,
             biomes: pkt.biomes,
             tints: pkt.tints,
-            blockEntities: [],
-            entities: [],
+            blockEntities: metaData?.blockEntities ?? [],
+            entities: metaData?.entities ?? [],
           });
         }
       }
     }
     for (const c of world.chunks.values()) {
-      if (c.modified || chunkMap.has(c.key)) {
+      const bes = beByChunk.get(c.key) ?? [];
+      const ents = entByChunk.get(c.key) ?? [];
+      if (c.modified || bes.length > 0 || ents.length > 0 || chunkMap.has(c.key)) {
         chunkMap.set(c.key, {
           key: c.key,
           blocks: c.blocks,
           meta: c.meta,
           biomes: c.biomes,
           tints: c.tints,
-          blockEntities: [],
-          entities: [],
+          blockEntities: bes,
+          entities: ents,
         });
       }
     }
@@ -817,6 +1106,7 @@ function start(): void {
         return;
       }
       target.gameMode = targetMode;
+      target.entity.gameMode = targetMode;
       sendJson(target.ws, { type: 'gamemode', gameMode: targetMode });
       sendJson(sender.ws, { type: 'chat', text: `Mode de jeu de ${target.name} passé en ${targetMode}` });
       return;
@@ -914,7 +1204,11 @@ function start(): void {
       const pwHeader = req.headers['x-server-password'];
       const hasValidPw = typeof pwHeader === 'string' && pwHeader.length > 0 && safeEqualString(pwHeader, password);
       const payload: Record<string, unknown> = { ok: true, hosting: inviteSecretHex !== null, port };
-      if (hasValidPw) payload.name = worldName;
+      if (hasValidPw) {
+        payload.name = worldName;
+        payload.entityCount = serverEntities.length;
+        payload.tickMsAvg = Math.round(tickMsAvg * 1000) / 1000;
+      }
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify(payload));
       return;
@@ -1000,15 +1294,26 @@ function start(): void {
         world.raining = raining;
         attachWorldHost(world);
         gen = new WorldGen(seed, worldType, genVersion);
+        serverEntities.length = 0;
+        pendingEntities.length = 0;
+        spawner = new Spawner();
 
         for (const c of archive.chunks) {
           const [cx, cz] = chunkCoordsFromKey(c.key);
           const hm = new Uint8Array(CHUNK_AREA);
           computeHeightmap(c.blocks, hm);
           const chunk = new Chunk(cx, cz, c.blocks, c.meta, c.biomes, hm, c.tints);
+          computeServerChunkLight(chunk);
           chunk.modified = true;
           chunk.saveDirty = true;
           world.addChunk(chunk);
+          for (const be of c.blockEntities) {
+            if (be && typeof be === 'object') world.setBlockEntity(be as BlockEntity, true);
+          }
+          for (const d of c.entities) {
+            const e = createEntity(d);
+            if (e) spawnServerEntity(e);
+          }
         }
 
         const hostName = (urlObj.searchParams.get('name') ?? 'Hote').trim().slice(0, 16) || 'Hote';
@@ -1402,28 +1707,47 @@ function start(): void {
 
         const savedPlayer = readJsonFile<PlayerSaveData>(path.join(playersDir, `${normalizePlayerFile(cleanName)}.json`));
         const id = nextPlayerId++;
+        const inv = new Inventory();
+        inv.slots = savedPlayer ? loadSlots(savedPlayer.slots, 36) : new Array<Slot>(36).fill(null);
+        inv.selected = savedPlayer && Number.isInteger(savedPlayer.selected) ? Math.max(0, Math.min(8, savedPlayer.selected)) : 0;
+        const pEntity = new ServerPlayerEntity(inv);
+        const px = savedPlayer?.x ?? spawn.x;
+        const py = savedPlayer?.y ?? spawn.y;
+        const pz = savedPlayer?.z ?? spawn.z;
+        const pyaw = savedPlayer?.yaw ?? 0;
+        const ppitch = savedPlayer?.pitch ?? 0;
+        const pMode = savedPlayer?.gameMode ?? gameMode;
+        pEntity.gameMode = pMode;
+        pEntity.setPosition(px, py, pz);
+        pEntity.setRotation(pyaw, ppitch);
         player = {
           id,
           name: cleanName,
           isHost,
           ws,
-          x: savedPlayer?.x ?? spawn.x,
-          y: savedPlayer?.y ?? spawn.y,
-          z: savedPlayer?.z ?? spawn.z,
-          yaw: savedPlayer?.yaw ?? 0,
-          pitch: savedPlayer?.pitch ?? 0,
+          x: px,
+          y: py,
+          z: pz,
+          yaw: pyaw,
+          pitch: ppitch,
           sneaking: false,
           onGround: true,
           swing: 0,
-          gameMode: savedPlayer?.gameMode ?? gameMode,
+          gameMode: pMode,
           health: savedPlayer?.health ?? 20,
           hunger: savedPlayer?.hunger ?? 20,
-          slots: savedPlayer ? loadSlots(savedPlayer.slots, 36) : new Array<Slot>(36).fill(null),
-          selected: savedPlayer && Number.isInteger(savedPlayer.selected) ? Math.max(0, Math.min(8, savedPlayer.selected)) : 0,
+          slots: inv.slots,
+          selected: inv.selected,
+          entity: pEntity,
+          openContainer: null,
+          openTradeEntityId: null,
           lastMoveMs: Date.now(),
-          lastChunkX: Math.floor(savedPlayer?.x ?? spawn.x) >> 4,
-          lastChunkZ: Math.floor(savedPlayer?.z ?? spawn.z) >> 4,
+          lastChunkX: Math.floor(px) >> 4,
+          lastChunkZ: Math.floor(pz) >> 4,
           sentChunks: new Set<number>(),
+        };
+        inv.drop = (stack) => {
+          serverDropStack(player!.x, player!.y + 1.3, player!.z, stack, 40);
         };
         players.set(id, player);
 
@@ -1500,6 +1824,8 @@ function start(): void {
         player.onGround = Boolean(onGround);
         player.swing = Number.isFinite(swing) ? Math.max(0, Math.min(1, swing)) : 0;
         player.lastMoveMs = now;
+        player.entity.setPosition(x, y, z);
+        player.entity.setRotation(yaw, pitch);
 
         const cx = Math.floor(x) >> 4;
         const cz = Math.floor(z) >> 4;
@@ -1536,10 +1862,9 @@ function start(): void {
             while (rem > 0) {
               const n = Math.min(max, rem);
               rem -= n;
-              addToSlots(player.slots, makeStack(d.id, n), 0, 36);
+              serverDropStack(x + 0.5, y + 0.5, z + 0.5, makeStack(d.id, n));
             }
           }
-          sendInventory(player);
         }
 
         world.setBlock(x, y, z, B.AIR, 0, true);
@@ -1589,19 +1914,82 @@ function start(): void {
         }
 
         world.setBlock(x, y, z, id, meta, true);
+        if (id === B.HOPPER) {
+          getHopper(world, x, y, z);
+          if (isBlockPowered(world, x, y, z)) world.setMeta(x, y, z, world.getMeta(x, y, z) | 8, false);
+        } else if (id === B.DISPENSER || id === B.DROPPER) {
+          getDispenser(world, x, y, z, id === B.DROPPER ? 'dropper' : 'dispenser');
+        } else if (id === B.DAYLIGHT_DETECTOR) {
+          const pwr = computeDaylightPower(world, x, y, z, false);
+          world.setMeta(x, y, z, pwr, false);
+          world.notifyNeighbors(x, y, z);
+          updateRedstoneAround(world, x, y, z);
+        } else if (id === B.REPEATER) {
+          updateRepeaterState(world, x, y, z, meta);
+        }
+        return;
+      }
+
+      if (msg.type === 'useBlock') {
+        const { x, y, z } = msg;
+        if (!Number.isInteger(x) || !Number.isInteger(y) || !Number.isInteger(z)) return;
+        if (y < 0 || y >= CHUNK_HEIGHT || !world.isLoaded(x, z)) return;
+        if (player.gameMode === 'spectator') return;
+        const dist = Math.hypot(x + 0.5 - player.x, y + 0.5 - (player.y + 1.62), z + 0.5 - player.z);
+        if (dist > 7.0) return;
+        const v = world.getBlockAndMeta(x, y, z);
+        const id = v & 255;
+        const meta = v >> 8;
+        if (id === B.OAK_DOOR) {
+          const ly = meta & 8 ? y - 1 : y;
+          const lower = world.getBlockAndMeta(x, ly, z);
+          const upper = world.getBlockAndMeta(x, ly + 1, z);
+          const open = ((lower >> 8) & 4) === 0;
+          if ((lower & 255) === id) world.setMeta(x, ly, z, open ? (lower >> 8) | 4 : (lower >> 8) & ~4);
+          if ((upper & 255) === id) world.setMeta(x, ly + 1, z, open ? (upper >> 8) | 4 : (upper >> 8) & ~4);
+        } else if (id === B.LEVER) {
+          world.setMeta(x, y, z, meta ^ 8, true);
+        } else if (id === B.STONE_BUTTON) {
+          if (!(meta & 8)) {
+            world.setMeta(x, y, z, meta | 8, true);
+            world.scheduleTick(x, y, z, 20);
+          }
+        } else if (id === B.TRAPDOOR || id === B.FENCE_GATE) {
+          world.setMeta(x, y, z, meta ^ 4);
+        } else if (id === B.REPEATER) {
+          const nextDelay = (((meta >> 2) & 3) + 1) & 3;
+          world.setMeta(x, y, z, (meta & ~12) | (nextDelay << 2), false);
+        } else if (id === B.COMPARATOR) {
+          const nextMode = meta ^ 4;
+          world.setMeta(x, y, z, (nextMode & 15), false);
+          world.notifyNeighbors(x, y, z);
+          updateRedstoneAround(world, x, y, z);
+        } else if (id === B.DAYLIGHT_DETECTOR) {
+          const inverted = (meta & 16) === 0;
+          const power = computeDaylightPower(world, x, y, z, inverted);
+          world.setMeta(x, y, z, (inverted ? 16 : 0) | power, false);
+          world.notifyNeighbors(x, y, z);
+          updateRedstoneAround(world, x, y, z);
+        } else if (id === B.NOTE_BLOCK) {
+          const nextNote = ((meta & 31) + 1) % 25;
+          world.setMetaSilent(x, y, z, nextNote | (meta & 32));
+          triggerNoteBlock(world, x, y, z, nextNote);
+        }
         return;
       }
 
       if (msg.type === 'selectSlot') {
         if (Number.isInteger(msg.slot) && msg.slot >= 0 && msg.slot < 9) {
           player.selected = msg.slot;
+          player.entity.inventory.selected = msg.slot;
         }
         return;
       }
 
       if (msg.type === 'invSync' && Array.isArray(msg.slots)) {
         if (player.gameMode === 'creative') {
-          player.slots = loadSlots(msg.slots, 36);
+          player.entity.inventory.slots = loadSlots(msg.slots, 36);
+          player.slots = player.entity.inventory.slots;
         } else if (player.gameMode === 'survival') {
           // Autoriser la réorganisation/fabrication locale tout en bornant les quantités
           const next = loadSlots(msg.slots, 36);
@@ -1609,10 +1997,274 @@ function start(): void {
             const s = next[i];
             if (s && s.count > 64) s.count = 64;
           }
-          player.slots = next;
+          player.entity.inventory.slots = next;
+          player.slots = player.entity.inventory.slots;
         }
         if (Number.isInteger(msg.selected) && msg.selected >= 0 && msg.selected < 9) {
           player.selected = msg.selected;
+          player.entity.inventory.selected = msg.selected;
+        }
+        return;
+      }
+
+      if (msg.type === 'dropItem') {
+        if (player.gameMode === 'spectator') return;
+        const slotIdx = Number.isInteger(msg.slot) && msg.slot >= 0 && msg.slot < 36 ? msg.slot : player.selected;
+        const held = player.slots[slotIdx];
+        if (!held || held.count <= 0) return;
+        let dropped: ItemStack;
+        if (msg.all || held.count <= 1) {
+          player.slots[slotIdx] = null;
+          dropped = held;
+        } else {
+          held.count--;
+          dropped = cloneStackWithCount(held, 1);
+        }
+        const cp = Math.cos(player.pitch);
+        const vx = -Math.sin(player.yaw) * cp * 0.3;
+        const vy = Math.sin(player.pitch) * 0.3 + 0.1;
+        const vz = -Math.cos(player.yaw) * cp * 0.3;
+        serverDropStack(player.x, player.y + 1.3, player.z, dropped, 40, vx, vy, vz);
+        sendInventory(player);
+        return;
+      }
+
+      if (msg.type === 'pickupItem') {
+        const entityId = Number(msg.entityId);
+        if (!Number.isInteger(entityId) || player.gameMode === 'spectator') {
+          sendJson(ws, { type: 'error', code: 'bad_request', message: 'Ramassage refusé.' });
+          return;
+        }
+        const target = serverEntities.find((e) => e.id === entityId && !e.dead);
+        if (!(target instanceof ItemEntity) || target.pickupDelay > 0 || target.stack.count <= 0) {
+          sendJson(ws, { type: 'error', code: 'bad_request', message: 'Objet inexistant ou déjà ramassé.' });
+          return;
+        }
+        const dist = Math.hypot(target.x - player.x, target.y - player.y, target.z - player.z);
+        if (dist > 3.0) {
+          sendJson(ws, { type: 'error', code: 'bad_request', message: 'Objet hors de portée.' });
+          return;
+        }
+        const before = target.stack.count;
+        const left = player.entity.collect(target.stack);
+        if (left < before) {
+          target.stack.count = left;
+          target.itemCount = left;
+          if (left <= 0) target.dead = true;
+          broadcastNear(target.x, target.y, target.z, 24, { type: 'sound', name: 'pop', x: target.x, y: target.y, z: target.z, volume: 0.5, pitch: 1.5 });
+          sendInventory(player);
+        }
+        return;
+      }
+
+      if (msg.type === 'attackEntity') {
+        const entityId = Number(msg.entityId);
+        if (!Number.isInteger(entityId) || player.gameMode === 'spectator') return;
+        const target = serverEntities.find((e) => e.id === entityId && !e.dead && e.pickable);
+        if (!target) return;
+        const dist = Math.hypot(target.x - player.x, target.y + target.height * 0.5 - (player.y + 1.62), target.z - player.z);
+        if (dist > 6.5) return;
+        const held = player.slots[player.selected];
+        const heldId = held?.id ?? 0;
+        let dmg = attackDamage(heldId);
+        const sharp = enchantLevel(held, 'sharpness');
+        if (sharp > 0) dmg += 0.5 * sharp + 0.5;
+        const api = createServerGameApi(player);
+        const ok = target.hurt(api, dmg, 'attack', player.entity);
+        if (ok) {
+          broadcastNear(target.x, target.y, target.z, 24, { type: 'sound', name: 'attack', x: target.x, y: target.y, z: target.z, volume: 0.7, pitch: 1 });
+          if (player.gameMode !== 'creative') {
+            player.entity.damageHeld(api, 1);
+          }
+          if (player.entity.invDirty) {
+            player.entity.invDirty = false;
+            sendInventory(player);
+          }
+          if (player.entity.vitalsDirty) {
+            player.entity.vitalsDirty = false;
+            sendVitals(player);
+          }
+        }
+        return;
+      }
+
+      if (msg.type === 'interactEntity') {
+        const entityId = Number(msg.entityId);
+        if (!Number.isInteger(entityId) || player.gameMode === 'spectator') return;
+        const target = serverEntities.find((e) => e.id === entityId && !e.dead);
+        if (!target) return;
+        const dist = Math.hypot(target.x - player.x, target.y + target.height * 0.5 - (player.y + 1.62), target.z - player.z);
+        if (dist > 6.5) return;
+        const api = createServerGameApi(player);
+        if (target instanceof Mob && target.useLeash(api, player.entity)) {
+          if (player.entity.invDirty) {
+            player.entity.invDirty = false;
+            sendInventory(player);
+          }
+          return;
+        }
+        if (target.interact(api, player.entity)) {
+          if (player.entity.invDirty) {
+            player.entity.invDirty = false;
+            sendInventory(player);
+          }
+          if (player.entity.vitalsDirty) {
+            player.entity.vitalsDirty = false;
+            sendVitals(player);
+          }
+        }
+        return;
+      }
+
+      if (msg.type === 'nameEntity') {
+        const entityId = Number(msg.entityId);
+        if (!Number.isInteger(entityId) || typeof msg.name !== 'string') return;
+        const clean = msg.name.replace(/\s+/g, ' ').trim().slice(0, 32);
+        if (!clean) return;
+        const target = serverEntities.find((e) => e.id === entityId && !e.dead && e instanceof Mob && e.alive);
+        if (!(target instanceof Mob)) return;
+        const dist = Math.hypot(target.x - player.x, target.y - player.y, target.z - player.z);
+        if (dist > 8.0 || player.entity.heldItemId !== I.NAME_TAG) return;
+        if (target.customName === clean) return;
+        target.customName = clean;
+        player.entity.consumeHeld(1);
+        player.entity.invDirty = false;
+        sendInventory(player);
+        return;
+      }
+
+      if (msg.type === 'tieLeash') {
+        const { x, y, z } = msg;
+        if (!Number.isInteger(x) || !Number.isInteger(y) || !Number.isInteger(z)) return;
+        if (y < 0 || y >= CHUNK_HEIGHT || !world.isLoaded(x, z)) return;
+        if (!isLeashPost(world.getBlock(x, y, z))) return;
+        const dist = Math.hypot(x + 0.5 - player.x, y + 0.5 - (player.y + 1.62), z + 0.5 - player.z);
+        if (dist > 7.0) return;
+        for (const e of serverEntities) {
+          if (!(e instanceof Mob) || e.leashHolder !== player.entity) continue;
+          if (e.distanceSq(x + 0.5, y + 0.5, z + 0.5) > LEASH_BREAK * LEASH_BREAK) continue;
+          e.tieTo(x, y, z);
+        }
+        return;
+      }
+
+      if (msg.type === 'openContainer') {
+        const { x, y, z } = msg;
+        if (!Number.isInteger(x) || !Number.isInteger(y) || !Number.isInteger(z)) return;
+        if (y < 0 || y >= CHUNK_HEIGHT || !world.isLoaded(x, z) || player.gameMode === 'spectator') {
+          sendJson(ws, { type: 'error', code: 'bad_request', message: 'Conteneur inaccessible.' });
+          return;
+        }
+        const dist = Math.hypot(x + 0.5 - player.x, y + 0.5 - (player.y + 1.62), z + 0.5 - player.z);
+        if (dist > 6.5) {
+          sendJson(ws, { type: 'error', code: 'bad_request', message: 'Conteneur hors de portée.' });
+          return;
+        }
+        const bid = world.getBlock(x, y, z);
+        const onChange = (): void => {
+          const be = world.getBlockEntity(x, y, z);
+          if (be) world.markBlockEntityDirty(be);
+          updateRedstoneAround(world, x, y, z);
+        };
+        let kind: ContainerKind | null = null;
+        let menu: Menu | null = null;
+        if (bid === B.CHEST) {
+          kind = 'chest';
+          menu = new ChestMenu(player.entity.inventory, getChest(world, x, y, z), onChange);
+        } else if (bid === B.FURNACE || bid === B.FURNACE_LIT) {
+          kind = 'furnace';
+          menu = new FurnaceMenu(player.entity.inventory, getFurnace(world, x, y, z), onChange);
+        } else if (bid === B.BREWING_STAND) {
+          kind = 'brewing';
+          menu = new BrewingMenu(player.entity.inventory, getBrewingStand(world, x, y, z), onChange);
+        } else if (bid === B.HOPPER) {
+          kind = 'hopper';
+          menu = new HopperMenu(player.entity.inventory, getHopper(world, x, y, z), onChange);
+        } else if (bid === B.DISPENSER || bid === B.DROPPER) {
+          kind = bid === B.DROPPER ? 'dropper' : 'dispenser';
+          menu = new DispenserMenu(player.entity.inventory, getDispenser(world, x, y, z, kind), onChange);
+        }
+        if (!kind || !menu) {
+          sendJson(ws, { type: 'error', code: 'bad_request', message: 'Ce bloc n’est pas un conteneur.' });
+          return;
+        }
+        if (player.openContainer) {
+          player.openContainer.menu.close();
+        }
+        player.openContainer = { x, y, z, kind, menu };
+        sendContainerStateTo(player, x, y, z, kind);
+        return;
+      }
+
+      if (msg.type === 'containerAction') {
+        const { x, y, z, action } = msg;
+        const oc = player.openContainer;
+        if (!oc || oc.x !== x || oc.y !== y || oc.z !== z || !action || typeof action !== 'object') {
+          sendJson(ws, { type: 'error', code: 'bad_request', message: 'Action de conteneur invalide.' });
+          return;
+        }
+        const dist = Math.hypot(x + 0.5 - player.x, y + 0.5 - (player.y + 1.62), z + 0.5 - player.z);
+        if (dist > 6.5 || !isContainerBlockAt(x, y, z, oc.kind)) {
+          oc.menu.close();
+          player.openContainer = null;
+          sendInventory(player);
+          sendJson(ws, { type: 'containerClose', x, y, z });
+          sendJson(ws, { type: 'error', code: 'bad_request', message: 'Conteneur hors de portée.' });
+          return;
+        }
+        const m = oc.menu;
+        if (action.kind === 'click') m.click(action.i, action.button, Boolean(action.shift));
+        else if (action.kind === 'doubleClick') m.doubleClick(action.i);
+        else if (action.kind === 'drag' && Array.isArray(action.slots)) m.drag(action.slots, action.button);
+        else if (action.kind === 'clickOutside') m.clickOutside(action.button);
+        else if (action.kind === 'numberKey') m.numberKey(action.i, action.bar);
+        else if (action.kind === 'dropKey') m.dropKey(action.i, Boolean(action.all));
+        sendInventory(player);
+        broadcastContainerState(x, y, z, oc.kind);
+        return;
+      }
+
+      if (msg.type === 'containerClose') {
+        const oc = player.openContainer;
+        if (oc && oc.x === msg.x && oc.y === msg.y && oc.z === msg.z) {
+          oc.menu.close();
+          player.openContainer = null;
+          sendInventory(player);
+        }
+        return;
+      }
+
+      if (msg.type === 'tradeSelect') {
+        const entityId = Number(msg.entityId);
+        const index = Number(msg.index);
+        if (!Number.isInteger(entityId) || !Number.isInteger(index)) return;
+        const target = serverEntities.find((e) => e.id === entityId && !e.dead && e instanceof Villager && e.alive);
+        if (!(target instanceof Villager)) return;
+        const dist = Math.hypot(target.x - player.x, target.y - player.y, target.z - player.z);
+        if (dist > 6.5) return;
+        const o = target.offers[index];
+        if (!o || o.uses >= o.maxUses) return;
+        const creative = player.gameMode === 'creative';
+        const inv = player.entity.inventory;
+        if (!creative) {
+          if (inv.count(o.buy) < o.buyCount || (o.buy2 !== 0 && inv.count(o.buy2) < o.buy2Count)) return;
+          inv.remove(o.buy, o.buyCount);
+          if (o.buy2 !== 0) inv.remove(o.buy2, o.buy2Count);
+        }
+        const stack = makeStack(o.sell, o.sellCount, 0, o.enchants);
+        if (inv.add(stack) > 0) serverDropStack(player.x, player.y + 1, player.z, stack);
+        target.completeTrade(createServerGameApi(player), index);
+        sendInventory(player);
+        sendJson(ws, { type: 'tradeOffers', entityId: target.id, offers: buildTradeOffers(target, player) });
+        return;
+      }
+
+      if (msg.type === 'tradeClose') {
+        const entityId = Number(msg.entityId);
+        if (player.openTradeEntityId === entityId) {
+          const target = serverEntities.find((e) => e.id === entityId && e instanceof Villager);
+          if (target instanceof Villager && target.customer === player.entity) target.customer = null;
+          player.openTradeEntityId = null;
         }
         return;
       }
@@ -1687,6 +2339,15 @@ function start(): void {
     ws.on('close', () => {
       clearTimeout(authTimer);
       if (!player) return;
+      if (player.openContainer) {
+        player.openContainer.menu.close();
+        player.openContainer = null;
+      }
+      if (player.openTradeEntityId !== null) {
+        const target = serverEntities.find((e) => e.id === player!.openTradeEntityId && e instanceof Villager);
+        if (target instanceof Villager && target.customer === player.entity) target.customer = null;
+        player.openTradeEntityId = null;
+      }
       savePlayerData(player);
       players.delete(player.id);
       broadcastJson({ type: 'playerLeave', id: player.id, name: player.name });
@@ -1695,11 +2356,77 @@ function start(): void {
     });
   });
 
+  function isContainerBlockAt(x: number, y: number, z: number, kind: ContainerKind): boolean {
+    const bid = world.getBlock(x, y, z);
+    if (kind === 'chest') return bid === B.CHEST;
+    if (kind === 'furnace') return bid === B.FURNACE || bid === B.FURNACE_LIT;
+    if (kind === 'brewing') return bid === B.BREWING_STAND;
+    if (kind === 'hopper') return bid === B.HOPPER;
+    if (kind === 'dispenser') return bid === B.DISPENSER;
+    if (kind === 'dropper') return bid === B.DROPPER;
+    return false;
+  }
+
+  function buildContainerPacket(x: number, y: number, z: number, kind: ContainerKind): ServerMessage {
+    let items: Slot[] = [];
+    let burnTime: number | undefined;
+    let burnTotal: number | undefined;
+    let cookTime: number | undefined;
+    let brewTime: number | undefined;
+    let fuel: number | undefined;
+    if (kind === 'chest') {
+      items = getChest(world, x, y, z).items;
+    } else if (kind === 'furnace') {
+      const f = getFurnace(world, x, y, z);
+      items = f.items;
+      burnTime = f.burnTime;
+      burnTotal = f.burnTotal;
+      cookTime = f.cookTime;
+    } else if (kind === 'brewing') {
+      const b = getBrewingStand(world, x, y, z);
+      items = b.items;
+      brewTime = b.brewTime;
+      fuel = b.fuel;
+    } else if (kind === 'hopper') {
+      items = getHopper(world, x, y, z).items;
+    } else {
+      items = getDispenser(world, x, y, z, kind).items;
+    }
+    return {
+      type: 'containerState',
+      x,
+      y,
+      z,
+      kind,
+      items: saveSlots(items) as Array<SerializedSlot | null>,
+      ...(burnTime !== undefined ? { burnTime, burnTotal, cookTime } : {}),
+      ...(brewTime !== undefined ? { brewTime, fuel } : {}),
+    };
+  }
+
+  function sendContainerStateTo(p: ServerPlayer, x: number, y: number, z: number, kind: ContainerKind): void {
+    sendJson(p.ws, buildContainerPacket(x, y, z, kind));
+  }
+
+  function broadcastContainerState(x: number, y: number, z: number, kind: ContainerKind): void {
+    const pkt = buildContainerPacket(x, y, z, kind);
+    const raw = JSON.stringify(pkt);
+    for (const p of players.values()) {
+      if (p.openContainer && p.openContainer.x === x && p.openContainer.y === y && p.openContainer.z === z && p.ws.readyState === WebSocket.OPEN) {
+        p.ws.send(raw);
+      }
+    }
+  }
+
   // Boucle 20 TPS
   let tickCount = 0;
+  let spawnPlayerIdx = 0;
   const tickTimer = setInterval(() => {
+    const t0 = performance.now();
     tickCount++;
     worldTime = (worldTime + 1) % DAY_TICKS;
+    const skyLightFactor = skyDayFactor(worldTime % DAY_TICKS) * (raining ? 0.6875 : 1) * (thundering ? 0.6875 : 1);
+    world.skyDarken = Math.round((1 - skyLightFactor) * 11);
 
     // Météo
     if (--weatherTimer <= 0) {
@@ -1721,12 +2448,71 @@ function start(): void {
     }
 
     if (players.size > 0) {
-      const firstPlayer = players.values().next().value;
+      const playerList = Array.from(players.values());
+      const firstPlayer = playerList[0];
       if (firstPlayer) {
         world.tick(firstPlayer.x, firstPlayer.z);
       }
+      tickBlockEntities(world);
+
+      // Mettre à jour les conteneurs ouverts (fourneaux, alambics, entonnoirs) et fermer si hors de portée
+      for (const p of playerList) {
+        const oc = p.openContainer;
+        if (!oc) continue;
+        const dist = Math.hypot(oc.x + 0.5 - p.x, oc.y + 0.5 - (p.y + 1.62), oc.z + 0.5 - p.z);
+        if (dist > 7.0 || !isContainerBlockAt(oc.x, oc.y, oc.z, oc.kind)) {
+          oc.menu.close();
+          p.openContainer = null;
+          sendInventory(p);
+          sendJson(p.ws, { type: 'containerClose', x: oc.x, y: oc.y, z: oc.z });
+        } else if (tickCount % 2 === 0 && (oc.kind === 'furnace' || oc.kind === 'brewing' || oc.kind === 'hopper')) {
+          sendContainerStateTo(p, oc.x, oc.y, oc.z, oc.kind);
+        }
+      }
+
+      // Apparition naturelle autour de chaque joueur (rotation à chaque cycle)
+      const spawnerTarget = playerList[spawnPlayerIdx % playerList.length];
+      spawner.tick(createServerGameApi(spawnerTarget));
+      if (tickCount % 20 === 0) spawnPlayerIdx++;
+
+      // Simulation des entités
+      entityTicking = true;
+      const api = createServerGameApi(firstPlayer);
+      for (let i = 0; i < serverEntities.length; i++) {
+        const e = serverEntities[i];
+        if (!e.roaming && !world.isLoaded(Math.floor(e.x), Math.floor(e.z))) {
+          e.dead = true;
+          continue;
+        }
+        e.tick(api);
+      }
+      let keep = 0;
+      for (let i = 0; i < serverEntities.length; i++) {
+        const e = serverEntities[i];
+        if (!e.dead) serverEntities[keep++] = e;
+      }
+      serverEntities.length = keep;
+      entityTicking = false;
+      if (pendingEntities.length > 0) {
+        for (const e of pendingEntities) serverEntities.push(e);
+        pendingEntities.length = 0;
+      }
+
+      // Synchroniser inventaires / XP modifiés (ex. ramassage d'objets)
+      for (const p of playerList) {
+        if (p.entity.invDirty) {
+          p.entity.invDirty = false;
+          sendInventory(p);
+        }
+        if (p.entity.vitalsDirty) {
+          p.entity.vitalsDirty = false;
+          sendVitals(p);
+        }
+      }
+
+      // Diffusion des joueurs
       const list: RemotePlayerState[] = [];
-      for (const p of players.values()) {
+      for (const p of playerList) {
         list.push({
           id: p.id,
           name: p.name,
@@ -1741,6 +2527,23 @@ function start(): void {
         });
       }
       broadcastJson({ type: 'players', list });
+
+      // Diffusion des entités à portée de chaque joueur
+      const entRange = (viewDistance + 2) * 16;
+      const entRange2 = entRange * entRange;
+      const serialized = serverEntities.map(serializeEntityState);
+      for (const p of playerList) {
+        if (p.ws.readyState !== WebSocket.OPEN) continue;
+        const visible: RemoteEntityState[] = [];
+        for (let i = 0; i < serialized.length; i++) {
+          const s = serialized[i];
+          const dx = s.x - p.x;
+          const dz = s.z - p.z;
+          if (dx * dx + dz * dz <= entRange2) visible.push(s);
+        }
+        sendJson(p.ws, { type: 'entities', list: visible });
+      }
+
       if (tickCount % TICKS_PER_SECOND === 0) {
         broadcastJson({ type: 'time', time: worldTime });
       }
@@ -1749,10 +2552,17 @@ function start(): void {
     if (tickCount % (TICKS_PER_SECOND * 30) === 0) {
       saveAll();
     }
+
+    const elapsed = performance.now() - t0;
+    totalTickSamples++;
+    tickMsAvg += (elapsed - tickMsAvg) / Math.min(200, totalTickSamples);
   }, 1000 / TICKS_PER_SECOND);
 
   function shutdown(): void {
     clearInterval(tickTimer);
+    if (totalTickSamples > 0) {
+      console.log(`[Serveur] Tick moyen : ${tickMsAvg.toFixed(2)} ms | Entités actives : ${serverEntities.length}`);
+    }
     saveAll();
     for (const p of players.values()) {
       p.ws.close(1001, 'Serveur arrêté');

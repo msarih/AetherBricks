@@ -62,6 +62,8 @@ export interface EntityData {
 export interface GameApi {
   readonly world: World;
   readonly player: PlayerLike;
+  /** Liste des joueurs connectés (mode serveur multijoueur). Absent en solo. */
+  readonly players?: readonly PlayerLike[];
   /** Toutes les entités vivantes du monde (joueur compris). Ne pas modifier : passer par spawn() et `dead`. */
   readonly entities: readonly Entity[];
   /** Aléa de gameplay (0..1). */

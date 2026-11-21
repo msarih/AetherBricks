@@ -69,17 +69,20 @@ export class ItemEntity extends Entity {
 
     if (this.age % 20 === this.id % 20 && this.stack.count < maxStack(this.stack.id)) this.mergeNearby(game);
 
-    const p = game.player;
-    if (this.pickupDelay === 0 && p.alive && p.gameMode !== 'spectator') {
-      const hw = this.width / 2;
-      if (p.intersects(this.x - hw - 1, this.y - 0.5, this.z - hw - 1, this.x + hw + 1, this.y + this.height + 0.5, this.z + hw + 1)) {
-        const before = this.stack.count;
-        const left = p.collect(this.stack);
-        if (left < before) {
-          game.sound('pop', this.x, this.y, this.z, 0.5, 1.4 + game.rng() * 0.8);
-          this.stack.count = left;
-          this.itemCount = left;
-          if (left <= 0) this.dead = true;
+    const candidates = game.players ?? [game.player];
+    for (const p of candidates) {
+      if (this.pickupDelay === 0 && p.alive && p.gameMode !== 'spectator') {
+        const hw = this.width / 2;
+        if (p.intersects(this.x - hw - 1, this.y - 0.5, this.z - hw - 1, this.x + hw + 1, this.y + this.height + 0.5, this.z + hw + 1)) {
+          const before = this.stack.count;
+          const left = p.collect(this.stack);
+          if (left < before) {
+            game.sound('pop', this.x, this.y, this.z, 0.5, 1.4 + game.rng() * 0.8);
+            this.stack.count = left;
+            this.itemCount = left;
+            if (left <= 0) this.dead = true;
+            break;
+          }
         }
       }
     }
