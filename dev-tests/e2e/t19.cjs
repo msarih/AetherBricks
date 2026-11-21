@@ -148,8 +148,26 @@ async function stopServer(srv, dir) {
   if (dir) fs.rmSync(dir, { recursive: true, force: true });
 }
 
-async function tpPlayer(hostPage, targetName, x, y, z) {
+async function tpPlayer(hostPage, targetName, x, y, z, targetPage = null) {
   await ev(hostPage, (cmd) => window.__game.chat(cmd), `/tp ${targetName} ${x} ${y} ${z}`);
+  if (targetPage) {
+    await targetPage.waitForFunction(
+      (tx, tz) => Math.hypot(window.__game.player.x - tx, window.__game.player.z - tz) < 0.5,
+      { timeout: 10000 },
+      x,
+      z,
+    );
+  }
+}
+
+async function tpSelf(page, x, y, z) {
+  await ev(page, (cmd) => window.__game.chat(cmd), `/tp ${x} ${y} ${z}`);
+  await page.waitForFunction(
+    (tx, tz) => Math.hypot(window.__game.player.x - tx, window.__game.player.z - tz) < 0.5,
+    { timeout: 10000 },
+    x,
+    z,
+  );
 }
 
 async function lookAtEntity(page, remoteId) {
@@ -295,10 +313,10 @@ async function lookAtEntity(page, remoteId) {
 
     await section('J4c. Objets au sol : casse en survie, ramassage unique, anti-duplication, lâcher', async () => {
       // Placer A et B près d'une zone propre à y=4
-      await ev(pageA, () => window.__game.chat('/tp 24.5 4 24.5'));
-      await tpPlayer(pageA, 'JoueurB', 20.5, 4, 20.5);
-      await ticks(pageA, 8);
-      await ticks(pageB, 8);
+      await tpSelf(pageA, 24.5, 4, 24.5);
+      await tpPlayer(pageA, 'JoueurB', 20.5, 4, 20.5, pageB);
+      await ticks(pageA, 6);
+      await ticks(pageB, 6);
 
       // B casse le bloc d'herbe devant lui (20, 3, 22)
       await pageB.bringToFront();
@@ -358,8 +376,8 @@ async function lookAtEntity(page, remoteId) {
         window.__game.chat('/gamemode creative');
       });
       await ticks(pageA, 4);
-      await ev(pageA, () => window.__game.chat('/tp 30.5 4 30.5'));
-      await tpPlayer(pageA, 'JoueurB', 30.5, 4, 34.5);
+      await tpSelf(pageA, 30.5, 4, 30.5);
+      await tpPlayer(pageA, 'JoueurB', 30.5, 4, 34.5, pageB);
       await ticks(pageA, 6);
       await ticks(pageB, 6);
 
@@ -503,7 +521,7 @@ async function lookAtEntity(page, remoteId) {
       check('tick serveur moyen < 50 ms avec 2 joueurs éloignés', typeof pingJson.tickMsAvg === 'number' && pingJson.tickMsAvg < 50, `tickMsAvg=${pingJson.tickMsAvg}`);
 
       // B revient devant le fourneau (34.5, 4, 32.5) et récupère le résultat
-      await tpPlayer(pageA, 'JoueurB', 34.5, 4, 32.5);
+      await tpPlayer(pageA, 'JoueurB', 34.5, 4, 32.5, pageB);
       await ticks(pageB, 8);
       await lookAtBlock(pageB, 34, 4, 30);
       await rclick(pageB);
@@ -639,11 +657,11 @@ async function lookAtEntity(page, remoteId) {
         // H pose un coffre en (10, 4, 10) ; AmiSolo y dépose un objet
         const chestId = await ev(pageH, () => window.__game.blocks().get('chest').id);
         const dirtId = await ev(pageH, () => window.__game.items().get('dirt'));
+        await tpSelf(pageH, 8.5, 4, 10.5);
         await ev(pageH, (cid) => {
-          window.__game.chat('/tp 8.5 4 10.5');
           window.__game.netPlaceBlock(10, 4, 10, 1, cid, 0, 0);
         }, chestId);
-        await ev(pageH, () => window.__game.chat('/tp AmiSolo 10.5 4 12.5'));
+        await tpPlayer(pageH, 'AmiSolo', 10.5, 4, 12.5, pageF);
         await ev(pageF, (did) => {
           const g = window.__game;
           g.player.inventory.slots[0] = { id: did, count: 7, damage: 0 };
