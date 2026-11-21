@@ -1908,3 +1908,131 @@
   right: 14px;
 }
 
+.mc-ui.mc-portrait .mc-rtc-panel {
+  top: max(54px, calc(env(safe-area-inset-top) + 46px));
+}
+
+/* Audio / Vidéo WebRTC multijoueur */
+.mc-rtc-panel {
+  position: absolute;
+  top: max(8px, env(safe-area-inset-top));
+  right: max(8px, env(safe-area-inset-right));
+  display: none;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  z-index: 20;
+  pointer-events: auto;
+  max-width: 280px;
+}
+
+.mc-rtc-bar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.mc-rtc-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 8px;
+  border: 2px solid #000;
+  background: rgba(34, 34, 34, 0.85);
+  color: #e6e6e6;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.mc-rtc-btn.mc-rtc-on {
+  background: rgba(46, 112, 49, 0.92);
+  color: #fff;
+  border-color: #7ee07e;
+}
+
+.mc-rtc-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.mc-rtc-alert {
+  display: none;
+  padding: 6px 8px;
+  background: rgba(90, 22, 22, 0.9);
+  border: 1px solid #ff7777;
+  color: #ffdddd;
+  font-size: 11px;
+  line-height: 1.35;
+  text-align: right;
+}
+
+.mc-rtc-self {
+  display: none;
+  padding: 3px 7px;
+  background: rgba(40, 100, 44, 0.88);
+  border: 1px solid #7ee07e;
+  color: #fff;
+  font-size: 11px;
+}
+
+.mc-rtc-peers {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.mc-rtc-peer {
+  background: rgba(20, 20, 20, 0.82);
+  border: 2px solid #444;
+  padding: 4px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 132px;
+}
+
+.mc-rtc-peer.mc-rtc-speaking {
+  border-color: #66ff66;
+  box-shadow: 0 0 8px rgba(102, 255, 102, 0.45);
+}
+
+.mc-rtc-peer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 12px;
+  color: #f0f0f0;
+}
+
+.mc-rtc-speak-badge {
+  color: #66ff66;
+}
+
+.mc-rtc-mute-btn {
+  border: 1px solid #666;
+  background: #2b2b2b;
+  color: #fff;
+  padding: 1px 5px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.mc-rtc-mute-btn.mc-rtc-muted {
+  background: #6b2222;
+  border-color: #ff6666;
+}
+
+.mc-rtc-video {
+  width: 128px;
+  height: 96px;
+  object-fit: cover;
+  background: #000;
+  border: 1px solid #222;
+  display: none;
+}
+
+

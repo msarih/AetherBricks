@@ -67,7 +67,12 @@ export class TitleMenu implements Screen {
   private newModeIndex = 0;
   private newType: WorldType = 'default';
 
-  constructor(private readonly ctx: UiContext, page: TitlePage, error = '') {
+  constructor(
+    private readonly ctx: UiContext,
+    page: TitlePage,
+    error = '',
+    private prefillCode = '',
+  ) {
     this.el = el('div', 'mc-screen mc-screen-dirt');
     this.el.dataset.mc = 'title';
     this.page = page;
@@ -549,7 +554,7 @@ export class TitleMenu implements Screen {
     this.mpNameInput = this.field(form, last?.name || loadLastPseudo() || 'Joueur', 'mp-name', 16);
 
     el('label', 'mc-field-label', form, 'Code d’invitation (donné par un ami)');
-    this.mpCodeInput = this.field(form, '', 'mp-code', 48);
+    this.mpCodeInput = this.field(form, this.prefillCode, 'mp-code', 48);
     this.mpCodeInput.placeholder = 'SB-XXXXX-XXXXX-XXXXX-XXXXX';
 
     el('label', 'mc-field-label', form, 'Ou adresse du serveur (si pas de code)');

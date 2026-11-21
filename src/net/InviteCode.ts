@@ -98,3 +98,31 @@ export function parseInviteCode(input: string): ParsedInviteCode | null {
   const normalized = `SB-${clean.slice(0, 5)}-${clean.slice(5, 10)}-${clean.slice(10, 15)}-${clean.slice(15, 20)}`;
   return { ip, port, secretHex, normalized };
 }
+
+/** Extrait un code d'invitation depuis une URL (`/?rejoindre=...`, `/rejoindre/...`, `sarihbricks://rejoindre/...`). */
+export function extractInviteCodeFromUrl(rawUrl: string): string | null {
+  const trimmed = rawUrl.trim();
+  if (!trimmed) return null;
+  let candidate = '';
+  try {
+    const u = new URL(trimmed, 'http://localhost');
+    const qp = u.searchParams.get('rejoindre') ?? u.searchParams.get('code');
+    if (qp) {
+      candidate = qp;
+    } else {
+      const m = u.pathname.match(/\/rejoindre\/([^/?#]+)/i);
+      if (m) {
+        candidate = decodeURIComponent(m[1]);
+      } else if (u.protocol === 'sarihbricks:' && u.hostname.toLowerCase() === 'rejoindre') {
+        const seg = u.pathname.replace(/^\/+/, '').split('/')[0];
+        if (seg) candidate = decodeURIComponent(seg);
+      }
+    }
+  } catch {
+    const m = trimmed.match(/rejoindre[\/=]([^/?#&]+)/i);
+    if (m) candidate = decodeURIComponent(m[1]);
+  }
+  if (!candidate) return null;
+  const parsed = parseInviteCode(candidate);
+  return parsed ? parsed.normalized : null;
+}

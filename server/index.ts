@@ -11,6 +11,8 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
+import https from 'node:https';
+import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { WebSocketServer, WebSocket } from 'ws';
@@ -39,6 +41,11 @@ import { WorldGen, computeHeightmap } from '../src/world/gen/WorldGen';
 interface ServerConfig {
   password?: string;
   port?: number;
+  maxPlayers?: number;
+  https?: boolean;
+  tlsCert?: string;
+  tlsKey?: string;
+  tailscaleDomain?: string;
   worldType?: WorldType;
   seed?: string | number;
   gameMode?: GameMode;
@@ -312,7 +319,35 @@ function start(): void {
 
   const viewDistanceRaw = Number(typeof args['view-distance'] === 'string' ? args['view-distance'] : fileConfig.viewDistance ?? 6);
   const viewDistance = Math.max(2, Math.min(8, Number.isFinite(viewDistanceRaw) ? Math.floor(viewDistanceRaw) : 6));
+  const maxPlayersRaw = Number(typeof args['max-players'] === 'string' ? args['max-players'] : fileConfig.maxPlayers ?? 8);
+  const maxPlayers = Math.max(1, Math.min(64, Number.isFinite(maxPlayersRaw) ? Math.floor(maxPlayersRaw) : 8));
   const allowCommands = args['no-cheats'] ? false : fileConfig.allowCommands ?? true;
+
+  const useHttps = args.https === true || fileConfig.https === true;
+  const tlsCertPath = path.resolve(
+    rootDir,
+    typeof args['tls-cert'] === 'string' ? args['tls-cert'] : fileConfig.tlsCert ?? path.join(dataDir, 'tailscale-cert.pem'),
+  );
+  const tlsKeyPath = path.resolve(
+    rootDir,
+    typeof args['tls-key'] === 'string' ? args['tls-key'] : fileConfig.tlsKey ?? path.join(dataDir, 'tailscale-key.pem'),
+  );
+  const tailscaleDomainFile = path.join(dataDir, 'tailscale-domain.txt');
+  let tailscaleDomain =
+    (typeof args['tailscale-domain'] === 'string' ? args['tailscale-domain'] : fileConfig.tailscaleDomain) ??
+    (fs.existsSync(tailscaleDomainFile) ? fs.readFileSync(tailscaleDomainFile, 'utf8').trim() : '');
+  let tlsOptions: { cert: Buffer; key: Buffer } | null = null;
+  if (useHttps) {
+    if (!fs.existsSync(tlsCertPath) || !fs.existsSync(tlsKeyPath)) {
+      console.error(`Certificat ou clé TLS introuvable (${tlsCertPath}, ${tlsKeyPath}).`);
+      console.error('Lancez d’abord `npm run serveur:tailscale-cert` ou passez `--tls-cert` et `--tls-key`.');
+      process.exit(1);
+    }
+    tlsOptions = {
+      cert: fs.readFileSync(tlsCertPath),
+      key: fs.readFileSync(tlsKeyPath),
+    };
+  }
 
   const worldDir = path.join(dataDir, 'worlds', 'default');
   const worldSavePath = path.join(worldDir, 'world.json');
@@ -370,6 +405,9 @@ function start(): void {
   let inviteSecretHex: string | null = null;
   let hostToken: string | null = null;
   let activeInviteCode: string | null = null;
+  let activeInviteUrl: string | null = null;
+  let activeTailscaleCode: string | null = null;
+  let activeTailscaleUrl: string | null = null;
 
   const players = new Map<number, ServerPlayer>();
   let nextPlayerId = 1;
@@ -621,6 +659,9 @@ function start(): void {
     inviteSecretHex = null;
     hostToken = null;
     activeInviteCode = null;
+    activeInviteUrl = null;
+    activeTailscaleCode = null;
+    activeTailscaleUrl = null;
 
     // Collecter tous les chunks sauvegardés sur disque + en mémoire
     const chunkMap = new Map<number, SavedChunk>();
@@ -1004,11 +1045,22 @@ function start(): void {
         const primaryIp = hostHeader === '127.0.0.1' ? '127.0.0.1' : lan[0] ?? '127.0.0.1';
         const inviteCode = encodeInviteCode(primaryIp, port, secret);
         const tailscaleCode = tailscale[0] ? encodeInviteCode(tailscale[0], port, secret) : null;
+        const inviteUrl = `http://${primaryIp}:${port}/rejoindre/${inviteCode}`;
+        const tailscaleUrl = tailscaleCode
+          ? useHttps && tailscaleDomain
+            ? `https://${tailscaleDomain}:${port}/rejoindre/${tailscaleCode}`
+            : `http://${tailscale[0]}:${port}/rejoindre/${tailscaleCode}`
+          : null;
         activeInviteCode = inviteCode;
+        activeInviteUrl = inviteUrl;
+        activeTailscaleCode = tailscaleCode;
+        activeTailscaleUrl = tailscaleUrl;
 
         console.log(`[Hôte] Monde « ${worldName} » ouvert aux amis par ${hostName} — Code : ${inviteCode}`);
+        console.log(`[Hôte] Lien Wi-Fi : ${inviteUrl}`);
+        if (tailscaleUrl) console.log(`[Hôte] Lien Tailscale : ${tailscaleUrl}`);
         res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-        res.end(JSON.stringify({ ok: true, inviteCode, tailscaleCode, hostToken, port }));
+        res.end(JSON.stringify({ ok: true, inviteCode, inviteUrl, tailscaleCode, tailscaleUrl, hostToken, port }));
       } catch (err) {
         res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
         res.end(JSON.stringify({ ok: false, error: err instanceof Error ? err.message : 'Erreur d’ouverture du monde.' }));
@@ -1044,6 +1096,92 @@ function start(): void {
       return;
     }
 
+    if (urlPath.startsWith('/rejoindre/')) {
+      const rawCode = decodeURIComponent(urlPath.slice('/rejoindre/'.length)).replace(/\/+$/, '');
+      const parsed = parseInviteCode(rawCode);
+      const valid = Boolean(parsed && inviteSecretHex && safeEqualString(parsed.secretHex, inviteSecretHex));
+      const noRedirect = urlObj.searchParams.get('no-redirect') === '1';
+      const isTls = Boolean((req.socket as { encrypted?: boolean }).encrypted);
+      const proto = isTls ? 'https' : 'http';
+      const hostHeader = req.headers.host ?? `127.0.0.1:${port}`;
+      const baseUrl = `${proto}://${hostHeader}`;
+
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      if (method === 'HEAD') {
+        res.end();
+        return;
+      }
+
+      if (!valid || !parsed) {
+        res.end(`<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SarihBricks 3D — Lien expiré</title>
+  <style>
+    body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#1e1b18;color:#f5f5f5;font-family:system-ui,sans-serif;padding:24px;text-align:center}
+    .card{max-width:440px;background:#2b2621;border:3px solid #554c43;padding:24px;box-shadow:0 8px 24px rgba(0,0,0,.5)}
+    h1{margin:0 0 12px;font-size:22px;color:#ff7777}
+    p{margin:0 0 20px;line-height:1.5;color:#d6d0c8}
+    a.btn{display:inline-block;padding:12px 20px;background:#4c7a34;color:#fff;text-decoration:none;font-weight:700;border:2px solid #2d4c1e}
+  </style>
+</head>
+<body>
+  <div class="card" data-mc="invite-expired">
+    <h1>Lien d’invitation expiré</h1>
+    <p>Ce lien d’invitation n’est plus valide ou la partie a été fermée par l’hôte.</p>
+    <a class="btn" href="/">Ouvrir SarihBricks 3D</a>
+  </div>
+</body>
+</html>`);
+        return;
+      }
+
+      const code = parsed.normalized;
+      const fallbackUrl = `${baseUrl}/?rejoindre=${encodeURIComponent(code)}`;
+      const intentUrl = `intent://rejoindre/${encodeURIComponent(code)}#Intent;scheme=sarihbricks;package=com.sarih.sarihbricks;S.browser_fallback_url=${encodeURIComponent(fallbackUrl)};end`;
+
+      res.end(`<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Rejoindre SarihBricks 3D</title>
+  <style>
+    body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#1e1b18;color:#f5f5f5;font-family:system-ui,sans-serif;padding:24px;text-align:center}
+    .card{max-width:460px;background:#2b2621;border:3px solid #554c43;padding:24px;box-shadow:0 8px 24px rgba(0,0,0,.5)}
+    h1{margin:0 0 8px;font-size:22px;color:#ffff55}
+    .code{font-family:monospace;font-size:16px;background:#141210;padding:10px 12px;border:1px solid #443c35;margin:14px 0 18px;letter-spacing:1px;word-break:break-all}
+    .actions{display:flex;flex-direction:column;gap:10px}
+    a.btn{display:block;padding:12px 18px;background:#4c7a34;color:#fff;text-decoration:none;font-weight:700;border:2px solid #2d4c1e}
+    a.btn.alt{background:#3c3732;border-color:#5a524a}
+  </style>
+</head>
+<body>
+  <div class="card" data-mc="invite-landing">
+    <h1>Rejoindre la partie</h1>
+    <div>Code d’invitation :</div>
+    <div class="code" data-mc="landing-code">${code}</div>
+    <div class="actions">
+      <a class="btn" data-mc="open-android-app" href="${intentUrl}">Ouvrir dans l’application Android</a>
+      <a class="btn alt" data-mc="open-browser" href="${fallbackUrl}">Jouer dans le navigateur</a>
+    </div>
+  </div>
+  <script>
+    (function () {
+      var noRedirect = ${noRedirect ? 'true' : 'false'};
+      if (noRedirect) return;
+      var isAndroid = /Android/i.test(navigator.userAgent || '');
+      var target = isAndroid ? ${JSON.stringify(intentUrl)} : ${JSON.stringify(fallbackUrl)};
+      setTimeout(function () { window.location.replace(target); }, 250);
+    })();
+  </script>
+</body>
+</html>`);
+      return;
+    }
+
     let relPath = decodeURIComponent(urlPath);
     if (relPath === '/' || relPath === '') relPath = '/index.html';
     const filePath = path.resolve(distDir, `.${relPath}`);
@@ -1068,7 +1206,7 @@ function start(): void {
 
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_PAYLOAD_BYTES });
 
-  server.on('upgrade', (req, socket, head) => {
+  const handleUpgrade = (req: http.IncomingMessage, socket: net.Socket, head: Buffer): void => {
     const urlPath = (req.url ?? '/').split('?')[0];
     if (urlPath !== '/ws') {
       socket.destroy();
@@ -1077,7 +1215,33 @@ function start(): void {
     wss.handleUpgrade(req, socket, head, (ws) => {
       wss.emit('connection', ws, req);
     });
-  });
+  };
+
+  server.on('upgrade', handleUpgrade);
+
+  const httpsServer = tlsOptions
+    ? https.createServer(tlsOptions, (req, res) => {
+        server.emit('request', req, res);
+      })
+    : null;
+  if (httpsServer) {
+    httpsServer.on('upgrade', handleUpgrade);
+  }
+
+  const listener: net.Server = httpsServer
+    ? net.createServer((socket) => {
+        socket.once('data', (chunk) => {
+          socket.pause();
+          socket.unshift(chunk);
+          if (chunk.length > 0 && chunk[0] === 0x16) {
+            httpsServer.emit('connection', socket);
+          } else {
+            server.emit('connection', socket);
+          }
+          socket.resume();
+        });
+      })
+    : server;
 
   wss.on('connection', (ws, req) => {
     const clientIp = normalizeIp(req.socket.remoteAddress);
@@ -1100,7 +1264,11 @@ function start(): void {
       if (!msg || typeof msg !== 'object') return;
 
       if (!player) {
-        if (msg.type !== 'join') return;
+        if (msg.type !== 'join') {
+          sendJson(ws, { type: 'error', code: 'bad_request', message: 'Authentification requise.' });
+          ws.close(1008, 'Auth required');
+          return;
+        }
         clearTimeout(authTimer);
 
         const waitSec = checkRateLimit(clientIp);
@@ -1178,6 +1346,18 @@ function start(): void {
           return;
         }
 
+        const hasHost = Array.from(players.values()).some((p) => p.isHost);
+        const limitForGuest = hasHost ? maxPlayers : Math.max(0, maxPlayers - 1);
+        if (!isHost && players.size >= limitForGuest) {
+          sendJson(ws, {
+            type: 'error',
+            code: 'server_full',
+            message: `Serveur complet (${players.size}/${maxPlayers})`,
+          });
+          ws.close(1008, 'Server full');
+          return;
+        }
+
         const savedPlayer = readJsonFile<PlayerSaveData>(path.join(playersDir, `${normalizePlayerFile(cleanName)}.json`));
         const id = nextPlayerId++;
         player = {
@@ -1229,7 +1409,14 @@ function start(): void {
             slots: saveSlots(player.slots) as Array<SerializedSlot | null>,
             selected: player.selected,
           },
-          ...(isHost && activeInviteCode ? { inviteCode: activeInviteCode } : {}),
+          ...(isHost && activeInviteCode
+            ? {
+                inviteCode: activeInviteCode,
+                inviteUrl: activeInviteUrl ?? undefined,
+                tailscaleCode: activeTailscaleCode,
+                tailscaleUrl: activeTailscaleUrl,
+              }
+            : {}),
         });
 
         streamChunksAround(player);
@@ -1413,6 +1600,37 @@ function start(): void {
         return;
       }
 
+      if (msg.type === 'rtcSignal') {
+        const to = Number(msg.to);
+        const kind = msg.kind;
+        if (!Number.isInteger(to) || to === player.id) return;
+        if (kind !== 'offer' && kind !== 'answer' && kind !== 'ice') return;
+        if (msg.payload !== null && typeof msg.payload !== 'object') return;
+        const target = players.get(to);
+        if (!target || target.ws.readyState !== WebSocket.OPEN) return;
+        sendJson(target.ws, {
+          type: 'rtcSignal',
+          from: player.id,
+          kind,
+          payload: msg.payload,
+        });
+        return;
+      }
+
+      if (msg.type === 'rtcState') {
+        broadcastJson(
+          {
+            type: 'rtcState',
+            id: player.id,
+            mic: Boolean(msg.mic),
+            cam: Boolean(msg.cam),
+            speaking: Boolean(msg.speaking),
+          },
+          player.id,
+        );
+        return;
+      }
+
       if (msg.type === 'chat' && typeof msg.text === 'string') {
         const text = msg.text.trim().slice(0, 256);
         if (!text) return;
@@ -1498,22 +1716,26 @@ function start(): void {
       p.ws.close(1001, 'Serveur arrêté');
     }
     wss.close();
-    server.close(() => process.exit(0));
+    if (httpsServer) httpsServer.close();
+    listener.close(() => process.exit(0));
     setTimeout(() => process.exit(0), 500).unref();
   }
 
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
 
-  server.listen(port, '0.0.0.0', () => {
+  listener.listen(port, '0.0.0.0', () => {
     const { lan, tailscale } = listNetworkAddresses();
     console.log('');
-    console.log('=== Serveur SarihBricks 3D (Jalon 2) ===');
+    console.log('=== Serveur SarihBricks 3D (Jalon 3) ===');
     console.log(`Monde : ${worldName} (${worldType === 'flat' ? 'Plat' : 'Normal'}) | Graine : ${seed} | Mode : ${gameMode}`);
-    console.log(`Port  : ${port}${generatedPassword ? ` | Mot de passe admin généré : ${password}` : ' | Mot de passe : requis'}`);
+    console.log(`Port  : ${port} | Plafond : ${maxPlayers} joueur(s)${generatedPassword ? ` | Mot de passe admin généré : ${password}` : ' | Mot de passe : requis'}`);
     console.log(`Local     : http://localhost:${port}`);
     for (const ip of lan) {
       console.log(`Wi-Fi LAN : http://${ip}:${port}`);
+    }
+    if (useHttps && tailscaleDomain) {
+      console.log(`Tailscale HTTPS : https://${tailscaleDomain}:${port}`);
     }
     for (const ip of tailscale) {
       console.log(`Tailscale : http://${ip}:${port}`);

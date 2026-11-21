@@ -131,16 +131,41 @@ Fabriquez un nouvel APK avec `npm run android:apk` (en utilisant la même clé `
 - Les mondes sont stockés dans le stockage interne de l'application (IndexedDB) : utilisez l'export `.aetherworld` si vous voulez une sauvegarde externe ou transférer un monde vers un autre appareil.
 - Les mêmes limites de jouabilité que la version navigateur (pas de vibrations manette, limites du multijoueur jalon 1).
 
-## 🌐 Multijoueur (Wi-Fi local et Tailscale — Jalon 2)
+## 🌐 Multijoueur (Wi-Fi local et Tailscale — Jalon 3)
 
 Un joueur lance un serveur Node.js autoritaire sur son ordinateur ; ses amis le rejoignent depuis un navigateur (ordinateur ou téléphone) ou depuis l'application Android.
 
-### Ouvrir un monde solo aux amis (par code)
+### Ouvrir un monde solo aux amis (par code ou lien cliquable)
 
 1. Lancez le serveur sur votre Mac : `npm run serveur` (ou ouvrez directement le jeu à l'adresse du serveur, par défaut `http://localhost:8080`).
-2. En jeu solo, ouvrez le menu de pause (`Échap`) et cliquez sur **Ouvrir aux amis**. La première fois, saisissez le **mot de passe du serveur** (il est ensuite mémorisé pour ce serveur). Le monde est envoyé au serveur et un **code d'invitation** (ex. `SB-XXXXX-XXXXX-XXXXX-XXXXX`) s'affiche avec un bouton **Copier le code**.
-3. Vos amis ouvrent **Multijoueur**, saisissent leur pseudo et **uniquement ce code** (insensible à la casse et aux tirets) : l'adresse et le port du serveur sont encodés dans le code.
-4. Cliquez sur **Fermer aux amis** (ou quittez la partie) pour invalider le code, renvoyer les amis au menu et récupérer toutes les modifications effectuées à plusieurs dans votre monde solo.
+2. En jeu solo, ouvrez le menu de pause (`Échap`) et cliquez sur **Ouvrir aux amis**. La première fois, saisissez le **mot de passe du serveur** (il est ensuite mémorisé pour ce serveur). Le monde est envoyé au serveur et deux moyens d'inviter s'affichent :
+   - un **code d'invitation** (`SB-XXXXX-XXXXX-XXXXX-XXXXX`, bouton **Copier le code**) ;
+   - un **lien d'invitation cliquable** (`http://192.168.x.x:8080/rejoindre/SB-...`, boutons **Copier le lien d'invitation**, **Copier le lien Tailscale** si Tailscale est actif, et **Partager le lien** sur les appareils compatibles).
+3. En cliquant sur le lien dans une messagerie (SMS, WhatsApp…), un téléphone Android équipé de l'application ouvre directement **SarihBricks** (`sarihbricks://rejoindre/…`) sur l'écran Multijoueur avec le code déjà rempli ; sinon, le jeu s'ouvre dans le navigateur avec le code rempli (il ne reste qu'à choisir un pseudo et cliquer sur **Rejoindre**).
+4. Cliquez sur **Fermer aux amis** (ou quittez la partie) pour invalider le code et le lien, renvoyer les amis au menu et récupérer toutes les modifications effectuées à plusieurs dans votre monde solo.
+
+### Plafond de joueurs
+
+- Par défaut, le serveur accepte **8 joueurs** au maximum (réglable via `--max-players <n>` ou `maxPlayers` dans `server-data/config.json`).
+- Au-delà, les nouveaux arrivants reçoivent le message `Serveur complet (8/8)`.
+- L'hôte compte dans le total, mais une place lui est toujours réservée : il peut rejoindre son propre monde ouvert même si ses amis ont pris toutes les autres places.
+
+### Audio et vidéo en partie (WebRTC)
+
+- **Connexion directe entre appareils** : la voix et la vidéo passent en maillage **WebRTC direct** entre joueurs ; le serveur WebSocket ne sert qu'à la mise en relation, **uniquement entre joueurs authentifiés dans la même partie**.
+- **Aucun serveur extérieur** : aucun serveur STUN ni TURN public (ni Google ni autre) n'est utilisé ; en Wi-Fi local et par Tailscale, les adresses directes suffisent.
+- **Micro et « appuyer pour parler »** : le micro est **coupé par défaut** à l'arrivée. Le bouton **🎤 Micro** en haut à droite l'active ou le coupe (la permission n'est demandée qu'à ce moment). Dans **Options…**, on peut activer **Appuyer pour parler** (touche `V` par défaut, remappable dans **Options → Contrôles…**, bouton tactile **🎙 Parler** ou clic du stick droit `R3` sur manette) et régler le **Volume des voix**.
+- **Caméra et vignettes** : le bouton **📷 Caméra** active ou coupe sa caméra ; les vidéos des autres apparaissent en **petites vignettes** dans le coin haut droit (masquables via **👁 Masquer vidéos**). Un indicateur vert signale qui parle, et chaque joueur peut couper le son d'un autre joueur (`🔇` / `🔊`).
+- **Contexte sécurisé obligatoire** : les navigateurs n'autorisent le micro et la caméra qu'en contexte sécurisé (`https://` ou `localhost`). Ils fonctionnent donc sur le Mac (`http://localhost:8080`), dans l'application Android (origine `https://localhost`) et via le lien Tailscale en HTTPS (`https://<machine>.<réseau>.ts.net:8080`). Dans un navigateur de téléphone ouvert en `http://192.168.x.x:8080`, le jeu affiche un message explicite et la discussion écrite reste utilisable.
+
+### Tailscale en HTTPS (pour audio/vidéo dans le navigateur à distance)
+
+```bash
+npm run serveur:tailscale-cert   # obtient le certificat via `tailscale cert` dans server-data/
+npm run serveur -- --https       # active HTTPS/WSS sur Tailscale tout en gardant le Wi-Fi en HTTP
+```
+
+Si la commande indique que les certificats HTTPS ne sont pas activés sur votre compte Tailscale, ouvrez la console DNS Tailscale (`https://login.tailscale.com/admin/dns`), activez **MagicDNS** puis **Enable HTTPS** dans la section **HTTPS Certificates**, et relancez `npm run serveur:tailscale-cert`. Options manuelles : `--tls-cert <chemin>` et `--tls-key <chemin>`. Le Wi-Fi local reste en `http://192.168.x.x:8080`.
 
 ### Lancer un serveur dédié
 
@@ -149,28 +174,30 @@ npm run serveur -- --password monsecret
 ```
 
 Options utiles :
-- `--port 8080` : port HTTP et WebSocket (8080 par défaut) ;
+- `--port 8080` : port HTTP/HTTPS et WebSocket (8080 par défaut) ;
+- `--max-players 8` : plafond de joueurs (8 par défaut) ;
+- `--https` (`--tls-cert`, `--tls-key`) : active HTTPS/WSS pour Tailscale sur le même port ;
 - `--import chemin/monde.aetherworld` : importe un monde exporté comme monde actif du serveur ;
 - `--flat` : monde plat (normal par défaut) ;
 - `--seed 1337` : graine du monde ;
 - `--gamemode creative` : mode de jeu par défaut (`survival` par défaut) ;
-- ou un fichier `server-data/config.json` (non commité) contenant `{ "password": "monsecret" }`.
+- ou un fichier `server-data/config.json` (non commité) contenant `{ "password": "monsecret", "maxPlayers": 8 }`.
 
 Au démarrage, le serveur affiche les adresses à partager :
 - **Wi-Fi local** : `http://192.168.x.x:8080`
-- **Tailscale** (si actif) : `http://100.x.x.x:8080`
+- **Tailscale** (si actif) : `http://100.x.x.x:8080` (ou `https://<machine>.<réseau>.ts.net:8080` avec `--https`)
 
-### Ce qui est partagé et sauvegardé (Jalon 2)
+### Ce qui est partagé et sauvegardé
 
 - **Blocs et simulation** : casse et pose validées par le serveur (portée, mode de jeu, objet présent dans l'inventaire en survie) et diffusées aux joueurs à portée ; chute du sable/gravier, écoulement de l'eau et de la lave, feu et cultures simulés sur le serveur.
 - **Inventaire, temps et météo** : inventaire géré par le serveur (en survie, casser un bloc place directement l'objet dans l'inventaire) ; temps et météo synchronisés.
 - **Droits de l'hôte** : seul l'hôte (celui qui a ouvert le monde ou connaît le mot de passe) peut utiliser `/gamemode`, `/tp`, `/time` et fermer le monde.
 - **Sauvegarde serveur** : chunks modifiés et un fichier par joueur (`server-data/worlds/default/players/`) enregistrés toutes les 30 secondes et à l'arrêt du serveur.
 
-### Limites du jalon 2
+### Limites du jalon 3
 
-- Les objets au sol arrivent au jalon 3 : en attendant, casser un bloc en survie place directement le butin dans l'inventaire.
-- Pas encore de créatures, de coffres/fourneaux synchronisés, de combat ni de changement de dimension en multijoueur ; un seul monde actif par serveur.
+- Les créatures, objets au sol et coffres/fourneaux synchronisés arrivent au jalon 4 : en attendant, casser un bloc en survie place directement le butin dans l'inventaire.
+- Pas encore de combat ni de changement de dimension en multijoueur ; un seul monde actif par serveur.
 
 ## 🎮 Contrôles
 

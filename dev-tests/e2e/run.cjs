@@ -85,6 +85,8 @@ function runScript(scriptPath) {
     await runScript(path.join(__dirname, 't16.cjs'));
     console.log('\n=== Exécution de t17.cjs (Multijoueur : jalon 2, code, blocs partagés, sauvegarde) ===');
     await runScript(path.join(__dirname, 't17.cjs'));
+    console.log('\n=== Exécution de t18.cjs (Multijoueur : jalon 3, lien d’invitation, plafond, audio/vidéo) ===');
+    await runScript(path.join(__dirname, 't18.cjs'));
     console.log('\nTous les tests E2E sont passés avec succès.');
   } catch (err) {
     console.error('\nÉchec des tests E2E :', err.message);

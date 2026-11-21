@@ -6,8 +6,21 @@
  * L'interface ne touche ni au monde ni au rendu 3D ; le jeu ne touche jamais au DOM.
  */
 import type { Inventory, Menu } from '../game/Inventory';
+import type { VoicePeerView } from '../net/VoiceVideo';
 import type { GameMode, WorldType } from '../world/Constants';
 import type { Settings, WorldInfo } from '../world/Storage';
+
+export interface VoiceStatusView {
+  secure: boolean;
+  micEnabled: boolean;
+  camEnabled: boolean;
+  pttMode: boolean;
+  pttActive: boolean;
+  selfSpeaking: boolean;
+  videosHidden: boolean;
+  error: string;
+  peers: VoicePeerView[];
+}
 
 /** Le jeu en cours, vu par l'interface. Toutes les valeurs sont relues à chaque image. */
 export interface UiGame {
@@ -89,10 +102,18 @@ export interface UiGame {
   readonly isRemote?: boolean;
   readonly isHost?: boolean;
   readonly inviteCode?: string | null;
+  readonly inviteUrl?: string | null;
   readonly tailscaleCode?: string | null;
-  openToFriends?(serverPassword?: string): Promise<{ inviteCode: string; tailscaleCode?: string | null }>;
+  readonly tailscaleUrl?: string | null;
+  openToFriends?(serverPassword?: string): Promise<{ inviteCode: string; inviteUrl?: string | null; tailscaleCode?: string | null; tailscaleUrl?: string | null }>;
   getSavedServerPassword?(): Promise<string | null>;
   closeToFriends?(): Promise<void>;
+  readonly voiceStatus?: VoiceStatusView | null;
+  toggleMic?(): Promise<boolean>;
+  toggleCam?(): Promise<boolean>;
+  toggleVideosHidden?(): boolean;
+  setPeerMuted?(id: number, muted: boolean): void;
+  setPushToTalkActive?(active: boolean): void;
 }
 
 /** Une offre d'un villageois, telle que l'écran d'échange l'affiche. */
@@ -181,7 +202,7 @@ export interface UiApi {
   readonly pausing: boolean;
 
   /** Menu principal (liste des mondes, création, options). Cache le HUD et tout autre écran. */
-  showTitle(page?: 'main' | 'worlds' | 'create' | 'multiplayer', error?: string): void;
+  showTitle(page?: 'main' | 'worlds' | 'create' | 'multiplayer', error?: string, prefillCode?: string): void;
   /** Écran de chargement plein écran. `progress` : 0..1. */
   showLoading(title: string, detail: string, progress: number): void;
   /** Cache le menu principal et l'écran de chargement, affiche le HUD : la partie commence. */
