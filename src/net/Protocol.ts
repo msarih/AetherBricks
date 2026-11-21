@@ -39,6 +39,8 @@ export type ClientMessage =
   | { type: 'placeBlock'; x: number; y: number; z: number; face: number; id: number; meta: number; slot: number }
   | { type: 'selectSlot'; slot: number }
   | { type: 'invSync'; slots: Array<SerializedSlot | null>; selected: number }
+  | { type: 'rtcSignal'; to: number; kind: 'offer' | 'answer' | 'ice'; payload: unknown }
+  | { type: 'rtcState'; mic: boolean; cam: boolean; speaking: boolean }
   | { type: 'closeWorld' };
 
 export type ErrorCode =
@@ -48,6 +50,7 @@ export type ErrorCode =
   | 'name_taken'
   | 'bad_name'
   | 'server_full'
+  | 'not_host'
   | 'bad_request';
 
 export type ServerMessage =
@@ -73,6 +76,9 @@ export type ServerMessage =
       hunger?: number;
       inventory?: { slots: Array<SerializedSlot | null>; selected: number };
       inviteCode?: string;
+      inviteUrl?: string;
+      tailscaleCode?: string | null;
+      tailscaleUrl?: string | null;
     }
   | { type: 'error'; code: ErrorCode; message: string }
   | { type: 'players'; list: RemotePlayerState[] }
@@ -85,6 +91,8 @@ export type ServerMessage =
   | { type: 'blockUpdate'; x: number; y: number; z: number; id: number; meta: number }
   | { type: 'inventory'; slots: Array<SerializedSlot | null>; selected: number }
   | { type: 'vitals'; health: number; hunger: number }
+  | { type: 'rtcSignal'; from: number; kind: 'offer' | 'answer' | 'ice'; payload: unknown }
+  | { type: 'rtcState'; id: number; mic: boolean; cam: boolean; speaking: boolean }
   | { type: 'worldClosed'; reason: string };
 
 /** Encode un chunk en paquet binaire RLE (tag + cx + cz + blocksRLE + metaRLE + biomes + tints). */

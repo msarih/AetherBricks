@@ -8,11 +8,13 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "serveur": "node scripts/serveur.mjs",
+    "serveur:tailscale-cert": "node scripts/tailscale-cert.mjs",
     "test:e2e": "node dev-tests/e2e/run.cjs",
     "android:apk": "bash scripts/build-apk.sh"
   },
   "dependencies": {
     "@capacitor/android": "7.6.10",
+    "@capacitor/app": "^7.1.2",
     "@capacitor/core": "7.6.10",
     "three": "^0.181.0",
     "ws": "^8.23.0"

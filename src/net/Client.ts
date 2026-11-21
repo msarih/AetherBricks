@@ -19,6 +19,8 @@ export interface ClientHandlers {
   onBlockUpdate(x: number, y: number, z: number, id: number, meta: number): void;
   onInventory(slots: Array<SerializedSlot | null>, selected: number): void;
   onVitals(health: number, hunger: number): void;
+  onRtcSignal?(from: number, kind: 'offer' | 'answer' | 'ice', payload: unknown): void;
+  onRtcState?(id: number, mic: boolean, cam: boolean, speaking: boolean): void;
   onWorldClosed(reason: string): void;
   onDisconnect(reason: string): void;
 }
@@ -60,6 +62,16 @@ export class MultiplayerClient {
       }
       targetAddress = `${parsed.ip}:${parsed.port}`;
       normalizedCode = parsed.normalized;
+      // En HTTPS (ex. lien Tailscale https://<machine>.ts.net:port), passer par wss:// sur l'hôte courant
+      if (
+        typeof location !== 'undefined' &&
+        location.protocol === 'https:' &&
+        location.hostname !== 'localhost' &&
+        location.hostname !== '127.0.0.1' &&
+        !/^\d+\.\d+\.\d+\.\d+$/.test(location.hostname)
+      ) {
+        targetAddress = `https://${location.host}`;
+      }
     } else if (!hostToken && !password) {
       return Promise.reject(new Error('Veuillez saisir un code d’invitation ou le mot de passe du serveur.'));
     }
@@ -186,6 +198,12 @@ export class MultiplayerClient {
       case 'vitals':
         this.handlers.onVitals(msg.health, msg.hunger);
         break;
+      case 'rtcSignal':
+        this.handlers.onRtcSignal?.(msg.from, msg.kind, msg.payload);
+        break;
+      case 'rtcState':
+        this.handlers.onRtcState?.(msg.id, msg.mic, msg.cam, msg.speaking);
+        break;
       case 'worldClosed':
         this.closedByClient = true;
         this.handlers.onWorldClosed(msg.reason);
@@ -222,6 +240,14 @@ export class MultiplayerClient {
 
   sendInvSync(slots: Array<SerializedSlot | null>, selected: number): void {
     this.send({ type: 'invSync', slots, selected });
+  }
+
+  sendRtcSignal(to: number, kind: 'offer' | 'answer' | 'ice', payload: unknown): void {
+    this.send({ type: 'rtcSignal', to, kind, payload });
+  }
+
+  sendRtcState(mic: boolean, cam: boolean, speaking: boolean): void {
+    this.send({ type: 'rtcState', mic, cam, speaking });
   }
 
   sendCloseWorld(): void {
