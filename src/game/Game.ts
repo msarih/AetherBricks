@@ -3533,7 +3533,10 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
 
   private applyRemoteInventory(slots: Array<SerializedSlot | null>, selected: number, cursor?: SerializedSlot | null): void {
     const inv = this.player.inventory;
-    inv.slots = loadSlots(slots, inv.slots.length);
+    const loaded = loadSlots(slots, inv.slots.length);
+    for (let i = 0; i < inv.slots.length; i++) {
+      inv.slots[i] = loaded[i] ?? null;
+    }
     if (cursor !== undefined) {
       inv.cursor = cursor ? loadSlots([cursor], 1)[0] : null;
     }
