@@ -4,7 +4,6 @@
 import * as THREE from 'three';
 import { Sfx } from './audio/Sfx';
 import { Game } from './game/Game';
-import { RemoteGame } from './game/RemoteGame';
 import { MultiplayerClient } from './net/Client';
 import { saveRecentServer } from './net/RecentServers';
 import { GamepadController } from './player/Gamepad';
@@ -63,7 +62,7 @@ async function main(): Promise<void> {
     return url;
   }
 
-  let game: Game | RemoteGame | null = null;
+  let game: Game | null = null;
 
   /** Arrête la partie en cours sans la sauvegarder. */
   function closeGame(): void {
@@ -86,19 +85,39 @@ async function main(): Promise<void> {
     g.start();
   }
 
-  async function launchMultiplayer(options: { address: string; name: string; password: string }): Promise<void> {
+  async function launchMultiplayer(options: { address: string; name: string; password: string; code?: string }): Promise<void> {
     const client = new MultiplayerClient();
-    const welcome = await client.connect(options.address, options.name, options.password);
-    saveRecentServer({ address: options.address, name: welcome.name, password: options.password });
+    const welcome = await client.connect(options.address, options.name, options.password, options.code);
+    if (!options.code) {
+      saveRecentServer({ address: options.address, name: welcome.name, password: options.password });
+    } else {
+      saveRecentServer({ address: '', name: welcome.name, password: '' });
+    }
     closeGame();
-    const g = new RemoteGame({
+    ui.showLoading('Connexion au serveur', 'Réception du monde…', 0);
+    const now = Date.now();
+    const info: WorldInfo = {
+      id: 'remote',
+      name: `Multijoueur (${welcome.name})`,
+      seed: welcome.seed,
+      worldType: welcome.worldType,
+      gameMode: welcome.gameMode,
+      genVersion: GEN_VERSION,
+      createdAt: now,
+      lastPlayed: now,
+      state: null,
+    };
+    const g = new Game({
       canvas,
       renderer,
       atlas,
       ui,
       sfx,
       settings,
-      client,
+      storage: null,
+      info,
+      savedKeys: new Set(),
+      net: client,
       welcome,
       onDisconnected: (reason) => {
         closeGame();
@@ -188,7 +207,7 @@ async function main(): Promise<void> {
       const info = await importWorld(storage, await file.arrayBuffer());
       return info.id;
     },
-    async joinMultiplayer(options: { address: string; name: string; password: string }): Promise<void> {
+    async joinMultiplayer(options: { address: string; name: string; password: string; code?: string }): Promise<void> {
       await launchMultiplayer(options);
     },
     async quitToTitle(): Promise<void> {

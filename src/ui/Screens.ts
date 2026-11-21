@@ -184,23 +184,134 @@ export class SignScreen implements Screen {
 export class PauseScreen implements Screen {
   readonly el: HTMLDivElement;
   readonly pausing = true;
-  private readonly buttons: HTMLButtonElement[] = [];
-  private readonly error: HTMLDivElement;
+  private buttons: HTMLButtonElement[] = [];
+  private error!: HTMLDivElement;
   private busy = false;
+  private askingOpenPassword = false;
+  private openPasswordInput: HTMLInputElement | null = null;
+  private openPasswordError = '';
 
   constructor(private readonly ctx: UiContext) {
-    const host = ctx.host;
     this.el = el('div', 'mc-screen mc-screen-dim mc-menu');
     this.el.dataset.mc = 'pause';
+    this.render();
+  }
+
+  private render(): void {
+    const ctx = this.ctx;
+    const host = ctx.host;
+    const game = host.game;
+    this.el.textContent = '';
+    this.buttons = [];
+
     el('div', 'mc-title', this.el, 'Menu du jeu');
     el('div', 'mc-gap', this.el);
-    this.buttons.push(
-      sized(button(host, 'Retour au jeu', () => this.resume(), 'resume', this.el), 204),
-      sized(button(host, 'Options…', () => ctx.openOptions(() => ctx.openPause(), true), 'options', this.el), 204),
-      sized(button(host, 'Statistiques', () => ctx.openStats(() => ctx.openPause()), 'stats', this.el), 204),
-      sized(button(host, 'Sauvegarder et quitter', () => this.quit(), 'quit', this.el), 204),
-    );
-    this.error = el('div', 'mc-error', this.el);
+
+    const resumeBtn = sized(button(host, 'Retour au jeu', () => this.resume(), 'resume', this.el), 204);
+    const optsBtn = sized(button(host, 'Options…', () => ctx.openOptions(() => ctx.openPause(), true), 'options', this.el), 204);
+    const statsBtn = sized(button(host, 'Statistiques', () => ctx.openStats(() => ctx.openPause()), 'stats', this.el), 204);
+    this.buttons.push(resumeBtn, optsBtn, statsBtn);
+
+    if (game && !game.isRemote && game.openToFriends) {
+      if (this.askingOpenPassword) {
+        const box = el('div', 'mc-invite-box', this.el);
+        box.style.display = 'flex';
+        box.style.flexDirection = 'column';
+        box.style.alignItems = 'center';
+        box.style.gap = u(4);
+        box.style.margin = `${u(4)} 0`;
+
+        const lbl = el('label', 'mc-field-label', box, 'Mot de passe du serveur');
+        lbl.style.textAlign = 'center';
+        const input = document.createElement('input');
+        input.type = 'password';
+        input.className = 'mc-input';
+        input.placeholder = 'Mot de passe du serveur';
+        input.dataset.mc = 'open-friends-password';
+        input.style.width = u(204);
+        input.maxLength = 64;
+        box.appendChild(input);
+        this.openPasswordInput = input;
+
+        const confirmBtn = sized(
+          button(host, 'Ouvrir aux amis', () => this.submitOpenPassword(confirmBtn), 'open-friends-confirm', box),
+          204,
+        );
+        input.addEventListener('keydown', (ev) => {
+          if (ev.key === 'Enter') {
+            ev.preventDefault();
+            this.submitOpenPassword(confirmBtn);
+          }
+        });
+        const cancelBtn = sized(
+          button(
+            host,
+            'Annuler',
+            () => {
+              this.askingOpenPassword = false;
+              this.openPasswordError = '';
+              this.render();
+            },
+            'open-friends-cancel',
+            box,
+          ),
+          204,
+        );
+        this.buttons.push(confirmBtn, cancelBtn);
+      } else {
+        this.openPasswordInput = null;
+        const openBtn = sized(button(host, 'Ouvrir aux amis', () => this.openToFriends(openBtn), 'open-friends', this.el), 204);
+        this.buttons.push(openBtn);
+      }
+    } else if (game && game.isRemote && game.isHost) {
+      if (game.inviteCode) {
+        const box = el('div', 'mc-invite-box', this.el);
+        box.style.textAlign = 'center';
+        box.style.margin = `${u(4)} 0`;
+        el('div', 'mc-world-meta', box, 'Code d’invitation (Wi-Fi) :');
+        const codeEl = el('div', 'mc-invite-code', box, game.inviteCode);
+        codeEl.dataset.mc = 'invite-code';
+        codeEl.style.fontWeight = 'bold';
+        codeEl.style.letterSpacing = '1px';
+        codeEl.style.userSelect = 'text';
+        codeEl.style.color = '#ffff55';
+        if (game.tailscaleCode) {
+          const tsEl = el('div', 'mc-world-meta', box, `Tailscale : ${game.tailscaleCode}`);
+          tsEl.dataset.mc = 'invite-code-tailscale';
+          tsEl.style.userSelect = 'text';
+        }
+        const copyBtn = sized(
+          button(
+            host,
+            'Copier le code',
+            () => {
+              const code = game.inviteCode ?? '';
+              navigator.clipboard?.writeText(code).catch(() => undefined);
+              setButtonLabel(copyBtn, 'Code copié !');
+              window.setTimeout(() => setButtonLabel(copyBtn, 'Copier le code'), 1500);
+            },
+            'copy-code',
+            this.el,
+          ),
+          204,
+        );
+        this.buttons.push(copyBtn);
+      }
+      if (game.closeToFriends) {
+        const closeBtn = sized(button(host, 'Fermer aux amis', () => this.closeToFriends(closeBtn), 'close-friends', this.el), 204);
+        this.buttons.push(closeBtn);
+      }
+    }
+
+    const quitLabel = game?.isRemote && !game.isHost ? 'Déconnecter' : 'Sauvegarder et quitter';
+    const quitBtn = sized(button(host, quitLabel, () => this.quit(quitBtn, quitLabel), 'quit', this.el), 204);
+    this.buttons.push(quitBtn);
+
+    this.error = el('div', 'mc-error', this.el, this.openPasswordError);
+    this.error.dataset.mc = 'pause-error';
+    if (this.askingOpenPassword && this.openPasswordInput) {
+      this.openPasswordInput.focus();
+    }
   }
 
   key(e: KeyboardEvent): boolean {
@@ -215,12 +326,118 @@ export class PauseScreen implements Screen {
     this.ctx.host.game?.resume();
   }
 
-  private quit(): void {
+  private openToFriends(btn: HTMLButtonElement): void {
+    const game = this.ctx.host.game;
+    if (!game?.openToFriends || this.busy) return;
+    this.busy = true;
+    this.openPasswordError = '';
+    this.error.textContent = '';
+    for (const b of this.buttons) b.disabled = true;
+    setButtonLabel(btn, 'Connexion…');
+
+    const checkSaved = game.getSavedServerPassword ? game.getSavedServerPassword() : Promise.resolve(null);
+    attempt(() => checkSaved).then(
+      (savedPw) => {
+        if (!this.ctx.isCurrent(this)) {
+          this.busy = false;
+          return;
+        }
+        if (!savedPw) {
+          this.busy = false;
+          this.askingOpenPassword = true;
+          this.render();
+          return;
+        }
+        this.runOpenToFriends(btn, savedPw);
+      },
+      (err: unknown) => {
+        this.busy = false;
+        if (this.ctx.isCurrent(this)) {
+          for (const b of this.buttons) b.disabled = false;
+          setButtonLabel(btn, 'Ouvrir aux amis');
+          this.error.textContent = errorText(err);
+        }
+      },
+    );
+  }
+
+  private submitOpenPassword(btn: HTMLButtonElement): void {
+    if (this.busy || !this.openPasswordInput) return;
+    const pw = this.openPasswordInput.value;
+    if (!pw) {
+      this.error.textContent = 'Veuillez saisir le mot de passe du serveur.';
+      this.openPasswordInput.focus();
+      return;
+    }
+    this.busy = true;
+    this.openPasswordError = '';
+    this.error.textContent = '';
+    for (const b of this.buttons) b.disabled = true;
+    this.runOpenToFriends(btn, pw);
+  }
+
+  private runOpenToFriends(btn: HTMLButtonElement, password: string): void {
+    const game = this.ctx.host.game;
+    if (!game?.openToFriends) {
+      this.busy = false;
+      return;
+    }
+    setButtonLabel(btn, 'Envoi du monde…');
+    attempt(() => game.openToFriends!(password)).then(
+      () => {
+        this.busy = false;
+        this.askingOpenPassword = false;
+        this.openPasswordError = '';
+        if (this.ctx.isCurrent(this)) this.render();
+      },
+      (err: unknown) => {
+        this.busy = false;
+        if (this.ctx.isCurrent(this)) {
+          const msg = errorText(err);
+          const isAuthErr = /mot de passe|essais|requis/i.test(msg);
+          if (!this.askingOpenPassword && isAuthErr) {
+            this.askingOpenPassword = true;
+            this.openPasswordError = msg;
+            this.render();
+            return;
+          }
+          for (const b of this.buttons) b.disabled = false;
+          setButtonLabel(btn, 'Ouvrir aux amis');
+          this.error.textContent = msg;
+        }
+      },
+    );
+  }
+
+  private closeToFriends(btn: HTMLButtonElement): void {
+    const game = this.ctx.host.game;
+    if (!game?.closeToFriends || this.busy) return;
+    this.busy = true;
+    this.error.textContent = '';
+    for (const b of this.buttons) b.disabled = true;
+    setButtonLabel(btn, 'Fermeture…');
+    attempt(() => game.closeToFriends!()).then(
+      () => {
+        this.busy = false;
+        if (this.ctx.isCurrent(this)) this.render();
+      },
+      (err: unknown) => {
+        this.busy = false;
+        if (this.ctx.isCurrent(this)) {
+          for (const b of this.buttons) b.disabled = false;
+          setButtonLabel(btn, 'Fermer aux amis');
+          this.error.textContent = errorText(err);
+        }
+      },
+    );
+  }
+
+  private quit(quitBtn: HTMLButtonElement, quitLabel: string): void {
     const ctx = this.ctx;
     this.busy = true;
     this.error.textContent = '';
     for (const b of this.buttons) b.disabled = true;
-    setButtonLabel(this.buttons[3], 'Sauvegarde du monde…');
+    setButtonLabel(quitBtn, 'Sauvegarde du monde…');
     attempt(() => ctx.host.quitToTitle()).then(
       () => {
         // l'application affiche en principe le menu principal elle-même ; sinon on s'en charge
@@ -234,7 +451,7 @@ export class PauseScreen implements Screen {
         }
         this.busy = false;
         for (const b of this.buttons) b.disabled = false;
-        setButtonLabel(this.buttons[3], 'Sauvegarder et quitter');
+        setButtonLabel(quitBtn, quitLabel);
         this.error.textContent = message;
       },
     );

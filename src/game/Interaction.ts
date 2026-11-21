@@ -82,6 +82,9 @@ export interface InteractionHost extends GameApi {
   strongholdTarget(): { x: number; y: number; z: number } | null;
   playJukebox?(x: number, y: number, z: number, discId: number): void;
   stopJukebox?(x: number, y: number, z: number): void;
+  readonly isRemote?: boolean;
+  netBreakBlock?(x: number, y: number, z: number): void;
+  netPlaceBlock?(x: number, y: number, z: number, face: number, id: number, meta: number, slot: number): void;
 }
 
 /** Ticks entre deux lancers de perle de l'Ender (Minecraft : une seconde). */
@@ -347,6 +350,11 @@ export class Interaction {
     if (id === B.AIR || isFluid(id)) return;
     const def = BLOCKS[id];
     if (def.hardness < 0 && !p.creative) return;
+    if (g.isRemote && g.netBreakBlock) {
+      w.host.effect('break', x, y, z, id, meta);
+      g.netBreakBlock(x, y, z);
+      return;
+    }
     const held = p.heldItemId;
     const creative = p.creative;
 
@@ -1323,6 +1331,13 @@ export class Interaction {
     if (isCrop(id) && w.getBlock(x, y - 1, z) !== B.FARMLAND) return false;
     if (!canStay(w, x, y, z, id, meta)) return false;
     if (!this.cellFree(x, y, z, id, meta)) return false;
+    if (g.isRemote && g.netPlaceBlock) {
+      const slot = this.activeHand === 'main' ? g.player.inventory.selected : 36;
+      g.netPlaceBlock(x, y, z, this.hit.face, id, meta, slot);
+      g.blockSound('place', id, x + 0.5, y + 0.5, z + 0.5);
+      this.swing();
+      return true;
+    }
     if (!w.setBlock(x, y, z, id, meta)) return false;
     // le bloc a pu être aussitôt refusé par le monde (support manquant…)
     if (w.getBlock(x, y, z) !== id && !def.gravity) return false;

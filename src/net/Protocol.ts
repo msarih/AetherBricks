@@ -9,6 +9,14 @@ import { rleDecode, rleEncode } from '../world/Storage';
 export const CHUNK_TINTS = CHUNK_AREA * 9;
 export const BINARY_CHUNK_TAG = 0x01;
 
+export interface SerializedSlot {
+  id: number;
+  count: number;
+  damage: number;
+  enchants?: Record<string, number>;
+  potion?: string;
+}
+
 export interface RemotePlayerState {
   id: number;
   name: string;
@@ -23,22 +31,37 @@ export interface RemotePlayerState {
 }
 
 export type ClientMessage =
-  | { type: 'join'; name: string; password: string }
+  | { type: 'join'; name: string; password?: string; code?: string; hostToken?: string }
   | { type: 'move'; x: number; y: number; z: number; yaw: number; pitch: number; sneaking: boolean; onGround: boolean; swing: number }
   | { type: 'chat'; text: string }
-  | { type: 'needChunks'; keys: Array<[number, number]> };
+  | { type: 'needChunks'; keys: Array<[number, number]> }
+  | { type: 'breakBlock'; x: number; y: number; z: number }
+  | { type: 'placeBlock'; x: number; y: number; z: number; face: number; id: number; meta: number; slot: number }
+  | { type: 'selectSlot'; slot: number }
+  | { type: 'invSync'; slots: Array<SerializedSlot | null>; selected: number }
+  | { type: 'closeWorld' };
 
-export type ErrorCode = 'bad_password' | 'name_taken' | 'bad_name' | 'server_full' | 'bad_request';
+export type ErrorCode =
+  | 'bad_password'
+  | 'bad_code'
+  | 'rate_limited'
+  | 'name_taken'
+  | 'bad_name'
+  | 'server_full'
+  | 'bad_request';
 
 export type ServerMessage =
   | {
       type: 'welcome';
       id: number;
       name: string;
+      isHost: boolean;
       seed: number;
       worldType: WorldType;
       gameMode: GameMode;
       time: number;
+      raining: boolean;
+      thundering: boolean;
       spawn: { x: number; y: number; z: number };
       viewDistance: number;
       x: number;
@@ -46,14 +69,23 @@ export type ServerMessage =
       z: number;
       yaw: number;
       pitch: number;
+      health?: number;
+      hunger?: number;
+      inventory?: { slots: Array<SerializedSlot | null>; selected: number };
+      inviteCode?: string;
     }
   | { type: 'error'; code: ErrorCode; message: string }
   | { type: 'players'; list: RemotePlayerState[] }
   | { type: 'playerLeave'; id: number; name: string }
   | { type: 'chat'; text: string; sender?: string }
   | { type: 'time'; time: number }
+  | { type: 'weather'; raining: boolean; thundering: boolean }
   | { type: 'gamemode'; gameMode: GameMode }
-  | { type: 'teleport'; x: number; y: number; z: number };
+  | { type: 'teleport'; x: number; y: number; z: number }
+  | { type: 'blockUpdate'; x: number; y: number; z: number; id: number; meta: number }
+  | { type: 'inventory'; slots: Array<SerializedSlot | null>; selected: number }
+  | { type: 'vitals'; health: number; hunger: number }
+  | { type: 'worldClosed'; reason: string };
 
 /** Encode un chunk en paquet binaire RLE (tag + cx + cz + blocksRLE + metaRLE + biomes + tints). */
 export function encodeChunkPacket(

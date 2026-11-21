@@ -85,6 +85,14 @@ export interface UiGame {
   tapJump(): void;
   /** Bascule l'accroupissement (tactile). */
   toggleSneak(): void;
+
+  readonly isRemote?: boolean;
+  readonly isHost?: boolean;
+  readonly inviteCode?: string | null;
+  readonly tailscaleCode?: string | null;
+  openToFriends?(serverPassword?: string): Promise<{ inviteCode: string; tailscaleCode?: string | null }>;
+  getSavedServerPassword?(): Promise<string | null>;
+  closeToFriends?(): Promise<void>;
 }
 
 /** Une offre d'un villageois, telle que l'écran d'échange l'affiche. */
@@ -158,7 +166,7 @@ export interface UiHost {
   /** Ajoute comme nouveau monde celui que contient le fichier ; rend son identifiant. */
   importWorld(file: File): Promise<string>;
   /** Rejoint un serveur multijoueur. */
-  joinMultiplayer(options: { address: string; name: string; password: string }): Promise<void>;
+  joinMultiplayer(options: { address: string; name: string; password: string; code?: string }): Promise<void>;
   /** Sauvegarde la partie en cours et revient au menu principal. */
   quitToTitle(): Promise<void>;
   /** À appeler après toute modification de `settings` : applique et enregistre. */

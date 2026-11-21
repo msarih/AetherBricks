@@ -38,6 +38,7 @@ export function loadRecentServers(): RecentServer[] {
 
 export function saveRecentServer(entry: { address: string; name: string; password: string }): void {
   try {
+    if (entry.name.trim()) localStorage.setItem(PSEUDO_KEY, entry.name.trim());
     const addr = entry.address.trim();
     if (!addr) return;
     const list = loadRecentServers().filter((s) => s.address.toLowerCase() !== addr.toLowerCase());
@@ -48,7 +49,6 @@ export function saveRecentServer(entry: { address: string; name: string; passwor
       lastUsed: Date.now(),
     });
     localStorage.setItem(SERVERS_KEY, JSON.stringify(list.slice(0, MAX_RECENT)));
-    if (entry.name.trim()) localStorage.setItem(PSEUDO_KEY, entry.name.trim());
   } catch {
     // localStorage indisponible
   }

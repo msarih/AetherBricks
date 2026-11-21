@@ -213,13 +213,55 @@ function readChunk(r: Reader): SavedChunk {
   };
 }
 
-/**
- * Lit un fichier de monde et l'ajoute comme NOUVEAU monde (nouvel identifiant : un monde
- * existant n'est jamais écrasé). Si un monde porte déjà ce nom, le nom reçoit un suffixe.
- * En cas d'échec en cours d'écriture, le monde partiel est supprimé.
- */
-export async function importWorld(storage: Storage, data: ArrayBuffer, onProgress?: (done: number) => void): Promise<WorldInfo> {
-  const r = new Reader(new Uint8Array(data));
+export interface ParsedWorldArchive {
+  info: WorldInfo;
+  chunks: SavedChunk[];
+  netherChunks: SavedChunk[];
+  endChunks: SavedChunk[];
+}
+
+/** Sérialise un en-tête et des chunks en archive `.aetherworld` binaire (utilisable côté navigateur et Node.js). */
+export function buildWorldArchive(
+  info: WorldInfo,
+  chunks: readonly SavedChunk[],
+  netherChunks: readonly SavedChunk[] = [],
+  endChunks: readonly SavedChunk[] = [],
+): Uint8Array {
+  const parts: Uint8Array[] = [encoder.encode(SIGNATURE), u32(FORMAT_VERSION)];
+  const header: FileHeader = {
+    info,
+    chunkCount: chunks.length,
+    ...(netherChunks.length > 0 ? { netherChunkCount: netherChunks.length } : {}),
+    ...(endChunks.length > 0 ? { endChunkCount: endChunks.length } : {}),
+  };
+  parts.push(...jsonPart(header));
+  for (const list of [chunks, netherChunks, endChunks]) {
+    for (const chunk of list) {
+      const buffers = [rleEncode(chunk.blocks), rleEncode(chunk.meta), rleEncode(chunk.biomes), rleEncode(chunk.tints)];
+      const head: ChunkHeader = {
+        key: chunk.key,
+        blockEntities: chunk.blockEntities,
+        entities: chunk.entities,
+        sizes: [buffers[0].length, buffers[1].length, buffers[2].length, buffers[3].length],
+      };
+      parts.push(...jsonPart(head), ...buffers);
+    }
+  }
+  let totalLen = 0;
+  for (const p of parts) totalLen += p.length;
+  const out = new Uint8Array(totalLen);
+  let off = 0;
+  for (const p of parts) {
+    out.set(p, off);
+    off += p.length;
+  }
+  return out;
+}
+
+/** Lit et valide une archive `.aetherworld` en mémoire (utilisable côté navigateur et Node.js). */
+export function parseWorldArchive(data: ArrayBuffer | Uint8Array): ParsedWorldArchive {
+  const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
+  const r = new Reader(bytes);
   let signature = '';
   try {
     signature = new TextDecoder().decode(r.take(SIGNATURE.length));
@@ -239,7 +281,6 @@ export async function importWorld(storage: Storage, data: ArrayBuffer, onProgres
   if (typeof eCount !== 'number' || !Number.isInteger(eCount) || eCount < 0 || count + nCount + eCount > MAX_CHUNKS) throw new Error(DAMAGED);
   const info = readInfo(header.info, Date.now());
 
-  // lecture et validation complètes avant toute écriture
   const chunks: SavedChunk[] = [];
   for (let i = 0; i < count; i++) chunks.push(readChunk(r));
   const netherChunks: SavedChunk[] = [];
@@ -247,6 +288,16 @@ export async function importWorld(storage: Storage, data: ArrayBuffer, onProgres
   const endChunks: SavedChunk[] = [];
   for (let i = 0; i < eCount; i++) endChunks.push(readChunk(r));
   if (!r.done) throw new Error(DAMAGED);
+  return { info, chunks, netherChunks, endChunks };
+}
+
+/**
+ * Lit un fichier de monde et l'ajoute comme NOUVEAU monde (nouvel identifiant : un monde
+ * existant n'est jamais écrasé). Si un monde porte déjà ce nom, le nom reçoit un suffixe.
+ * En cas d'échec en cours d'écriture, le monde partiel est supprimé.
+ */
+export async function importWorld(storage: Storage, data: ArrayBuffer, onProgress?: (done: number) => void): Promise<WorldInfo> {
+  const { info, chunks, netherChunks, endChunks } = parseWorldArchive(data);
 
   const names = new Set((await storage.listWorlds()).map((w) => w.name));
   if (names.has(info.name)) {
@@ -279,4 +330,30 @@ export async function importWorld(storage: Storage, data: ArrayBuffer, onProgres
     throw error;
   }
   return info;
+}
+
+/**
+ * Met à jour un monde solo existant avec le contenu d'une archive `.aetherworld` reçue du serveur.
+ * Conserve l'identifiant, le nom et la date de création du monde solo.
+ */
+export async function replaceWorldFromArchive(storage: Storage, id: string, data: ArrayBuffer | Uint8Array): Promise<void> {
+  const { info: parsed, chunks, netherChunks, endChunks } = parseWorldArchive(data);
+  const existing = await storage.getWorld(id);
+  const updated: WorldInfo = existing
+    ? {
+        ...existing,
+        lastPlayed: Date.now(),
+        gameMode: parsed.gameMode,
+        state: parsed.state,
+      }
+    : { ...parsed, id };
+  await storage.putWorld(updated);
+  for (let i = 0; i < chunks.length; i += BATCH) {
+    await storage.saveChunks(id, chunks.slice(i, i + BATCH));
+  }
+  for (const [dimId, list] of [[netherStorageId(id), netherChunks], [endStorageId(id), endChunks]] as const) {
+    for (let i = 0; i < list.length; i += BATCH) {
+      await storage.saveChunks(dimId, list.slice(i, i + BATCH));
+    }
+  }
 }

@@ -45,7 +45,7 @@ import { CHUNK_HEIGHT, DAY_TICKS, TICKS_PER_SECOND, chunkKey, skyDayFactor, type
 import { GAME_RULE_NAMES, loadGameRules, resolveGameRule, saveGameRules } from '../world/GameRules';
 import { B, I, MUSIC_DISCS, musicDiscInfo } from '../world/Ids';
 import { ITEMS, getItem, itemLabel } from '../world/Items';
-import { cloneStack, cloneStackWithCount, makeStack, maxDamage, type ItemStack } from '../world/ItemStack';
+import { cloneStack, cloneStackWithCount, loadSlots, makeStack, maxDamage, saveSlots, type ItemStack } from '../world/ItemStack';
 import { applyBonemeal, fireCanStay } from '../world/Behavior';
 import { updateRedstoneAround } from '../world/Redstone';
 import { POTION_COMPLETIONS, POTION_GIVE_HELP, potionLabel, resolvePotionKind } from '../world/Potions';
@@ -74,6 +74,12 @@ import { MapStore, type MapData } from './Maps';
 import { STAT, type Stats } from './Stats';
 import { Interaction, particleTile, particleTint, type InteractionHost } from './Interaction';
 import { CreativeMenu, HOTBAR_SIZE, InventoryMenu, type Inventory, type Menu } from './Inventory';
+import type { MultiplayerClient, WelcomePacket } from '../net/Client';
+import { MultiplayerClient as NetClient } from '../net/Client';
+import type { SerializedSlot } from '../net/Protocol';
+import { RemotePlayerEntity } from '../net/RemotePlayer';
+import { loadLastPseudo, loadRecentServers, saveRecentServer } from '../net/RecentServers';
+import { exportWorld, replaceWorldFromArchive } from '../world/WorldFile';
 
 export interface GameOptions {
   canvas: HTMLCanvasElement;
@@ -82,10 +88,14 @@ export interface GameOptions {
   ui: UiApi;
   sfx: Sfx;
   settings: Settings;
-  storage: Storage;
+  storage: Storage | null;
   info: WorldInfo;
   /** Clés des chunks déjà sauvegardés de ce monde. */
   savedKeys: Set<number>;
+  /** Session réseau (présente uniquement en multijoueur). */
+  net?: MultiplayerClient;
+  welcome?: WelcomePacket;
+  onDisconnected?: (reason: string) => void;
 }
 
 /** Rayon (en chunks) qui doit être maillé avant d'entrer dans le monde. */
@@ -278,7 +288,25 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
   private readonly atlas: Atlas;
   private readonly sfx: Sfx;
   readonly settings: Settings;
-  private readonly storage: Storage;
+  private readonly storage: Storage | null;
+  net: MultiplayerClient | null = null;
+  private remoteId = 0;
+  private readonly remotePlayers = new Map<number, RemotePlayerEntity>();
+  private readonly requestedChunks = new Set<number>();
+  private lastSentX = Number.NaN;
+  private lastSentY = Number.NaN;
+  private lastSentZ = Number.NaN;
+  private lastSentYaw = Number.NaN;
+  private lastSentPitch = Number.NaN;
+  private lastSentSneak = false;
+  private lastSentSwing = 0;
+  private lastSentSlot = -1;
+  private onDisconnected: ((reason: string) => void) | null = null;
+  isHost = false;
+  inviteCode: string | null = null;
+  tailscaleCode: string | null = null;
+  private hostToken: string | null = null;
+  private hostServerUrl: string | null = null;
   private readonly pending: Entity[] = [];
   /** Chunk où chaque entité sauvegardable a été vue pour la dernière fois. */
   private readonly homes = new Map<Entity, number>();
@@ -361,6 +389,8 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     this.settings = o.settings;
     this.storage = o.storage;
     this.info = o.info;
+    this.net = o.net ?? null;
+    this.onDisconnected = o.onDisconnected ?? null;
     const info = o.info;
     const canvas = o.canvas;
 
@@ -385,7 +415,8 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       storage: o.storage,
       worldId: info.id,
       savedKeys: o.savedKeys,
-      viewDistance: o.settings.renderDistance,
+      viewDistance: o.welcome ? Math.min(o.settings.renderDistance, o.welcome.viewDistance) : o.settings.renderDistance,
+      remoteMode: Boolean(o.net),
     });
     this.chunks.hooks = this;
 
@@ -458,7 +489,26 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     if (this.hardcore) this.level = 3;
     if (this.weatherTimer <= 0) this.weatherTimer = 12000 + Math.floor(Math.random() * 168000);
     const savedPlayer = st?.player;
-    if (savedPlayer && typeof savedPlayer === 'object') {
+    if (o.welcome && o.net) {
+      this.remoteId = o.welcome.id;
+      this.isHost = o.welcome.isHost;
+      this.inviteCode = o.welcome.inviteCode ?? null;
+      this.time = o.welcome.time;
+      this.raining = o.welcome.raining;
+      this.thundering = o.welcome.thundering;
+      this.rainLevel = this.raining ? 1 : 0;
+      this.thunderLevel = this.thundering ? 1 : 0;
+      this.spawnPoint = o.welcome.spawn;
+      player.teleport(o.welcome.x, o.welcome.y, o.welcome.z);
+      player.yaw = player.pYaw = player.headYaw = player.pHeadYaw = o.welcome.yaw;
+      player.headPitch = player.pHeadPitch = o.welcome.pitch;
+      if (o.welcome.health !== undefined) player.health = o.welcome.health;
+      if (o.welcome.hunger !== undefined) player.hunger = o.welcome.hunger;
+      if (o.welcome.inventory) this.applyRemoteInventory(o.welcome.inventory.slots, o.welcome.inventory.selected);
+      this.needSettle = false;
+      this.freshSpawn = false;
+      this.attachNetHandlers(o.net);
+    } else if (savedPlayer && typeof savedPlayer === 'object') {
       player.loadState(savedPlayer as Record<string, unknown>);
     } else {
       player.setPosition(this.spawnPoint.x, this.spawnPoint.y, this.spawnPoint.z);
@@ -528,8 +578,16 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     this.ui.update(0);
   }
 
+  get isRemote(): boolean {
+    return this.net !== null;
+  }
+
   /** Sauvegarde le monde (état global, joueur, chunks modifiés). Les appels simultanés partagent la même écriture. */
-  save(): Promise<void> {
+  async save(): Promise<void> {
+    if (this.isHost) {
+      await this.closeToFriends().catch(() => undefined);
+    }
+    if (this.isRemote) return;
     if (this.saving) return this.saving;
     const run = this.writeSave().finally(() => {
       this.saving = null;
@@ -539,6 +597,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
   }
 
   private async writeSave(): Promise<void> {
+    if (!this.storage) return;
     const info = this.info;
     info.state = {
       player: this.player.saveState(),
@@ -591,6 +650,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     this.disposed = true;
     cancelAnimationFrame(this.raf);
     this.raf = 0;
+    this.net?.close();
     this.input.unlock();
     this.touchLook.dispose();
     this.input.dispose();
@@ -627,6 +687,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     if (this.dimensionSwitching) return;
     const p = this.player;
     this.chunks.update(p.x, p.z);
+    if (this.isRemote) this.requestMissingChunks();
 
     this.fpsFrames++;
     this.fpsTime += dt;
@@ -637,17 +698,21 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     }
 
     if (!this.ready) {
-      const radius = Math.min(this.chunks.viewDistance, READY_RADIUS);
+      const radius = Math.min(this.chunks.viewDistance, this.isRemote ? 2 : READY_RADIUS);
       if (!this.chunks.isReady(p.x, p.z, radius)) {
-        this.ui.showLoading('Chargement du monde', 'Génération du terrain…', this.chunks.progress(p.x, p.z, radius));
+        this.ui.showLoading(
+          this.isRemote ? 'Connexion au serveur' : 'Chargement du monde',
+          this.isRemote ? 'Construction du terrain…' : 'Génération du terrain…',
+          this.chunks.progress(p.x, p.z, radius),
+        );
         this.ui.update(dt);
         return;
       }
       this.enterWorld();
     }
 
-    const paused = this.ui.pausing;
-    const loaded = this.areaLoaded();
+    const paused = !this.isRemote && this.ui.pausing;
+    const loaded = this.isRemote || this.areaLoaded();
     if (loaded && this.needSettle) {
       this.needSettle = false;
       this.settle();
@@ -694,7 +759,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     this.sfx.setRain(this.rainVolume);
     this.sfx.setUnderwater(this.headInWater);
 
-    if (!paused && loaded && !this.deathShown) {
+    if (!this.isRemote && !paused && loaded && !this.deathShown) {
       this.autosave += dt;
       if (this.autosave >= AUTOSAVE_SECONDS) void this.save().catch((err: unknown) => this.saveFailed(err));
     }
@@ -810,6 +875,10 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     }
     this.jumpTapped = false;
     this.interaction.tick();
+    if (this.isRemote) {
+      this.tickRemote();
+      return;
+    }
 
     // --- entités ---
     const list = this.entities;
@@ -2185,10 +2254,10 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     const block = w.getBlockLight(bx, by, bz);
     const weather = this.thunderLevel > 0.5 ? 'orage' : this.rainLevel > 0.2 ? 'pluie' : 'dégagé';
     const left = [
-      'SarihBricks 3D',
+      this.isRemote ? 'SarihBricks 3D (Multijoueur)' : 'SarihBricks 3D',
       `${this.fps} ips, ${this.chunkRenderer.count} chunks affichés, ${this.triangles} triangles`,
       `Chunks : ${stats.loaded} chargés, ${stats.generating} en génération, ${stats.meshing} en maillage`,
-      `Entités : ${this.entities.length}`,
+      this.isRemote ? `Joueurs visibles : ${this.remotePlayers.size + 1}` : `Entités : ${this.entities.length}`,
       '',
       `XYZ : ${fmt(p.x)} / ${fmt(p.y)} / ${fmt(p.z)}`,
       `Bloc : ${bx} ${by} ${bz}`,
@@ -2202,7 +2271,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       `Graine : ${this.info.seed}`,
       `Mode : ${this.hardcore ? 'Extrême' : p.gameMode === 'creative' ? 'créatif' : p.gameMode === 'adventure' ? 'aventure' : p.gameMode === 'spectator' ? 'spectateur' : 'survie'}`,
       `Difficulté : ${DIFFICULTY_LABELS[this.difficulty] ?? this.difficulty}`,
-      `Sauvegarde : ${this.storage.persistent ? 'sur disque' : 'en mémoire'}`,
+      `Sauvegarde : ${this.storage ? (this.storage.persistent ? 'sur disque' : 'en mémoire') : 'serveur'}`,
     ];
     if (this.chunks.saveError) right.push(`Erreur de sauvegarde : ${this.chunks.saveError}`);
     const it = this.interaction;
@@ -2221,6 +2290,9 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       this.menu = null;
       menu.close();
       if (menu.type === 'chest') this.sfx.play('chest_close', { volume: 0.6, pitch: 0.9 + Math.random() * 0.2 });
+      if (this.net) {
+        this.net.sendInvSync(saveSlots(this.player.inventory.slots) as Array<SerializedSlot | null>, this.player.inventory.selected);
+      }
     }
     this.input.lock();
   }
@@ -2309,6 +2381,11 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
   // ------------------------------------------------------------------ chat et commandes
 
   chat(text: string): void {
+    if (this.net) {
+      const s = text.trim();
+      if (s) this.net.sendChat(s);
+      return;
+    }
     if (!text.startsWith('/')) {
       this.ui.addMessage(`<Vous> ${text}`);
       return;
@@ -2867,6 +2944,10 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     const parts = text.slice(1).split(' ');
     const last = parts[parts.length - 1].toLowerCase();
     const pick = (list: readonly string[]): string[] => list.filter((s) => s.startsWith(last));
+    if (this.isRemote) {
+      if (parts.length === 1) return pick(['help', 'tp', 'time', 'gamemode']);
+      return [];
+    }
     if (parts.length === 1) return pick(COMMANDS);
     const cmd = parts[0].toLowerCase();
     if (parts.length === 2) {
@@ -2911,5 +2992,300 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       if (parts.length === 9) return pick(FILL_MODES);
     }
     return [];
+  }
+
+  // ------------------------------------------------------------------ multijoueur
+
+  private attachNetHandlers(client: MultiplayerClient): void {
+    client.setHandlers({
+      onChunk: (cx, cz, blocks, meta, biomes, tints) => {
+        this.chunks.receiveRemoteChunk(cx, cz, blocks, meta, biomes, tints);
+      },
+      onPlayers: (list) => {
+        const seen = new Set<number>();
+        for (const s of list) {
+          if (s.id === this.remoteId) continue;
+          seen.add(s.id);
+          const existing = this.remotePlayers.get(s.id);
+          if (existing) {
+            existing.applyServerState(s);
+          } else {
+            const rp = new RemotePlayerEntity(s);
+            this.remotePlayers.set(s.id, rp);
+            this.entities.push(rp);
+          }
+        }
+        for (const [id, rp] of this.remotePlayers) {
+          if (!seen.has(id)) {
+            this.remotePlayers.delete(id);
+            const idx = this.entities.indexOf(rp);
+            if (idx >= 0) this.entities.splice(idx, 1);
+          }
+        }
+      },
+      onPlayerLeave: (id) => {
+        const rp = this.remotePlayers.get(id);
+        if (rp) {
+          this.remotePlayers.delete(id);
+          const idx = this.entities.indexOf(rp);
+          if (idx >= 0) this.entities.splice(idx, 1);
+        }
+      },
+      onChat: (text) => {
+        this.ui.addMessage(text);
+      },
+      onTime: (t) => {
+        this.time = t;
+      },
+      onWeather: (raining, thundering) => {
+        this.raining = raining;
+        this.thundering = thundering;
+      },
+      onGameMode: (mode) => {
+        this.player.gameMode = mode;
+        this.ui.actionBar(`Mode de jeu : ${mode}`);
+      },
+      onTeleport: (x, y, z) => {
+        this.player.teleport(x, y, z);
+      },
+      onBlockUpdate: (x, y, z, id, meta) => {
+        this.world.setBlock(x, y, z, id, meta, false);
+        const c = this.world.chunkAt(x, z);
+        if (c) c.saveDirty = false;
+      },
+      onInventory: (slots, selected) => {
+        this.applyRemoteInventory(slots, selected);
+      },
+      onVitals: (health, hunger) => {
+        this.player.health = health;
+        this.player.hunger = hunger;
+      },
+      onWorldClosed: (reason) => {
+        if (this.disposed) return;
+        this.onDisconnected?.(reason);
+      },
+      onDisconnect: (reason) => {
+        if (this.disposed) return;
+        this.onDisconnected?.(reason);
+      },
+    });
+  }
+
+  private requestMissingChunks(): void {
+    if (!this.net) return;
+    const pcx = Math.floor(this.player.x) >> 4;
+    const pcz = Math.floor(this.player.z) >> 4;
+    const r = this.chunks.viewDistance + 1;
+    const missing: Array<[number, number]> = [];
+    for (let dz = -r; dz <= r; dz++) {
+      for (let dx = -r; dx <= r; dx++) {
+        if (dx * dx + dz * dz > (r + 0.5) * (r + 0.5)) continue;
+        const cx = pcx + dx;
+        const cz = pcz + dz;
+        const key = chunkKey(cx, cz);
+        if (!this.world.chunks.has(key) && !this.requestedChunks.has(key)) {
+          this.requestedChunks.add(key);
+          missing.push([cx, cz]);
+        }
+      }
+    }
+    if (missing.length > 0) this.net.sendNeedChunks(missing);
+  }
+
+  netBreakBlock(x: number, y: number, z: number): void {
+    this.net?.sendBreakBlock(x, y, z);
+  }
+
+  netPlaceBlock(x: number, y: number, z: number, face: number, id: number, meta: number, slot: number): void {
+    this.net?.sendPlaceBlock(x, y, z, face, id, meta, slot);
+  }
+
+  private async findLocalServer(): Promise<string> {
+    const candidates: string[] = [];
+    if (typeof location !== 'undefined' && location.protocol.startsWith('http')) {
+      const p = location.port || (location.protocol === 'https:' ? '443' : '80');
+      if (p !== '5173' && p !== '5174' && p !== '5175') {
+        candidates.push(location.origin);
+      }
+    }
+    candidates.push('http://localhost:8080', 'http://127.0.0.1:8080');
+    for (const s of loadRecentServers()) {
+      const raw = s.address.trim();
+      if (!raw) continue;
+      const base = raw.startsWith('http://') || raw.startsWith('https://') ? raw : `http://${raw}`;
+      if (!candidates.includes(base)) candidates.push(base);
+    }
+
+    for (const base of candidates) {
+      try {
+        const ctrl = new AbortController();
+        const timer = window.setTimeout(() => ctrl.abort(), 1200);
+        const res = await fetch(`${base}/api/ping`, { signal: ctrl.signal });
+        window.clearTimeout(timer);
+        if (res.ok) {
+          const data = (await res.json()) as { ok?: boolean };
+          if (data?.ok) return base;
+        }
+      } catch {
+        // essayer suivant
+      }
+    }
+    throw new Error(
+      'Aucun serveur SarihBricks trouvé. Lancez « npm run serveur » dans un terminal ou ouvrez le jeu à l’adresse du serveur (http://localhost:8080).',
+    );
+  }
+
+  async getSavedServerPassword(): Promise<string | null> {
+    const serverUrl = await this.findLocalServer();
+    const host = new URL(serverUrl).host.toLowerCase();
+    const match = loadRecentServers().find((s) => s.address.toLowerCase() === host && s.password.length > 0);
+    return match ? match.password : null;
+  }
+
+  async openToFriends(serverPassword?: string): Promise<{ inviteCode: string; tailscaleCode?: string | null }> {
+    if (this.isRemote || !this.storage) {
+      throw new Error('Impossible d’ouvrir ce monde aux amis.');
+    }
+    const serverUrl = await this.findLocalServer();
+    const u = new URL(serverUrl);
+    const saved = loadRecentServers().find((s) => s.address.toLowerCase() === u.host.toLowerCase())?.password ?? '';
+    const password = serverPassword ?? saved;
+    if (!password) {
+      throw new Error('Mot de passe du serveur requis.');
+    }
+
+    await this.writeSave();
+    const blob = await exportWorld(this.storage, this.info.id);
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+
+    const hostName = (loadLastPseudo() || 'Hote').trim().slice(0, 16) || 'Hote';
+    const res = await fetch(`${serverUrl}/api/open-world?name=${encodeURIComponent(hostName)}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/octet-stream',
+        'X-Server-Password': password,
+      },
+      body: bytes,
+    });
+    const json = (await res.json()) as {
+      ok?: boolean;
+      error?: string;
+      inviteCode?: string;
+      tailscaleCode?: string | null;
+      hostToken?: string;
+    };
+    if (!res.ok || !json.ok || !json.inviteCode || !json.hostToken) {
+      throw new Error(json.error || 'Le serveur a refusé d’ouvrir le monde.');
+    }
+
+    const client = new NetClient();
+    const welcome = await client.connect(`${u.hostname}:${u.port || (u.protocol === 'https:' ? '443' : '80')}`, hostName, '', undefined, json.hostToken);
+
+    saveRecentServer({ address: u.host, name: hostName, password });
+    this.net = client;
+    this.remoteId = welcome.id;
+    this.isHost = true;
+    this.inviteCode = json.inviteCode;
+    this.tailscaleCode = json.tailscaleCode ?? null;
+    this.hostToken = json.hostToken;
+    this.hostServerUrl = serverUrl;
+    this.requestedChunks.clear();
+    this.chunks.setRemoteMode(true);
+    this.attachNetHandlers(client);
+    this.ui.addMessage(`Monde ouvert aux amis ! Code : ${json.inviteCode}`);
+    return { inviteCode: json.inviteCode, tailscaleCode: json.tailscaleCode ?? null };
+  }
+
+  async closeToFriends(): Promise<void> {
+    if (!this.isHost || !this.hostServerUrl || !this.hostToken) return;
+    const serverUrl = this.hostServerUrl;
+    const token = this.hostToken;
+
+    this.isHost = false;
+    this.inviteCode = null;
+    this.tailscaleCode = null;
+    this.hostToken = null;
+    this.hostServerUrl = null;
+
+    let archiveBuf: ArrayBuffer | null = null;
+    try {
+      const res = await fetch(`${serverUrl}/api/close-world`, {
+        method: 'POST',
+        headers: { 'X-Host-Token': token },
+      });
+      if (res.ok) {
+        archiveBuf = await res.arrayBuffer();
+      }
+    } catch {
+      // ignorer si déjà fermé
+    }
+
+    if (this.net) {
+      this.net.close();
+      this.net = null;
+    }
+    for (const rp of this.remotePlayers.values()) {
+      const idx = this.entities.indexOf(rp);
+      if (idx >= 0) this.entities.splice(idx, 1);
+    }
+    this.remotePlayers.clear();
+    this.requestedChunks.clear();
+
+    if (archiveBuf && this.storage) {
+      await replaceWorldFromArchive(this.storage, this.info.id, archiveBuf);
+    }
+    this.chunks.setRemoteMode(false);
+    this.ui.addMessage('Partie fermée aux amis. Le monde solo est à jour.');
+  }
+
+  private applyRemoteInventory(slots: Array<SerializedSlot | null>, selected: number): void {
+    const inv = this.player.inventory;
+    inv.slots = loadSlots(slots, inv.slots.length);
+    if (Number.isInteger(selected) && selected >= 0 && selected < HOTBAR_SIZE) {
+      inv.selected = selected;
+      this.lastSentSlot = selected;
+    }
+  }
+
+  private tickRemote(): void {
+    const p = this.player;
+    this.time = (this.time + 1) % DAY_TICKS;
+    this.rainLevel = approach(this.rainLevel, this.raining ? 1 : 0, 0.01);
+    this.thunderLevel = approach(this.thunderLevel, this.thundering ? 1 : 0, 0.01);
+    const light = skyDayFactor(this.dayTime) * (1 - (this.rainLevel * 5) / 16) * (1 - (this.thunderLevel * 5) / 16);
+    this.world.skyDarken = Math.round((1 - light) * 11);
+    this.world.raining = this.rainLevel > 0.2;
+
+    const cx = Math.floor(p.x) >> 4;
+    const cz = Math.floor(p.z) >> 4;
+    if (this.world.chunks.has(chunkKey(cx, cz))) {
+      p.tick(this);
+    }
+    for (const rp of this.remotePlayers.values()) {
+      rp.tick(this);
+    }
+    if (this.net && p.inventory.selected !== this.lastSentSlot) {
+      this.lastSentSlot = p.inventory.selected;
+      this.net.sendSelectSlot(p.inventory.selected);
+    }
+    if (
+      this.net &&
+      (p.x !== this.lastSentX ||
+        p.y !== this.lastSentY ||
+        p.z !== this.lastSentZ ||
+        p.yaw !== this.lastSentYaw ||
+        p.headPitch !== this.lastSentPitch ||
+        p.sneaking !== this.lastSentSneak ||
+        p.swing !== this.lastSentSwing)
+    ) {
+      this.lastSentX = p.x;
+      this.lastSentY = p.y;
+      this.lastSentZ = p.z;
+      this.lastSentYaw = p.yaw;
+      this.lastSentPitch = p.headPitch;
+      this.lastSentSneak = p.sneaking;
+      this.lastSentSwing = p.swing;
+      this.net.sendMove(p.x, p.y, p.z, p.yaw, p.headPitch, p.sneaking, p.onGround, p.swing);
+    }
   }
 }

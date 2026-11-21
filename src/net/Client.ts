@@ -1,7 +1,8 @@
 /**
  * Client WebSocket multijoueur : poignée de main, réception binaire des chunks et messages JSON.
  */
-import { decodeChunkPacket, type ClientMessage, type RemotePlayerState, type ServerMessage } from './Protocol';
+import { decodeChunkPacket, type ClientMessage, type RemotePlayerState, type SerializedSlot, type ServerMessage } from './Protocol';
+import { parseInviteCode } from './InviteCode';
 import type { GameMode } from '../world/Constants';
 
 export type WelcomePacket = Extract<ServerMessage, { type: 'welcome' }>;
@@ -12,8 +13,13 @@ export interface ClientHandlers {
   onPlayerLeave(id: number, name: string): void;
   onChat(text: string): void;
   onTime(time: number): void;
+  onWeather(raining: boolean, thundering: boolean): void;
   onGameMode(gameMode: GameMode): void;
   onTeleport(x: number, y: number, z: number): void;
+  onBlockUpdate(x: number, y: number, z: number, id: number, meta: number): void;
+  onInventory(slots: Array<SerializedSlot | null>, selected: number): void;
+  onVitals(health: number, hunger: number): void;
+  onWorldClosed(reason: string): void;
   onDisconnect(reason: string): void;
 }
 
@@ -41,11 +47,24 @@ export class MultiplayerClient {
   private handlers: ClientHandlers | null = null;
   private closedByClient = false;
 
-  connect(address: string, name: string, password: string): Promise<WelcomePacket> {
-    const wsUrl = normalizeWsUrl(address);
+  connect(address: string, name: string, password: string, code?: string, hostToken?: string): Promise<WelcomePacket> {
     const cleanName = name.trim();
     if (!cleanName) return Promise.reject(new Error('Veuillez saisir un pseudo.'));
-    if (!password) return Promise.reject(new Error('Veuillez saisir le mot de passe du serveur.'));
+
+    let targetAddress = address;
+    let normalizedCode: string | undefined;
+    if (code && code.trim()) {
+      const parsed = parseInviteCode(code);
+      if (!parsed) {
+        return Promise.reject(new Error('Code d’invitation invalide. Vérifiez les caractères saisis.'));
+      }
+      targetAddress = `${parsed.ip}:${parsed.port}`;
+      normalizedCode = parsed.normalized;
+    } else if (!hostToken && !password) {
+      return Promise.reject(new Error('Veuillez saisir un code d’invitation ou le mot de passe du serveur.'));
+    }
+
+    const wsUrl = normalizeWsUrl(targetAddress);
 
     return new Promise((resolve, reject) => {
       let settled = false;
@@ -62,11 +81,15 @@ export class MultiplayerClient {
         } catch {
           // ignore
         }
-        reject(new Error('Serveur injoignable (délai dépassé). Vérifiez l’adresse et le port.'));
+        reject(new Error('Serveur injoignable (délai dépassé). Vérifiez le code ou l’adresse.'));
       }, 6000);
 
       ws.onopen = () => {
-        this.send({ type: 'join', name: cleanName, password });
+        this.send({
+          type: 'join',
+          name: cleanName,
+          ...(normalizedCode ? { code: normalizedCode } : hostToken ? { hostToken } : { password }),
+        });
       };
 
       ws.onerror = () => {
@@ -145,11 +168,27 @@ export class MultiplayerClient {
       case 'time':
         this.handlers.onTime(msg.time);
         break;
+      case 'weather':
+        this.handlers.onWeather(msg.raining, msg.thundering);
+        break;
       case 'gamemode':
         this.handlers.onGameMode(msg.gameMode);
         break;
       case 'teleport':
         this.handlers.onTeleport(msg.x, msg.y, msg.z);
+        break;
+      case 'blockUpdate':
+        this.handlers.onBlockUpdate(msg.x, msg.y, msg.z, msg.id, msg.meta);
+        break;
+      case 'inventory':
+        this.handlers.onInventory(msg.slots, msg.selected);
+        break;
+      case 'vitals':
+        this.handlers.onVitals(msg.health, msg.hunger);
+        break;
+      case 'worldClosed':
+        this.closedByClient = true;
+        this.handlers.onWorldClosed(msg.reason);
         break;
       case 'error':
         this.handlers.onChat(msg.message);
@@ -167,6 +206,26 @@ export class MultiplayerClient {
 
   sendNeedChunks(keys: Array<[number, number]>): void {
     if (keys.length > 0) this.send({ type: 'needChunks', keys });
+  }
+
+  sendBreakBlock(x: number, y: number, z: number): void {
+    this.send({ type: 'breakBlock', x, y, z });
+  }
+
+  sendPlaceBlock(x: number, y: number, z: number, face: number, id: number, meta: number, slot: number): void {
+    this.send({ type: 'placeBlock', x, y, z, face, id, meta, slot });
+  }
+
+  sendSelectSlot(slot: number): void {
+    this.send({ type: 'selectSlot', slot });
+  }
+
+  sendInvSync(slots: Array<SerializedSlot | null>, selected: number): void {
+    this.send({ type: 'invSync', slots, selected });
+  }
+
+  sendCloseWorld(): void {
+    this.send({ type: 'closeWorld' });
   }
 
   private send(msg: ClientMessage): void {

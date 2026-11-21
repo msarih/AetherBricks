@@ -66,7 +66,8 @@ export class ChunkManager {
 
   private readonly genWorkers: WorkerSlot[] = [];
   private readonly meshWorkers: WorkerSlot[] = [];
-  private readonly remoteMode: boolean;
+  private remoteMode: boolean;
+  private readonly dim: Dimension;
   /** Clés des chunks dont les données sont en route (génération ou lecture). */
   private readonly loading = new Set<number>();
   private storageLoads = 0;
@@ -104,6 +105,7 @@ export class ChunkManager {
     this.genVersion = options.genVersion ?? 1;
     this.remoteMode = options.remoteMode ?? false;
     const dim = options.dimension ?? 'overworld';
+    this.dim = dim;
     this.worldId = dimensionStorageId(options.worldId, dim);
     this.savedKeys = options.savedKeys;
     this.viewDistance = options.viewDistance;
@@ -112,19 +114,7 @@ export class ChunkManager {
     const genCount = cores >= 8 ? 3 : cores >= 4 ? 2 : 1;
     const meshCount = cores >= 4 ? 2 : 1;
     if (!this.remoteMode) {
-      for (let i = 0; i < genCount; i++) {
-        const worker = new Worker(new URL('./gen/gen.worker.ts', import.meta.url), { type: 'module' });
-        const slot: WorkerSlot = { worker, busy: 0 };
-        worker.onmessage = (e: MessageEvent) => {
-          const res = e.data as GenResponse;
-          if (res.epoch !== undefined && res.epoch !== this.epoch) return;
-          slot.busy = Math.max(0, slot.busy - 1);
-          this.onGenerated(res);
-        };
-        const init: GenRequest = { type: 'init', seed: options.seed, worldType: options.worldType, dimension: dim, genVersion: this.genVersion };
-        worker.postMessage(init);
-        this.genWorkers.push(slot);
-      }
+      this.ensureGenWorkers();
     }
     for (let i = 0; i < meshCount; i++) {
       const worker = new Worker(new URL('./mesh/mesh.worker.ts', import.meta.url), { type: 'module' });
@@ -134,6 +124,34 @@ export class ChunkManager {
         this.onMeshed(e.data as MeshResult);
       };
       this.meshWorkers.push(slot);
+    }
+  }
+
+  private ensureGenWorkers(): void {
+    if (this.genWorkers.length > 0) return;
+    const cores = navigator.hardwareConcurrency || 4;
+    const genCount = cores >= 8 ? 3 : cores >= 4 ? 2 : 1;
+    for (let i = 0; i < genCount; i++) {
+      const worker = new Worker(new URL('./gen/gen.worker.ts', import.meta.url), { type: 'module' });
+      const slot: WorkerSlot = { worker, busy: 0 };
+      worker.onmessage = (e: MessageEvent) => {
+        const res = e.data as GenResponse;
+        if (res.epoch !== undefined && res.epoch !== this.epoch) return;
+        slot.busy = Math.max(0, slot.busy - 1);
+        this.onGenerated(res);
+      };
+      const init: GenRequest = { type: 'init', seed: this.seed, worldType: this.worldType, dimension: this.dim, genVersion: this.genVersion };
+      worker.postMessage(init);
+      this.genWorkers.push(slot);
+    }
+  }
+
+  /** Bascule entre mode local (génération) et mode réseau (chunks reçus du serveur). */
+  setRemoteMode(remote: boolean): void {
+    this.remoteMode = remote;
+    if (!remote) {
+      this.ensureGenWorkers();
+      this.loadScanDone = false;
     }
   }
 
