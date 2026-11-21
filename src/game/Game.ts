@@ -66,7 +66,20 @@ import type { GenSpawn } from '../world/gen/GenCanvas';
 import { hash2, mulberry32 } from '../world/gen/Noise';
 import { locateStructure, structuresNear, type Structure, type StructureKind, type TerrainInfo } from '../world/gen/Structures';
 import { WorldGen } from '../world/gen/WorldGen';
-import { blockEntityItems, cleanSignLines, getDispenser, getSign, insertOneIntoContainer, resolveLoot, tickBlockEntities } from './BlockEntities';
+import {
+  blockEntityItems,
+  cleanSignLines,
+  getDispenser,
+  getSign,
+  insertOneIntoContainer,
+  resolveLoot,
+  tickBlockEntities,
+  type BrewingStandEntity,
+  type ChestEntity,
+  type DispenserEntity,
+  type FurnaceEntity,
+  type HopperEntity,
+} from './BlockEntities';
 import { ADVANCEMENTS, advancementText, isAdvancementAvailable } from './Advancements';
 import { Dial, bearing, clockTarget, dialNoise } from './Dials';
 import { EndFight } from './EndFight';
@@ -74,10 +87,22 @@ import { explode as runExplosion } from './Explosion';
 import { MapStore, type MapData } from './Maps';
 import { STAT, type Stats } from './Stats';
 import { Interaction, particleTile, particleTint, type InteractionHost } from './Interaction';
-import { CreativeMenu, HOTBAR_SIZE, InventoryMenu, type Inventory, type Menu } from './Inventory';
+import {
+  BrewingMenu,
+  ChestMenu,
+  CreativeMenu,
+  DispenserMenu,
+  FurnaceMenu,
+  HOTBAR_SIZE,
+  HopperMenu,
+  InventoryMenu,
+  type Inventory,
+  type Menu,
+} from './Inventory';
 import type { MultiplayerClient, WelcomePacket } from '../net/Client';
 import { MultiplayerClient as NetClient } from '../net/Client';
-import type { SerializedSlot } from '../net/Protocol';
+import type { ContainerKind, SerializedSlot, TradeOfferInfo } from '../net/Protocol';
+import { RemoteEntity } from '../net/RemoteEntity';
 import { RemotePlayerEntity } from '../net/RemotePlayer';
 import { loadLastPseudo, loadRecentServers, saveRecentServer } from '../net/RecentServers';
 import { exportWorld, replaceWorldFromArchive } from '../world/WorldFile';
@@ -293,6 +318,16 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
   net: MultiplayerClient | null = null;
   private remoteId = 0;
   private readonly remotePlayers = new Map<number, RemotePlayerEntity>();
+  private readonly remoteEntities = new Map<number, RemoteEntity>();
+  private remoteContainer: {
+    x: number;
+    y: number;
+    z: number;
+    kind: ContainerKind;
+    be: ChestEntity | FurnaceEntity | BrewingStandEntity | HopperEntity | DispenserEntity;
+    menu: Menu;
+  } | null = null;
+  private remoteTrade: { entityId: number; offers: TradeOfferInfo[] } | null = null;
   private readonly requestedChunks = new Set<number>();
   private lastSentX = Number.NaN;
   private lastSentY = Number.NaN;
@@ -1545,6 +1580,12 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     const p = this.player;
     const clean = name.replace(/\s+/g, ' ').trim().slice(0, NAME_MAX);
     const mob = this.entities.find((e) => e.id === id);
+    if (this.isRemote) {
+      if (clean !== '' && mob instanceof RemoteEntity && mob.kind === 'mob') {
+        this.net?.sendNameEntity(mob.remoteId, clean);
+      }
+      return;
+    }
     if (clean === '' || !(mob instanceof Mob) || mob.dead || !mob.alive) return;
     if (p.heldItemId !== I.NAME_TAG || mob.distanceSqTo(p) > 64) return;
     if (mob.customName === clean) return;
@@ -2318,7 +2359,9 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       this.isRemote ? 'SarihBricks 3D (Multijoueur)' : 'SarihBricks 3D',
       `${this.fps} ips, ${this.chunkRenderer.count} chunks affichés, ${this.triangles} triangles`,
       `Chunks : ${stats.loaded} chargés, ${stats.generating} en génération, ${stats.meshing} en maillage`,
-      this.isRemote ? `Joueurs visibles : ${this.remotePlayers.size + 1}` : `Entités : ${this.entities.length}`,
+      this.isRemote
+        ? `Joueurs visibles : ${this.remotePlayers.size + 1} | Entités : ${this.remoteEntities.size}`
+        : `Entités : ${this.entities.length}`,
       '',
       `XYZ : ${fmt(p.x)} / ${fmt(p.y)} / ${fmt(p.z)}`,
       `Bloc : ${bx} ${by} ${bz}`,
@@ -2351,7 +2394,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       this.menu = null;
       menu.close();
       if (menu.type === 'chest') this.sfx.play('chest_close', { volume: 0.6, pitch: 0.9 + Math.random() * 0.2 });
-      if (this.net) {
+      if (this.net && !menu.remote) {
         this.net.sendInvSync(saveSlots(this.player.inventory.slots) as Array<SerializedSlot | null>, this.player.inventory.selected);
       }
     }
@@ -3089,6 +3132,27 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
         }
         this.voice?.syncPeers(list);
       },
+      onEntities: (list) => {
+        const seen = new Set<number>();
+        for (const s of list) {
+          seen.add(s.id);
+          const existing = this.remoteEntities.get(s.id);
+          if (existing) {
+            existing.applyServerState(s);
+          } else {
+            const re = new RemoteEntity(s);
+            this.remoteEntities.set(s.id, re);
+            this.entities.push(re);
+          }
+        }
+        for (const [id, re] of this.remoteEntities) {
+          if (!seen.has(id)) {
+            this.remoteEntities.delete(id);
+            const idx = this.entities.indexOf(re);
+            if (idx >= 0) this.entities.splice(idx, 1);
+          }
+        }
+      },
       onPlayerLeave: (id) => {
         const rp = this.remotePlayers.get(id);
         if (rp) {
@@ -3126,12 +3190,118 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
         const c = this.world.chunkAt(x, z);
         if (c) c.saveDirty = false;
       },
-      onInventory: (slots, selected) => {
-        this.applyRemoteInventory(slots, selected);
+      onInventory: (slots, selected, cursor) => {
+        this.applyRemoteInventory(slots, selected, cursor);
       },
-      onVitals: (health, hunger) => {
+      onVitals: (health, hunger, xpLevel, xpProgress) => {
         this.player.health = health;
         this.player.hunger = hunger;
+        if (xpLevel !== undefined) this.player.xpLevel = xpLevel;
+        if (xpProgress !== undefined) this.player.xpProgress = xpProgress;
+      },
+      onContainerState: (msg) => {
+        const loaded = loadSlots(msg.items, msg.items.length);
+        const rc = this.remoteContainer;
+        if (rc && rc.x === msg.x && rc.y === msg.y && rc.z === msg.z && rc.kind === msg.kind) {
+          for (let i = 0; i < rc.be.items.length && i < loaded.length; i++) {
+            rc.be.items[i] = loaded[i];
+          }
+          if (rc.be.type === 'furnace') {
+            rc.be.burnTime = msg.burnTime ?? 0;
+            rc.be.burnTotal = msg.burnTotal ?? 0;
+            rc.be.cookTime = msg.cookTime ?? 0;
+          } else if (rc.be.type === 'brewing') {
+            rc.be.brewTime = msg.brewTime ?? 0;
+            rc.be.fuel = msg.fuel ?? 0;
+          }
+          return;
+        }
+        let be: ChestEntity | FurnaceEntity | BrewingStandEntity | HopperEntity | DispenserEntity;
+        let menu: Menu;
+        const noop = (): void => {};
+        if (msg.kind === 'chest') {
+          be = { type: 'chest', x: msg.x, y: msg.y, z: msg.z, items: loaded };
+          menu = new ChestMenu(this.player.inventory, be, noop);
+          this.sfx.play('chest_open', { volume: 0.6, pitch: 0.9 + Math.random() * 0.2 });
+        } else if (msg.kind === 'furnace') {
+          be = {
+            type: 'furnace',
+            x: msg.x,
+            y: msg.y,
+            z: msg.z,
+            items: loaded,
+            burnTime: msg.burnTime ?? 0,
+            burnTotal: msg.burnTotal ?? 0,
+            cookTime: msg.cookTime ?? 0,
+          };
+          menu = new FurnaceMenu(this.player.inventory, be, noop);
+        } else if (msg.kind === 'brewing') {
+          be = {
+            type: 'brewing',
+            x: msg.x,
+            y: msg.y,
+            z: msg.z,
+            items: loaded,
+            brewTime: msg.brewTime ?? 0,
+            fuel: msg.fuel ?? 0,
+          };
+          menu = new BrewingMenu(this.player.inventory, be, noop);
+        } else if (msg.kind === 'hopper') {
+          be = { type: 'hopper', x: msg.x, y: msg.y, z: msg.z, items: loaded, cooldown: 0 };
+          menu = new HopperMenu(this.player.inventory, be, noop);
+        } else {
+          be = { type: msg.kind, x: msg.x, y: msg.y, z: msg.z, items: loaded };
+          menu = new DispenserMenu(this.player.inventory, be, noop);
+        }
+        menu.remote = {
+          send: (action) => this.net?.sendContainerAction(msg.x, msg.y, msg.z, action),
+          close: () => {
+            if (this.remoteContainer?.menu === menu) this.remoteContainer = null;
+            this.net?.sendContainerClose(msg.x, msg.y, msg.z);
+          },
+        };
+        this.remoteContainer = { x: msg.x, y: msg.y, z: msg.z, kind: msg.kind, be, menu };
+        this.openMenu(menu);
+      },
+      onContainerClose: (x, y, z) => {
+        const rc = this.remoteContainer;
+        if (rc && rc.x === x && rc.y === y && rc.z === z) {
+          this.remoteContainer = null;
+          if (this.menu === rc.menu) {
+            this.menu = null;
+            this.ui.closeScreen();
+            this.input.lock();
+          }
+        }
+      },
+      onTradeOpen: (entityId, title, offers) => {
+        this.remoteTrade = { entityId, offers };
+        const view: TradeView = {
+          title,
+          offers: () => this.remoteTrade?.offers ?? [],
+          trade: (index) => {
+            this.net?.sendTradeSelect(entityId, index);
+            return true;
+          },
+          closed: () => {
+            if (this.remoteTrade?.entityId === entityId) this.remoteTrade = null;
+            this.net?.sendTradeClose(entityId);
+          },
+        };
+        this.interaction.reset();
+        this.ui.openTrade(view);
+        this.input.unlock();
+      },
+      onTradeOffers: (entityId, offers) => {
+        if (this.remoteTrade && this.remoteTrade.entityId === entityId) {
+          this.remoteTrade.offers = offers;
+        }
+      },
+      onSound: (name, x, y, z, volume, pitch) => {
+        this.sound(name, x, y, z, volume, pitch);
+      },
+      onParticles: (kind, x, y, z, count, spread) => {
+        this.particles(kind, x, y, z, count, spread);
       },
       onWorldClosed: (reason) => {
         if (this.disposed) return;
@@ -3171,6 +3341,30 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
 
   netPlaceBlock(x: number, y: number, z: number, face: number, id: number, meta: number, slot: number): void {
     this.net?.sendPlaceBlock(x, y, z, face, id, meta, slot);
+  }
+
+  netUseBlock(x: number, y: number, z: number): void {
+    this.net?.sendUseBlock(x, y, z);
+  }
+
+  netDropItem(slot: number, all: boolean): void {
+    this.net?.sendDropItem(slot, all);
+  }
+
+  netAttackEntity(entityId: number): void {
+    this.net?.sendAttackEntity(entityId);
+  }
+
+  netInteractEntity(entityId: number): void {
+    this.net?.sendInteractEntity(entityId);
+  }
+
+  netTieLeash(x: number, y: number, z: number): void {
+    this.net?.sendTieLeash(x, y, z);
+  }
+
+  netOpenContainer(x: number, y: number, z: number): void {
+    this.net?.sendOpenContainer(x, y, z);
   }
 
   private async findLocalServer(): Promise<string> {
@@ -3315,6 +3509,13 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       if (idx >= 0) this.entities.splice(idx, 1);
     }
     this.remotePlayers.clear();
+    for (const re of this.remoteEntities.values()) {
+      const idx = this.entities.indexOf(re);
+      if (idx >= 0) this.entities.splice(idx, 1);
+    }
+    this.remoteEntities.clear();
+    this.remoteContainer = null;
+    this.remoteTrade = null;
     this.requestedChunks.clear();
 
     if (archiveBuf && this.storage) {
@@ -3324,9 +3525,12 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     this.ui.addMessage('Partie fermée aux amis. Le monde solo est à jour.');
   }
 
-  private applyRemoteInventory(slots: Array<SerializedSlot | null>, selected: number): void {
+  private applyRemoteInventory(slots: Array<SerializedSlot | null>, selected: number, cursor?: SerializedSlot | null): void {
     const inv = this.player.inventory;
     inv.slots = loadSlots(slots, inv.slots.length);
+    if (cursor !== undefined) {
+      inv.cursor = cursor ? loadSlots([cursor], 1)[0] : null;
+    }
     if (Number.isInteger(selected) && selected >= 0 && selected < HOTBAR_SIZE) {
       inv.selected = selected;
       this.lastSentSlot = selected;
@@ -3349,6 +3553,9 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     }
     for (const rp of this.remotePlayers.values()) {
       rp.tick(this);
+    }
+    for (const re of this.remoteEntities.values()) {
+      re.tick(this);
     }
     if (this.net && p.inventory.selected !== this.lastSentSlot) {
       this.lastSentSlot = p.inventory.selected;

@@ -8,6 +8,7 @@ import { Living, type Entity, type GameApi } from '../entity/Entity';
 import { tryBuildGolem } from '../entity/Creatures';
 import { ItemFrame, Painting, hangingFits } from '../entity/Hanging';
 import { LEASH_BREAK, Mob, isLeashPost, notifyTamedWolves } from '../entity/Mobs';
+import { RemoteEntity } from '../net/RemoteEntity';
 import { Arrow, EyeOfEnder, FishingBobber, Thrown, ThrownPearl, ThrownPotion } from '../entity/Objects';
 import { Boat, Minecart } from '../entity/Vehicles';
 import type { Input } from '../player/Input';
@@ -85,6 +86,12 @@ export interface InteractionHost extends GameApi {
   readonly isRemote?: boolean;
   netBreakBlock?(x: number, y: number, z: number): void;
   netPlaceBlock?(x: number, y: number, z: number, face: number, id: number, meta: number, slot: number): void;
+  netUseBlock?(x: number, y: number, z: number): void;
+  netDropItem?(slot: number, all: boolean): void;
+  netAttackEntity?(entityId: number): void;
+  netInteractEntity?(entityId: number): void;
+  netTieLeash?(x: number, y: number, z: number): void;
+  netOpenContainer?(x: number, y: number, z: number): void;
 }
 
 /** Ticks entre deux lancers de perle de l'Ender (Minecraft : une seconde). */
@@ -412,6 +419,12 @@ export class Interaction {
 
   private attack(e: Entity): void {
     const g = this.game;
+    if (g.isRemote) {
+      if (e instanceof RemoteEntity && g.netAttackEntity) {
+        g.netAttackEntity(e.remoteId);
+      }
+      return;
+    }
     const p = g.player;
     const held = p.heldItemId;
     let damage = attackDamage(held);
@@ -534,6 +547,19 @@ export class Interaction {
 
     if (this.entity) {
       const e = this.entity;
+      if (g.isRemote) {
+        if (e instanceof RemoteEntity && this.freshClick) {
+          if (held === I.NAME_TAG && e.kind === 'mob' && g.openNameTag) {
+            g.openNameTag(e);
+            this.swing();
+            return true;
+          }
+          g.netInteractEntity?.(e.remoteId);
+          this.swing();
+          return true;
+        }
+        return false;
+      }
       if (e instanceof Mob && this.freshClick) {
         // laisse : détacher une créature attachée, ou lui passer la laisse tenue en main
         if (e.useLeash(g, p)) {
@@ -551,9 +577,17 @@ export class Interaction {
         return true;
       }
     } else if (this.hasBlock) {
-      if (this.freshClick && isLeashPost(this.hit.id) && this.tieLeashes()) {
-        this.swing();
-        return true;
+      if (this.freshClick && isLeashPost(this.hit.id)) {
+        if (g.isRemote && g.netTieLeash) {
+          if (g.entities.some((e) => e instanceof RemoteEntity && e.leashed)) {
+            g.netTieLeash(this.hit.x, this.hit.y, this.hit.z);
+            this.swing();
+            return true;
+          }
+        } else if (this.tieLeashes()) {
+          this.swing();
+          return true;
+        }
       }
       if ((!p.input.sneak || held === 0) && this.activate()) {
         this.swing();
@@ -644,6 +678,19 @@ export class Interaction {
       w.setMeta(x, y, z, m);
       g.sound(open ? 'door_open' : 'door_close', x + 0.5, y + 0.5, z + 0.5, 0.8, 0.9 + g.rng() * 0.2);
       return true;
+    }
+    if (g.isRemote) {
+      if (id === B.CHEST || id === B.FURNACE || id === B.FURNACE_LIT || id === B.BREWING_STAND || id === B.HOPPER || id === B.DISPENSER || id === B.DROPPER) {
+        g.netOpenContainer?.(x, y, z);
+        return true;
+      }
+      if (
+        id === B.OAK_DOOR || id === B.LEVER || id === B.STONE_BUTTON || id === B.TRAPDOOR || id === B.FENCE_GATE ||
+        id === B.REPEATER || id === B.COMPARATOR || id === B.DAYLIGHT_DETECTOR || id === B.NOTE_BLOCK
+      ) {
+        g.netUseBlock?.(x, y, z);
+        return true;
+      }
     }
     if (id === B.CHEST) {
       const chest = getChest(w, x, y, z);
@@ -1499,11 +1546,17 @@ export class Interaction {
 
   /** Lâche l'objet tenu (toute la pile si `all`). */
   dropHeld(all: boolean): void {
-    const p = this.game.player;
+    const g = this.game;
+    const p = g.player;
     const inv = p.inventory;
     const held = inv.slots[inv.selected];
     if (!held || !p.alive || p.spectator) return;
     if (p.useKind !== 'none') p.stopUsing();
+    if (g.isRemote && g.netDropItem) {
+      g.netDropItem(inv.selected, all);
+      this.swing();
+      return;
+    }
     if (all || held.count <= 1) {
       inv.slots[inv.selected] = null;
       inv.drop(held);

@@ -5,6 +5,7 @@
  */
 import { I } from '../world/Ids';
 import { getItem, maxStack } from '../world/Items';
+import type { ContainerAction } from '../net/Protocol';
 import { addToSlots, canMerge, cloneStack, cloneStackWithCount, loadSlots, makeStack, maxDamage, saveSlots, type ItemStack, type Slot } from '../world/ItemStack';
 import { canEnchantItem, computeAnvilResult, enchantLevel, hasEnchants, rollEnchantOffers, type EnchantOffer } from '../world/Enchants';
 import { mulberry32 } from '../world/gen/Noise';
@@ -278,10 +279,16 @@ function craftingRemainder(id: number): number {
   return id === I.WATER_BUCKET || id === I.LAVA_BUCKET || id === I.MILK_BUCKET ? I.BUCKET : 0;
 }
 
+export interface RemoteMenuHandler {
+  send(action: ContainerAction): void;
+  close(): void;
+}
+
 export abstract class Menu {
   abstract readonly type: MenuType;
   abstract readonly title: string;
   readonly slots: MenuSlot[] = [];
+  remote?: RemoteMenuHandler;
   /** Grille de fabrication éventuelle. */
   protected grid: Slot[] | null = null;
   protected gridW = 0;
@@ -485,6 +492,10 @@ export abstract class Menu {
    * Avec `shift`, la pile est déplacée d'un coup vers la zone opposée.
    */
   click(i: number, button: number, shift: boolean): void {
+    if (this.remote) {
+      this.remote.send({ kind: 'click', i, button, shift });
+      return;
+    }
     const slot = this.slots[i];
     if (!slot) return;
     if (shift) {
@@ -552,6 +563,10 @@ export abstract class Menu {
 
   /** Clic hors de la fenêtre : lâche la pile du curseur (clic droit : un seul objet). */
   clickOutside(button: number): void {
+    if (this.remote) {
+      this.remote.send({ kind: 'clickOutside', button });
+      return;
+    }
     const cur = this.inv.cursor;
     if (!cur) return;
     if (button === 1 && cur.count > 1) {
@@ -564,7 +579,11 @@ export abstract class Menu {
   }
 
   /** Double clic : rassemble sur le curseur les objets identiques de toutes les cases. */
-  doubleClick(_i: number): void {
+  doubleClick(i: number): void {
+    if (this.remote) {
+      this.remote.send({ kind: 'doubleClick', i });
+      return;
+    }
     const cur = this.inv.cursor;
     if (!cur) return;
     const max = maxStack(cur.id);
@@ -588,6 +607,10 @@ export abstract class Menu {
 
   /** Touche 1..9 au-dessus d'une case : échange avec la case `hotbar` (0..8) de la barre. */
   numberKey(i: number, hotbar: number): void {
+    if (this.remote) {
+      this.remote.send({ kind: 'numberKey', i, bar: hotbar });
+      return;
+    }
     const slot = this.slots[i];
     if (!slot || hotbar < 0 || hotbar >= HOTBAR_SIZE) return;
     const inv = this.inv;
@@ -609,6 +632,10 @@ export abstract class Menu {
 
   /** Touche « lâcher » au-dessus d'une case : un objet, ou toute la pile avec `all`. */
   dropKey(i: number, all: boolean): void {
+    if (this.remote) {
+      this.remote.send({ kind: 'dropKey', i, all });
+      return;
+    }
     const slot = this.slots[i];
     const s = slot?.stack;
     if (!slot || !s) return;
@@ -632,6 +659,10 @@ export abstract class Menu {
    * (bouton gauche : à parts égales ; bouton droit : un objet par case).
    */
   drag(indices: readonly number[], button: number): void {
+    if (this.remote) {
+      this.remote.send({ kind: 'drag', slots: [...indices], button });
+      return;
+    }
     const cur = this.inv.cursor;
     if (!cur) return;
     const targets: MenuSlot[] = [];
@@ -715,6 +746,10 @@ export abstract class Menu {
 
   /** Ferme le menu : la grille de fabrication et le curseur retournent dans l'inventaire (ou tombent au sol). */
   close(): void {
+    if (this.remote) {
+      this.remote.close();
+      return;
+    }
     const inv = this.inv;
     if (this.grid) {
       for (let i = 0; i < this.grid.length; i++) {
@@ -1070,6 +1105,10 @@ export class AnvilMenu extends Menu {
   }
 
   click(i: number, button: number, shift: boolean): void {
+    if (this.remote) {
+      this.remote.send({ kind: 'click', i, button, shift });
+      return;
+    }
     const slot = this.slots[i];
     if (slot && slot.group === 'result') {
       const res = slot.stack;
