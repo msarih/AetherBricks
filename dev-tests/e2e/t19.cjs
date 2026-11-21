@@ -129,11 +129,13 @@ async function lookAtBlock(page, bx, by, bz) {
 }
 
 async function lclick(page) {
+  await page.bringToFront();
   await ev(page, () => { window.__game.input.presses[0]++; });
   await ticks(page, 2);
 }
 
 async function rclick(page) {
+  await page.bringToFront();
   await ev(page, () => { window.__game.input.presses[2]++; });
   await ticks(page, 3);
 }
@@ -299,6 +301,7 @@ async function lookAtEntity(page, remoteId) {
       await ticks(pageB, 8);
 
       // B casse le bloc d'herbe devant lui (20, 3, 22)
+      await pageB.bringToFront();
       await lookAtBlock(pageB, 20, 3, 22);
       await ev(pageB, () => { window.__game.input.buttons[0] = true; });
       await ticks(pageB, 22);
