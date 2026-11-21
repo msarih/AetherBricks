@@ -1146,7 +1146,30 @@ function start(): void {
         sendJson(sender.ws, { type: 'chat', text: `Téléporté en ${tx.toFixed(1)}, ${ty.toFixed(1)}, ${tz.toFixed(1)}` });
         return;
       }
-      sendJson(sender.ws, { type: 'chat', text: 'Usage : /tp <x> <y> <z> ou /tp <joueur>' });
+      if (parts.length === 5) {
+        const target = findPlayerByName(parts[1]);
+        if (!target) {
+          sendJson(sender.ws, { type: 'chat', text: `Joueur introuvable : ${parts[1]}` });
+          return;
+        }
+        const tx = Number(parts[2]);
+        const ty = Number(parts[3]);
+        const tz = Number(parts[4]);
+        if (!Number.isFinite(tx) || !Number.isFinite(ty) || !Number.isFinite(tz) || ty < -10 || ty > 256) {
+          sendJson(sender.ws, { type: 'chat', text: 'Coordonnées invalides.' });
+          return;
+        }
+        target.x = tx;
+        target.y = ty;
+        target.z = tz;
+        target.entity.setPosition(tx, ty, tz);
+        target.lastMoveMs = Date.now();
+        sendJson(target.ws, { type: 'teleport', x: tx, y: ty, z: tz });
+        streamChunksAround(target);
+        sendJson(sender.ws, { type: 'chat', text: `${target.name} téléporté en ${tx.toFixed(1)}, ${ty.toFixed(1)}, ${tz.toFixed(1)}` });
+        return;
+      }
+      sendJson(sender.ws, { type: 'chat', text: 'Usage : /tp <x> <y> <z> ou /tp <joueur> [x y z]' });
       return;
     }
 
