@@ -289,7 +289,10 @@ async function lookAtEntity(page, remoteId) {
             const m = window.__game.entities.find((e) => e.remoteId === id);
             return Boolean(m && m.deathTime === 0);
           }, mobA.id);
-          if (!alive) break;
+          if (!alive) {
+            await ev(pageA, (cmd) => window.__game.chat(cmd), `/tp ${lastMobPos.x - 4} ${lastMobPos.y} ${lastMobPos.z}`);
+            break;
+          }
           const mPos = await ev(pageA, (id) => {
             const m = window.__game.entities.find((e) => e.remoteId === id);
             return m ? { x: m.x, y: m.y, z: m.z } : null;
