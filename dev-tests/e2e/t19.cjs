@@ -449,7 +449,7 @@ async function lookAtEntity(page, remoteId) {
         const idx = m.slots.findIndex((s) => (s.group === 'hotbar' || s.group === 'main') && s.stack);
         if (idx >= 0) m.click(idx, 0, true);
       });
-      await ticks(pageB, 6);
+      await pageB.waitForFunction(() => Boolean(window.__game.menu?.slots[0]?.stack), { timeout: 5000 });
       await pageB.keyboard.press('Escape');
       await pageA.keyboard.press('Escape');
       await ticks(pageA, 4);
