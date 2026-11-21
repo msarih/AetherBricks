@@ -5,6 +5,10 @@
  */
 import { CHUNK_AREA, CHUNK_VOLUME, type GameMode, type WorldType } from '../world/Constants';
 import { rleDecode, rleEncode } from '../world/Storage';
+import type { EntityKind } from '../entity/EntityView';
+import type { MobKind } from '../entity/MobModels';
+import type { SfxName } from '../audio/Sfx';
+import type { ParticleKind } from '../render/Particles';
 
 export const CHUNK_TINTS = CHUNK_AREA * 9;
 export const BINARY_CHUNK_TAG = 0x01;
@@ -30,15 +34,85 @@ export interface RemotePlayerState {
   gameMode: GameMode;
 }
 
+export interface RemoteEntityState {
+  id: number;
+  kind: EntityKind;
+  mobKind?: MobKind;
+  x: number;
+  y: number;
+  z: number;
+  yaw: number;
+  headYaw?: number;
+  headPitch?: number;
+  hurtTime?: number;
+  deathTime?: number;
+  swing?: number;
+  itemId?: number;
+  itemCount?: number;
+  offhandId?: number;
+  blockId?: number;
+  blockMeta?: number;
+  fuse?: number;
+  woolColor?: number;
+  sheared?: boolean;
+  tamed?: boolean;
+  angry?: boolean;
+  sitting?: boolean;
+  collarColor?: number;
+  variant?: number;
+  customName?: string;
+  leashed?: boolean;
+  leashX?: number;
+  leashY?: number;
+  leashZ?: number;
+  saddled?: boolean;
+  baby?: boolean;
+  mobScale?: number;
+}
+
+export type ContainerKind = 'chest' | 'furnace' | 'brewing' | 'hopper' | 'dispenser' | 'dropper';
+
+export type ContainerAction =
+  | { kind: 'click'; i: number; button: number; shift: boolean }
+  | { kind: 'doubleClick'; i: number }
+  | { kind: 'drag'; slots: number[]; button: number }
+  | { kind: 'clickOutside'; button: number }
+  | { kind: 'numberKey'; i: number; bar: number }
+  | { kind: 'dropKey'; i: number; all: boolean };
+
+export interface TradeOfferInfo {
+  buy: number;
+  buyCount: number;
+  buy2: number;
+  buy2Count: number;
+  sell: number;
+  sellCount: number;
+  enchanted: boolean;
+  soldOut: boolean;
+  affordable: boolean;
+}
+
 export type ClientMessage =
   | { type: 'join'; name: string; password?: string; code?: string; hostToken?: string }
   | { type: 'move'; x: number; y: number; z: number; yaw: number; pitch: number; sneaking: boolean; onGround: boolean; swing: number }
   | { type: 'chat'; text: string }
   | { type: 'needChunks'; keys: Array<[number, number]> }
   | { type: 'breakBlock'; x: number; y: number; z: number }
-  | { type: 'placeBlock'; x: number; y: number; z: number; face: number; id: number; meta: number; slot: number }
+  | { type: 'placeBlock'; x: number, y: number, z: number, face: number, id: number, meta: number, slot: number }
+  | { type: 'useBlock'; x: number; y: number; z: number }
   | { type: 'selectSlot'; slot: number }
   | { type: 'invSync'; slots: Array<SerializedSlot | null>; selected: number }
+  | { type: 'dropItem'; slot: number; all: boolean }
+  | { type: 'pickupItem'; entityId: number }
+  | { type: 'attackEntity'; entityId: number }
+  | { type: 'interactEntity'; entityId: number }
+  | { type: 'nameEntity'; entityId: number; name: string }
+  | { type: 'tieLeash'; x: number; y: number; z: number }
+  | { type: 'openContainer'; x: number; y: number; z: number }
+  | { type: 'containerAction'; x: number; y: number; z: number; action: ContainerAction }
+  | { type: 'containerClose'; x: number; y: number; z: number }
+  | { type: 'tradeSelect'; entityId: number; index: number }
+  | { type: 'tradeClose'; entityId: number }
   | { type: 'rtcSignal'; to: number; kind: 'offer' | 'answer' | 'ice'; payload: unknown }
   | { type: 'rtcState'; mic: boolean; cam: boolean; speaking: boolean }
   | { type: 'closeWorld' };
@@ -74,6 +148,9 @@ export type ServerMessage =
       pitch: number;
       health?: number;
       hunger?: number;
+      xpLevel?: number;
+      xpProgress?: number;
+      xpTotal?: number;
       inventory?: { slots: Array<SerializedSlot | null>; selected: number };
       inviteCode?: string;
       inviteUrl?: string;
@@ -82,6 +159,7 @@ export type ServerMessage =
     }
   | { type: 'error'; code: ErrorCode; message: string }
   | { type: 'players'; list: RemotePlayerState[] }
+  | { type: 'entities'; list: RemoteEntityState[] }
   | { type: 'playerLeave'; id: number; name: string }
   | { type: 'chat'; text: string; sender?: string }
   | { type: 'time'; time: number }
@@ -89,8 +167,26 @@ export type ServerMessage =
   | { type: 'gamemode'; gameMode: GameMode }
   | { type: 'teleport'; x: number; y: number; z: number }
   | { type: 'blockUpdate'; x: number; y: number; z: number; id: number; meta: number }
-  | { type: 'inventory'; slots: Array<SerializedSlot | null>; selected: number }
-  | { type: 'vitals'; health: number; hunger: number }
+  | { type: 'inventory'; slots: Array<SerializedSlot | null>; selected: number; cursor?: SerializedSlot | null }
+  | { type: 'vitals'; health: number; hunger: number; xpLevel?: number; xpProgress?: number; xpTotal?: number }
+  | {
+      type: 'containerState';
+      x: number;
+      y: number;
+      z: number;
+      kind: ContainerKind;
+      items: Array<SerializedSlot | null>;
+      burnTime?: number;
+      burnTotal?: number;
+      cookTime?: number;
+      brewTime?: number;
+      fuel?: number;
+    }
+  | { type: 'containerClose'; x: number; y: number; z: number }
+  | { type: 'tradeOpen'; entityId: number; title: string; offers: TradeOfferInfo[] }
+  | { type: 'tradeOffers'; entityId: number; offers: TradeOfferInfo[] }
+  | { type: 'sound'; name: SfxName; x: number; y: number; z: number; volume?: number; pitch?: number }
+  | { type: 'particles'; kind: ParticleKind; x: number; y: number; z: number; count?: number; spread?: number }
   | { type: 'rtcSignal'; from: number; kind: 'offer' | 'answer' | 'ice'; payload: unknown }
   | { type: 'rtcState'; id: number; mic: boolean; cam: boolean; speaking: boolean }
   | { type: 'worldClosed'; reason: string };

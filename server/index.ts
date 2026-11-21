@@ -1097,6 +1097,25 @@ function start(): void {
     }
 
     if (urlPath.startsWith('/rejoindre/')) {
+      const clientIp = normalizeIp(req.socket.remoteAddress);
+      const waitSec = checkRateLimit(clientIp);
+      if (waitSec > 0) {
+        res.writeHead(429, {
+          'Content-Type': 'text/html; charset=utf-8',
+          'Retry-After': String(waitSec),
+        });
+        if (method === 'HEAD') {
+          res.end();
+          return;
+        }
+        res.end(`<!DOCTYPE html>
+<html lang="fr"><head><meta charset="utf-8" /><title>Trop d’essais</title></head>
+<body style="margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#1e1b18;color:#f5f5f5;font-family:system-ui,sans-serif;text-align:center">
+  <div data-mc="invite-rate-limited"><h1>Trop d’essais ratés</h1><p>Veuillez patienter ${waitSec} s.</p></div>
+</body></html>`);
+        return;
+      }
+
       const rawCode = decodeURIComponent(urlPath.slice('/rejoindre/'.length)).replace(/\/+$/, '');
       const parsed = parseInviteCode(rawCode);
       const valid = Boolean(parsed && inviteSecretHex && safeEqualString(parsed.secretHex, inviteSecretHex));
@@ -1106,13 +1125,29 @@ function start(): void {
       const hostHeader = req.headers.host ?? `127.0.0.1:${port}`;
       const baseUrl = `${proto}://${hostHeader}`;
 
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-      if (method === 'HEAD') {
-        res.end();
-        return;
-      }
-
       if (!valid || !parsed) {
+        const lockSec = recordAuthFailure(clientIp);
+        if (lockSec > 0) {
+          res.writeHead(429, {
+            'Content-Type': 'text/html; charset=utf-8',
+            'Retry-After': String(lockSec),
+          });
+          if (method === 'HEAD') {
+            res.end();
+            return;
+          }
+          res.end(`<!DOCTYPE html>
+<html lang="fr"><head><meta charset="utf-8" /><title>Trop d’essais</title></head>
+<body style="margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#1e1b18;color:#f5f5f5;font-family:system-ui,sans-serif;text-align:center">
+  <div data-mc="invite-rate-limited"><h1>Trop d’essais ratés</h1><p>Veuillez patienter ${lockSec} s.</p></div>
+</body></html>`);
+          return;
+        }
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        if (method === 'HEAD') {
+          res.end();
+          return;
+        }
         res.end(`<!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -1135,6 +1170,13 @@ function start(): void {
   </div>
 </body>
 </html>`);
+        return;
+      }
+
+      clearAuthFailure(clientIp);
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      if (method === 'HEAD') {
+        res.end();
         return;
       }
 

@@ -1,15 +1,28 @@
 /**
  * Client WebSocket multijoueur : poignée de main, réception binaire des chunks et messages JSON.
  */
-import { decodeChunkPacket, type ClientMessage, type RemotePlayerState, type SerializedSlot, type ServerMessage } from './Protocol';
+import {
+  decodeChunkPacket,
+  type ClientMessage,
+  type ContainerAction,
+  type ContainerKind,
+  type RemoteEntityState,
+  type RemotePlayerState,
+  type SerializedSlot,
+  type ServerMessage,
+  type TradeOfferInfo,
+} from './Protocol';
 import { parseInviteCode } from './InviteCode';
 import type { GameMode } from '../world/Constants';
+import type { SfxName } from '../audio/Sfx';
+import type { ParticleKind } from '../render/Particles';
 
 export type WelcomePacket = Extract<ServerMessage, { type: 'welcome' }>;
 
 export interface ClientHandlers {
   onChunk(cx: number, cz: number, blocks: Uint8Array, meta: Uint8Array, biomes: Uint8Array, tints: Uint8Array): void;
   onPlayers(list: RemotePlayerState[]): void;
+  onEntities?(list: RemoteEntityState[]): void;
   onPlayerLeave(id: number, name: string): void;
   onChat(text: string): void;
   onTime(time: number): void;
@@ -17,8 +30,14 @@ export interface ClientHandlers {
   onGameMode(gameMode: GameMode): void;
   onTeleport(x: number, y: number, z: number): void;
   onBlockUpdate(x: number, y: number, z: number, id: number, meta: number): void;
-  onInventory(slots: Array<SerializedSlot | null>, selected: number): void;
-  onVitals(health: number, hunger: number): void;
+  onInventory(slots: Array<SerializedSlot | null>, selected: number, cursor?: SerializedSlot | null): void;
+  onVitals(health: number, hunger: number, xpLevel?: number, xpProgress?: number, xpTotal?: number): void;
+  onContainerState?(msg: Extract<ServerMessage, { type: 'containerState' }>): void;
+  onContainerClose?(x: number, y: number, z: number): void;
+  onTradeOpen?(entityId: number, title: string, offers: TradeOfferInfo[]): void;
+  onTradeOffers?(entityId: number, offers: TradeOfferInfo[]): void;
+  onSound?(name: SfxName, x: number, y: number, z: number, volume?: number, pitch?: number): void;
+  onParticles?(kind: ParticleKind, x: number, y: number, z: number, count?: number, spread?: number): void;
   onRtcSignal?(from: number, kind: 'offer' | 'answer' | 'ice', payload: unknown): void;
   onRtcState?(id: number, mic: boolean, cam: boolean, speaking: boolean): void;
   onWorldClosed(reason: string): void;
@@ -171,6 +190,9 @@ export class MultiplayerClient {
       case 'players':
         this.handlers.onPlayers(msg.list);
         break;
+      case 'entities':
+        this.handlers.onEntities?.(msg.list);
+        break;
       case 'playerLeave':
         this.handlers.onPlayerLeave(msg.id, msg.name);
         break;
@@ -193,10 +215,28 @@ export class MultiplayerClient {
         this.handlers.onBlockUpdate(msg.x, msg.y, msg.z, msg.id, msg.meta);
         break;
       case 'inventory':
-        this.handlers.onInventory(msg.slots, msg.selected);
+        this.handlers.onInventory(msg.slots, msg.selected, msg.cursor);
         break;
       case 'vitals':
-        this.handlers.onVitals(msg.health, msg.hunger);
+        this.handlers.onVitals(msg.health, msg.hunger, msg.xpLevel, msg.xpProgress, msg.xpTotal);
+        break;
+      case 'containerState':
+        this.handlers.onContainerState?.(msg);
+        break;
+      case 'containerClose':
+        this.handlers.onContainerClose?.(msg.x, msg.y, msg.z);
+        break;
+      case 'tradeOpen':
+        this.handlers.onTradeOpen?.(msg.entityId, msg.title, msg.offers);
+        break;
+      case 'tradeOffers':
+        this.handlers.onTradeOffers?.(msg.entityId, msg.offers);
+        break;
+      case 'sound':
+        this.handlers.onSound?.(msg.name, msg.x, msg.y, msg.z, msg.volume, msg.pitch);
+        break;
+      case 'particles':
+        this.handlers.onParticles?.(msg.kind, msg.x, msg.y, msg.z, msg.count, msg.spread);
         break;
       case 'rtcSignal':
         this.handlers.onRtcSignal?.(msg.from, msg.kind, msg.payload);
@@ -234,12 +274,60 @@ export class MultiplayerClient {
     this.send({ type: 'placeBlock', x, y, z, face, id, meta, slot });
   }
 
+  sendUseBlock(x: number, y: number, z: number): void {
+    this.send({ type: 'useBlock', x, y, z });
+  }
+
   sendSelectSlot(slot: number): void {
     this.send({ type: 'selectSlot', slot });
   }
 
   sendInvSync(slots: Array<SerializedSlot | null>, selected: number): void {
     this.send({ type: 'invSync', slots, selected });
+  }
+
+  sendDropItem(slot: number, all: boolean): void {
+    this.send({ type: 'dropItem', slot, all });
+  }
+
+  sendPickupItem(entityId: number): void {
+    this.send({ type: 'pickupItem', entityId });
+  }
+
+  sendAttackEntity(entityId: number): void {
+    this.send({ type: 'attackEntity', entityId });
+  }
+
+  sendInteractEntity(entityId: number): void {
+    this.send({ type: 'interactEntity', entityId });
+  }
+
+  sendNameEntity(entityId: number, name: string): void {
+    this.send({ type: 'nameEntity', entityId, name });
+  }
+
+  sendTieLeash(x: number, y: number, z: number): void {
+    this.send({ type: 'tieLeash', x, y, z });
+  }
+
+  sendOpenContainer(x: number, y: number, z: number): void {
+    this.send({ type: 'openContainer', x, y, z });
+  }
+
+  sendContainerAction(x: number, y: number, z: number, action: ContainerAction): void {
+    this.send({ type: 'containerAction', x, y, z, action });
+  }
+
+  sendContainerClose(x: number, y: number, z: number): void {
+    this.send({ type: 'containerClose', x, y, z });
+  }
+
+  sendTradeSelect(entityId: number, index: number): void {
+    this.send({ type: 'tradeSelect', entityId, index });
+  }
+
+  sendTradeClose(entityId: number): void {
+    this.send({ type: 'tradeClose', entityId });
   }
 
   sendRtcSignal(to: number, kind: 'offer' | 'answer' | 'ice', payload: unknown): void {
