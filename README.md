@@ -131,7 +131,7 @@ Fabriquez un nouvel APK avec `npm run android:apk` (en utilisant la même clé `
 - Les mondes sont stockés dans le stockage interne de l'application (IndexedDB) : utilisez l'export `.aetherworld` si vous voulez une sauvegarde externe ou transférer un monde vers un autre appareil.
 - Les mêmes limites de jouabilité que la version navigateur (pas de vibrations manette, limites du multijoueur jalon 1).
 
-## 🌐 Multijoueur (Wi-Fi local et Tailscale — Jalon 4)
+## 🌐 Multijoueur (Wi-Fi local et Tailscale — Jalon 5)
 
 Un joueur lance un serveur Node.js autoritaire sur son ordinateur ; ses amis le rejoignent depuis un navigateur (ordinateur ou téléphone) ou depuis l'application Android.
 
@@ -193,14 +193,15 @@ Au démarrage, le serveur affiche les adresses à partager :
 - **Créatures** : apparition naturelle autour de chaque joueur (jour/nuit), IA et recherche de chemin simulées sur le serveur et diffusées aux joueurs à portée (interpolation fluide chez le client) ; frapper/tuer (dégâts, recul, butin au sol, XP), nourrir et faire se reproduire, tondre, traire, laisse et échanges avec les villageois.
 - **Objets au sol** : en survie, casser un bloc ou lâcher un objet (`A`) fait tomber l'objet au sol pour tous ; ramassage arbitré par le serveur (sans duplication possible), fusion des piles et disparition au bout de 5 minutes.
 - **Coffres, fourneaux et conteneurs** : coffres (y compris côte à côte), fourneaux, alambics, entonnoirs et distributeurs/droppers gérés par le serveur, mis à jour en temps réel pour tous ceux qui ouvrent le même conteneur ; les fourneaux, alambics et entonnoirs continuent de tourner même sans spectateur ; casser un conteneur répand son contenu au sol.
-- **Inventaire, temps et météo** : inventaire géré par le serveur ; temps et météo synchronisés.
-- **Droits de l'hôte** : seul l'hôte (celui qui a ouvert le monde ou connaît le mot de passe) peut utiliser `/gamemode`, `/tp`, `/time` et fermer le monde.
-- **Sauvegarde serveur** : chunks modifiés, créatures, objets au sol, coffres/fourneaux et un fichier par joueur (`server-data/worlds/default/players/`) enregistrés toutes les 30 secondes et à l'arrêt du serveur ; à la fermeture aux amis, le monde solo de l'hôte récupère blocs, créatures et conteneurs.
+- **Combat et survie** : vie, faim, saturation, armure, enchantements (Protection, Chute amortie, Tranchant, Puissance), effets de potions et dégâts d'environnement (chute, noyade, lave, feu, cactus, suffocation, faim, explosions) gérés par le serveur ; combat PvP et PvE (portée, recharge 1.12, coups critiques, recul), arc et flèches, potions bues et jetables, bouclier, commande `/pvp on|off`.
+- **Mort, réapparition et nuit au lit** : écran de mort, message de mort diffusé dans le chat, butin au sol et XP selon `/gamerule keepInventory true|false`, réapparition au point d'apparition ou au lit ; dormir au lit définit le point de réapparition et passe la nuit quand tous les joueurs connectés sont couchés.
+- **Inventaire, temps et météo** : inventaire (y compris armure et seconde main) géré par le serveur ; temps et météo synchronisés.
+- **Droits de l'hôte** : seul l'hôte (celui qui a ouvert le monde ou connaît le mot de passe) peut utiliser `/gamemode`, `/tp`, `/time`, `/give`, `/summon`, `/kill`, `/difficulty`, `/weather`, `/spawnpoint`, `/pvp`, `/gamerule` et fermer le monde.
+- **Sauvegarde serveur** : chunks modifiés, créatures, objets au sol, coffres/fourneaux et un fichier par joueur (`server-data/worlds/default/players/`, incluant vie, faim, effets, lit et armure) enregistrés toutes les 30 secondes et à l'arrêt du serveur ; à la fermeture aux amis, le monde solo de l'hôte récupère blocs, créatures et conteneurs.
 
-### Limites du jalon 4
+### Limites restantes (jalon 6)
 
-- **Combat, mort et réapparition** (jalon 5) : les créatures hostiles n'infligent pas encore de dégâts aux joueurs, et il n'y a ni mort ni réapparition de joueur en multijoueur (pas de PvP non plus).
-- Pas encore de changement de dimension en multijoueur ; un seul monde actif par serveur.
+- **Redstone, véhicules et dimensions (Nether, End)** restent pour le jalon 6 ; un seul monde actif par serveur.
 
 ## 🎮 Contrôles
 

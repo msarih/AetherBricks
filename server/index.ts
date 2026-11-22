@@ -77,9 +77,9 @@ import {
 } from '../src/world/Constants';
 import { blockDrops } from '../src/world/Drops';
 import { enchantLevel } from '../src/world/Enchants';
-import { type GameRules, GAME_RULE_KEYS } from '../src/world/GameRules';
+import { type GameRules, GAME_RULE_NAMES } from '../src/world/GameRules';
 import { B, I } from '../src/world/Ids';
-import { ITEMS, getItem, isFood, isTool, itemLabel, maxStack } from '../src/world/Items';
+import { ITEMS, getItem, isTool, itemLabel, maxStack } from '../src/world/Items';
 import { addToSlots, cloneStackWithCount, loadSlots, makeStack, saveSlots, type ItemStack, type Slot } from '../src/world/ItemStack';
 import { POTION_GIVE_HELP, applyPotionVariant, potionLabel, resolvePotionKind } from '../src/world/Potions';
 import { computeDaylightPower, isBlockPowered, triggerNoteBlock, updateRedstoneAround, updateRepeaterState } from '../src/world/Redstone';
@@ -746,7 +746,7 @@ function start(): void {
     world = new World(seed, worldType, genVersion);
     world.raining = raining;
     if (existingSave?.rules) {
-      for (const k of GAME_RULE_KEYS) {
+      for (const k of GAME_RULE_NAMES) {
         if (typeof existingSave.rules[k] === 'boolean') world.rules[k] = existingSave.rules[k] as boolean;
       }
     }
@@ -1389,9 +1389,9 @@ function start(): void {
 
     if (cmd === 'gamerule') {
       const ruleRaw = parts[1];
-      const rule = GAME_RULE_KEYS.find((r) => r.toLowerCase() === (ruleRaw ?? '').toLowerCase());
+      const rule = GAME_RULE_NAMES.find((r) => r.toLowerCase() === (ruleRaw ?? '').toLowerCase());
       if (!rule) {
-        sendJson(sender.ws, { type: 'chat', text: `Règles : ${GAME_RULE_KEYS.join(', ')}` });
+        sendJson(sender.ws, { type: 'chat', text: `Règles : ${GAME_RULE_NAMES.join(', ')}` });
         return;
       }
       if (parts[2] === undefined) {
@@ -1522,6 +1522,18 @@ function start(): void {
         return;
       }
       target.entity.hurt(createServerGameApi(), 1000, 'void', null);
+      return;
+    }
+
+    if (cmd === 'clear') {
+      const target = parts[1] ? findPlayerByName(parts[1]) : sender;
+      if (!target) {
+        sendJson(sender.ws, { type: 'chat', text: `Joueur introuvable : ${parts[1]}` });
+        return;
+      }
+      target.entity.inventory.takeAll();
+      sendInventory(target);
+      sendJson(sender.ws, { type: 'chat', text: `Inventaire de ${target.name} vidé` });
       return;
     }
 
@@ -2342,6 +2354,20 @@ function start(): void {
           sendInventory(player);
         }
 
+        if (id === B.BED) {
+          const d = meta & 3;
+          const hx = x + FACING_DX[d];
+          const hz = z + FACING_DZ[d];
+          world.setBlock(x, y, z, id, meta, false);
+          if (world.isLoaded(hx, hz) && BLOCK_REPLACEABLE[world.getBlock(hx, y, hz)] === 1) {
+            world.setBlock(hx, y, hz, B.BED, meta | 4, false);
+            broadcastBlockUpdate(hx, y, hz, B.BED, meta | 4);
+          }
+          broadcastBlockUpdate(x, y, z, id, meta);
+          world.notifyNeighbors(x, y, z);
+          world.notifyNeighbors(hx, y, hz);
+          return;
+        }
         world.setBlock(x, y, z, id, meta, true);
         if (id === B.HOPPER) {
           getHopper(world, x, y, z);
@@ -2581,7 +2607,7 @@ function start(): void {
 
       if (msg.type === 'finishEat') {
         if (!player.entity.alive || player.gameMode === 'spectator') return;
-        if (player.entity.useKind !== 'eat' || player.entity.useTicks < 24) return;
+        if (player.entity.useKind !== 'eat' || player.entity.useTicks < 16) return;
         const hand = msg.hand === 'offhand' ? 'offhand' : 'main';
         const stack = hand === 'offhand' ? player.entity.inventory.offhandItem : player.entity.inventory.held;
         const held = stack?.id ?? 0;
@@ -2591,7 +2617,7 @@ function start(): void {
           if (stack?.potion) applyPotionVariant(player.entity, stack.potion, 1, player.entity);
           player.entity.replaceHand(hand, I.GLASS_BOTTLE);
           broadcastNear(player.x, player.y + 1.5, player.z, 24, { type: 'sound', name: 'drink', x: player.x, y: player.y + 1.5, z: player.z, volume: 0.6, pitch: 1 });
-        } else if (isFood(held) || held === I.MILK_BUCKET) {
+        } else if (item.food > 0 || held === I.MILK_BUCKET) {
           if (held !== I.GOLDEN_APPLE && held !== I.MILK_BUCKET && player.entity.hunger >= 20 && player.gameMode !== 'creative') return;
           player.entity.feed(item.food, item.saturation);
           if (held === I.GOLDEN_APPLE) player.entity.heal(4);

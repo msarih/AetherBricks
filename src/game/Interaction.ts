@@ -576,23 +576,23 @@ export class Interaction {
           this.swing();
           return true;
         }
-        return false;
-      }
-      if (e instanceof Mob && this.freshClick) {
-        // laisse : détacher une créature attachée, ou lui passer la laisse tenue en main
-        if (e.useLeash(g, p)) {
+      } else {
+        if (e instanceof Mob && this.freshClick) {
+          // laisse : détacher une créature attachée, ou lui passer la laisse tenue en main
+          if (e.useLeash(g, p)) {
+            this.swing();
+            return true;
+          }
+          if (held === I.NAME_TAG && e.alive && g.openNameTag) {
+            g.openNameTag(e);
+            this.swing();
+            return true;
+          }
+        }
+        if (e.interact(g, p)) {
           this.swing();
           return true;
         }
-        if (held === I.NAME_TAG && e.alive && g.openNameTag) {
-          g.openNameTag(e);
-          this.swing();
-          return true;
-        }
-      }
-      if (e.interact(g, p)) {
-        this.swing();
-        return true;
       }
     } else if (this.hasBlock) {
       if (this.freshClick && isLeashPost(this.hit.id)) {
@@ -1499,12 +1499,20 @@ export class Interaction {
   }
 
   private placeBed(x: number, y: number, z: number, pf: number): boolean {
-    const w = this.game.world;
+    const g = this.game;
+    const w = g.world;
     const hx = x + FACING_DX[pf];
     const hz = z + FACING_DZ[pf];
     if (!this.replaceable(hx, y, hz)) return false;
     if (!topSolid(w, x, y - 1, z) || !topSolid(w, hx, y - 1, hz)) return false;
     if (!this.cellFree(x, y, z, B.BED, pf) || !this.cellFree(hx, y, hz, B.BED, pf | 4)) return false;
+    if (g.isRemote && g.netPlaceBlock) {
+      const slot = this.activeHand === 'main' ? g.player.inventory.selected : 36;
+      g.netPlaceBlock(x, y, z, this.hit.face, B.BED, pf, slot);
+      g.blockSound('place', B.BED, x + 0.5, y + 0.5, z + 0.5);
+      this.swing();
+      return true;
+    }
     w.setBlock(x, y, z, B.BED, pf, false);
     w.setBlock(hx, y, hz, B.BED, pf | 4, false);
     this.notifyAround(x, y, z);

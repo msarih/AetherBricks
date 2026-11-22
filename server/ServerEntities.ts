@@ -1,7 +1,7 @@
 /**
  * Adaptateurs d'entités et de lumière pour le serveur multijoueur autoritaire.
  */
-import { type DamageCause, type Entity, type GameApi } from '../src/entity/Entity';
+import { type DamageCause, type EffectType, type Entity, type GameApi } from '../src/entity/Entity';
 import { updateMedium } from '../src/entity/Physics';
 import type { RemoteEntityState } from '../src/net/Protocol';
 import { Player } from '../src/player/Player';
@@ -9,15 +9,17 @@ import type { ParticleKind } from '../src/render/Particles';
 import { BLOCK_EMIT } from '../src/world/Blocks';
 import type { Chunk } from '../src/world/Chunk';
 import { CHUNK_HEIGHT } from '../src/world/Constants';
-import { isAxe, isPickaxe, isShovel, isSword } from '../src/world/Items';
+import { getItem } from '../src/world/Items';
 import type { ItemStack } from '../src/world/ItemStack';
 
 /** Durée de recharge d'attaque Minecraft 1.12 en ticks selon l'objet tenu. */
 export function attackCooldownTicks(itemId: number): number {
-  if (isSword(itemId)) return 13;
-  if (isAxe(itemId)) return 20;
-  if (isPickaxe(itemId)) return 17;
-  if (isShovel(itemId)) return 20;
+  if (itemId <= 0) return 5;
+  const tool = getItem(itemId).tool;
+  if (tool === 'sword') return 13;
+  if (tool === 'axe') return 20;
+  if (tool === 'pickaxe') return 17;
+  if (tool === 'shovel') return 20;
   return 5;
 }
 
@@ -184,6 +186,21 @@ export class ServerPlayerEntity extends Player {
   override addXp(amount: number): void {
     if (amount <= 0) return;
     super.addXp(amount);
+    this.vitalsDirty = true;
+  }
+
+  override addEffect(type: EffectType, ticks: number, level = 1): void {
+    super.addEffect(type, ticks, level);
+    this.vitalsDirty = true;
+  }
+
+  override removeEffect(type: EffectType): void {
+    super.removeEffect(type);
+    this.vitalsDirty = true;
+  }
+
+  override clearEffects(): void {
+    super.clearEffects();
     this.vitalsDirty = true;
   }
 }
