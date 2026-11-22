@@ -24,17 +24,20 @@ import {
   type ContainerKind,
   type RemoteEntityState,
   type RemotePlayerState,
+  type SerializedEffect,
   type SerializedSlot,
   type ServerMessage,
   type TradeOfferInfo,
 } from '../src/net/Protocol';
-import { Entity, Living, type GameApi } from '../src/entity/Entity';
+import { EFFECT_TYPES, Entity, Living, type DamageCause, type EffectType, type GameApi } from '../src/entity/Entity';
 import { IronGolem } from '../src/entity/Creatures';
-import { LEASH_BREAK, Mob, Villager, isLeashPost } from '../src/entity/Mobs';
+import { HOSTILE_KINDS, LEASH_BREAK, Mob, Monster, NPC_KINDS, PASSIVE_KINDS, Villager, createMob, isLeashPost } from '../src/entity/Mobs';
 import { isProfession } from '../src/entity/Trades';
-import { ItemEntity } from '../src/entity/Objects';
+import { Arrow, ItemEntity, ThrownPotion, Tnt } from '../src/entity/Objects';
 import { createEntity } from '../src/entity/Registry';
 import { Spawner } from '../src/entity/Spawner';
+import { explode as runExplosion } from '../src/game/Explosion';
+import { findBedStandSpot, formatDeathMessage } from '../src/game/SurvivalHelpers';
 import {
   blockEntityItems,
   getBrewingStand,
@@ -59,7 +62,7 @@ import {
   type Menu,
 } from '../src/game/Inventory';
 import { attackDamage } from '../src/player/Player';
-import { BLOCKS, BLOCK_REPLACEABLE, BLOCK_SOLID, isFluid } from '../src/world/Blocks';
+import { BLOCKS, BLOCK_REPLACEABLE, BLOCK_SOLID, FACING_DX, FACING_DZ, isFluid } from '../src/world/Blocks';
 import { Chunk } from '../src/world/Chunk';
 import {
   CHUNK_AREA,
@@ -74,9 +77,11 @@ import {
 } from '../src/world/Constants';
 import { blockDrops } from '../src/world/Drops';
 import { enchantLevel } from '../src/world/Enchants';
+import { type GameRules, GAME_RULE_KEYS } from '../src/world/GameRules';
 import { B, I } from '../src/world/Ids';
-import { getItem, maxStack } from '../src/world/Items';
+import { ITEMS, getItem, isFood, isTool, itemLabel, maxStack } from '../src/world/Items';
 import { addToSlots, cloneStackWithCount, loadSlots, makeStack, saveSlots, type ItemStack, type Slot } from '../src/world/ItemStack';
+import { POTION_GIVE_HELP, applyPotionVariant, potionLabel, resolvePotionKind } from '../src/world/Potions';
 import { computeDaylightPower, isBlockPowered, triggerNoteBlock, updateRedstoneAround, updateRepeaterState } from '../src/world/Redstone';
 import type { SavedChunk, WorldInfo } from '../src/world/Storage';
 import { World, type BlockEntity } from '../src/world/World';
@@ -99,6 +104,8 @@ interface ServerConfig {
   gameMode?: GameMode;
   viewDistance?: number;
   allowCommands?: boolean;
+  pvp?: boolean;
+  difficulty?: number;
 }
 
 interface WorldSaveMeta {
@@ -111,6 +118,9 @@ interface WorldSaveMeta {
   raining?: boolean;
   thundering?: boolean;
   weatherTimer?: number;
+  pvp?: boolean;
+  difficulty?: number;
+  rules?: Partial<GameRules>;
   spawn: { x: number; y: number; z: number };
 }
 
@@ -123,7 +133,17 @@ interface PlayerSaveData {
   gameMode: GameMode;
   health: number;
   hunger: number;
+  saturation?: number;
+  exhaustion?: number;
+  xpLevel?: number;
+  xpProgress?: number;
+  air?: number;
+  fire?: number;
+  effects?: SerializedEffect[];
+  bed?: [number, number, number] | null;
   slots: Array<SerializedSlot | null>;
+  armor?: Array<SerializedSlot | null>;
+  offhand?: SerializedSlot | null;
   selected: number;
 }
 
@@ -454,9 +474,23 @@ function start(): void {
   let raining = false;
   let thundering = false;
   let weatherTimer = 12000 + Math.floor(Math.random() * 168000);
+  let pvpEnabled = args['no-pvp'] ? false : fileConfig.pvp ?? true;
+  let difficulty = typeof fileConfig.difficulty === 'number' ? Math.max(0, Math.min(3, Math.floor(fileConfig.difficulty))) : 2;
+  const SLEEP_TICKS = 100;
   let spawn = { x: 8.5, y: 65, z: 8.5 };
   let world!: World;
   let gen!: WorldGen;
+
+  const itemNamesMap = new Map<string, number>();
+  for (const [k, v] of Object.entries(I)) {
+    if (typeof v === 'number') itemNamesMap.set(k.toLowerCase(), v);
+  }
+  for (const [idStr, def] of Object.entries(ITEMS)) {
+    if (def && typeof def.name === 'string') {
+      const norm = def.name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+      if (norm && !itemNamesMap.has(norm)) itemNamesMap.set(norm, Number(idStr));
+    }
+  }
 
   // Code d'invitation et jeton hôte ("Ouvrir aux amis")
   let inviteSecretHex: string | null = null;
@@ -473,7 +507,7 @@ function start(): void {
   const pendingEntities: Entity[] = [];
   let entityTicking = false;
   let spawner = new Spawner();
-  const fallbackPlayerEntity = new ServerPlayerEntity(new Inventory());
+  const fallbackPlayerEntity = new ServerPlayerEntity('');
   let tickMsAvg = 0;
   let totalTickSamples = 0;
 
@@ -579,10 +613,11 @@ function start(): void {
       world,
       player: activePlayer?.entity ?? fallbackPlayerEntity,
       players: Array.from(players.values()).map((p) => p.entity),
+      pvp: pvpEnabled,
       entities: serverEntities,
       rng: () => Math.random(),
       dayTime: worldTime % DAY_TICKS,
-      difficulty: 2,
+      difficulty,
       dimension: 'overworld',
       spawn: (e) => spawnServerEntity(e),
       sound: (name, x, y, z, volume, pitch) => {
@@ -607,11 +642,18 @@ function start(): void {
           offers: buildTradeOffers(villager, activePlayer),
         });
       },
-      explode: () => {},
+      explode: (x, y, z, power, fire, source, griefing) => {
+        runExplosion(createServerGameApi(), x, y, z, power, fire, source, griefing ?? world.rules.mobGriefing);
+      },
       entitiesInBox: (x0, y0, z0, x1, y1, z1, except = null) => {
         const out: Entity[] = [];
         for (const e of serverEntities) {
           if (e !== except && !e.dead && e.intersects(x0, y0, z0, x1, y1, z1)) out.push(e);
+        }
+        for (const p of players.values()) {
+          if (p.entity !== except && p.entity.alive && p.entity.intersects(x0, y0, z0, x1, y1, z1)) {
+            out.push(p.entity);
+          }
         }
         return out;
       },
@@ -655,7 +697,11 @@ function start(): void {
         w.setBlock(x, ly, z, id, meta, true);
         return true;
       },
-      primeTnt: () => {},
+      primeTnt: (x, y, z, fuse) => {
+        const t = new Tnt(fuse);
+        t.setPosition(x + 0.5, y, z + 0.5);
+        spawnServerEntity(t);
+      },
       effect: () => {},
       blockEntityRemoved: (be: BlockEntity) => {
         for (const s of blockEntityItems(be)) {
@@ -694,9 +740,16 @@ function start(): void {
     raining = existingSave?.raining === true;
     thundering = existingSave?.thundering === true && raining;
     weatherTimer = existingSave?.weatherTimer ?? (12000 + Math.floor(Math.random() * 168000));
+    if (existingSave?.pvp !== undefined) pvpEnabled = existingSave.pvp;
+    if (typeof existingSave?.difficulty === 'number') difficulty = Math.max(0, Math.min(3, Math.floor(existingSave.difficulty)));
 
     world = new World(seed, worldType, genVersion);
     world.raining = raining;
+    if (existingSave?.rules) {
+      for (const k of GAME_RULE_KEYS) {
+        if (typeof existingSave.rules[k] === 'boolean') world.rules[k] = existingSave.rules[k] as boolean;
+      }
+    }
     attachWorldHost(world);
     gen = new WorldGen(seed, worldType, genVersion);
 
@@ -763,6 +816,9 @@ function start(): void {
       raining,
       thundering,
       weatherTimer,
+      pvp: pvpEnabled,
+      difficulty,
+      rules: { ...world.rules },
       spawn,
     };
     writeJsonAtomic(worldSavePath, meta);
@@ -819,6 +875,7 @@ function start(): void {
   }
 
   function savePlayerData(p: ServerPlayer): void {
+    const e = p.entity;
     const data: PlayerSaveData = {
       x: p.x,
       y: p.y,
@@ -826,10 +883,20 @@ function start(): void {
       yaw: p.yaw,
       pitch: p.pitch,
       gameMode: p.gameMode,
-      health: p.health,
-      hunger: p.hunger,
-      slots: saveSlots(p.slots) as Array<SerializedSlot | null>,
-      selected: p.selected,
+      health: e.health,
+      hunger: e.hunger,
+      saturation: e.saturation,
+      exhaustion: e.exhaustion,
+      xpLevel: e.xpLevel,
+      xpProgress: e.xpProgress,
+      air: e.air,
+      fire: e.fireTicks,
+      effects: Array.from(e.effects, ([type, fx]) => ({ type, level: fx.level, ticks: fx.ticks })),
+      bed: e.bed ? [e.bed.x, e.bed.y, e.bed.z] : null,
+      slots: saveSlots(e.inventory.slots) as Array<SerializedSlot | null>,
+      armor: saveSlots(e.inventory.armor) as Array<SerializedSlot | null>,
+      offhand: saveSlots(e.inventory.offhand)[0] as SerializedSlot | null,
+      selected: e.inventory.selected,
     };
     writeJsonAtomic(path.join(playersDir, `${normalizePlayerFile(p.name)}.json`), data);
   }
@@ -888,20 +955,144 @@ function start(): void {
     const cur = p.entity.inventory.cursor;
     sendJson(p.ws, {
       type: 'inventory',
-      slots: saveSlots(p.slots) as Array<SerializedSlot | null>,
-      selected: p.selected,
+      slots: saveSlots(p.entity.inventory.slots) as Array<SerializedSlot | null>,
+      selected: p.entity.inventory.selected,
       cursor: cur ? (saveSlots([cur])[0] as SerializedSlot | null) : null,
+      armor: saveSlots(p.entity.inventory.armor) as Array<SerializedSlot | null>,
+      offhand: saveSlots(p.entity.inventory.offhand)[0] as SerializedSlot | null,
     });
   }
 
+  function serializeEffects(e: ServerPlayerEntity): SerializedEffect[] {
+    const out: SerializedEffect[] = [];
+    for (const [type, fx] of e.effects) {
+      if (fx.ticks > 0) out.push({ type, level: fx.level, ticks: fx.ticks });
+    }
+    return out;
+  }
+
   function sendVitals(p: ServerPlayer): void {
+    const e = p.entity;
+    p.health = e.health;
+    p.hunger = e.hunger;
     sendJson(p.ws, {
       type: 'vitals',
-      health: p.health,
-      hunger: p.hunger,
-      xpLevel: p.entity.xpLevel,
-      xpProgress: p.entity.xpProgress,
+      health: e.health,
+      hunger: e.hunger,
+      saturation: e.saturation,
+      air: e.air,
+      fireTicks: e.fireTicks,
+      effects: serializeEffects(e),
+      xpLevel: e.xpLevel,
+      xpProgress: e.xpProgress,
     });
+  }
+
+  function findRespawnSpot(p: ServerPlayer): { x: number; y: number; z: number } {
+    const bed = p.entity.bed;
+    if (bed) {
+      getOrGenerateChunk(bed.x >> 4, bed.z >> 4);
+      if (world.getBlock(bed.x, bed.y, bed.z) === B.BED) {
+        const spot = findBedStandSpot(world, bed.x, bed.y, bed.z, p.entity.width, p.entity.height);
+        if (spot) return spot;
+        return { x: bed.x + 0.5, y: bed.y + 0.5625, z: bed.z + 0.5 };
+      }
+      p.entity.bed = null;
+      sendJson(p.ws, { type: 'chat', text: 'Votre lit a disparu ou est obstrué' });
+    }
+    return { x: spawn.x, y: spawn.y, z: spawn.z };
+  }
+
+  function respawnServerPlayer(p: ServerPlayer, sendPacket = true): void {
+    const spot = findRespawnSpot(p);
+    p.entity.respawn(spot.x, spot.y, spot.z);
+    p.x = spot.x;
+    p.y = spot.y;
+    p.z = spot.z;
+    p.health = p.entity.health;
+    p.hunger = p.entity.hunger;
+    p.lastMoveMs = Date.now();
+    if (sendPacket) {
+      sendJson(p.ws, { type: 'respawn', x: spot.x, y: spot.y, z: spot.z });
+      sendVitals(p);
+      sendInventory(p);
+      streamChunksAround(p);
+    }
+  }
+
+  function wakeServerPlayer(p: ServerPlayer): void {
+    if (!p.entity.sleeping) return;
+    const bed = p.entity.bed;
+    p.entity.sleeping = false;
+    p.entity.sleepTicks = 0;
+    let x = p.x;
+    let y = p.y;
+    let z = p.z;
+    if (bed) {
+      const spot = findBedStandSpot(world, bed.x, bed.y, bed.z, p.entity.width, p.entity.height);
+      if (spot) {
+        x = spot.x;
+        y = spot.y;
+        z = spot.z;
+        p.entity.teleport(x, y, z);
+        p.x = x;
+        p.y = y;
+        p.z = z;
+      }
+    }
+    sendJson(p.ws, { type: 'sleep', sleeping: false, x, y, z });
+  }
+
+  function trySleepServerPlayer(p: ServerPlayer, x: number, y: number, z: number, meta: number): void {
+    const d = meta & 3;
+    const hx = meta & 4 ? x : x + FACING_DX[d];
+    const hz = meta & 4 ? z : z + FACING_DZ[d];
+    p.entity.bed = { x: hx, y, z: hz };
+    sendJson(p.ws, { type: 'chat', text: 'Point de réapparition défini' });
+    const t = worldTime % DAY_TICKS;
+    if (!(thundering || (t >= 12541 && t <= 23458))) {
+      sendJson(p.ws, { type: 'actionBar', text: 'Vous ne pouvez dormir que la nuit ou pendant un orage' });
+      return;
+    }
+    for (const e of serverEntities) {
+      if (e instanceof Monster && !e.dead && Math.abs(e.x - hx) < 8 && Math.abs(e.z - hz) < 8 && Math.abs(e.y - y) < 5) {
+        sendJson(p.ws, { type: 'actionBar', text: 'Vous ne pouvez pas dormir : des monstres rôdent' });
+        return;
+      }
+    }
+    p.entity.stopUsing();
+    p.entity.sprinting = false;
+    const sx = hx + 0.5;
+    const sy = y + 0.5625;
+    const sz = hz + 0.5;
+    p.entity.teleport(sx, sy, sz);
+    p.x = sx;
+    p.y = sy;
+    p.z = sz;
+    p.entity.sleeping = true;
+    p.entity.sleepTicks = 0;
+    sendJson(p.ws, { type: 'sleep', sleeping: true, x: sx, y: sy, z: sz });
+    sendJson(p.ws, { type: 'actionBar', text: 'Appuyez sur Espace pour vous lever' });
+    let sleepingCount = 0;
+    for (const other of players.values()) {
+      if (other.entity.sleeping) sleepingCount++;
+    }
+    broadcastJson({ type: 'chat', text: `${sleepingCount}/${players.size} joueurs dorment` });
+  }
+
+  function attachPlayerCallbacks(p: ServerPlayer): void {
+    p.entity.canPvp = () => pvpEnabled;
+    p.entity.onHurtNotify = (vx, vy, vz) => {
+      sendJson(p.ws, { type: 'playerHurt', hurtTime: p.entity.hurtTime, vx, vy, vz });
+      sendVitals(p);
+    };
+    p.entity.onDeathNotify = (cause, attacker) => {
+      const msg = formatDeathMessage(p.name, cause, attacker);
+      broadcastJson({ type: 'chat', text: msg });
+      sendJson(p.ws, { type: 'death', message: msg });
+      sendVitals(p);
+      sendInventory(p);
+    };
   }
 
   function checkRateLimit(ip: string): number {
@@ -1045,7 +1236,7 @@ function start(): void {
 
     if (cmd === 'help' || cmd === '?') {
       const list = sender.isHost
-        ? '/help, /tp <x y z | joueur>, /time <set|add|query>, /gamemode <mode> [joueur]'
+        ? '/help, /tp, /time, /weather, /gamemode, /give, /summon, /kill, /difficulty, /gamerule, /pvp, /spawnpoint'
         : '/help (les autres commandes sont réservées à l’hôte)';
       sendJson(sender.ws, { type: 'chat', text: `Commandes : ${list}` });
       return;
@@ -1123,6 +1314,8 @@ function start(): void {
         sender.x = dest.x;
         sender.y = dest.y;
         sender.z = dest.z;
+        sender.entity.teleport(dest.x, dest.y, dest.z);
+        sender.entity.fallDistance = 0;
         sender.lastMoveMs = Date.now();
         sendJson(sender.ws, { type: 'teleport', x: sender.x, y: sender.y, z: sender.z });
         streamChunksAround(sender);
@@ -1140,6 +1333,8 @@ function start(): void {
         sender.x = tx;
         sender.y = ty;
         sender.z = tz;
+        sender.entity.teleport(tx, ty, tz);
+        sender.entity.fallDistance = 0;
         sender.lastMoveMs = Date.now();
         sendJson(sender.ws, { type: 'teleport', x: tx, y: ty, z: tz });
         streamChunksAround(sender);
@@ -1162,7 +1357,8 @@ function start(): void {
         target.x = tx;
         target.y = ty;
         target.z = tz;
-        target.entity.setPosition(tx, ty, tz);
+        target.entity.teleport(tx, ty, tz);
+        target.entity.fallDistance = 0;
         target.lastMoveMs = Date.now();
         sendJson(target.ws, { type: 'teleport', x: tx, y: ty, z: tz });
         streamChunksAround(target);
@@ -1170,6 +1366,173 @@ function start(): void {
         return;
       }
       sendJson(sender.ws, { type: 'chat', text: 'Usage : /tp <x> <y> <z> ou /tp <joueur> [x y z]' });
+      return;
+    }
+
+    if (cmd === 'pvp') {
+      const sub = (parts[1] ?? '').toLowerCase();
+      if (sub === 'on' || sub === 'true') {
+        pvpEnabled = true;
+        saveWorldMeta();
+        broadcastJson({ type: 'chat', text: 'PvP activé' });
+        return;
+      }
+      if (sub === 'off' || sub === 'false') {
+        pvpEnabled = false;
+        saveWorldMeta();
+        broadcastJson({ type: 'chat', text: 'PvP désactivé' });
+        return;
+      }
+      sendJson(sender.ws, { type: 'chat', text: `PvP : ${pvpEnabled ? 'activé' : 'désactivé'} (usage : /pvp on|off)` });
+      return;
+    }
+
+    if (cmd === 'gamerule') {
+      const ruleRaw = parts[1];
+      const rule = GAME_RULE_KEYS.find((r) => r.toLowerCase() === (ruleRaw ?? '').toLowerCase());
+      if (!rule) {
+        sendJson(sender.ws, { type: 'chat', text: `Règles : ${GAME_RULE_KEYS.join(', ')}` });
+        return;
+      }
+      if (parts[2] === undefined) {
+        sendJson(sender.ws, { type: 'chat', text: `${rule} = ${world.rules[rule]}` });
+        return;
+      }
+      const v = parts[2].toLowerCase();
+      if (v !== 'true' && v !== 'false') {
+        sendJson(sender.ws, { type: 'chat', text: `Usage : /gamerule ${rule} <true|false>` });
+        return;
+      }
+      world.rules[rule] = v === 'true';
+      saveWorldMeta();
+      broadcastJson({ type: 'chat', text: `Règle ${rule} = ${world.rules[rule]}` });
+      return;
+    }
+
+    if (cmd === 'difficulty') {
+      const map: Record<string, number> = { peaceful: 0, paisible: 0, easy: 1, facile: 1, normal: 2, hard: 3, difficile: 3 };
+      const rawArg = (parts[1] ?? '').toLowerCase();
+      const d = map[rawArg] ?? (/^[0-3]$/.test(rawArg) ? Number(rawArg) : -1);
+      if (d < 0 || d > 3) {
+        sendJson(sender.ws, { type: 'chat', text: 'Usage : /difficulty <0|1|2|3|peaceful|easy|normal|hard>' });
+        return;
+      }
+      difficulty = d;
+      if (d === 0) {
+        for (const e of serverEntities) {
+          if (e instanceof Monster) e.dead = true;
+        }
+      }
+      saveWorldMeta();
+      broadcastJson({ type: 'chat', text: `Difficulté fixée à ${d}` });
+      return;
+    }
+
+    if (cmd === 'weather') {
+      const kind = (parts[1] ?? '').toLowerCase();
+      if (kind !== 'clear' && kind !== 'rain' && kind !== 'thunder') {
+        sendJson(sender.ws, { type: 'chat', text: 'Usage : /weather <clear|rain|thunder>' });
+        return;
+      }
+      raining = kind !== 'clear';
+      thundering = kind === 'thunder';
+      world.raining = raining;
+      weatherTimer = kind === 'clear' ? 12000 + Math.floor(Math.random() * 168000) : 12000 + Math.floor(Math.random() * 12000);
+      broadcastJson({ type: 'weather', raining, thundering });
+      broadcastJson({ type: 'chat', text: kind === 'clear' ? 'Le temps se dégage' : kind === 'rain' ? 'Il se met à pleuvoir' : "L'orage approche" });
+      return;
+    }
+
+    if (cmd === 'give') {
+      let idx = 1;
+      let target = findPlayerByName(parts[1] ?? '');
+      if (target) idx = 2;
+      else target = sender;
+      const key = (parts[idx] ?? '').toLowerCase();
+      const id = itemNamesMap.get(key) ?? (/^\d+$/.test(key) && ITEMS[Number(key)] ? Number(key) : -1);
+      if (id === I.POTION || id === I.SPLASH_POTION) {
+        const arg1 = (parts[idx + 1] ?? '').trim();
+        let potionKey = id === I.SPLASH_POTION ? 'healing' : 'water';
+        let countRaw = parts[idx + 1];
+        if (arg1 !== '' && !/^\d+$/.test(arg1)) {
+          const resolved = resolvePotionKind(arg1);
+          if (!resolved) {
+            sendJson(sender.ws, { type: 'chat', text: `Sorte de potion inconnue : ${arg1}. ${POTION_GIVE_HELP}` });
+            return;
+          }
+          potionKey = resolved;
+          countRaw = parts[idx + 2];
+        }
+        const count = countRaw === undefined ? 1 : Math.floor(Number(countRaw));
+        if (!Number.isFinite(count) || count < 1) {
+          sendJson(sender.ws, { type: 'chat', text: 'Usage : /give [joueur] <potion|splash_potion> <sorte> [quantité]' });
+          return;
+        }
+        const n = Math.min(count, 2304);
+        target.entity.inventory.give(id, n, 0, potionKey);
+        sendInventory(target);
+        sendJson(sender.ws, { type: 'chat', text: `Donné à ${target.name} : ${n} × ${potionLabel(potionKey, id === I.SPLASH_POTION)}` });
+        return;
+      }
+      const count = parts[idx + 1] === undefined ? 1 : Math.floor(Number(parts[idx + 1]));
+      if (id <= 0 || !Number.isFinite(count) || count < 1) {
+        sendJson(sender.ws, { type: 'chat', text: key === '' ? 'Usage : /give [joueur] <objet> [quantité]' : `Objet inconnu : ${key}` });
+        return;
+      }
+      const n = Math.min(count, 2304);
+      target.entity.inventory.give(id, n);
+      sendInventory(target);
+      sendJson(sender.ws, { type: 'chat', text: `Donné à ${target.name} : ${n} × ${itemLabel(id)}` });
+      return;
+    }
+
+    if (cmd === 'summon') {
+      const kind = (parts[1] ?? '').toLowerCase();
+      const allKinds = [...PASSIVE_KINDS, ...HOSTILE_KINDS, ...NPC_KINDS] as string[];
+      if (!allKinds.includes(kind)) {
+        sendJson(sender.ws, { type: 'chat', text: `Usage : /summon <${allKinds.join('|')}> [x y z]` });
+        return;
+      }
+      const parseCoord = (raw: string | undefined, base: number): number => {
+        if (!raw) return base;
+        if (raw === '~') return base;
+        if (raw.startsWith('~')) {
+          const d = Number(raw.slice(1));
+          return Number.isFinite(d) ? base + d : base;
+        }
+        const v = Number(raw);
+        return Number.isFinite(v) ? v : base;
+      };
+      const sx = parts[2] !== undefined ? parseCoord(parts[2], sender.x) : sender.x + 2;
+      const sy = parts[3] !== undefined ? parseCoord(parts[3], sender.y) : sender.y;
+      const sz = parts[4] !== undefined ? parseCoord(parts[4], sender.z) : sender.z;
+      const mob = createMob(kind as Parameters<typeof createMob>[0], () => Math.random());
+      if (!mob) return;
+      mob.setPosition(sx, sy, sz);
+      mob.setRotation(Math.random() * Math.PI * 2);
+      spawnServerEntity(mob);
+      sendJson(sender.ws, { type: 'chat', text: `Apparition : ${kind} en ${sx.toFixed(1)}, ${sy.toFixed(1)}, ${sz.toFixed(1)}` });
+      return;
+    }
+
+    if (cmd === 'kill') {
+      const target = parts[1] ? findPlayerByName(parts[1]) : sender;
+      if (!target) {
+        sendJson(sender.ws, { type: 'chat', text: `Joueur introuvable : ${parts[1]}` });
+        return;
+      }
+      target.entity.hurt(createServerGameApi(), 1000, 'void', null);
+      return;
+    }
+
+    if (cmd === 'spawnpoint') {
+      const bx = parts[1] !== undefined ? Math.floor(Number(parts[1])) : Math.floor(sender.x);
+      const by = parts[2] !== undefined ? Math.floor(Number(parts[2])) : Math.floor(sender.y);
+      const bz = parts[3] !== undefined ? Math.floor(Number(parts[3])) : Math.floor(sender.z);
+      if (!Number.isFinite(bx) || !Number.isFinite(by) || !Number.isFinite(bz)) return;
+      spawn = { x: bx + 0.5, y: by, z: bz + 0.5 };
+      saveWorldMeta();
+      sendJson(sender.ws, { type: 'chat', text: `Point d'apparition fixé en ${bx}, ${by}, ${bz}` });
       return;
     }
 
@@ -1731,10 +2094,12 @@ function start(): void {
 
         const savedPlayer = readJsonFile<PlayerSaveData>(path.join(playersDir, `${normalizePlayerFile(cleanName)}.json`));
         const id = nextPlayerId++;
-        const inv = new Inventory();
+        const pEntity = new ServerPlayerEntity(cleanName);
+        const inv = pEntity.inventory;
         inv.slots = savedPlayer ? loadSlots(savedPlayer.slots, 36) : new Array<Slot>(36).fill(null);
+        if (savedPlayer?.armor) inv.armor = loadSlots(savedPlayer.armor, 4);
+        if (savedPlayer?.offhand !== undefined) inv.offhand = loadSlots([savedPlayer.offhand], 1);
         inv.selected = savedPlayer && Number.isInteger(savedPlayer.selected) ? Math.max(0, Math.min(8, savedPlayer.selected)) : 0;
-        const pEntity = new ServerPlayerEntity(inv);
         const px = savedPlayer?.x ?? spawn.x;
         const py = savedPlayer?.y ?? spawn.y;
         const pz = savedPlayer?.z ?? spawn.z;
@@ -1744,6 +2109,22 @@ function start(): void {
         pEntity.gameMode = pMode;
         pEntity.setPosition(px, py, pz);
         pEntity.setRotation(pyaw, ppitch);
+        pEntity.health = savedPlayer ? Math.max(0, Math.min(pEntity.maxHealth, savedPlayer.health)) : pEntity.maxHealth;
+        pEntity.hunger = savedPlayer ? Math.max(0, Math.min(20, savedPlayer.hunger)) : 20;
+        pEntity.saturation = savedPlayer?.saturation ?? 5;
+        pEntity.exhaustion = savedPlayer?.exhaustion ?? 0;
+        pEntity.xpLevel = savedPlayer?.xpLevel ?? 0;
+        pEntity.xpProgress = savedPlayer?.xpProgress ?? 0;
+        pEntity.air = savedPlayer?.air ?? 300;
+        pEntity.fireTicks = savedPlayer?.fire ?? 0;
+        if (Array.isArray(savedPlayer?.effects)) {
+          for (const fx of savedPlayer.effects) {
+            if (EFFECT_TYPES.includes(fx.type)) pEntity.addEffect(fx.type, fx.ticks, fx.level);
+          }
+        }
+        if (Array.isArray(savedPlayer?.bed) && savedPlayer.bed.length === 3) {
+          pEntity.bed = { x: savedPlayer.bed[0], y: savedPlayer.bed[1], z: savedPlayer.bed[2] };
+        }
         player = {
           id,
           name: cleanName,
@@ -1758,8 +2139,8 @@ function start(): void {
           onGround: true,
           swing: 0,
           gameMode: pMode,
-          health: savedPlayer?.health ?? 20,
-          hunger: savedPlayer?.hunger ?? 20,
+          health: pEntity.health,
+          hunger: pEntity.hunger,
           slots: inv.slots,
           selected: inv.selected,
           entity: pEntity,
@@ -1773,6 +2154,11 @@ function start(): void {
         inv.drop = (stack) => {
           serverDropStack(player!.x, player!.y + 1.3, player!.z, stack, 40);
         };
+        attachPlayerCallbacks(player);
+        // Un joueur déconnecté mort réapparaît proprement à la reconnexion, sans dupliquer son inventaire
+        if (pEntity.health <= 0) {
+          respawnServerPlayer(player, false);
+        }
         players.set(id, player);
 
         sendJson(ws, {
@@ -1793,11 +2179,19 @@ function start(): void {
           z: player.z,
           yaw: player.yaw,
           pitch: player.pitch,
-          health: player.health,
-          hunger: player.hunger,
+          health: pEntity.health,
+          hunger: pEntity.hunger,
+          saturation: pEntity.saturation,
+          air: pEntity.air,
+          fireTicks: pEntity.fireTicks,
+          effects: serializeEffects(pEntity),
+          xpLevel: pEntity.xpLevel,
+          xpProgress: pEntity.xpProgress,
           inventory: {
-            slots: saveSlots(player.slots) as Array<SerializedSlot | null>,
-            selected: player.selected,
+            slots: saveSlots(inv.slots) as Array<SerializedSlot | null>,
+            selected: inv.selected,
+            armor: saveSlots(inv.armor) as Array<SerializedSlot | null>,
+            offhand: saveSlots(inv.offhand)[0] as SerializedSlot | null,
           },
           ...(isHost && activeInviteCode
             ? {
@@ -1817,7 +2211,7 @@ function start(): void {
 
       // Messages authentifiés
       if (msg.type === 'move') {
-        const { x, y, z, yaw, pitch, sneaking, onGround, swing } = msg;
+        const { x, y, z, yaw, pitch, sneaking, onGround, swing, sprinting } = msg;
         if (
           !Number.isFinite(x) ||
           !Number.isFinite(y) ||
@@ -1829,6 +2223,7 @@ function start(): void {
         ) {
           return;
         }
+        if (!player.entity.alive || player.entity.sleeping) return;
         const now = Date.now();
         const dt = Math.max(0.05, Math.min(1, (now - player.lastMoveMs) / 1000));
         const maxSpeed = player.gameMode === 'creative' || player.gameMode === 'spectator' ? 40 : 20;
@@ -1848,8 +2243,18 @@ function start(): void {
         player.onGround = Boolean(onGround);
         player.swing = Number.isFinite(swing) ? Math.max(0, Math.min(1, swing)) : 0;
         player.lastMoveMs = now;
-        player.entity.setPosition(x, y, z);
-        player.entity.setRotation(yaw, pitch);
+        player.entity.handleMove(
+          createServerGameApi(player),
+          x,
+          y,
+          z,
+          yaw,
+          pitch,
+          player.sneaking,
+          player.onGround,
+          Boolean(sprinting),
+          player.swing,
+        );
 
         const cx = Math.floor(x) >> 4;
         const cz = Math.floor(z) >> 4;
@@ -1998,6 +2403,8 @@ function start(): void {
           const nextNote = ((meta & 31) + 1) % 25;
           world.setMetaSilent(x, y, z, nextNote | (meta & 32));
           triggerNoteBlock(world, x, y, z, nextNote);
+        } else if (id === B.BED) {
+          trySleepServerPlayer(player, x, y, z, meta);
         }
         return;
       }
@@ -2014,6 +2421,8 @@ function start(): void {
         if (player.gameMode === 'creative') {
           player.entity.inventory.slots = loadSlots(msg.slots, 36);
           player.slots = player.entity.inventory.slots;
+          if (Array.isArray(msg.armor)) player.entity.inventory.armor = loadSlots(msg.armor, 4);
+          if (msg.offhand !== undefined) player.entity.inventory.offhand = loadSlots([msg.offhand], 1);
         } else if (player.gameMode === 'survival') {
           // Autoriser la réorganisation/fabrication locale tout en bornant les quantités
           const next = loadSlots(msg.slots, 36);
@@ -2023,6 +2432,8 @@ function start(): void {
           }
           player.entity.inventory.slots = next;
           player.slots = player.entity.inventory.slots;
+          if (Array.isArray(msg.armor)) player.entity.inventory.armor = loadSlots(msg.armor, 4);
+          if (msg.offhand !== undefined) player.entity.inventory.offhand = loadSlots([msg.offhand], 1);
         }
         if (Number.isInteger(msg.selected) && msg.selected >= 0 && msg.selected < 9) {
           player.selected = msg.selected;
@@ -2081,24 +2492,68 @@ function start(): void {
         return;
       }
 
-      if (msg.type === 'attackEntity') {
-        const entityId = Number(msg.entityId);
-        if (!Number.isInteger(entityId) || player.gameMode === 'spectator') return;
-        const target = serverEntities.find((e) => e.id === entityId && !e.dead && e.pickable);
+      if (msg.type === 'attackEntity' || msg.type === 'attackPlayer') {
+        if (player.gameMode === 'spectator' || !player.entity.alive) return;
+        let target: Entity | undefined;
+        if (msg.type === 'attackPlayer') {
+          const pid = Number(msg.playerId);
+          if (!Number.isInteger(pid) || pid === player.id) return;
+          const tp = players.get(pid);
+          if (!tp || !tp.entity.alive || tp.gameMode === 'spectator') return;
+          target = tp.entity;
+        } else {
+          const entityId = Number(msg.entityId);
+          if (!Number.isInteger(entityId)) return;
+          target = serverEntities.find((e) => e.id === entityId && !e.dead && e.pickable);
+        }
         if (!target) return;
-        const dist = Math.hypot(target.x - player.x, target.y + target.height * 0.5 - (player.y + 1.62), target.z - player.z);
-        if (dist > 6.5) return;
-        const held = player.slots[player.selected];
+        const eyeY = player.y + player.entity.eyeHeight;
+        const hw = target.width * 0.5;
+        const dx = Math.max(0, Math.abs(player.x - target.x) - hw);
+        const dy = Math.max(0, eyeY < target.y ? target.y - eyeY : eyeY > target.y + target.height ? eyeY - (target.y + target.height) : 0);
+        const dz = Math.max(0, Math.abs(player.z - target.z) - hw);
+        const aabbDist = Math.hypot(dx, dy, dz);
+        const maxReach = player.gameMode === 'creative' ? 5.0 : 3.8;
+        if (aabbDist > maxReach) return;
+
+        const held = player.entity.inventory.held;
         const heldId = held?.id ?? 0;
+        const mult = player.entity.consumeAttackMultiplier(heldId);
         let dmg = attackDamage(heldId);
         const sharp = enchantLevel(held, 'sharpness');
         if (sharp > 0) dmg += 0.5 * sharp + 0.5;
+        const crit =
+          player.entity.fallDistance > 0 &&
+          !player.onGround &&
+          !player.entity.inWater &&
+          !player.entity.flying;
+        if (crit) dmg *= 1.5;
+        if (player.entity.hasEffect('strength')) dmg += 3 * player.entity.effectLevel('strength');
+        if (player.entity.weakTicks > 0) dmg = Math.max(0, dmg - 4 * Math.max(1, player.entity.effectLevel('weakness')));
+        dmg *= mult;
+
         const api = createServerGameApi(player);
         const ok = target.hurt(api, dmg, 'attack', player.entity);
+        const ey = target.y + target.height * 0.6;
         if (ok) {
-          broadcastNear(target.x, target.y, target.z, 24, { type: 'sound', name: 'attack', x: target.x, y: target.y, z: target.z, volume: 0.7, pitch: 1 });
+          broadcastNear(target.x, ey, target.z, 24, {
+            type: 'sound',
+            name: crit ? 'attack_crit' : 'attack',
+            x: target.x,
+            y: ey,
+            z: target.z,
+            volume: 0.7,
+            pitch: 0.9 + Math.random() * 0.2,
+          });
+          if (crit) broadcastNear(target.x, ey, target.z, 24, { type: 'particles', kind: 'crit', x: target.x, y: ey, z: target.z, count: 8, spread: 0.4 });
+          if (player.entity.sprinting && target instanceof Living) {
+            target.knockback(target.x - player.x, target.z - player.z, 0.4);
+            player.entity.sprinting = false;
+            if (target instanceof ServerPlayerEntity) target.onHurtNotify?.(target.vx, target.vy, target.vz);
+          }
           if (player.gameMode !== 'creative') {
-            player.entity.damageHeld(api, 1);
+            player.entity.exhaustion += 0.1;
+            if (isTool(heldId)) player.entity.damageHeld(api, 1);
           }
           if (player.entity.invDirty) {
             player.entity.invDirty = false;
@@ -2108,7 +2563,113 @@ function start(): void {
             player.entity.vitalsDirty = false;
             sendVitals(player);
           }
+        } else {
+          broadcastNear(player.x, eyeY, player.z, 16, { type: 'sound', name: 'attack_miss', x: player.x, y: eyeY, z: player.z, volume: 0.4, pitch: 1 });
         }
+        return;
+      }
+
+      if (msg.type === 'useState') {
+        if (!player.entity.alive || player.gameMode === 'spectator') return;
+        const kind = msg.kind;
+        if (kind === 'none' || kind === 'eat' || kind === 'bow' || kind === 'block') {
+          player.entity.useKind = kind;
+          player.entity.useTicks = 0;
+        }
+        return;
+      }
+
+      if (msg.type === 'finishEat') {
+        if (!player.entity.alive || player.gameMode === 'spectator') return;
+        if (player.entity.useKind !== 'eat' || player.entity.useTicks < 24) return;
+        const hand = msg.hand === 'offhand' ? 'offhand' : 'main';
+        const stack = hand === 'offhand' ? player.entity.inventory.offhandItem : player.entity.inventory.held;
+        const held = stack?.id ?? 0;
+        if (held === 0) return;
+        const item = getItem(held);
+        if (held === I.POTION) {
+          if (stack?.potion) applyPotionVariant(player.entity, stack.potion, 1, player.entity);
+          player.entity.replaceHand(hand, I.GLASS_BOTTLE);
+          broadcastNear(player.x, player.y + 1.5, player.z, 24, { type: 'sound', name: 'drink', x: player.x, y: player.y + 1.5, z: player.z, volume: 0.6, pitch: 1 });
+        } else if (isFood(held) || held === I.MILK_BUCKET) {
+          if (held !== I.GOLDEN_APPLE && held !== I.MILK_BUCKET && player.entity.hunger >= 20 && player.gameMode !== 'creative') return;
+          player.entity.feed(item.food, item.saturation);
+          if (held === I.GOLDEN_APPLE) player.entity.heal(4);
+          if (held === I.MUSHROOM_STEW) player.entity.replaceHand(hand, I.BOWL);
+          else if (held === I.MILK_BUCKET) {
+            player.entity.fireTicks = 0;
+            player.entity.clearEffects();
+            player.entity.replaceHand(hand, I.BUCKET);
+          } else {
+            player.entity.consumeHand(hand);
+          }
+          broadcastNear(player.x, player.y + 1.5, player.z, 24, { type: 'sound', name: 'burp', x: player.x, y: player.y + 1.5, z: player.z, volume: 0.5, pitch: 1 });
+        }
+        player.entity.stopUsing();
+        sendInventory(player);
+        sendVitals(player);
+        return;
+      }
+
+      if (msg.type === 'shootBow') {
+        if (!player.entity.alive || player.gameMode === 'spectator') return;
+        const hand = msg.hand === 'offhand' ? 'offhand' : 'main';
+        const bowStack = hand === 'offhand' ? player.entity.inventory.offhandItem : player.entity.inventory.held;
+        if (!bowStack || bowStack.id !== I.BOW) return;
+        if (player.gameMode !== 'creative' && player.entity.inventory.count(I.ARROW) === 0) return;
+        const yaw = Number.isFinite(msg.yaw) ? msg.yaw : player.yaw;
+        const pitch = Number.isFinite(msg.pitch) ? Math.max(-1.57, Math.min(1.57, msg.pitch)) : player.pitch;
+        const t = Math.max(0.2, Math.min(20, player.entity.useTicks)) / 20;
+        const power = Math.min(1, (t * t + 2 * t) / 3);
+        player.entity.stopUsing();
+        if (power < 0.1) return;
+        const cp = Math.cos(pitch);
+        const lx = -Math.sin(yaw) * cp;
+        const ly = Math.sin(pitch);
+        const lz = -Math.cos(yaw) * cp;
+        const arrow = new Arrow();
+        arrow.owner = player.entity;
+        arrow.fromPlayer = true;
+        arrow.powerLevel = enchantLevel(bowStack, 'power');
+        arrow.critical = power >= 1;
+        arrow.shoot(player.x + lx * 0.3, player.y + player.entity.eyeHeight - 0.1, player.z + lz * 0.3, lx, ly, lz, power * 3, 1, () => Math.random());
+        spawnServerEntity(arrow);
+        broadcastNear(player.x, player.y + 1.5, player.z, 32, { type: 'sound', name: 'bow', x: player.x, y: player.y + 1.5, z: player.z, volume: 0.8, pitch: 0.8 + power * 0.4 });
+        if (player.gameMode !== 'creative') player.entity.inventory.remove(I.ARROW, 1);
+        player.entity.damageHand(hand, createServerGameApi(player), 1);
+        sendInventory(player);
+        return;
+      }
+
+      if (msg.type === 'throwPotion') {
+        if (!player.entity.alive || player.gameMode === 'spectator') return;
+        const hand = msg.hand === 'offhand' ? 'offhand' : 'main';
+        const stack = hand === 'offhand' ? player.entity.inventory.offhandItem : player.entity.inventory.held;
+        if (!stack || stack.id !== I.SPLASH_POTION) return;
+        const yaw = Number.isFinite(msg.yaw) ? msg.yaw : player.yaw;
+        const pitch = Number.isFinite(msg.pitch) ? Math.max(-1.57, Math.min(1.57, msg.pitch)) : player.pitch;
+        const cp = Math.cos(pitch);
+        const lx = -Math.sin(yaw) * cp;
+        const ly = Math.sin(pitch);
+        const lz = -Math.cos(yaw) * cp;
+        const pot = new ThrownPotion(stack.potion ?? 'poison');
+        pot.owner = player.entity;
+        pot.shoot(player.x + lx * 0.3, player.y + player.entity.eyeHeight - 0.1, player.z + lz * 0.3, lx, ly, lz, 0.6);
+        spawnServerEntity(pot);
+        broadcastNear(player.x, player.y + 1.5, player.z, 24, { type: 'sound', name: 'bow', x: player.x, y: player.y + 1.5, z: player.z, volume: 0.5, pitch: 0.6 });
+        player.entity.consumeHand(hand);
+        sendInventory(player);
+        return;
+      }
+
+      if (msg.type === 'respawn') {
+        if (player.entity.health > 0) return;
+        respawnServerPlayer(player, true);
+        return;
+      }
+
+      if (msg.type === 'wake') {
+        wakeServerPlayer(player);
         return;
       }
 
@@ -2448,7 +3009,9 @@ function start(): void {
   const tickTimer = setInterval(() => {
     const t0 = performance.now();
     tickCount++;
-    worldTime = (worldTime + 1) % DAY_TICKS;
+    if (world.rules.doDaylightCycle) {
+      worldTime = (worldTime + 1) % DAY_TICKS;
+    }
     const skyLightFactor = skyDayFactor(worldTime % DAY_TICKS) * (raining ? 0.6875 : 1) * (thundering ? 0.6875 : 1);
     world.skyDarken = Math.round((1 - skyLightFactor) * 11);
 
@@ -2495,9 +3058,34 @@ function start(): void {
       }
 
       // Apparition naturelle autour de chaque joueur (rotation à chaque cycle)
-      const spawnerTarget = playerList[spawnPlayerIdx % playerList.length];
-      spawner.tick(createServerGameApi(spawnerTarget));
+      if (world.rules.doMobSpawning) {
+        const spawnerTarget = playerList[spawnPlayerIdx % playerList.length];
+        spawner.tick(createServerGameApi(spawnerTarget));
+      }
       if (tickCount % 20 === 0) spawnPlayerIdx++;
+
+      // Simulation des joueurs (faim, effets, noyade, lave, feu, vide, sommeil)
+      for (const p of playerList) {
+        p.entity.tick(createServerGameApi(p));
+        if (p.entity.sleeping) {
+          const bed = p.entity.bed;
+          if (!bed || world.getBlock(bed.x, bed.y, bed.z) !== B.BED || !p.entity.alive) {
+            wakeServerPlayer(p);
+          } else {
+            p.entity.sleepTicks++;
+          }
+        }
+      }
+      if (playerList.length > 0 && playerList.every((p) => p.entity.sleeping && p.entity.sleepTicks >= SLEEP_TICKS)) {
+        worldTime += (DAY_TICKS - (worldTime % DAY_TICKS)) % DAY_TICKS;
+        raining = false;
+        thundering = false;
+        world.raining = false;
+        weatherTimer = 12000 + Math.floor(Math.random() * 168000);
+        broadcastJson({ type: 'time', time: worldTime });
+        broadcastJson({ type: 'weather', raining: false, thundering: false });
+        for (const p of playerList) wakeServerPlayer(p);
+      }
 
       // Simulation des entités
       entityTicking = true;
@@ -2548,6 +3136,11 @@ function start(): void {
           sneaking: p.sneaking,
           swing: p.swing,
           gameMode: p.gameMode,
+          heldId: p.entity.inventory.heldId,
+          offhandId: p.entity.inventory.offhandId,
+          blocking: p.entity.blocking,
+          hurtTime: p.entity.hurtTime,
+          alive: p.entity.alive,
         });
       }
       broadcastJson({ type: 'players', list });

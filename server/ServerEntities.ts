@@ -1,126 +1,191 @@
 /**
  * Adaptateurs d'entités et de lumière pour le serveur multijoueur autoritaire.
  */
-import { Entity, Living, type DamageCause, type GameApi, type PlayerLike } from '../src/entity/Entity';
-import type { EntityKind } from '../src/entity/EntityView';
-import type { Inventory } from '../src/game/Inventory';
+import { type DamageCause, type Entity, type GameApi } from '../src/entity/Entity';
+import { updateMedium } from '../src/entity/Physics';
 import type { RemoteEntityState } from '../src/net/Protocol';
-import { xpNeeded } from '../src/player/Player';
+import { Player } from '../src/player/Player';
+import type { ParticleKind } from '../src/render/Particles';
 import { BLOCK_EMIT } from '../src/world/Blocks';
 import type { Chunk } from '../src/world/Chunk';
-import { CHUNK_HEIGHT, type GameMode } from '../src/world/Constants';
-import { makeStack, type ItemStack } from '../src/world/ItemStack';
+import { CHUNK_HEIGHT } from '../src/world/Constants';
+import { isAxe, isPickaxe, isShovel, isSword } from '../src/world/Items';
+import type { ItemStack } from '../src/world/ItemStack';
 
-/** Joueur côté serveur exposé comme PlayerLike aux créatures et objets au sol. */
-export class ServerPlayerEntity extends Living implements PlayerLike {
-  readonly kind: EntityKind = 'player';
-  gameMode: GameMode = 'survival';
-  xpLevel = 0;
-  xpProgress = 0;
+/** Durée de recharge d'attaque Minecraft 1.12 en ticks selon l'objet tenu. */
+export function attackCooldownTicks(itemId: number): number {
+  if (isSword(itemId)) return 13;
+  if (isAxe(itemId)) return 20;
+  if (isPickaxe(itemId)) return 17;
+  if (isShovel(itemId)) return 20;
+  return 5;
+}
+
+/** Joueur côté serveur : réutilise toute la logique survie de Player sans simulation physique locale. */
+export class ServerPlayerEntity extends Player {
   invDirty = false;
   vitalsDirty = false;
-  readonly input = { forward: 0, strafe: 0, jump: false, sneak: false };
+  attackRechargeTicks = 20;
+  canPvp: () => boolean = () => true;
+  onHurtNotify?: (vx: number, vy: number, vz: number) => void;
+  onDeathNotify?: (cause: DamageCause, attacker: Entity | null) => void;
 
-  constructor(readonly inventory: Inventory) {
-    super();
-    this.width = 0.6;
-    this.height = 1.8;
-    this.eyeHeight = 1.62;
-  }
-
-  get creative(): boolean {
-    return this.gameMode === 'creative';
+  constructor(name = '') {
+    super('survival');
+    this.customName = name;
   }
 
   override get roaming(): boolean {
     return true;
   }
 
-  /** Jalon 4 : les créatures hostiles n'infligent pas encore de dégâts aux joueurs (jalon 5). */
-  get targetable(): boolean {
-    return false;
+  /** Consomme la jauge de recharge 1.12 et retourne le multiplicateur de dégâts (0.2..1.0). */
+  consumeAttackMultiplier(itemId: number): number {
+    const cooldown = attackCooldownTicks(itemId);
+    const progress = Math.min(1, this.attackRechargeTicks / cooldown);
+    this.attackRechargeTicks = 0;
+    return 0.2 + progress * progress * 0.8;
   }
 
-  override hurt(_game: GameApi, _amount: number, _cause: DamageCause, _attacker: Entity | null = null): boolean {
-    return false;
+  /** Met à jour position, distance de chute et épuisement depuis un paquet `move` validé. */
+  handleMove(
+    game: GameApi,
+    x: number,
+    y: number,
+    z: number,
+    yaw: number,
+    pitch: number,
+    sneaking: boolean,
+    onGround: boolean,
+    sprinting: boolean,
+    swing: number,
+  ): void {
+    if (!this.alive || this.sleeping) return;
+    const prevX = this.x;
+    const prevY = this.y;
+    const prevZ = this.z;
+    const prevOnGround = this.onGround;
+    this.setPosition(x, y, z);
+    this.setRotation(yaw, pitch);
+    this.sneaking = sneaking;
+    this.onGround = onGround;
+    this.sprinting = sprinting;
+    this.swing = swing;
+    updateMedium(game.world, this);
+
+    const dy = y - prevY;
+    if (this.creative || this.spectator || this.inWater || this.flying) {
+      this.fallDistance = 0;
+    } else if (this.inLava) {
+      this.fallDistance *= 0.5;
+    } else if (!onGround && dy < 0) {
+      this.fallDistance += -dy;
+    }
+    if (onGround && this.fallDistance > 0) {
+      super.land(game, this.fallDistance);
+      this.fallDistance = 0;
+    }
+
+    const dist = Math.hypot(x - prevX, z - prevZ);
+    if (!this.creative && !this.spectator && dist > 0 && dist < 5) {
+      if (this.inWater) this.exhaustion += 0.015 * Math.hypot(dist, dy);
+      else if (onGround) this.exhaustion += (sprinting ? 0.1 : 0.01) * dist;
+    }
+    if (!this.creative && !this.spectator && prevOnGround && !onGround && dy > 0) {
+      this.exhaustion += sprinting ? 0.2 : 0.05;
+    }
   }
 
-  get heldItemId(): number {
-    return this.inventory.heldId;
+  override tick(game: GameApi): void {
+    this.attackRechargeTicks++;
+    if (this.useKind !== 'none') this.useTicks++;
+    const prevH = this.health;
+    const prevF = this.hunger;
+    const prevA = this.air;
+    const prevFire = this.fireTicks > 0;
+    const prevFx = this.effects.size;
+    super.tick(game);
+    if (this.alive && this.effects.size > 0 && this.age % 12 === 0) {
+      const firstType = this.effects.keys().next().value;
+      const kind: ParticleKind =
+        firstType === 'fire_resistance' || firstType === 'strength'
+          ? 'flame'
+          : firstType === 'night_vision'
+            ? 'portal'
+            : firstType === 'slow' || firstType === 'weakness' || firstType === 'wither'
+              ? 'smoke'
+              : 'slime';
+      game.particles(kind, this.x, this.y + 1.0, this.z, 2, 0.35);
+    }
+    if (
+      this.health !== prevH ||
+      this.hunger !== prevF ||
+      this.air !== prevA ||
+      (this.fireTicks > 0) !== prevFire ||
+      this.effects.size !== prevFx
+    ) {
+      this.vitalsDirty = true;
+    }
   }
 
-  mount(vehicle: Entity): boolean {
-    if (this.vehicle) return false;
-    this.vehicle = vehicle;
-    return true;
+  protected override think(_game: GameApi): void {}
+
+  protected override moveTick(_game: GameApi): void {}
+
+  protected override deathTick(_game: GameApi): void {
+    if (this.deathTime < 20) this.deathTime++;
+    if (this.hurtTime > 0) this.hurtTime--;
   }
 
-  dismount(_game: GameApi): void {
-    this.vehicle = null;
+  override hurt(game: GameApi, amount: number, cause: DamageCause, attacker: Entity | null = null): boolean {
+    if (attacker instanceof ServerPlayerEntity && attacker !== this && !this.canPvp()) return false;
+    const ok = super.hurt(game, amount, cause, attacker);
+    if (ok) {
+      this.vitalsDirty = true;
+      this.invDirty = true;
+      if (this.health > 0) {
+        this.onHurtNotify?.(this.vx, this.vy, this.vz);
+      }
+    }
+    return ok;
   }
 
-  collect(stack: ItemStack): number {
+  protected override onDeath(game: GameApi, cause: DamageCause, attacker: Entity | null): void {
+    super.onDeath(game, cause, attacker);
+    this.invDirty = true;
+    this.vitalsDirty = true;
+    this.onDeathNotify?.(cause, attacker);
+  }
+
+  override collect(stack: ItemStack): number {
     const before = stack.count;
-    const left = this.inventory.add(stack);
+    const left = super.collect(stack);
     if (left < before) this.invDirty = true;
     return left;
   }
 
-  consumeHeld(count = 1): void {
+  override consumeHand(hand: 'main' | 'offhand', count = 1): void {
     if (this.creative) return;
-    this.inventory.consumeHeld(count);
+    super.consumeHand(hand, count);
     this.invDirty = true;
   }
 
-  replaceHeld(id: number): void {
-    const inv = this.inventory;
-    const s = inv.slots[inv.selected];
-    if (!s) return;
-    if (this.creative) {
-      if (inv.find(id) < 0) {
-        const stack = makeStack(id, 1);
-        if (inv.add(stack) > 0) inv.drop(stack);
-      }
-      this.invDirty = true;
-      return;
-    }
-    if (s.count <= 1) {
-      inv.slots[inv.selected] = makeStack(id, 1);
-    } else {
-      s.count--;
-      const rem = makeStack(id, 1);
-      if (inv.add(rem) > 0) inv.drop(rem);
-    }
+  override replaceHand(hand: 'main' | 'offhand', id: number): void {
+    super.replaceHand(hand, id);
     this.invDirty = true;
   }
 
-  damageHeld(game: GameApi, amount = 1): void {
+  override damageHand(hand: 'main' | 'offhand', game: GameApi, amount = 1): void {
     if (this.creative) return;
-    this.inventory.damageHeld(amount, game.rng);
+    super.damageHand(hand, game, amount);
     this.invDirty = true;
   }
 
-  addXp(amount: number): void {
+  override addXp(amount: number): void {
     if (amount <= 0) return;
-    let points = amount;
-    while (points > 0) {
-      const need = xpNeeded(this.xpLevel);
-      const missing = (1 - this.xpProgress) * need;
-      if (points < missing) {
-        this.xpProgress += points / need;
-        points = 0;
-      } else {
-        points -= missing;
-        this.xpProgress = 0;
-        this.xpLevel++;
-      }
-    }
+    super.addXp(amount);
     this.vitalsDirty = true;
   }
-
-  addStat(_key: string, _n = 1): void {}
-
-  tick(_game: GameApi): void {}
 }
 
 /** Calcule une lumière colonne simple (ciel + sources ponctuelles) et marque le chunk prêt pour la simulation serveur. */
