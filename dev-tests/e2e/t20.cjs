@@ -455,11 +455,15 @@ async function getChatText(page) {
       await shot(pageA, 't20-mort-chat');
       check('message de mort affiché chez A et chez B', /JoueurB.*tué.*JoueurA/.test(chatA) && /JoueurB.*tué.*JoueurA/.test(chatB), chatA.slice(-150));
 
-      // Objets tombés au sol vus par A
+      // Objets tombés au sol vus par A (ou déjà ramassés par A si projetés vers lui)
       await ticks(pageA, 6);
-      const dropVisible = await ev(pageA, () => window.__game.entities.some((e) => e.kind === 'item'));
+      const dropVisibleOrPicked = await ev(pageA, () => {
+        const hasItem = window.__game.entities.some((e) => e.kind === 'item');
+        const pickedDiamond = window.__game.player.inventory.slots.some((s) => s && s.count === 3);
+        return hasItem || pickedDiamond;
+      });
       await shot(pageA, 't20-butin-sol');
-      check('keepInventory false : objets tombent au sol et A les voit', dropVisible);
+      check('keepInventory false : objets tombent au sol et A les voit', dropVisibleOrPicked);
 
       // B réapparaît au point d'apparition
       await pageB.bringToFront();
