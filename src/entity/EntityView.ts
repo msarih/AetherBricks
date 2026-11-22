@@ -105,6 +105,8 @@ export interface EntityView {
   mobScale: number;
   /** Accroupi (joueur) : le corps s'incline. */
   sneaking: boolean;
+  /** Bouclier levé (joueur). */
+  blocking?: boolean;
   /** Le maillage ne doit pas être dessiné (joueur en vue à la première personne). */
   hidden: boolean;
 }

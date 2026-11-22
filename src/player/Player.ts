@@ -88,6 +88,9 @@ export class Player extends Living implements PlayerLike {
   /** Son non positionné joué pour le joueur (branché par le jeu). */
   sfx: (name: SfxName, volume?: number, pitch?: number) => void = () => {};
 
+  /** Mode client multijoueur : le serveur gère vie, faim, dégâts et effets. */
+  remoteClient = false;
+
   private foodTimer = 0;
   private stepAcc = 0;
   private jumpTap = 0;
@@ -331,7 +334,37 @@ export class Player extends Living implements PlayerLike {
     this.itemId = this.inventory.heldId;
     this.offhandId = this.inventory.offhandId;
     super.tick(game);
-    if (this.alive) this.foodTick(game);
+    if (this.alive && !this.remoteClient) this.foodTick(game);
+  }
+
+  protected override environmentTick(game: GameApi): void {
+    if (!this.remoteClient) {
+      super.environmentTick(game);
+      return;
+    }
+    // En client multijoueur : on décrémente les compteurs locaux d'affichage (hurtTime, effets, bras) et la physique fluide,
+    // sans appliquer de dégâts ni consommer d'air/faim localement (le serveur fait autorité).
+    if (this.invulnerable > 0) this.invulnerable--;
+    if (this.hurtTime > 0) this.hurtTime--;
+    for (const [type, fx] of this.effects) {
+      fx.ticks--;
+      if (fx.ticks <= 0) this.effects.delete(type);
+    }
+    if (this.swingTicks >= 0) {
+      this.swingTicks++;
+      if (this.swingTicks >= 6) {
+        this.swingTicks = -1;
+        this.swing = 0;
+      } else {
+        this.swing = this.swingTicks / 6;
+      }
+    }
+    updateMedium(game.world, this);
+  }
+
+  protected override land(game: GameApi, distance: number): void {
+    if (this.remoteClient) return;
+    super.land(game, distance);
   }
 
   protected think(_game: GameApi): void {
@@ -487,6 +520,7 @@ export class Player extends Living implements PlayerLike {
   // ------------------------------------------------------------------ dégâts, mort
 
   hurt(game: GameApi, amount: number, cause: DamageCause, attacker: Entity | null = null): boolean {
+    if (this.remoteClient) return false;
     if (this.spectator) return false;
     if (this.creative && cause !== 'void') return false;
     if (this.blocking && (cause === 'attack' || cause === 'arrow' || cause === 'explosion')) {

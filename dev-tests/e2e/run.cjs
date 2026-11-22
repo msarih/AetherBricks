@@ -89,6 +89,8 @@ function runScript(scriptPath) {
     await runScript(path.join(__dirname, 't18.cjs'));
     console.log('\n=== Exécution de t19.cjs (Multijoueur : jalon 4, créatures, objets au sol, conteneurs) ===');
     await runScript(path.join(__dirname, 't19.cjs'));
+    console.log('\n=== Exécution de t20.cjs (Multijoueur : jalon 5, combat, survie, mort et réapparition) ===');
+    await runScript(path.join(__dirname, 't20.cjs'));
     console.log('\nTous les tests E2E sont passés avec succès.');
   } catch (err) {
     console.error('\nÉchec des tests E2E :', err.message);

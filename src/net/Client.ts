@@ -8,6 +8,7 @@ import {
   type ContainerKind,
   type RemoteEntityState,
   type RemotePlayerState,
+  type SerializedEffect,
   type SerializedSlot,
   type ServerMessage,
   type TradeOfferInfo,
@@ -16,6 +17,7 @@ import { parseInviteCode } from './InviteCode';
 import type { GameMode } from '../world/Constants';
 import type { SfxName } from '../audio/Sfx';
 import type { ParticleKind } from '../render/Particles';
+import type { UseKind } from '../player/Player';
 
 export type WelcomePacket = Extract<ServerMessage, { type: 'welcome' }>;
 
@@ -30,8 +32,13 @@ export interface ClientHandlers {
   onGameMode(gameMode: GameMode): void;
   onTeleport(x: number, y: number, z: number): void;
   onBlockUpdate(x: number, y: number, z: number, id: number, meta: number): void;
-  onInventory(slots: Array<SerializedSlot | null>, selected: number, cursor?: SerializedSlot | null): void;
-  onVitals(health: number, hunger: number, xpLevel?: number, xpProgress?: number, xpTotal?: number): void;
+  onInventory(slots: Array<SerializedSlot | null>, selected: number, cursor?: SerializedSlot | null, armor?: Array<SerializedSlot | null>, offhand?: SerializedSlot | null): void;
+  onVitals(health: number, hunger: number, xpLevel?: number, xpProgress?: number, xpTotal?: number, saturation?: number, air?: number, fireTicks?: number, effects?: SerializedEffect[]): void;
+  onPlayerHurt?(hurtTime: number, vx: number, vy: number, vz: number): void;
+  onDeath?(message: string): void;
+  onRespawn?(x: number, y: number, z: number): void;
+  onSleep?(sleeping: boolean, x?: number, y?: number, z?: number): void;
+  onActionBar?(text: string): void;
   onContainerState?(msg: Extract<ServerMessage, { type: 'containerState' }>): void;
   onContainerClose?(x: number, y: number, z: number): void;
   onTradeOpen?(entityId: number, title: string, offers: TradeOfferInfo[]): void;
@@ -215,10 +222,25 @@ export class MultiplayerClient {
         this.handlers.onBlockUpdate(msg.x, msg.y, msg.z, msg.id, msg.meta);
         break;
       case 'inventory':
-        this.handlers.onInventory(msg.slots, msg.selected, msg.cursor);
+        this.handlers.onInventory(msg.slots, msg.selected, msg.cursor, msg.armor, msg.offhand);
         break;
       case 'vitals':
-        this.handlers.onVitals(msg.health, msg.hunger, msg.xpLevel, msg.xpProgress, msg.xpTotal);
+        this.handlers.onVitals(msg.health, msg.hunger, msg.xpLevel, msg.xpProgress, msg.xpTotal, msg.saturation, msg.air, msg.fireTicks, msg.effects);
+        break;
+      case 'playerHurt':
+        this.handlers.onPlayerHurt?.(msg.hurtTime, msg.vx, msg.vy, msg.vz);
+        break;
+      case 'death':
+        this.handlers.onDeath?.(msg.message);
+        break;
+      case 'respawn':
+        this.handlers.onRespawn?.(msg.x, msg.y, msg.z);
+        break;
+      case 'sleep':
+        this.handlers.onSleep?.(msg.sleeping, msg.x, msg.y, msg.z);
+        break;
+      case 'actionBar':
+        this.handlers.onActionBar?.(msg.text);
         break;
       case 'containerState':
         this.handlers.onContainerState?.(msg);
@@ -254,8 +276,8 @@ export class MultiplayerClient {
     }
   }
 
-  sendMove(x: number, y: number, z: number, yaw: number, pitch: number, sneaking: boolean, onGround: boolean, swing: number): void {
-    this.send({ type: 'move', x, y, z, yaw, pitch, sneaking, onGround, swing });
+  sendMove(x: number, y: number, z: number, yaw: number, pitch: number, sneaking: boolean, onGround: boolean, swing: number, sprinting = false): void {
+    this.send({ type: 'move', x, y, z, yaw, pitch, sneaking, onGround, swing, sprinting });
   }
 
   sendChat(text: string): void {
@@ -282,8 +304,8 @@ export class MultiplayerClient {
     this.send({ type: 'selectSlot', slot });
   }
 
-  sendInvSync(slots: Array<SerializedSlot | null>, selected: number): void {
-    this.send({ type: 'invSync', slots, selected });
+  sendInvSync(slots: Array<SerializedSlot | null>, selected: number, armor?: Array<SerializedSlot | null>, offhand?: SerializedSlot | null): void {
+    this.send({ type: 'invSync', slots, selected, ...(armor ? { armor } : {}), ...(offhand !== undefined ? { offhand } : {}) });
   }
 
   sendDropItem(slot: number, all: boolean): void {
@@ -296,6 +318,34 @@ export class MultiplayerClient {
 
   sendAttackEntity(entityId: number): void {
     this.send({ type: 'attackEntity', entityId });
+  }
+
+  sendAttackPlayer(playerId: number): void {
+    this.send({ type: 'attackPlayer', playerId });
+  }
+
+  sendUseState(kind: UseKind): void {
+    this.send({ type: 'useState', kind });
+  }
+
+  sendFinishEat(hand: 'main' | 'offhand'): void {
+    this.send({ type: 'finishEat', hand });
+  }
+
+  sendShootBow(hand: 'main' | 'offhand', yaw: number, pitch: number): void {
+    this.send({ type: 'shootBow', hand, yaw, pitch });
+  }
+
+  sendThrowPotion(hand: 'main' | 'offhand', yaw: number, pitch: number): void {
+    this.send({ type: 'throwPotion', hand, yaw, pitch });
+  }
+
+  sendRespawn(): void {
+    this.send({ type: 'respawn' });
+  }
+
+  sendWake(): void {
+    this.send({ type: 'wake' });
   }
 
   sendInteractEntity(entityId: number): void {

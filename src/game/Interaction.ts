@@ -9,6 +9,7 @@ import { tryBuildGolem } from '../entity/Creatures';
 import { ItemFrame, Painting, hangingFits } from '../entity/Hanging';
 import { LEASH_BREAK, Mob, isLeashPost, notifyTamedWolves } from '../entity/Mobs';
 import { RemoteEntity } from '../net/RemoteEntity';
+import { RemotePlayerEntity } from '../net/RemotePlayer';
 import { Arrow, EyeOfEnder, FishingBobber, Thrown, ThrownPearl, ThrownPotion } from '../entity/Objects';
 import { Boat, Minecart } from '../entity/Vehicles';
 import type { Input } from '../player/Input';
@@ -89,6 +90,11 @@ export interface InteractionHost extends GameApi {
   netUseBlock?(x: number, y: number, z: number): void;
   netDropItem?(slot: number, all: boolean): void;
   netAttackEntity?(entityId: number): void;
+  netAttackPlayer?(playerId: number): void;
+  netUseState?(kind: 'none' | 'eat' | 'bow' | 'block'): void;
+  netFinishEat?(hand: 'main' | 'offhand'): void;
+  netShootBow?(hand: 'main' | 'offhand', yaw: number, pitch: number): void;
+  netThrowPotion?(hand: 'main' | 'offhand', yaw: number, pitch: number): void;
   netInteractEntity?(entityId: number): void;
   netTieLeash?(x: number, y: number, z: number): void;
   netOpenContainer?(x: number, y: number, z: number): void;
@@ -420,7 +426,9 @@ export class Interaction {
   private attack(e: Entity): void {
     const g = this.game;
     if (g.isRemote) {
-      if (e instanceof RemoteEntity && g.netAttackEntity) {
+      if (e instanceof RemotePlayerEntity && g.netAttackPlayer) {
+        g.netAttackPlayer(e.remoteId);
+      } else if (e instanceof RemoteEntity && g.netAttackEntity) {
         g.netAttackEntity(e.remoteId);
       }
       return;
@@ -484,6 +492,12 @@ export class Interaction {
       g.sound(drink ? 'drink' : 'eat', x, y, z, 0.5, 0.9 + g.rng() * 0.3);
     }
     if (p.useTicks >= EAT_TICKS) {
+      if (g.isRemote) {
+        g.netFinishEat?.(this.useHand);
+        p.stopUsing();
+        this.useDelay = USE_DELAY;
+        return;
+      }
       const item = getItem(held);
       if (held === I.POTION) {
         const stack = this.useHand === 'offhand' ? p.inventory.offhandItem : p.inventory.held;
@@ -513,6 +527,10 @@ export class Interaction {
     const power = Math.min(1, (t * t + 2 * t) / 3);
     if (power < 0.1) return;
     if (!p.creative && p.inventory.count(I.ARROW) === 0) return;
+    if (g.isRemote) {
+      g.netShootBow?.(this.useHand, p.yaw, p.headPitch);
+      return;
+    }
     const l = this.look;
     p.look(l);
     const arrow = new Arrow();
@@ -558,23 +576,23 @@ export class Interaction {
           this.swing();
           return true;
         }
-        return false;
-      }
-      if (e instanceof Mob && this.freshClick) {
-        // laisse : détacher une créature attachée, ou lui passer la laisse tenue en main
-        if (e.useLeash(g, p)) {
+      } else {
+        if (e instanceof Mob && this.freshClick) {
+          // laisse : détacher une créature attachée, ou lui passer la laisse tenue en main
+          if (e.useLeash(g, p)) {
+            this.swing();
+            return true;
+          }
+          if (held === I.NAME_TAG && e.alive && g.openNameTag) {
+            g.openNameTag(e);
+            this.swing();
+            return true;
+          }
+        }
+        if (e.interact(g, p)) {
           this.swing();
           return true;
         }
-        if (held === I.NAME_TAG && e.alive && g.openNameTag) {
-          g.openNameTag(e);
-          this.swing();
-          return true;
-        }
-      }
-      if (e.interact(g, p)) {
-        this.swing();
-        return true;
       }
     } else if (this.hasBlock) {
       if (this.freshClick && isLeashPost(this.hit.id)) {
@@ -686,7 +704,7 @@ export class Interaction {
       }
       if (
         id === B.OAK_DOOR || id === B.LEVER || id === B.STONE_BUTTON || id === B.TRAPDOOR || id === B.FENCE_GATE ||
-        id === B.REPEATER || id === B.COMPARATOR || id === B.DAYLIGHT_DETECTOR || id === B.NOTE_BLOCK
+        id === B.REPEATER || id === B.COMPARATOR || id === B.DAYLIGHT_DETECTOR || id === B.NOTE_BLOCK || id === B.BED
       ) {
         g.netUseBlock?.(x, y, z);
         return true;
@@ -1167,6 +1185,11 @@ export class Interaction {
 
     if (held === I.SPLASH_POTION) {
       if (!this.freshClick) return false;
+      if (g.isRemote) {
+        g.netThrowPotion?.(this.activeHand, p.yaw, p.headPitch);
+        this.swing();
+        return true;
+      }
       const stack = this.activeHand === 'offhand' ? p.inventory.offhandItem : p.inventory.held;
       const t = new ThrownPotion(stack?.potion ?? 'poison');
       t.owner = p;
@@ -1476,12 +1499,20 @@ export class Interaction {
   }
 
   private placeBed(x: number, y: number, z: number, pf: number): boolean {
-    const w = this.game.world;
+    const g = this.game;
+    const w = g.world;
     const hx = x + FACING_DX[pf];
     const hz = z + FACING_DZ[pf];
     if (!this.replaceable(hx, y, hz)) return false;
     if (!topSolid(w, x, y - 1, z) || !topSolid(w, hx, y - 1, hz)) return false;
     if (!this.cellFree(x, y, z, B.BED, pf) || !this.cellFree(hx, y, hz, B.BED, pf | 4)) return false;
+    if (g.isRemote && g.netPlaceBlock) {
+      const slot = this.activeHand === 'main' ? g.player.inventory.selected : 36;
+      g.netPlaceBlock(x, y, z, this.hit.face, B.BED, pf, slot);
+      g.blockSound('place', B.BED, x + 0.5, y + 0.5, z + 0.5);
+      this.swing();
+      return true;
+    }
     w.setBlock(x, y, z, B.BED, pf, false);
     w.setBlock(hx, y, hz, B.BED, pf | 4, false);
     this.notifyAround(x, y, z);

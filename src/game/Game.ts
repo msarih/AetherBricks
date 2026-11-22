@@ -13,7 +13,8 @@
  */
 import * as THREE from 'three';
 import type { Sfx, SfxName } from '../audio/Sfx';
-import { Living, type DamageCause, type Entity, type GameApi } from '../entity/Entity';
+import { EFFECT_TYPES, Living, type DamageCause, type Entity, type GameApi } from '../entity/Entity';
+import { findBedStandSpot, formatDeathMessage } from './SurvivalHelpers';
 import type { MobKind } from '../entity/MobModels';
 import { IronGolem } from '../entity/Creatures';
 import { EndCrystal } from '../entity/EndMobs';
@@ -25,7 +26,7 @@ import { createEntity } from '../entity/Registry';
 import { tickSpawners } from '../entity/BlockSpawner';
 import { Spawner } from '../entity/Spawner';
 import { Input } from '../player/Input';
-import { Player } from '../player/Player';
+import { Player, type UseKind } from '../player/Player';
 import { TouchLookController, isTouchActive } from '../player/Touch';
 import type { Atlas } from '../render/Atlas';
 import { END_AMBIENT, NETHER_AMBIENT, OVERWORLD_AMBIENT, worldUniforms } from '../render/ChunkMaterials';
@@ -337,6 +338,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
   private lastSentSneak = false;
   private lastSentSwing = 0;
   private lastSentSlot = -1;
+  private lastSentUseKind: UseKind = 'none';
   private onDisconnected: ((reason: string) => void) | null = null;
   isHost = false;
   inviteCode: string | null = null;
@@ -546,9 +548,29 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       player.teleport(o.welcome.x, o.welcome.y, o.welcome.z);
       player.yaw = player.pYaw = player.headYaw = player.pHeadYaw = o.welcome.yaw;
       player.headPitch = player.pHeadPitch = o.welcome.pitch;
+      player.remoteClient = true;
       if (o.welcome.health !== undefined) player.health = o.welcome.health;
       if (o.welcome.hunger !== undefined) player.hunger = o.welcome.hunger;
-      if (o.welcome.inventory) this.applyRemoteInventory(o.welcome.inventory.slots, o.welcome.inventory.selected);
+      if (o.welcome.saturation !== undefined) player.saturation = o.welcome.saturation;
+      if (o.welcome.air !== undefined) player.air = o.welcome.air;
+      if (o.welcome.fireTicks !== undefined) player.fireTicks = o.welcome.fireTicks;
+      if (o.welcome.xpLevel !== undefined) player.xpLevel = o.welcome.xpLevel;
+      if (o.welcome.xpProgress !== undefined) player.xpProgress = o.welcome.xpProgress;
+      if (o.welcome.effects) {
+        player.clearEffects();
+        for (const fx of o.welcome.effects) {
+          if (EFFECT_TYPES.includes(fx.type)) player.addEffect(fx.type, fx.ticks, fx.level);
+        }
+      }
+      if (o.welcome.inventory) {
+        this.applyRemoteInventory(
+          o.welcome.inventory.slots,
+          o.welcome.inventory.selected,
+          undefined,
+          o.welcome.inventory.armor,
+          o.welcome.inventory.offhand,
+        );
+      }
       this.needSettle = false;
       this.freshSpawn = false;
       this.attachNetHandlers(o.net);
@@ -1252,6 +1274,10 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
   }
 
   private wake(): void {
+    if (this.isRemote) {
+      this.net?.sendWake();
+      return;
+    }
     const p = this.player;
     const bed = p.bed;
     p.sleeping = false;
@@ -1268,48 +1294,10 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
 
   /** Case libre pour tenir debout à côté du lit (tête en hx, by, hz), ou null si toutes sont obstruées. */
   private bedStandSpot(hx: number, by: number, hz: number): { x: number; y: number; z: number } | null {
-    const w = this.world;
-    if (!w.isLoaded(hx, hz) || w.getBlock(hx, by, hz) !== B.BED) return null;
-    const d = w.getMeta(hx, by, hz) & 3;
-    const fx = hx - FACING_DX[d];
-    const fz = hz - FACING_DZ[d];
-    const hasFoot = w.getBlock(fx, by, fz) === B.BED;
-    const candidates: Array<[number, number]> = [];
-    const seen = new Set<string>();
-    const push = (x: number, z: number): void => {
-      if ((x === hx && z === hz) || (hasFoot && x === fx && z === fz)) return;
-      const k = `${x},${z}`;
-      if (seen.has(k)) return;
-      seen.add(k);
-      candidates.push([x, z]);
-    };
-    for (const [ax, az] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) push(hx + ax, hz + az);
-    if (hasFoot) for (const [ax, az] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) push(fx + ax, fz + az);
-    for (const [ax, az] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) push(hx + ax, hz + az);
-    if (hasFoot) for (const [ax, az] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) push(fx + ax, fz + az);
-
-    const p = this.player;
-    const hw = p.width / 2;
-    for (const cy of [by, by - 1, by + 1]) {
-      if (cy < 1 || cy + 2 >= CHUNK_HEIGHT) continue;
-      for (const [cx, cz] of candidates) {
-        if (!w.isLoaded(cx, cz)) continue;
-        const below = w.getBlock(cx, cy - 1, cz);
-        if (BLOCK_SOLID[below] !== 1 || below === B.CACTUS) continue;
-        const feet = w.getBlock(cx, cy, cz);
-        const head = w.getBlock(cx, cy + 1, cz);
-        if (BLOCK_SHAPE[feet] === SHAPE.FLUID || BLOCK_SHAPE[head] === SHAPE.FLUID) continue;
-        if (feet === B.FIRE || head === B.FIRE || feet === B.CACTUS || head === B.CACTUS) continue;
-        const sx = cx + 0.5;
-        const sz = cz + 0.5;
-        if (!isBoxFree(w, sx - hw, cy, sz - hw, sx + hw, cy + p.height, sz + hw)) continue;
-        return { x: sx, y: cy, z: sz };
-      }
-    }
-    return null;
+    return findBedStandSpot(this.world, hx, by, hz, this.player.width, this.player.height);
   }
 
-  private showDeath(): void {
+  private showDeath(msg?: string): void {
     const p = this.player;
     this.deathShown = true;
     if (this.menu) {
@@ -1317,7 +1305,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       this.menu = null;
     }
     this.interaction.reset();
-    this.ui.showDeath(deathMessage(p.deathCause, p.deathBy));
+    this.ui.showDeath(msg ?? formatDeathMessage(null, p.deathCause, p.deathBy));
     this.input.unlock();
   }
 
@@ -1515,6 +1503,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
         p.inventory.swapOffhand();
         p.itemId = p.inventory.heldId;
         p.offhandId = p.inventory.offhandId;
+        if (this.isRemote) this.sendRemoteInvSync();
       }
       return true;
     }
@@ -2395,7 +2384,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       menu.close();
       if (menu.type === 'chest') this.sfx.play('chest_close', { volume: 0.6, pitch: 0.9 + Math.random() * 0.2 });
       if (this.net && !menu.remote) {
-        this.net.sendInvSync(saveSlots(this.player.inventory.slots) as Array<SerializedSlot | null>, this.player.inventory.selected);
+        this.sendRemoteInvSync();
       }
     }
     this.input.lock();
@@ -2406,6 +2395,10 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
   }
 
   respawn(): void {
+    if (this.isRemote) {
+      this.net?.sendRespawn();
+      return;
+    }
     if (this.hardcore) {
       this.spectate();
       return;
@@ -3190,14 +3183,50 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
         const c = this.world.chunkAt(x, z);
         if (c) c.saveDirty = false;
       },
-      onInventory: (slots, selected, cursor) => {
-        this.applyRemoteInventory(slots, selected, cursor);
+      onInventory: (slots, selected, cursor, armor, offhand) => {
+        this.applyRemoteInventory(slots, selected, cursor, armor, offhand);
       },
-      onVitals: (health, hunger, xpLevel, xpProgress) => {
+      onVitals: (health, hunger, xpLevel, xpProgress, _xpTotal, saturation, air, fireTicks, effects) => {
         this.player.health = health;
         this.player.hunger = hunger;
+        if (saturation !== undefined) this.player.saturation = saturation;
+        if (air !== undefined) this.player.air = air;
+        if (fireTicks !== undefined) this.player.fireTicks = fireTicks;
         if (xpLevel !== undefined) this.player.xpLevel = xpLevel;
         if (xpProgress !== undefined) this.player.xpProgress = xpProgress;
+        if (effects !== undefined) {
+          this.player.clearEffects();
+          for (const fx of effects) {
+            if (EFFECT_TYPES.includes(fx.type)) this.player.addEffect(fx.type, fx.ticks, fx.level);
+          }
+        }
+      },
+      onPlayerHurt: (hurtTime, vx, vy, vz) => {
+        this.player.hurtTime = hurtTime;
+        this.player.vx = vx;
+        this.player.vy = vy;
+        this.player.vz = vz;
+      },
+      onDeath: (message) => {
+        this.player.health = 0;
+        this.player.sleeping = false;
+        this.player.stopUsing();
+        this.showDeath(message);
+      },
+      onRespawn: (x, y, z) => {
+        this.revive({ x, y, z });
+      },
+      onSleep: (sleeping, x, y, z) => {
+        this.player.sleeping = sleeping;
+        this.player.sleepTicks = 0;
+        if (x !== undefined && y !== undefined && z !== undefined) {
+          this.player.teleport(x, y, z);
+          this.player.vx = this.player.vy = this.player.vz = 0;
+          this.player.fallDistance = 0;
+        }
+      },
+      onActionBar: (text) => {
+        this.ui.actionBar(text);
       },
       onContainerState: (msg) => {
         const loaded = loadSlots(msg.items, msg.items.length);
@@ -3353,6 +3382,37 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
 
   netAttackEntity(entityId: number): void {
     this.net?.sendAttackEntity(entityId);
+  }
+
+  netAttackPlayer(playerId: number): void {
+    this.net?.sendAttackPlayer(playerId);
+  }
+
+  netUseState(kind: UseKind): void {
+    this.net?.sendUseState(kind);
+  }
+
+  netFinishEat(hand: 'main' | 'offhand'): void {
+    this.net?.sendFinishEat(hand);
+  }
+
+  netShootBow(hand: 'main' | 'offhand', yaw: number, pitch: number): void {
+    this.net?.sendShootBow(hand, yaw, pitch);
+  }
+
+  netThrowPotion(hand: 'main' | 'offhand', yaw: number, pitch: number): void {
+    this.net?.sendThrowPotion(hand, yaw, pitch);
+  }
+
+  private sendRemoteInvSync(): void {
+    if (!this.net) return;
+    const inv = this.player.inventory;
+    this.net.sendInvSync(
+      saveSlots(inv.slots) as Array<SerializedSlot | null>,
+      inv.selected,
+      saveSlots(inv.armor) as Array<SerializedSlot | null>,
+      saveSlots(inv.offhand)[0] as SerializedSlot | null,
+    );
   }
 
   netInteractEntity(entityId: number): void {
@@ -3531,11 +3591,26 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     this.ui.addMessage('Partie fermée aux amis. Le monde solo est à jour.');
   }
 
-  private applyRemoteInventory(slots: Array<SerializedSlot | null>, selected: number, cursor?: SerializedSlot | null): void {
+  private applyRemoteInventory(
+    slots: Array<SerializedSlot | null>,
+    selected: number,
+    cursor?: SerializedSlot | null,
+    armor?: Array<SerializedSlot | null>,
+    offhand?: SerializedSlot | null,
+  ): void {
     const inv = this.player.inventory;
     const loaded = loadSlots(slots, inv.slots.length);
     for (let i = 0; i < inv.slots.length; i++) {
       inv.slots[i] = loaded[i] ?? null;
+    }
+    if (armor) {
+      const loadedArmor = loadSlots(armor, inv.armor.length);
+      for (let i = 0; i < inv.armor.length; i++) {
+        inv.armor[i] = loadedArmor[i] ?? null;
+      }
+    }
+    if (offhand !== undefined) {
+      inv.offhand[0] = offhand ? loadSlots([offhand], 1)[0] : null;
     }
     if (cursor !== undefined) {
       inv.cursor = cursor ? loadSlots([cursor], 1)[0] : null;
@@ -3555,6 +3630,8 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     this.world.skyDarken = Math.round((1 - light) * 11);
     this.world.raining = this.rainLevel > 0.2;
 
+    if (p.sleeping) p.sleepTicks++;
+
     const cx = Math.floor(p.x) >> 4;
     const cz = Math.floor(p.z) >> 4;
     if (this.world.chunks.has(chunkKey(cx, cz))) {
@@ -3569,6 +3646,10 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     if (this.net && p.inventory.selected !== this.lastSentSlot) {
       this.lastSentSlot = p.inventory.selected;
       this.net.sendSelectSlot(p.inventory.selected);
+    }
+    if (this.net && p.useKind !== this.lastSentUseKind) {
+      this.lastSentUseKind = p.useKind;
+      this.net.sendUseState(p.useKind);
     }
     if (
       this.net &&
@@ -3587,7 +3668,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       this.lastSentPitch = p.headPitch;
       this.lastSentSneak = p.sneaking;
       this.lastSentSwing = p.swing;
-      this.net.sendMove(p.x, p.y, p.z, p.yaw, p.headPitch, p.sneaking, p.onGround, p.swing);
+      this.net.sendMove(p.x, p.y, p.z, p.yaw, p.headPitch, p.sneaking, p.onGround, p.swing, p.sprinting);
     }
   }
 }

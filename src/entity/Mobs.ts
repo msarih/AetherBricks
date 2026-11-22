@@ -89,6 +89,29 @@ export function isDay(game: GameApi): boolean {
   return t < 12500 || t >= 23500;
 }
 
+function gamePlayers(game: GameApi): readonly PlayerLike[] {
+  return game.players && game.players.length > 0 ? game.players : [game.player];
+}
+
+function isPlayerLike(game: GameApi, e: Entity | null): e is PlayerLike {
+  if (!e) return false;
+  return e === game.player || (!!game.players && game.players.includes(e as PlayerLike));
+}
+
+function nearestPlayer(game: GameApi, from: Entity, onlyTargetable = false): { player: PlayerLike; distSq: number } | null {
+  let best: PlayerLike | null = null;
+  let bestD = Infinity;
+  for (const p of gamePlayers(game)) {
+    if (onlyTargetable ? !p.targetable : !p.alive) continue;
+    const d = from.distanceSqTo(p);
+    if (d < bestD) {
+      bestD = d;
+      best = p;
+    }
+  }
+  return best ? { player: best, distSq: bestD } : null;
+}
+
 /**
  * Recale le centre d'une boîte de demi-largeur `hw` dont un bord frôle une limite de bloc (au seizième).
  * Physics.move recalcule la boîte depuis le centre à chaque tick : après un arrêt contre un mur, l'arrondi
@@ -413,9 +436,9 @@ export abstract class Mob extends Living {
   /** À l'arrêt : regarde parfois ailleurs, ou suit des yeux le joueur proche. */
   private idleLook(game: GameApi): void {
     if (this.lookTicks > 0 || game.rng() >= 0.02) return;
-    const p = game.player;
-    if (p.alive && this.distanceSqTo(p) < 36 && game.rng() < 0.7) {
-      this.lookAt(p, 40 + Math.floor(game.rng() * 40));
+    const near = nearestPlayer(game, this);
+    if (near && near.distSq < 36 && game.rng() < 0.7) {
+      this.lookAt(near.player, 40 + Math.floor(game.rng() * 40));
     } else {
       this.lookTarget = null;
       this.lookOffset = (game.rng() * 2 - 1) * 1.1;
@@ -524,17 +547,17 @@ export abstract class Mob extends Living {
 
   protected onDeath(game: GameApi, cause: DamageCause, attacker: Entity | null): void {
     const killer = attacker ?? this.attacker;
-    const byPlayer = killer === game.player;
+    const byPlayer = isPlayerLike(game, killer);
     if (byPlayer) {
-      game.player.addStat('mob_kills');
-      game.player.addStat(`killed:${this.mobKind}`);
+      killer.addStat('mob_kills');
+      killer.addStat(`killed:${this.mobKind}`);
     }
     this.breakLeash(game, true);
     if (this.baby) return;
     this.dropLoot(game, this.fireTicks > 0 || cause === 'fire' || cause === 'lava', byPlayer);
     if (byPlayer) {
       const xp = this.xpValue(game);
-      if (xp > 0) game.player.addXp(xp);
+      if (xp > 0) killer.addXp(xp);
     }
   }
 
@@ -1371,7 +1394,11 @@ export abstract class Monster extends Mob {
   private checkDespawn(game: GameApi): boolean {
     // une créature nommée (ou qui porte quelque chose à rendre) ne disparaît jamais
     if (this.persistent) return false;
-    const dSq = this.distanceSqTo(game.player);
+    let dSq = Infinity;
+    for (const p of gamePlayers(game)) {
+      const d = this.distanceSqTo(p);
+      if (d < dSq) dSq = d;
+    }
     this.unseenTicks++;
     if (dSq > 96 * 96 || (dSq > 32 * 32 && this.unseenTicks > 600 && game.rng() < 1 / 800)) {
       this.dead = true;
@@ -1381,11 +1408,10 @@ export abstract class Monster extends Mob {
   }
 
   private updateTarget(game: GameApi): void {
-    const p = game.player;
     let t = this.target;
     const lose = this.loseRange();
     if (t) {
-      const lost = t === p ? !p.targetable : !t.alive;
+      const lost = isPlayerLike(game, t) ? !t.targetable : !t.alive;
       if (lost || this.distanceSqTo(t) > lose * lose) {
         this.dropTarget();
         t = null;
@@ -1395,10 +1421,22 @@ export abstract class Monster extends Mob {
     const follow = this.followRange();
     if (t) {
       if (phase % 5 === 0) this.seesTarget = this.canSee(game.world, t);
-      if (this.seesTarget && t === p) this.unseenTicks = 0;
-    } else if (phase === 0 && p.targetable && this.distanceSqTo(p) <= follow * follow && this.aggressive(game) && this.canSee(game.world, p)) {
-      this.setTarget(p);
-      this.unseenTicks = 0;
+      if (this.seesTarget && isPlayerLike(game, t)) this.unseenTicks = 0;
+    } else if (phase === 0 && this.aggressive(game)) {
+      let best: PlayerLike | null = null;
+      let bestDist = follow * follow;
+      for (const p of gamePlayers(game)) {
+        if (!p.targetable) continue;
+        const dSq = this.distanceSqTo(p);
+        if (dSq <= bestDist && this.canSee(game.world, p)) {
+          bestDist = dSq;
+          best = p;
+        }
+      }
+      if (best) {
+        this.setTarget(best);
+        this.unseenTicks = 0;
+      }
     }
   }
 
@@ -1416,9 +1454,9 @@ export abstract class Monster extends Mob {
   /** Riposte : celui qui la blesse devient sa cible. */
   protected onHurt(game: GameApi, _cause: DamageCause, attacker: Entity | null): void {
     if (!attacker || attacker === this || !(attacker instanceof Living)) return;
-    if (attacker === game.player) {
+    if (isPlayerLike(game, attacker)) {
       this.unseenTicks = 0;
-      if (!game.player.targetable) return;
+      if (!attacker.targetable) return;
     }
     this.setTarget(attacker);
   }
@@ -1731,7 +1769,7 @@ export class ZombiePigman extends Monster {
   protected override behave(game: GameApi): void {
     if (this.angerTicks > 0) {
       this.angerTicks--;
-      if (this.angerTicks === 0 && this.target === game.player) this.dropTarget();
+      if (this.angerTicks === 0 && isPlayerLike(game, this.target)) this.dropTarget();
     }
     super.behave(game);
   }
@@ -1739,7 +1777,7 @@ export class ZombiePigman extends Monster {
   protected override onHurt(game: GameApi, cause: DamageCause, attacker: Entity | null): void {
     super.onHurt(game, cause, attacker);
     if (!attacker || attacker === this || !(attacker instanceof Living)) return;
-    if (attacker === game.player && !game.player.targetable) return;
+    if (isPlayerLike(game, attacker) && !attacker.targetable) return;
     const duration = 400 + Math.floor(game.rng() * 400);
     this.angerTicks = Math.max(this.angerTicks, duration);
     // Alerte les autres cochons-zombies dans un rayon de 32 blocs

@@ -1264,6 +1264,15 @@ class MobVisual implements Visual {
       rax = lax = -HALF_PI + headX - (f * 1.2 - f1 * 0.4);
     } else {
       if (e.itemId !== 0) rax = rax * 0.5 - PI / 10;
+      if (e.blocking) {
+        if (e.offhandId === I.SHIELD) {
+          lax = lax * 0.5 - 0.9425;
+          lay = 0.5236;
+        } else {
+          rax = rax * 0.5 - 0.9425;
+          ray = -0.5236;
+        }
+      }
       if (sw > 0) {
         // Coup porté par le bras droit
         bodyY = Math.sin(Math.sqrt(sw) * 2 * PI) * 0.2;
