@@ -9,6 +9,8 @@ import type { EntityKind } from '../entity/EntityView';
 import type { MobKind } from '../entity/MobModels';
 import type { SfxName } from '../audio/Sfx';
 import type { ParticleKind } from '../render/Particles';
+import type { EffectType } from '../entity/Entity';
+import type { UseKind } from '../player/Player';
 
 export const CHUNK_TINTS = CHUNK_AREA * 9;
 export const BINARY_CHUNK_TAG = 0x01;
@@ -32,6 +34,11 @@ export interface RemotePlayerState {
   sneaking: boolean;
   swing: number;
   gameMode: GameMode;
+  heldId?: number;
+  offhandId?: number;
+  blocking?: boolean;
+  hurtTime?: number;
+  alive?: boolean;
 }
 
 export interface RemoteEntityState {
@@ -92,19 +99,32 @@ export interface TradeOfferInfo {
   affordable: boolean;
 }
 
+export interface SerializedEffect {
+  type: EffectType;
+  level: number;
+  ticks: number;
+}
+
 export type ClientMessage =
   | { type: 'join'; name: string; password?: string; code?: string; hostToken?: string }
-  | { type: 'move'; x: number; y: number; z: number; yaw: number; pitch: number; sneaking: boolean; onGround: boolean; swing: number }
+  | { type: 'move'; x: number; y: number; z: number; yaw: number; pitch: number; sneaking: boolean; onGround: boolean; swing: number; sprinting?: boolean }
   | { type: 'chat'; text: string }
   | { type: 'needChunks'; keys: Array<[number, number]> }
   | { type: 'breakBlock'; x: number; y: number; z: number }
-  | { type: 'placeBlock'; x: number, y: number, z: number, face: number, id: number, meta: number, slot: number }
+  | { type: 'placeBlock'; x: number; y: number; z: number; face: number; id: number; meta: number; slot: number }
   | { type: 'useBlock'; x: number; y: number; z: number }
   | { type: 'selectSlot'; slot: number }
-  | { type: 'invSync'; slots: Array<SerializedSlot | null>; selected: number }
+  | { type: 'invSync'; slots: Array<SerializedSlot | null>; selected: number; armor?: Array<SerializedSlot | null>; offhand?: SerializedSlot | null }
   | { type: 'dropItem'; slot: number; all: boolean }
   | { type: 'pickupItem'; entityId: number }
   | { type: 'attackEntity'; entityId: number }
+  | { type: 'attackPlayer'; playerId: number }
+  | { type: 'useState'; kind: UseKind }
+  | { type: 'finishEat'; hand: 'main' | 'offhand' }
+  | { type: 'shootBow'; hand: 'main' | 'offhand'; yaw: number; pitch: number }
+  | { type: 'throwPotion'; hand: 'main' | 'offhand'; yaw: number; pitch: number }
+  | { type: 'respawn' }
+  | { type: 'wake' }
   | { type: 'interactEntity'; entityId: number }
   | { type: 'nameEntity'; entityId: number; name: string }
   | { type: 'tieLeash'; x: number; y: number; z: number }
@@ -148,10 +168,14 @@ export type ServerMessage =
       pitch: number;
       health?: number;
       hunger?: number;
+      saturation?: number;
+      air?: number;
+      fireTicks?: number;
+      effects?: SerializedEffect[];
       xpLevel?: number;
       xpProgress?: number;
       xpTotal?: number;
-      inventory?: { slots: Array<SerializedSlot | null>; selected: number };
+      inventory?: { slots: Array<SerializedSlot | null>; selected: number; armor?: Array<SerializedSlot | null>; offhand?: SerializedSlot | null };
       inviteCode?: string;
       inviteUrl?: string;
       tailscaleCode?: string | null;
@@ -167,8 +191,13 @@ export type ServerMessage =
   | { type: 'gamemode'; gameMode: GameMode }
   | { type: 'teleport'; x: number; y: number; z: number }
   | { type: 'blockUpdate'; x: number; y: number; z: number; id: number; meta: number }
-  | { type: 'inventory'; slots: Array<SerializedSlot | null>; selected: number; cursor?: SerializedSlot | null }
-  | { type: 'vitals'; health: number; hunger: number; xpLevel?: number; xpProgress?: number; xpTotal?: number }
+  | { type: 'inventory'; slots: Array<SerializedSlot | null>; selected: number; cursor?: SerializedSlot | null; armor?: Array<SerializedSlot | null>; offhand?: SerializedSlot | null }
+  | { type: 'vitals'; health: number; hunger: number; saturation?: number; air?: number; fireTicks?: number; effects?: SerializedEffect[]; xpLevel?: number; xpProgress?: number; xpTotal?: number }
+  | { type: 'playerHurt'; hurtTime: number; vx: number; vy: number; vz: number }
+  | { type: 'death'; message: string }
+  | { type: 'respawn'; x: number; y: number; z: number }
+  | { type: 'sleep'; sleeping: boolean; x?: number; y?: number; z?: number }
+  | { type: 'actionBar'; text: string }
   | {
       type: 'containerState';
       x: number;

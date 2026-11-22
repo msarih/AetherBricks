@@ -9,9 +9,14 @@ import type { RemotePlayerState } from './Protocol';
 export class RemotePlayerEntity extends Entity {
   readonly kind: EntityKind = 'player';
   readonly remoteId: number;
+  gameMode: RemotePlayerState['gameMode'] = 'survival';
+  blocking = false;
 
   override get roaming(): boolean {
     return true;
+  }
+  override get pickable(): boolean {
+    return !this.hidden && this.gameMode !== 'spectator';
   }
   override width = 0.6;
   override height = 1.8;
@@ -34,6 +39,12 @@ export class RemotePlayerEntity extends Entity {
     this.pHeadPitch = this.headPitch = this.tpitch = s.pitch;
     this.sneaking = s.sneaking;
     this.swing = s.swing;
+    this.gameMode = s.gameMode;
+    this.itemId = s.heldId ?? 0;
+    this.offhandId = s.offhandId ?? 0;
+    this.blocking = s.blocking ?? false;
+    this.hurtTime = s.hurtTime ?? 0;
+    this.hidden = s.alive === false;
   }
 
   applyServerState(s: RemotePlayerState): void {
@@ -45,6 +56,12 @@ export class RemotePlayerEntity extends Entity {
     this.tpitch = s.pitch;
     this.sneaking = s.sneaking;
     this.swing = s.swing;
+    this.gameMode = s.gameMode;
+    this.itemId = s.heldId ?? 0;
+    this.offhandId = s.offhandId ?? 0;
+    this.blocking = s.blocking ?? false;
+    this.hurtTime = s.hurtTime ?? 0;
+    this.hidden = s.alive === false;
   }
 
   tick(api: GameApi): void {
