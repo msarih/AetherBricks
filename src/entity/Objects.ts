@@ -316,11 +316,15 @@ export class Arrow extends Entity {
         this.vz = (game.rng() - 0.5) * 0.1;
       } else {
         if (++this.groundTicks >= 1200) this.dead = true;
-        const p = game.player;
-        if (this.fromPlayer && this.groundTicks > 10 && p.alive && p.intersects(this.x - 1, this.y - 0.5, this.z - 1, this.x + 1, this.y + 0.8, this.z + 1)) {
-          if (p.gameMode === 'creative' || p.collect({ id: I.ARROW, count: 1, damage: 0 }) === 0) {
-            game.sound('pop', this.x, this.y, this.z, 0.5, 1.6);
-            this.dead = true;
+        if (this.fromPlayer && this.groundTicks > 10) {
+          for (const p of game.players ?? [game.player]) {
+            if (p.alive && p.intersects(this.x - 1, this.y - 0.5, this.z - 1, this.x + 1, this.y + 0.8, this.z + 1)) {
+              if (p.gameMode === 'creative' || p.collect({ id: I.ARROW, count: 1, damage: 0 }) === 0) {
+                game.sound('pop', this.x, this.y, this.z, 0.5, 1.6);
+                this.dead = true;
+              }
+              break;
+            }
           }
         }
         return;
@@ -628,6 +632,15 @@ export class ThrownPotion extends Thrown {
     for (const e of game.entitiesInBox(x - r, y - 2, z - r, x + r, y + 2, z + r, null)) {
       if (!(e instanceof Living) || !e.alive) continue;
       if (e.mobKind === 'witch' && (this.effect === 'harm' || this.effect === 'poison' || this.effect === 'slow' || this.effect === 'weak')) continue;
+      if (
+        game.pvp === false &&
+        this.owner?.kind === 'player' &&
+        e.kind === 'player' &&
+        e !== this.owner &&
+        (this.effect === 'harm' || this.effect === 'poison' || this.effect === 'slow' || this.effect === 'weak')
+      ) {
+        continue;
+      }
       const d = Math.sqrt(e.distanceSq(x, y - e.height * 0.5, z));
       if (e !== target && d >= r) continue;
       const str = e === target ? 1 : 1 - d / r;

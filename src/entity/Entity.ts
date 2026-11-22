@@ -64,6 +64,8 @@ export interface GameApi {
   readonly player: PlayerLike;
   /** Liste des joueurs connectés (mode serveur multijoueur). Absent en solo. */
   readonly players?: readonly PlayerLike[];
+  /** PvP activé (mode serveur multijoueur ; vrai par défaut). */
+  readonly pvp?: boolean;
   /** Toutes les entités vivantes du monde (joueur compris). Ne pas modifier : passer par spawn() et `dead`. */
   readonly entities: readonly Entity[];
   /** Aléa de gameplay (0..1). */
@@ -421,7 +423,7 @@ export abstract class Living extends Entity {
   attackerAge = 0;
 
   private jumpDelay = 0;
-  private swingTicks = -1;
+  protected swingTicks = -1;
 
   get alive(): boolean {
     return this.health > 0 && !this.dead;
