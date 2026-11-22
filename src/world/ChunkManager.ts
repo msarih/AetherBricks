@@ -147,11 +147,27 @@ export class ChunkManager {
   }
 
   /** Bascule entre mode local (génération) et mode réseau (chunks reçus du serveur). */
-  setRemoteMode(remote: boolean): void {
+  setRemoteMode(remote: boolean, savedKeys?: Set<number>): void {
     this.remoteMode = remote;
     if (!remote) {
       this.ensureGenWorkers();
       this.loadScanDone = false;
+      if (savedKeys) {
+        this.epoch++;
+        this.savedKeys = savedKeys;
+        this.loading.clear();
+        this.storageLoads = 0;
+        for (const k of this.world.chunks.keys()) {
+          const cx = Math.floor(k / 0x10000) - 0x8000;
+          const cz = (k % 0x10000) - 0x8000;
+          this.sink.removeChunk(cx, cz);
+        }
+        this.world.chunks.clear();
+        this.world.dirty.clear();
+        this.world.blockEntities.clear();
+        this.centerX = Number.NaN;
+        this.centerZ = Number.NaN;
+      }
     }
   }
 

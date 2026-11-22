@@ -131,7 +131,7 @@ Fabriquez un nouvel APK avec `npm run android:apk` (en utilisant la même clé `
 - Les mondes sont stockés dans le stockage interne de l'application (IndexedDB) : utilisez l'export `.aetherworld` si vous voulez une sauvegarde externe ou transférer un monde vers un autre appareil.
 - Les mêmes limites de jouabilité que la version navigateur (pas de vibrations manette, limites du multijoueur jalon 1).
 
-## 🌐 Multijoueur (Wi-Fi local et Tailscale — Jalon 3)
+## 🌐 Multijoueur (Wi-Fi local et Tailscale — Jalon 4)
 
 Un joueur lance un serveur Node.js autoritaire sur son ordinateur ; ses amis le rejoignent depuis un navigateur (ordinateur ou téléphone) ou depuis l'application Android.
 
@@ -190,14 +190,17 @@ Au démarrage, le serveur affiche les adresses à partager :
 ### Ce qui est partagé et sauvegardé
 
 - **Blocs et simulation** : casse et pose validées par le serveur (portée, mode de jeu, objet présent dans l'inventaire en survie) et diffusées aux joueurs à portée ; chute du sable/gravier, écoulement de l'eau et de la lave, feu et cultures simulés sur le serveur.
-- **Inventaire, temps et météo** : inventaire géré par le serveur (en survie, casser un bloc place directement l'objet dans l'inventaire) ; temps et météo synchronisés.
+- **Créatures** : apparition naturelle autour de chaque joueur (jour/nuit), IA et recherche de chemin simulées sur le serveur et diffusées aux joueurs à portée (interpolation fluide chez le client) ; frapper/tuer (dégâts, recul, butin au sol, XP), nourrir et faire se reproduire, tondre, traire, laisse et échanges avec les villageois.
+- **Objets au sol** : en survie, casser un bloc ou lâcher un objet (`A`) fait tomber l'objet au sol pour tous ; ramassage arbitré par le serveur (sans duplication possible), fusion des piles et disparition au bout de 5 minutes.
+- **Coffres, fourneaux et conteneurs** : coffres (y compris côte à côte), fourneaux, alambics, entonnoirs et distributeurs/droppers gérés par le serveur, mis à jour en temps réel pour tous ceux qui ouvrent le même conteneur ; les fourneaux, alambics et entonnoirs continuent de tourner même sans spectateur ; casser un conteneur répand son contenu au sol.
+- **Inventaire, temps et météo** : inventaire géré par le serveur ; temps et météo synchronisés.
 - **Droits de l'hôte** : seul l'hôte (celui qui a ouvert le monde ou connaît le mot de passe) peut utiliser `/gamemode`, `/tp`, `/time` et fermer le monde.
-- **Sauvegarde serveur** : chunks modifiés et un fichier par joueur (`server-data/worlds/default/players/`) enregistrés toutes les 30 secondes et à l'arrêt du serveur.
+- **Sauvegarde serveur** : chunks modifiés, créatures, objets au sol, coffres/fourneaux et un fichier par joueur (`server-data/worlds/default/players/`) enregistrés toutes les 30 secondes et à l'arrêt du serveur ; à la fermeture aux amis, le monde solo de l'hôte récupère blocs, créatures et conteneurs.
 
-### Limites du jalon 3
+### Limites du jalon 4
 
-- Les créatures, objets au sol et coffres/fourneaux synchronisés arrivent au jalon 4 : en attendant, casser un bloc en survie place directement le butin dans l'inventaire.
-- Pas encore de combat ni de changement de dimension en multijoueur ; un seul monde actif par serveur.
+- **Combat, mort et réapparition** (jalon 5) : les créatures hostiles n'infligent pas encore de dégâts aux joueurs, et il n'y a ni mort ni réapparition de joueur en multijoueur (pas de PvP non plus).
+- Pas encore de changement de dimension en multijoueur ; un seul monde actif par serveur.
 
 ## 🎮 Contrôles
 
