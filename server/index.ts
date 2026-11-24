@@ -36,6 +36,7 @@ import { isProfession } from '../src/entity/Trades';
 import { Arrow, ItemEntity, Thrown, ThrownPearl, ThrownPotion, Tnt } from '../src/entity/Objects';
 import { createEntity } from '../src/entity/Registry';
 import { Spawner } from '../src/entity/Spawner';
+import { BOAT_SEAT, Boat, MINECART_SEAT, Minecart } from '../src/entity/Vehicles';
 import type { SfxName } from '../src/audio/Sfx';
 import { explode as runExplosion } from '../src/game/Explosion';
 import { findBedStandSpot, formatDeathMessage } from '../src/game/SurvivalHelpers';
@@ -86,6 +87,7 @@ import { B, I, musicDiscInfo } from '../src/world/Ids';
 import { ITEMS, getItem, isTool, itemLabel, maxDamage, maxStack } from '../src/world/Items';
 import { addToSlots, cloneStackWithCount, loadSlots, makeStack, saveSlots, type ItemStack, type Slot } from '../src/world/ItemStack';
 import { POTION_GIVE_HELP, applyPotionVariant, potionLabel, resolvePotionKind } from '../src/world/Potions';
+import { isRail } from '../src/world/Rails';
 import { computeDaylightPower, isBlockPowered, triggerNoteBlock, updateRedstoneAround, updateRepeaterState } from '../src/world/Redstone';
 import type { SavedChunk, WorldInfo } from '../src/world/Storage';
 import { World, posKey, posKeyX, posKeyY, posKeyZ, type BlockEntity } from '../src/world/World';
@@ -2420,12 +2422,33 @@ function start(): void {
           return;
         }
 
+        if (
+          player.entity.vehicle instanceof Boat ||
+          player.entity.vehicle instanceof Minecart
+        ) {
+          const v = player.entity.vehicle;
+          if (sneaking) {
+            player.entity.dismount(createServerGameApi(player));
+            v.rider = null;
+            player.x = player.entity.x;
+            player.y = player.entity.y;
+            player.z = player.entity.z;
+            player.lastMoveMs = now;
+            sendJson(ws, { type: 'mount', vehicleId: 0 });
+            sendJson(ws, { type: 'teleport', x: player.x, y: player.y, z: player.z });
+            return;
+          }
+          const seatY = v instanceof Minecart ? MINECART_SEAT : BOAT_SEAT;
+          v.setPosition(x, y - seatY, z);
+          if (Number.isFinite(msg.vehicleYaw)) v.yaw = msg.vehicleYaw!;
+        }
+
         player.x = x;
         player.y = y;
         player.z = z;
         player.yaw = yaw;
         player.pitch = pitch;
-        player.sneaking = Boolean(sneaking);
+        player.sneaking = player.entity.vehicle ? false : Boolean(sneaking);
         player.onGround = Boolean(onGround);
         player.swing = Number.isFinite(swing) ? Math.max(0, Math.min(1, swing)) : 0;
         player.lastMoveMs = now;
@@ -2448,6 +2471,67 @@ function start(): void {
           player.lastChunkX = cx;
           player.lastChunkZ = cz;
           streamChunksAround(player);
+        }
+        return;
+      }
+
+      if (msg.type === 'placeVehicle') {
+        const { x, y, z, face, itemId, yaw } = msg;
+        if (!Number.isInteger(x) || !Number.isInteger(y) || !Number.isInteger(z)) return;
+        if (y < 0 || y >= CHUNK_HEIGHT || !world.isLoaded(x, z)) return;
+        if (player.gameMode === 'adventure' || player.gameMode === 'spectator') return;
+        const dist = Math.hypot(x + 0.5 - player.x, y + 0.5 - (player.y + 1.62), z + 0.5 - player.z);
+        if (dist > 7.0) return;
+        const held = player.entity.inventory.held;
+        if (player.gameMode !== 'creative' && (!held || held.id !== itemId || held.count <= 0)) {
+          sendInventory(player);
+          return;
+        }
+        if (itemId === I.MINECART) {
+          if (!isRail(world.getBlock(x, y, z))) return;
+          const cart = new Minecart();
+          cart.setPosition(x + 0.5, y + 0.0625, z + 0.5);
+          cart.yaw = Number.isFinite(yaw) ? yaw : 0;
+          spawnServerEntity(cart);
+        } else if (itemId === I.BOAT) {
+          const bid = world.getBlock(x, y, z);
+          const boat = new Boat();
+          if (bid === B.WATER) {
+            boat.setPosition(x + 0.5, y + 0.9, z + 0.5);
+          } else {
+            const dx = face === 5 ? 1 : face === 4 ? -1 : 0;
+            const dy = face === 1 ? 1 : face === 0 ? -1 : 0;
+            const dz = face === 3 ? 1 : face === 2 ? -1 : 0;
+            const ax = x + dx;
+            const ay = y + dy;
+            const az = z + dz;
+            if (ay < 0 || ay >= CHUNK_HEIGHT || BLOCK_REPLACEABLE[world.getBlock(ax, ay, az)] !== 1) return;
+            boat.setPosition(ax + 0.5, ay + 0.05, az + 0.5);
+          }
+          boat.yaw = Number.isFinite(yaw) ? yaw : 0;
+          spawnServerEntity(boat);
+        } else {
+          return;
+        }
+        if (player.gameMode !== 'creative' && held) {
+          held.count--;
+          if (held.count <= 0) player.entity.inventory.slots[player.selected] = null;
+          sendInventory(player);
+        }
+        return;
+      }
+
+      if (msg.type === 'dismount') {
+        const v = player.entity.vehicle;
+        if (v instanceof Boat || v instanceof Minecart) {
+          player.entity.dismount(createServerGameApi(player));
+          v.rider = null;
+          player.x = player.entity.x;
+          player.y = player.entity.y;
+          player.z = player.entity.z;
+          player.lastMoveMs = Date.now();
+          sendJson(ws, { type: 'mount', vehicleId: 0 });
+          sendJson(ws, { type: 'teleport', x: player.x, y: player.y, z: player.z });
         }
         return;
       }
@@ -2911,6 +2995,13 @@ function start(): void {
           return;
         }
         if (target.interact(api, player.entity)) {
+          if ((target instanceof Boat || target instanceof Minecart) && player.entity.vehicle === target) {
+            player.x = player.entity.x;
+            player.y = player.entity.y;
+            player.z = player.entity.z;
+            player.lastMoveMs = Date.now();
+            sendJson(player.ws, { type: 'mount', vehicleId: target.id });
+          }
           if (player.entity.invDirty) {
             player.entity.invDirty = false;
             sendInventory(player);
@@ -3395,6 +3486,7 @@ function start(): void {
           blocking: p.entity.blocking,
           hurtTime: p.entity.hurtTime,
           alive: p.entity.alive,
+          riding: p.entity.riding,
         });
       }
       broadcastJson({ type: 'players', list });

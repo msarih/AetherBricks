@@ -45,6 +45,7 @@ export class RemotePlayerEntity extends Entity {
     this.blocking = s.blocking ?? false;
     this.hurtTime = s.hurtTime ?? 0;
     this.hidden = s.alive === false;
+    this.riding = s.riding ?? false;
   }
 
   applyServerState(s: RemotePlayerState): void {
@@ -62,6 +63,7 @@ export class RemotePlayerEntity extends Entity {
     this.blocking = s.blocking ?? false;
     this.hurtTime = s.hurtTime ?? 0;
     this.hidden = s.alive === false;
+    this.riding = s.riding ?? false;
   }
 
   tick(api: GameApi): void {

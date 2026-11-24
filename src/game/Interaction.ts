@@ -87,6 +87,7 @@ export interface InteractionHost extends GameApi {
   readonly isRemote?: boolean;
   netBreakBlock?(x: number, y: number, z: number): void;
   netPlaceBlock?(x: number, y: number, z: number, face: number, id: number, meta: number, slot: number): void;
+  netPlaceVehicle?(x: number, y: number, z: number, face: number, itemId: number, yaw: number): void;
   netUseBlock?(x: number, y: number, z: number): void;
   netDropItem?(slot: number, all: boolean): void;
   netAttackEntity?(entityId: number): void;
@@ -872,6 +873,10 @@ export class Interaction {
     const item = getItem(held);
 
     if (held === I.MINECART && isRail(h.id)) {
+      if (g.isRemote && g.netPlaceVehicle) {
+        g.netPlaceVehicle(h.x, h.y, h.z, h.face, held, p.yaw);
+        return true;
+      }
       const cart = new Minecart();
       cart.setPosition(h.x + 0.5, h.y + 0.0625, h.z + 0.5);
       cart.yaw = p.yaw;
@@ -886,6 +891,10 @@ export class Interaction {
       p.look(this.look);
       const l = this.look;
       if (raycast(w, p.x, p.y + p.eyeHeight, p.z, l.x, l.y, l.z, this.reach(), f, false, true) && f.id === B.WATER) {
+        if (g.isRemote && g.netPlaceVehicle) {
+          g.netPlaceVehicle(f.x, f.y, f.z, f.face, held, p.yaw);
+          return true;
+        }
         const boat = new Boat();
         boat.setPosition(f.x + 0.5, f.y + 0.9, f.z + 0.5);
         boat.yaw = p.yaw;
@@ -901,6 +910,10 @@ export class Interaction {
       const ay = h.y + dy;
       const az = h.z + dz;
       if (this.replaceable(ax, ay, az)) {
+        if (g.isRemote && g.netPlaceVehicle) {
+          g.netPlaceVehicle(h.x, h.y, h.z, h.face, held, p.yaw);
+          return true;
+        }
         const boat = new Boat();
         boat.setPosition(ax + 0.5, ay + 0.05, az + 0.5);
         boat.yaw = p.yaw;

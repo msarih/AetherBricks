@@ -38,6 +38,7 @@ export interface ClientHandlers {
   onDeath?(message: string): void;
   onRespawn?(x: number, y: number, z: number): void;
   onSleep?(sleeping: boolean, x?: number, y?: number, z?: number): void;
+  onMount?(vehicleId: number): void;
   onActionBar?(text: string): void;
   onContainerState?(msg: Extract<ServerMessage, { type: 'containerState' }>): void;
   onContainerClose?(x: number, y: number, z: number): void;
@@ -240,6 +241,9 @@ export class MultiplayerClient {
       case 'sleep':
         this.handlers.onSleep?.(msg.sleeping, msg.x, msg.y, msg.z);
         break;
+      case 'mount':
+        this.handlers.onMount?.(msg.vehicleId);
+        break;
       case 'actionBar':
         this.handlers.onActionBar?.(msg.text);
         break;
@@ -280,8 +284,8 @@ export class MultiplayerClient {
     }
   }
 
-  sendMove(x: number, y: number, z: number, yaw: number, pitch: number, sneaking: boolean, onGround: boolean, swing: number, sprinting = false): void {
-    this.send({ type: 'move', x, y, z, yaw, pitch, sneaking, onGround, swing, sprinting });
+  sendMove(x: number, y: number, z: number, yaw: number, pitch: number, sneaking: boolean, onGround: boolean, swing: number, sprinting = false, vehicleYaw?: number): void {
+    this.send({ type: 'move', x, y, z, yaw, pitch, sneaking, onGround, swing, sprinting, ...(vehicleYaw !== undefined ? { vehicleYaw } : {}) });
   }
 
   sendChat(text: string): void {
@@ -298,6 +302,14 @@ export class MultiplayerClient {
 
   sendPlaceBlock(x: number, y: number, z: number, face: number, id: number, meta: number, slot: number): void {
     this.send({ type: 'placeBlock', x, y, z, face, id, meta, slot });
+  }
+
+  sendPlaceVehicle(x: number, y: number, z: number, face: number, itemId: number, yaw: number): void {
+    this.send({ type: 'placeVehicle', x, y, z, face, itemId, yaw });
+  }
+
+  sendDismount(): void {
+    this.send({ type: 'dismount' });
   }
 
   sendUseBlock(x: number, y: number, z: number): void {

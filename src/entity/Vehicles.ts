@@ -9,10 +9,244 @@ import type { EntityKind } from './EntityView';
 import { loadMob } from './Mobs';
 import { move } from './Physics';
 
-const BOAT_SEAT = -0.02;
-const MINECART_SEAT = -0.05;
+import type { World } from '../world/World';
+
+export const BOAT_SEAT = -0.02;
+export const MINECART_SEAT = -0.05;
 const MAX_CART_SPEED = 0.4;
 const MAX_BOAT_SPEED = 0.42;
+
+/** Un pas de physique bateau partagé entre solo, serveur et prédiction client. */
+export function stepBoatPhysics(
+  w: World,
+  ent: Entity,
+  input: { forward: number; strafe: number } | null,
+): void {
+  let waterSurface = -1;
+  const wy = Math.floor(ent.y + 0.05);
+  const x0 = Math.floor(ent.x - 0.5);
+  const x1 = Math.floor(ent.x + 0.5);
+  const z0 = Math.floor(ent.z - 0.5);
+  const z1 = Math.floor(ent.z + 0.5);
+  for (let ix = x0; ix <= x1; ix++) {
+    for (let iz = z0; iz <= z1; iz++) {
+      const v = w.getBlockAndMeta(ix, wy, iz);
+      if ((v & 255) !== B.WATER) continue;
+      const lvl = (v >> 8) & 7;
+      const top = wy + (1 - lvl / 8) * 0.875;
+      if (top > waterSurface) waterSurface = top;
+    }
+  }
+  const onWater = waterSurface >= 0 && ent.y <= waterSurface + 0.15;
+
+  if (input) {
+    ent.yaw -= input.strafe * 0.06;
+    const accel = onWater
+      ? input.forward > 0
+        ? 0.045
+        : input.forward < 0
+          ? -0.022
+          : 0
+      : input.forward > 0
+        ? 0.008
+        : input.forward < 0
+          ? -0.005
+          : 0;
+    if (accel !== 0) {
+      ent.vx += -Math.sin(ent.yaw) * accel;
+      ent.vz += -Math.cos(ent.yaw) * accel;
+    }
+  }
+
+  if (onWater) {
+    const targetY = waterSurface - 0.1;
+    if (ent.y < targetY) ent.vy = Math.min(0.08, (targetY - ent.y) * 0.5);
+    else ent.vy = Math.max(-0.04, (targetY - ent.y) * 0.3);
+  } else {
+    ent.stepHeight = 0;
+    ent.vy -= 0.04;
+  }
+
+  const drag = onWater ? 0.9 : ent.onGround ? 0.5 : 0.91;
+  ent.vx *= drag;
+  ent.vz *= drag;
+
+  const spd = Math.hypot(ent.vx, ent.vz);
+  if (spd > MAX_BOAT_SPEED) {
+    const k = MAX_BOAT_SPEED / spd;
+    ent.vx *= k;
+    ent.vz *= k;
+  }
+
+  move(w, ent, ent.vx, ent.vy, ent.vz);
+  if (ent.collidedH) {
+    if (Math.abs(ent.vx) < 0.001) ent.vx = 0;
+    if (Math.abs(ent.vz) < 0.001) ent.vz = 0;
+  }
+  if (ent.onGround && ent.vy < 0) ent.vy = 0;
+  ent.updateLight(w);
+}
+
+/** Un pas de physique wagonnet partagé entre solo, serveur et prédiction client. */
+export function stepMinecartPhysics(
+  w: World,
+  ent: Entity,
+  riderInput: { forward: number; yaw: number } | null,
+  hasRider: boolean,
+  authoritativeRails = true,
+): void {
+  const bx = Math.floor(ent.x);
+  let by = Math.floor(ent.y + 0.15);
+  const bz = Math.floor(ent.z);
+  let v = w.getBlockAndMeta(bx, by, bz);
+  if (!isRail(v & 255)) {
+    const below = w.getBlockAndMeta(bx, by - 1, bz);
+    if (isRail(below & 255)) {
+      by--;
+      v = below;
+    }
+  }
+  const railId = v & 255;
+
+  if (isRail(railId)) {
+    ent.stepHeight = 1;
+    const meta = v >> 8;
+    const shape = railShape(railId, meta);
+    ent.fallDistance = 0;
+
+    if (authoritativeRails && railId === B.DETECTOR_RAIL) {
+      setDetectorRailActive(w, bx, by, bz, true);
+      w.scheduleTick(bx, by, bz, 20);
+    }
+
+    if (riderInput && riderInput.forward > 0) {
+      const lx = -Math.sin(riderInput.yaw);
+      const lz = -Math.cos(riderInput.yaw);
+      ent.vx += lx * 0.018;
+      ent.vz += lz * 0.018;
+    }
+
+    if (shape === 0) {
+      ent.x = bx + 0.5;
+      ent.vx = 0;
+      ent.y = by + 0.0625;
+    } else if (shape === 1) {
+      ent.z = bz + 0.5;
+      ent.vz = 0;
+      ent.y = by + 0.0625;
+    } else if (shape === 2) {
+      ent.z = bz + 0.5;
+      ent.vz = 0;
+      ent.vx -= 0.0078125;
+      ent.y = by + 0.0625 + clamp(ent.x - bx, 0, 1);
+    } else if (shape === 3) {
+      ent.z = bz + 0.5;
+      ent.vz = 0;
+      ent.vx += 0.0078125;
+      ent.y = by + 0.0625 + clamp(1 - (ent.x - bx), 0, 1);
+    } else if (shape === 4) {
+      ent.x = bx + 0.5;
+      ent.vx = 0;
+      ent.vz += 0.0078125;
+      ent.y = by + 0.0625 + clamp(1 - (ent.z - bz), 0, 1);
+    } else if (shape === 5) {
+      ent.x = bx + 0.5;
+      ent.vx = 0;
+      ent.vz -= 0.0078125;
+      ent.y = by + 0.0625 + clamp(ent.z - bz, 0, 1);
+    } else if (shape >= 6 && shape <= 9) {
+      ent.y = by + 0.0625;
+      const dirZ = shape === 6 || shape === 7 ? 1 : -1;
+      const dirX = shape === 6 || shape === 9 ? 1 : -1;
+      const lx = ent.x - (bx + 0.5);
+      const lz = ent.z - (bz + 0.5);
+      const spd = Math.hypot(ent.vx, ent.vz);
+      if (Math.abs(ent.vz) >= Math.abs(ent.vx)) {
+        ent.x = bx + 0.5;
+        if (ent.vz * dirZ < 0 && lz * dirZ <= 0) {
+          ent.vx = dirX * spd;
+          ent.vz = 0;
+          ent.z = bz + 0.5;
+        }
+      } else {
+        ent.z = bz + 0.5;
+        if (ent.vx * dirX < 0 && lx * dirX <= 0) {
+          ent.vz = dirZ * spd;
+          ent.vx = 0;
+          ent.x = bx + 0.5;
+        }
+      }
+    }
+
+    if (railId === B.POWERED_RAIL) {
+      if (meta & 8) {
+        const spd = Math.hypot(ent.vx, ent.vz);
+        if (spd > 0.01) {
+          ent.vx += (ent.vx / spd) * 0.06;
+          ent.vz += (ent.vz / spd) * 0.06;
+        } else if (shape === 0 || shape === 4 || shape === 5) {
+          const bN = w.isSolid(bx, by, bz - 1);
+          const bS = w.isSolid(bx, by, bz + 1);
+          if (bN && !bS) ent.vz = 0.06;
+          else if (bS && !bN) ent.vz = -0.06;
+        } else {
+          const bW = w.isSolid(bx - 1, by, bz);
+          const bE = w.isSolid(bx + 1, by, bz);
+          if (bW && !bE) ent.vx = 0.06;
+          else if (bE && !bW) ent.vx = -0.06;
+        }
+      } else {
+        ent.vx *= 0.5;
+        ent.vz *= 0.5;
+        if (Math.hypot(ent.vx, ent.vz) < 0.01) {
+          ent.vx = 0;
+          ent.vz = 0;
+        }
+      }
+    } else {
+      const drag = hasRider ? 0.997 : 0.96;
+      ent.vx *= drag;
+      ent.vz *= drag;
+    }
+
+    const spd = Math.hypot(ent.vx, ent.vz);
+    if (spd > MAX_CART_SPEED) {
+      const k = MAX_CART_SPEED / spd;
+      ent.vx *= k;
+      ent.vz *= k;
+    }
+
+    ent.onGround = true;
+    move(w, ent, ent.vx, 0, ent.vz);
+    ent.vy = 0;
+    const nbx = Math.floor(ent.x);
+    const nbz = Math.floor(ent.z);
+    for (const nby of [by, by + 1, by - 1]) {
+      const nv = w.getBlockAndMeta(nbx, nby, nbz);
+      if (!isRail(nv & 255)) continue;
+      const ns = railShape(nv & 255, nv >> 8);
+      if (ns === 2) ent.y = nby + 0.0625 + clamp(ent.x - nbx, 0, 1);
+      else if (ns === 3) ent.y = nby + 0.0625 + clamp(1 - (ent.x - nbx), 0, 1);
+      else if (ns === 4) ent.y = nby + 0.0625 + clamp(1 - (ent.z - nbz), 0, 1);
+      else if (ns === 5) ent.y = nby + 0.0625 + clamp(ent.z - nbz, 0, 1);
+      else ent.y = nby + 0.0625;
+      break;
+    }
+    if (Math.hypot(ent.vx, ent.vz) > 0.005) {
+      ent.yaw = Math.atan2(-ent.vx, -ent.vz);
+    }
+  } else {
+    ent.stepHeight = 0;
+    ent.vy -= 0.04;
+    const drag = ent.onGround ? 0.5 : 0.95;
+    ent.vx *= drag;
+    ent.vz *= drag;
+    move(w, ent, ent.vx, ent.vy, ent.vz);
+    if (ent.onGround && ent.vy < 0) ent.vy = 0;
+  }
+
+  ent.updateLight(w);
+}
 
 function isPlayerLike(e: Living): e is Living & PlayerLike {
   return e.kind === 'player';
@@ -141,74 +375,8 @@ export class Boat extends Entity {
       }
     }
 
-    const w = game.world;
-    // Surface d'eau dans le niveau courant du bateau : il flotte mais ne grimpe pas une marche d'eau
-    let waterSurface = -1;
-    const wy = Math.floor(this.y + 0.05);
-    const x0 = Math.floor(this.x - 0.5);
-    const x1 = Math.floor(this.x + 0.5);
-    const z0 = Math.floor(this.z - 0.5);
-    const z1 = Math.floor(this.z + 0.5);
-    for (let ix = x0; ix <= x1; ix++) {
-      for (let iz = z0; iz <= z1; iz++) {
-        const v = w.getBlockAndMeta(ix, wy, iz);
-        if ((v & 255) !== B.WATER) continue;
-        const lvl = (v >> 8) & 7;
-        const top = wy + (1 - lvl / 8) * 0.875;
-        if (top > waterSurface) waterSurface = top;
-      }
-    }
-    const onWater = waterSurface >= 0 && this.y <= waterSurface + 0.15;
-
-    if (this.rider && isPlayerLike(this.rider)) {
-      const inp = this.rider.input;
-      this.yaw -= inp.strafe * 0.06;
-      const accel = onWater
-        ? inp.forward > 0
-          ? 0.045
-          : inp.forward < 0
-            ? -0.022
-            : 0
-        : inp.forward > 0
-          ? 0.008
-          : inp.forward < 0
-            ? -0.005
-            : 0;
-      if (accel !== 0) {
-        this.vx += -Math.sin(this.yaw) * accel;
-        this.vz += -Math.cos(this.yaw) * accel;
-      }
-    }
-
-    if (onWater) {
-      const targetY = waterSurface - 0.1;
-      if (this.y < targetY) this.vy = Math.min(0.08, (targetY - this.y) * 0.5);
-      else this.vy = Math.max(-0.04, (targetY - this.y) * 0.3);
-    } else {
-      this.stepHeight = 0;
-      this.vy -= 0.04;
-    }
-
-    const drag = onWater ? 0.9 : this.onGround ? 0.5 : 0.91;
-    this.vx *= drag;
-    this.vz *= drag;
-
-    const spd = Math.hypot(this.vx, this.vz);
-    if (spd > MAX_BOAT_SPEED) {
-      const k = MAX_BOAT_SPEED / spd;
-      this.vx *= k;
-      this.vz *= k;
-    }
-
-    move(w, this, this.vx, this.vy, this.vz);
-    if (this.collidedH) {
-      // Choc contre un bloc : ne casse pas le bateau (comportement 1.12)
-      if (Math.abs(this.vx) < 0.001) this.vx = 0;
-      if (Math.abs(this.vz) < 0.001) this.vz = 0;
-    }
-    if (this.onGround && this.vy < 0) this.vy = 0;
-
-    this.updateLight(w);
+    const riderInput = this.rider && isPlayerLike(this.rider) ? this.rider.input : null;
+    stepBoatPhysics(game.world, this, riderInput);
     if (this.rider) syncPassenger(this, this.rider, BOAT_SEAT);
     if (this.y < -64) this.dead = true;
   }
@@ -335,168 +503,11 @@ export class Minecart extends Entity {
       }
     }
 
-    const w = game.world;
-    const bx = Math.floor(this.x);
-    let by = Math.floor(this.y + 0.15);
-    const bz = Math.floor(this.z);
-    let v = w.getBlockAndMeta(bx, by, bz);
-    if (!isRail(v & 255)) {
-      const below = w.getBlockAndMeta(bx, by - 1, bz);
-      if (isRail(below & 255)) {
-        by--;
-        v = below;
-      }
-    }
-    const railId = v & 255;
-
-    if (isRail(railId)) {
-      this.stepHeight = 1;
-      const meta = v >> 8;
-      const shape = railShape(railId, meta);
-      this.fallDistance = 0;
-
-      if (railId === B.DETECTOR_RAIL) {
-        setDetectorRailActive(w, bx, by, bz, true);
-        w.scheduleTick(bx, by, bz, 20);
-      }
-
-      // Commande du joueur assis (Z pousse doucement dans la direction du regard projetée sur le rail)
-      if (this.rider && isPlayerLike(this.rider) && this.rider.input.forward > 0) {
-        const lx = -Math.sin(this.rider.yaw);
-        const lz = -Math.cos(this.rider.yaw);
-        this.vx += lx * 0.018;
-        this.vz += lz * 0.018;
-      }
-
-      // Guidage selon la forme du rail (0..9)
-      if (shape === 0) {
-        // N-S
-        this.x = bx + 0.5;
-        this.vx = 0;
-        this.y = by + 0.0625;
-      } else if (shape === 1) {
-        // E-W
-        this.z = bz + 0.5;
-        this.vz = 0;
-        this.y = by + 0.0625;
-      } else if (shape === 2) {
-        // montée +X
-        this.z = bz + 0.5;
-        this.vz = 0;
-        this.vx -= 0.0078125;
-        this.y = by + 0.0625 + clamp(this.x - bx, 0, 1);
-      } else if (shape === 3) {
-        // montée -X
-        this.z = bz + 0.5;
-        this.vz = 0;
-        this.vx += 0.0078125;
-        this.y = by + 0.0625 + clamp(1 - (this.x - bx), 0, 1);
-      } else if (shape === 4) {
-        // montée -Z
-        this.x = bx + 0.5;
-        this.vx = 0;
-        this.vz += 0.0078125;
-        this.y = by + 0.0625 + clamp(1 - (this.z - bz), 0, 1);
-      } else if (shape === 5) {
-        // montée +Z
-        this.x = bx + 0.5;
-        this.vx = 0;
-        this.vz -= 0.0078125;
-        this.y = by + 0.0625 + clamp(this.z - bz, 0, 1);
-      } else if (shape >= 6 && shape <= 9) {
-        this.y = by + 0.0625;
-        const dirZ = shape === 6 || shape === 7 ? 1 : -1;
-        const dirX = shape === 6 || shape === 9 ? 1 : -1;
-        const lx = this.x - (bx + 0.5);
-        const lz = this.z - (bz + 0.5);
-        const spd = Math.hypot(this.vx, this.vz);
-        if (Math.abs(this.vz) >= Math.abs(this.vx)) {
-          this.x = bx + 0.5;
-          if (this.vz * dirZ < 0 && lz * dirZ <= 0) {
-            this.vx = dirX * spd;
-            this.vz = 0;
-            this.z = bz + 0.5;
-          }
-        } else {
-          this.z = bz + 0.5;
-          if (this.vx * dirX < 0 && lx * dirX <= 0) {
-            this.vz = dirZ * spd;
-            this.vx = 0;
-            this.x = bx + 0.5;
-          }
-        }
-      }
-
-      // Rail propulseur : allumé -> accélère ; éteint -> freine
-      if (railId === B.POWERED_RAIL) {
-        if (meta & 8) {
-          const spd = Math.hypot(this.vx, this.vz);
-          if (spd > 0.01) {
-            this.vx += (this.vx / spd) * 0.06;
-            this.vz += (this.vz / spd) * 0.06;
-          } else if (shape === 0 || shape === 4 || shape === 5) {
-            const bN = w.isSolid(bx, by, bz - 1);
-            const bS = w.isSolid(bx, by, bz + 1);
-            if (bN && !bS) this.vz = 0.06;
-            else if (bS && !bN) this.vz = -0.06;
-          } else {
-            const bW = w.isSolid(bx - 1, by, bz);
-            const bE = w.isSolid(bx + 1, by, bz);
-            if (bW && !bE) this.vx = 0.06;
-            else if (bE && !bW) this.vx = -0.06;
-          }
-        } else {
-          this.vx *= 0.5;
-          this.vz *= 0.5;
-          if (Math.hypot(this.vx, this.vz) < 0.01) {
-            this.vx = 0;
-            this.vz = 0;
-          }
-        }
-      } else {
-        const drag = this.rider ? 0.997 : 0.96;
-        this.vx *= drag;
-        this.vz *= drag;
-      }
-
-      const spd = Math.hypot(this.vx, this.vz);
-      if (spd > MAX_CART_SPEED) {
-        const k = MAX_CART_SPEED / spd;
-        this.vx *= k;
-        this.vz *= k;
-      }
-
-      this.onGround = true;
-      move(w, this, this.vx, 0, this.vz);
-      this.vy = 0;
-      // Ajuste y si on vient de passer sur une pente
-      const nbx = Math.floor(this.x);
-      const nbz = Math.floor(this.z);
-      for (const nby of [by, by + 1, by - 1]) {
-        const nv = w.getBlockAndMeta(nbx, nby, nbz);
-        if (!isRail(nv & 255)) continue;
-        const ns = railShape(nv & 255, nv >> 8);
-        if (ns === 2) this.y = nby + 0.0625 + clamp(this.x - nbx, 0, 1);
-        else if (ns === 3) this.y = nby + 0.0625 + clamp(1 - (this.x - nbx), 0, 1);
-        else if (ns === 4) this.y = nby + 0.0625 + clamp(1 - (this.z - nbz), 0, 1);
-        else if (ns === 5) this.y = nby + 0.0625 + clamp(this.z - nbz, 0, 1);
-        else this.y = nby + 0.0625;
-        break;
-      }
-      if (Math.hypot(this.vx, this.vz) > 0.005) {
-        this.yaw = Math.atan2(-this.vx, -this.vz);
-      }
-    } else {
-      this.stepHeight = 0;
-      this.vy -= 0.04;
-      const drag = this.onGround ? 0.5 : 0.95;
-      this.vx *= drag;
-      this.vz *= drag;
-      move(w, this, this.vx, this.vy, this.vz);
-      if (this.onGround && this.vy < 0) this.vy = 0;
-    }
-
-    this.updateLight(w);
+    const riderInput =
+      this.rider && isPlayerLike(this.rider)
+        ? { forward: this.rider.input.forward, yaw: this.rider.yaw }
+        : null;
+    stepMinecartPhysics(game.world, this, riderInput, this.rider !== null, true);
     if (this.rider) syncPassenger(this, this.rider, MINECART_SEAT);
     if (this.y < -64) this.dead = true;
   }

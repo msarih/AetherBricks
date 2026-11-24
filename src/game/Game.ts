@@ -105,6 +105,7 @@ import { MultiplayerClient as NetClient } from '../net/Client';
 import type { ContainerKind, SerializedSlot, TradeOfferInfo } from '../net/Protocol';
 import { RemoteEntity } from '../net/RemoteEntity';
 import { RemotePlayerEntity } from '../net/RemotePlayer';
+import { BOAT_SEAT, MINECART_SEAT, stepBoatPhysics, stepMinecartPhysics } from '../entity/Vehicles';
 import { loadLastPseudo, loadRecentServers, saveRecentServer } from '../net/RecentServers';
 import { exportWorld, replaceWorldFromArchive } from '../world/WorldFile';
 
@@ -318,6 +319,8 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
   private readonly storage: Storage | null;
   net: MultiplayerClient | null = null;
   private remoteId = 0;
+  private serverVehicleId = 0;
+  private pendingMountId = 0;
   private readonly remotePlayers = new Map<number, RemotePlayerEntity>();
   private readonly remoteEntities = new Map<number, RemoteEntity>();
   private remoteContainer: {
@@ -3140,9 +3143,21 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
         }
         for (const [id, re] of this.remoteEntities) {
           if (!seen.has(id)) {
+            if (this.player.vehicle === re) {
+              re.localDriven = false;
+              this.player.dismount(this);
+              this.serverVehicleId = 0;
+            }
             this.remoteEntities.delete(id);
             const idx = this.entities.indexOf(re);
             if (idx >= 0) this.entities.splice(idx, 1);
+          }
+        }
+        if (this.pendingMountId > 0) {
+          const re = this.remoteEntities.get(this.pendingMountId);
+          if (re) {
+            this.pendingMountId = 0;
+            this.mountRemoteVehicle(re);
           }
         }
       },
@@ -3223,6 +3238,25 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
           this.player.teleport(x, y, z);
           this.player.vx = this.player.vy = this.player.vz = 0;
           this.player.fallDistance = 0;
+        }
+      },
+      onMount: (vehicleId) => {
+        if (vehicleId <= 0) {
+          this.serverVehicleId = 0;
+          this.pendingMountId = 0;
+          if (this.player.vehicle instanceof RemoteEntity) {
+            this.player.vehicle.localDriven = false;
+          }
+          if (this.player.vehicle) this.player.dismount(this);
+          return;
+        }
+        this.serverVehicleId = vehicleId;
+        const re = this.remoteEntities.get(vehicleId);
+        if (re) {
+          this.pendingMountId = 0;
+          this.mountRemoteVehicle(re);
+        } else {
+          this.pendingMountId = vehicleId;
         }
       },
       onActionBar: (text) => {
@@ -3385,6 +3419,20 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
 
   netPlaceBlock(x: number, y: number, z: number, face: number, id: number, meta: number, slot: number): void {
     this.net?.sendPlaceBlock(x, y, z, face, id, meta, slot);
+  }
+
+  netPlaceVehicle(x: number, y: number, z: number, face: number, itemId: number, yaw: number): void {
+    this.net?.sendPlaceVehicle(x, y, z, face, itemId, yaw);
+  }
+
+  private mountRemoteVehicle(re: RemoteEntity): void {
+    if (this.player.vehicle === re) return;
+    if (this.player.vehicle instanceof RemoteEntity) this.player.vehicle.localDriven = false;
+    if (this.player.vehicle) this.player.leaveVehicle();
+    if (!this.player.mount(re)) return;
+    re.localDriven = true;
+    const seatY = re.kind === 'minecart' ? MINECART_SEAT : BOAT_SEAT;
+    this.player.setPosition(re.x, re.y + seatY, re.z);
   }
 
   netUseBlock(x: number, y: number, z: number): void {
@@ -3650,7 +3698,28 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     const cx = Math.floor(p.x) >> 4;
     const cz = Math.floor(p.z) >> 4;
     if (this.world.chunks.has(chunkKey(cx, cz))) {
+      if (p.vehicle instanceof RemoteEntity && !p.vehicle.dead) {
+        const v = p.vehicle;
+        v.px = v.x;
+        v.py = v.y;
+        v.pz = v.z;
+        v.pYaw = v.yaw;
+        if (v.kind === 'boat') {
+          stepBoatPhysics(this.world, v, p.input);
+          p.setPosition(v.x, v.y + BOAT_SEAT, v.z);
+        } else if (v.kind === 'minecart') {
+          stepMinecartPhysics(this.world, v, { forward: p.input.forward, yaw: p.yaw }, true, false);
+          p.setPosition(v.x, v.y + MINECART_SEAT, v.z);
+        }
+        p.vx = p.vy = p.vz = 0;
+        p.fallDistance = 0;
+      }
       p.tick(this);
+      if (this.serverVehicleId > 0 && !p.vehicle) {
+        this.serverVehicleId = 0;
+        for (const re of this.remoteEntities.values()) re.localDriven = false;
+        this.net?.sendDismount();
+      }
     }
     for (const rp of this.remotePlayers.values()) {
       rp.tick(this);
@@ -3674,7 +3743,8 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
         p.yaw !== this.lastSentYaw ||
         p.headPitch !== this.lastSentPitch ||
         p.sneaking !== this.lastSentSneak ||
-        p.swing !== this.lastSentSwing)
+        p.swing !== this.lastSentSwing ||
+        p.vehicle instanceof RemoteEntity)
     ) {
       this.lastSentX = p.x;
       this.lastSentY = p.y;
@@ -3683,7 +3753,8 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       this.lastSentPitch = p.headPitch;
       this.lastSentSneak = p.sneaking;
       this.lastSentSwing = p.swing;
-      this.net.sendMove(p.x, p.y, p.z, p.yaw, p.headPitch, p.sneaking, p.onGround, p.swing, p.sprinting);
+      const vYaw = p.vehicle instanceof RemoteEntity ? p.vehicle.yaw : undefined;
+      this.net.sendMove(p.x, p.y, p.z, p.yaw, p.headPitch, p.sneaking, p.onGround, p.swing, p.sprinting, vYaw);
     }
   }
 }
