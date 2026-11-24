@@ -431,6 +431,9 @@ async function getChatText(page) {
       await chatCmd(pageA, '/give JoueurA diamond_sword 1');
       await chatCmd(pageA, '/give JoueurB diamond 3');
       await chatCmd(pageA, '/tp JoueurA 30 4 29.0');
+      await chatCmd(pageA, '/setblock 29 4 32 stone');
+      await chatCmd(pageA, '/setblock 31 4 32 stone');
+      await chatCmd(pageA, '/setblock 30 4 33 stone');
       await chatCmd(pageA, '/tp JoueurB 30 4 32');
       await ticks(pageA, 4);
       await selectSlot(pageA, 0);
