@@ -444,7 +444,9 @@ async function getChatText(page) {
         await ticks(pageA, 4);
         await aimAtPlayer(pageA, 'JoueurB');
         await lclick(pageA);
-        await sleep(750);
+        await sleep(150);
+        if ((await getHealth(pageB)) <= 0) break;
+        await sleep(600);
       }
       // Objets tombés au sol vus par A (diamants de B à moins de 3 blocs de sa mort, ou ramassés par A)
       await ticks(pageA, 2);
