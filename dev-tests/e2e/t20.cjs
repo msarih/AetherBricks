@@ -443,20 +443,6 @@ async function getChatText(page) {
         await lclick(pageA);
         await sleep(750);
       }
-      await pageB.bringToFront();
-      await ticks(pageB, 4);
-      const deadB = await getHealth(pageB);
-      const deathPos = await getPos(pageB);
-      const deathBtn = await pageB.$('[data-mc="respawn"]');
-      await shot(pageB, 't20-mort-ecran');
-      check('B meurt et voit l’écran de mort', deadB <= 0 && deathBtn !== null, `health=${deadB}`);
-
-      const chatA = await getChatText(pageA);
-      const chatB = await getChatText(pageB);
-      await pageA.bringToFront();
-      await shot(pageA, 't20-mort-chat');
-      check('message de mort affiché chez A et chez B', /JoueurB.*tué.*JoueurA/.test(chatA) && /JoueurB.*tué.*JoueurA/.test(chatB), chatA.slice(-150));
-
       // Objets tombés au sol vus par A (diamants de B à moins de 3 blocs de sa mort, ou ramassés par A)
       await ticks(pageA, 2);
       const diamondId = 261;
@@ -469,7 +455,20 @@ async function getChatText(page) {
           (s) => s && s.id === did && s.count === 3,
         );
         return { ok: itemOk || pickedDiamond, items, pickedDiamond };
-      }, diamondId, deathPos.x, deathPos.y, deathPos.z);
+      }, diamondId, 30, 4, 32);
+      await pageB.bringToFront();
+      await ticks(pageB, 4);
+      const deadB = await getHealth(pageB);
+      const deathBtn = await pageB.$('[data-mc="respawn"]');
+      await shot(pageB, 't20-mort-ecran');
+      check('B meurt et voit l’écran de mort', deadB <= 0 && deathBtn !== null, `health=${deadB}`);
+
+      const chatA = await getChatText(pageA);
+      const chatB = await getChatText(pageB);
+      await pageA.bringToFront();
+      await shot(pageA, 't20-mort-chat');
+      check('message de mort affiché chez A et chez B', /JoueurB.*tué.*JoueurA/.test(chatA) && /JoueurB.*tué.*JoueurA/.test(chatB), chatA.slice(-150));
+
       await shot(pageA, 't20-butin-sol');
       check('keepInventory false : diamants tombent à moins de 3 blocs de la mort et A les voit', dropInfo.ok, JSON.stringify(dropInfo));
 
