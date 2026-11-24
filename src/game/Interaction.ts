@@ -663,6 +663,19 @@ export class Interaction {
       return true;
     }
 
+    if (g.isRemote) {
+      if (id === B.CHEST || id === B.FURNACE || id === B.FURNACE_LIT || id === B.BREWING_STAND || id === B.HOPPER || id === B.DISPENSER || id === B.DROPPER) {
+        g.netOpenContainer?.(x, y, z);
+        return true;
+      }
+      if (
+        id === B.OAK_DOOR || id === B.LEVER || id === B.STONE_BUTTON || id === B.TRAPDOOR || id === B.FENCE_GATE ||
+        id === B.REPEATER || id === B.COMPARATOR || id === B.DAYLIGHT_DETECTOR || id === B.NOTE_BLOCK || id === B.JUKEBOX || id === B.BED
+      ) {
+        g.netUseBlock?.(x, y, z);
+        return true;
+      }
+    }
     if (id === B.OAK_DOOR) {
       const ly = meta & META_DOOR_UPPER ? y - 1 : y;
       const lower = w.getBlockAndMeta(x, ly, z);
@@ -697,19 +710,6 @@ export class Interaction {
       w.setMeta(x, y, z, m);
       g.sound(open ? 'door_open' : 'door_close', x + 0.5, y + 0.5, z + 0.5, 0.8, 0.9 + g.rng() * 0.2);
       return true;
-    }
-    if (g.isRemote) {
-      if (id === B.CHEST || id === B.FURNACE || id === B.FURNACE_LIT || id === B.BREWING_STAND || id === B.HOPPER || id === B.DISPENSER || id === B.DROPPER) {
-        g.netOpenContainer?.(x, y, z);
-        return true;
-      }
-      if (
-        id === B.OAK_DOOR || id === B.LEVER || id === B.STONE_BUTTON || id === B.TRAPDOOR || id === B.FENCE_GATE ||
-        id === B.REPEATER || id === B.COMPARATOR || id === B.DAYLIGHT_DETECTOR || id === B.NOTE_BLOCK || id === B.BED
-      ) {
-        g.netUseBlock?.(x, y, z);
-        return true;
-      }
     }
     if (id === B.CHEST) {
       const chest = getChest(w, x, y, z);

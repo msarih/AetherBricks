@@ -75,6 +75,9 @@ import {
   CHUNK_AREA,
   CHUNK_HEIGHT,
   DAY_TICKS,
+  FACE_DX,
+  FACE_DY,
+  FACE_DZ,
   GEN_VERSION,
   TICKS_PER_SECOND,
   chunkKey,
@@ -1585,6 +1588,15 @@ function start(): void {
           sendJson(sender.ws, { type: 'chat', text: `Joueur introuvable : ${parts[1]}` });
           return;
         }
+        const clearRide = (p: ServerPlayer): void => {
+          if (p.entity.vehicle) {
+            const v = p.entity.vehicle;
+            if (v instanceof Boat || v instanceof Minecart) v.rider = null;
+            p.entity.leaveVehicle();
+            sendJson(p.ws, { type: 'mount', vehicleId: 0 });
+          }
+        };
+        clearRide(sender);
         sender.x = dest.x;
         sender.y = dest.y;
         sender.z = dest.z;
@@ -1635,6 +1647,12 @@ function start(): void {
         if (!Number.isFinite(tx) || !Number.isFinite(ty) || !Number.isFinite(tz) || ty < -10 || ty > 256) {
           sendJson(sender.ws, { type: 'chat', text: 'Coordonnées invalides.' });
           return;
+        }
+        if (target.entity.vehicle) {
+          const v = target.entity.vehicle;
+          if (v instanceof Boat || v instanceof Minecart) v.rider = null;
+          target.entity.leaveVehicle();
+          sendJson(target.ws, { type: 'mount', vehicleId: 0 });
         }
         target.x = tx;
         target.y = ty;
@@ -1829,6 +1847,115 @@ function start(): void {
       spawn = { x: bx + 0.5, y: by, z: bz + 0.5 };
       saveWorldMeta();
       sendJson(sender.ws, { type: 'chat', text: `Point d'apparition fixé en ${bx}, ${by}, ${bz}` });
+      return;
+    }
+
+    const resolveBlockArg = (nameRaw: string | undefined, metaRaw?: string): { id: number; meta: number } | null => {
+      if (!nameRaw) return null;
+      const clean = nameRaw.toLowerCase().replace(/^minecraft:/, '');
+      let id = -1;
+      for (const [k, v] of Object.entries(B)) {
+        if (typeof v === 'number' && k.toLowerCase() === clean) {
+          id = v;
+          break;
+        }
+      }
+      if (id < 0) {
+        for (let i = 0; i < BLOCKS.length; i++) {
+          const b = BLOCKS[i];
+          if (b && b.name.toLowerCase() === clean) {
+            id = i;
+            break;
+          }
+        }
+      }
+      if (id < 0) return null;
+      const m = metaRaw !== undefined ? Number(metaRaw) : 0;
+      if (!Number.isInteger(m) || m < 0 || m > 255) return null;
+      return { id, meta: m };
+    };
+    const parseBlkCoord = (raw: string | undefined, base: number): number => {
+      if (!raw || raw === '~') return base;
+      if (raw.startsWith('~')) {
+        const d = Number(raw.slice(1));
+        return Number.isFinite(d) ? Math.floor(base + d) : NaN;
+      }
+      const v = Number(raw);
+      return Number.isFinite(v) ? Math.floor(v) : NaN;
+    };
+
+    if (cmd === 'setblock') {
+      if (parts.length < 5) {
+        sendJson(sender.ws, { type: 'chat', text: 'Usage : /setblock <x> <y> <z> <bloc> [méta]' });
+        return;
+      }
+      const sWorld = getDim(sender.dimension).world;
+      const x = parseBlkCoord(parts[1], Math.floor(sender.x));
+      const y = parseBlkCoord(parts[2], Math.floor(sender.y));
+      const z = parseBlkCoord(parts[3], Math.floor(sender.z));
+      if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z) || y < 0 || y >= CHUNK_HEIGHT) return;
+      if (!sWorld.isLoaded(x, z)) {
+        sendJson(sender.ws, { type: 'chat', text: 'Chunk non chargé à cette position' });
+        return;
+      }
+      const spec = resolveBlockArg(parts[4], parts[5]);
+      if (!spec) {
+        sendJson(sender.ws, { type: 'chat', text: `Bloc inconnu : ${parts[4]}` });
+        return;
+      }
+      if (spec.id === B.IRON_DOOR || spec.id === B.OAK_DOOR) {
+        if ((spec.meta & 8) === 0 && y + 1 < CHUNK_HEIGHT) {
+          sWorld.setBlock(x, y, z, spec.id, spec.meta, false);
+          sWorld.setBlock(x, y + 1, z, spec.id, spec.meta | 8, true);
+          broadcastBlockUpdate(x, y, z, spec.id, spec.meta, sender.dimension);
+          return;
+        }
+      }
+      sWorld.setBlock(x, y, z, spec.id, spec.meta, true);
+      sendJson(sender.ws, { type: 'chat', text: `Bloc posé en ${x} ${y} ${z}` });
+      return;
+    }
+
+    if (cmd === 'fill') {
+      if (parts.length < 8) {
+        sendJson(sender.ws, { type: 'chat', text: 'Usage : /fill <x1> <y1> <z1> <x2> <y2> <z2> <bloc> [mode]' });
+        return;
+      }
+      const sWorld = getDim(sender.dimension).world;
+      const bx = Math.floor(sender.x);
+      const by = Math.floor(sender.y);
+      const bz = Math.floor(sender.z);
+      const x1 = parseBlkCoord(parts[1], bx);
+      const y1 = parseBlkCoord(parts[2], by);
+      const z1 = parseBlkCoord(parts[3], bz);
+      const x2 = parseBlkCoord(parts[4], bx);
+      const y2 = parseBlkCoord(parts[5], by);
+      const z2 = parseBlkCoord(parts[6], bz);
+      if (![x1, y1, z1, x2, y2, z2].every(Number.isFinite)) return;
+      if (y1 < 0 || y1 >= CHUNK_HEIGHT || y2 < 0 || y2 >= CHUNK_HEIGHT) return;
+      const minX = Math.min(x1, x2), maxX = Math.max(x1, x2);
+      const minY = Math.min(y1, y2), maxY = Math.max(y1, y2);
+      const minZ = Math.min(z1, z2), maxZ = Math.max(z1, z2);
+      if ((maxX - minX + 1) * (maxY - minY + 1) * (maxZ - minZ + 1) > 32768) return;
+      const spec = resolveBlockArg(parts[7]);
+      if (!spec) {
+        sendJson(sender.ws, { type: 'chat', text: `Bloc inconnu : ${parts[7]}` });
+        return;
+      }
+      const mode = (parts[8] ?? 'replace').toLowerCase();
+      for (let fx = minX; fx <= maxX; fx++) {
+        for (let fz = minZ; fz <= maxZ; fz++) {
+          if (!sWorld.isLoaded(fx, fz)) continue;
+          for (let fy = minY; fy <= maxY; fy++) {
+            const shell = fx === minX || fx === maxX || fy === minY || fy === maxY || fz === minZ || fz === maxZ;
+            if (mode === 'outline' && !shell) continue;
+            if (mode === 'keep' && sWorld.getBlock(fx, fy, fz) !== B.AIR) continue;
+            if (mode === 'hollow' && !shell) sWorld.setBlock(fx, fy, fz, B.AIR, 0, true);
+            else sWorld.setBlock(fx, fy, fz, spec.id, spec.meta, true);
+          }
+        }
+      }
+      sendJson(sender.ws, { type: 'chat', text: 'Zone remplie' });
       return;
     }
 
@@ -2628,9 +2755,9 @@ function start(): void {
           if (bid === B.WATER) {
             boat.setPosition(x + 0.5, y + 0.9, z + 0.5);
           } else {
-            const dx = face === 5 ? 1 : face === 4 ? -1 : 0;
-            const dy = face === 1 ? 1 : face === 0 ? -1 : 0;
-            const dz = face === 3 ? 1 : face === 2 ? -1 : 0;
+            const dx = FACE_DX[face] ?? 0;
+            const dy = FACE_DY[face] ?? 0;
+            const dz = FACE_DZ[face] ?? 0;
             const ax = x + dx;
             const ay = y + dy;
             const az = z + dz;
@@ -2838,9 +2965,9 @@ function start(): void {
             pWorld.setBlock(x, y, z, B.AIR, 0);
             pWorld.host.primeTnt(x, y, z, 80);
           } else {
-            const fdx = face === 5 ? 1 : face === 4 ? -1 : 0;
-            const fdy = face === 1 ? 1 : face === 0 ? -1 : 0;
-            const fdz = face === 3 ? 1 : face === 2 ? -1 : 0;
+            const fdx = FACE_DX[face] ?? 0;
+            const fdy = FACE_DY[face] ?? 0;
+            const fdz = FACE_DZ[face] ?? 0;
             const tx = x + fdx;
             const ty = y + fdy;
             const tz = z + fdz;
@@ -3045,7 +3172,7 @@ function start(): void {
         const vx = -Math.sin(player.yaw) * cp * 0.3;
         const vy = Math.sin(player.pitch) * 0.3 + 0.1;
         const vz = -Math.cos(player.yaw) * cp * 0.3;
-        serverDropStack(player.x, player.y + 1.3, player.z, dropped, 40, vx, vy, vz);
+        serverDropStack(player.x, player.y + 1.3, player.z, dropped, 40, vx, vy, vz, player.dimension);
         sendInventory(player);
         return;
       }
