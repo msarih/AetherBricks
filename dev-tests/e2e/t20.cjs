@@ -479,6 +479,7 @@ async function getChatText(page) {
 
       // B réapparaît au point d'apparition
       await pageB.bringToFront();
+      await pageB.waitForSelector('[data-mc="respawn"]:not([disabled])', { timeout: 5000 });
       await pageB.click('[data-mc="respawn"]');
       await ticks(pageB, 10);
       const respH = await getHealth(pageB);
