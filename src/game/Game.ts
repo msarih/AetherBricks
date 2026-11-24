@@ -322,6 +322,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
   private serverVehicleId = 0;
   private pendingMountId = 0;
   private remoteDragonProgress: number | null = null;
+  private closingToFriends = false;
   private readonly remotePlayers = new Map<number, RemotePlayerEntity>();
   private readonly remoteEntities = new Map<number, RemoteEntity>();
   private remoteContainer: {
@@ -3427,11 +3428,11 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
         this.particles(kind, x, y, z, count, spread);
       },
       onWorldClosed: (reason) => {
-        if (this.disposed) return;
+        if (this.disposed || this.closingToFriends) return;
         this.onDisconnected?.(reason);
       },
       onDisconnect: (reason) => {
-        if (this.disposed) return;
+        if (this.disposed || this.closingToFriends) return;
         this.onDisconnected?.(reason);
       },
     });
@@ -3642,6 +3643,8 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
 
   async closeToFriends(): Promise<void> {
     if (!this.isHost || !this.hostServerUrl || !this.hostToken) return;
+    this.closingToFriends = true;
+    try {
     const serverUrl = this.hostServerUrl;
     const token = this.hostToken;
 
@@ -3698,6 +3701,9 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       this.chunks.setRemoteMode(false);
     }
     this.ui.addMessage('Partie fermée aux amis. Le monde solo est à jour.');
+    } finally {
+      this.closingToFriends = false;
+    }
   }
 
   private applyRemoteInventory(
