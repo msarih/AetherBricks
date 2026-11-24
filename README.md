@@ -131,7 +131,7 @@ Fabriquez un nouvel APK avec `npm run android:apk` (en utilisant la même clé `
 - Les mondes sont stockés dans le stockage interne de l'application (IndexedDB) : utilisez l'export `.aetherworld` si vous voulez une sauvegarde externe ou transférer un monde vers un autre appareil.
 - Les mêmes limites de jouabilité que la version navigateur (pas de vibrations manette, limites du multijoueur jalon 1).
 
-## 🌐 Multijoueur (Wi-Fi local et Tailscale — Jalon 5)
+## 🌐 Multijoueur (Wi-Fi local et Tailscale — Jalon 6)
 
 Un joueur lance un serveur Node.js autoritaire sur son ordinateur ; ses amis le rejoignent depuis un navigateur (ordinateur ou téléphone) ou depuis l'application Android.
 
@@ -197,11 +197,14 @@ Au démarrage, le serveur affiche les adresses à partager :
 - **Mort, réapparition et nuit au lit** : écran de mort, message de mort diffusé dans le chat, butin au sol et XP selon `/gamerule keepInventory true|false`, réapparition au point d'apparition ou au lit ; dormir au lit définit le point de réapparition et passe la nuit quand tous les joueurs connectés sont couchés.
 - **Inventaire, temps et météo** : inventaire (y compris armure et seconde main) géré par le serveur ; temps et météo synchronisés.
 - **Droits de l'hôte** : seul l'hôte (celui qui a ouvert le monde ou connaît le mot de passe) peut utiliser `/gamemode`, `/tp`, `/time`, `/give`, `/summon`, `/kill`, `/difficulty`, `/weather`, `/spawnpoint`, `/pvp`, `/gamerule` et fermer le monde.
-- **Sauvegarde serveur** : chunks modifiés, créatures, objets au sol, coffres/fourneaux et un fichier par joueur (`server-data/worlds/default/players/`, incluant vie, faim, effets, lit et armure) enregistrés toutes les 30 secondes et à l'arrêt du serveur ; à la fermeture aux amis, le monde solo de l'hôte récupère blocs, créatures et conteneurs.
+- **Sauvegarde serveur** : chunks modifiés des trois dimensions (`overworld`, `nether`, `end`), créatures, véhicules, objets au sol, coffres/fourneaux et un fichier par joueur (`server-data/worlds/default/players/`, incluant vie, faim, effets, lit, dimension et armure) enregistrés toutes les 30 secondes et à l'arrêt du serveur ; à la fermeture aux amis, le monde solo de l'hôte récupère les trois dimensions, les créatures et les conteneurs.
+- **Tout le solo est maintenant partagé** : redstone (fils, torches, répéteurs, comparateurs, leviers, boutons, plaques de pression, capteurs de lumière, portes, trappes, lampes, distributeurs, entonnoirs, pistons simples et collants déplaçant blocs/entités/joueurs, jukebox et blocs musicaux, TNT), bateaux et wagonnets (prédiction locale fluide, siège unique), portails du Nether (échelle 1:8, liaison de portails) et de l'End avec combat du dragon partagé.
 
-### Limites restantes (jalon 6)
+### Limites restantes
 
-- **Redstone, véhicules et dimensions (Nether, End)** restent pour le jalon 6 ; un seul monde actif par serveur.
+- **Un seul monde actif par serveur** : le serveur dédié héberge une seule partie à la fois.
+- **Variantes de wagonnets/rails absentes du solo** : pas de wagonnet à coffre, à entonnoir, à TNT ni de rail activateur (le multijoueur suit exactement le périmètre du solo).
+- **Audio/vidéo et packs locaux** : le chat vocal/vidéo WebRTC dépend du réseau pair-à-pair entre navigateurs, et les packs de textures restent locaux à chaque client.
 
 ## 🎮 Contrôles
 
