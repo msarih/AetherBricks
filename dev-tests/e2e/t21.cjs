@@ -339,8 +339,12 @@ async function getPos(page) {
       if (cartPos) {
         await chatCmd(pageA, `/tp JoueurB ${cartPos.x} 4 ${cartPos.z + 1.5}`);
         await ticks(pageB, 3);
-        await aimAt(pageB, cartPos.x, cartPos.y + 0.35, cartPos.z);
+        await aimAt(pageB, cartPos.x, cartPos.y + 0.15, cartPos.z);
         await rclick(pageB);
+        await ev(pageB, () => {
+          const c = window.__game.entities.find((e) => e.kind === 'minecart');
+          if (c) window.__game.netInteractEntity(c.remoteId);
+        });
         await ticks(pageB, 4);
       }
       const bRiding = await ev(pageB, () => window.__game.player.riding);
