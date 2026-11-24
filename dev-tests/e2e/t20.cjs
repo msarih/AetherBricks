@@ -446,6 +446,7 @@ async function getChatText(page) {
       await pageB.bringToFront();
       await ticks(pageB, 4);
       const deadB = await getHealth(pageB);
+      const deathPos = await getPos(pageB);
       const deathBtn = await pageB.$('[data-mc="respawn"]');
       await shot(pageB, 't20-mort-ecran');
       check('B meurt et voit l’écran de mort', deadB <= 0 && deathBtn !== null, `health=${deadB}`);
@@ -468,7 +469,7 @@ async function getChatText(page) {
           (s) => s && s.id === did && s.count === 3,
         );
         return { ok: itemOk || pickedDiamond, items, pickedDiamond };
-      }, diamondId, 30, 4, 32);
+      }, diamondId, deathPos.x, deathPos.y, deathPos.z);
       await shot(pageA, 't20-butin-sol');
       check('keepInventory false : diamants tombent à moins de 3 blocs de la mort et A les voit', dropInfo.ok, JSON.stringify(dropInfo));
 
