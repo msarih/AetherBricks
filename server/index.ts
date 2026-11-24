@@ -33,9 +33,10 @@ import { EFFECT_TYPES, Entity, Living, type DamageCause, type EffectType, type G
 import { IronGolem } from '../src/entity/Creatures';
 import { HOSTILE_KINDS, LEASH_BREAK, Mob, Monster, NPC_KINDS, PASSIVE_KINDS, Villager, createMob, isLeashPost } from '../src/entity/Mobs';
 import { isProfession } from '../src/entity/Trades';
-import { Arrow, ItemEntity, ThrownPotion, Tnt } from '../src/entity/Objects';
+import { Arrow, ItemEntity, Thrown, ThrownPearl, ThrownPotion, Tnt } from '../src/entity/Objects';
 import { createEntity } from '../src/entity/Registry';
 import { Spawner } from '../src/entity/Spawner';
+import type { SfxName } from '../src/audio/Sfx';
 import { explode as runExplosion } from '../src/game/Explosion';
 import { findBedStandSpot, formatDeathMessage } from '../src/game/SurvivalHelpers';
 import {
@@ -45,6 +46,8 @@ import {
   getDispenser,
   getFurnace,
   getHopper,
+  getJukebox,
+  insertOneIntoContainer,
   tickBlockEntities,
   type BrewingStandEntity,
   type ChestEntity,
@@ -62,7 +65,8 @@ import {
   type Menu,
 } from '../src/game/Inventory';
 import { attackDamage } from '../src/player/Player';
-import { BLOCKS, BLOCK_REPLACEABLE, BLOCK_SOLID, FACING_DX, FACING_DZ, isFluid } from '../src/world/Blocks';
+import { applyBonemeal, fireCanStay } from '../src/world/Behavior';
+import { BLOCKS, BLOCK_REPLACEABLE, BLOCK_SOLID, FACING_DX, FACING_DZ, PISTON_DX, PISTON_DY, PISTON_DZ, isFluid } from '../src/world/Blocks';
 import { Chunk } from '../src/world/Chunk';
 import {
   CHUNK_AREA,
@@ -78,13 +82,13 @@ import {
 import { blockDrops } from '../src/world/Drops';
 import { enchantLevel } from '../src/world/Enchants';
 import { type GameRules, GAME_RULE_NAMES } from '../src/world/GameRules';
-import { B, I } from '../src/world/Ids';
-import { ITEMS, getItem, isTool, itemLabel, maxStack } from '../src/world/Items';
+import { B, I, musicDiscInfo } from '../src/world/Ids';
+import { ITEMS, getItem, isTool, itemLabel, maxDamage, maxStack } from '../src/world/Items';
 import { addToSlots, cloneStackWithCount, loadSlots, makeStack, saveSlots, type ItemStack, type Slot } from '../src/world/ItemStack';
 import { POTION_GIVE_HELP, applyPotionVariant, potionLabel, resolvePotionKind } from '../src/world/Potions';
 import { computeDaylightPower, isBlockPowered, triggerNoteBlock, updateRedstoneAround, updateRepeaterState } from '../src/world/Redstone';
 import type { SavedChunk, WorldInfo } from '../src/world/Storage';
-import { World, type BlockEntity } from '../src/world/World';
+import { World, posKey, posKeyX, posKeyY, posKeyZ, type BlockEntity } from '../src/world/World';
 import { buildWorldArchive, parseWorldArchive } from '../src/world/WorldFile';
 import type { GenSpawn } from '../src/world/gen/GenCanvas';
 import { hash2, hashString, mulberry32 } from '../src/world/gen/Noise';
@@ -505,6 +509,7 @@ function start(): void {
   const authLimits = new Map<string, RateLimitEntry>();
   const serverEntities: Entity[] = [];
   const pendingEntities: Entity[] = [];
+  const pressedPlates = new Map<number, number>();
   let entityTicking = false;
   let spawner = new Spawner();
   const fallbackPlayerEntity = new ServerPlayerEntity('');
@@ -682,6 +687,102 @@ function start(): void {
     spawnServerEntity(v);
   }
 
+  function serverDispenseAt(w: World, x: number, y: number, z: number, dropper: boolean): void {
+    const v = w.getBlockAndMeta(x, y, z);
+    const id = v & 255;
+    if ((dropper && id !== B.DROPPER) || (!dropper && id !== B.DISPENSER)) return;
+    const f = Math.min(5, (v >> 8) & 7);
+    const be = getDispenser(w, x, y, z, dropper ? 'dropper' : 'dispenser');
+    const nonEmpty: number[] = [];
+    for (let i = 0; i < be.items.length; i++) {
+      const s = be.items[i];
+      if (s && s.count > 0) nonEmpty.push(i);
+    }
+    if (nonEmpty.length === 0) {
+      broadcastNear(x + 0.5, y + 0.5, z + 0.5, 32, { type: 'sound', name: 'click', x: x + 0.5, y: y + 0.5, z: z + 0.5, volume: 0.5, pitch: 0.7 });
+      return;
+    }
+    const idx = nonEmpty[Math.floor(Math.random() * nonEmpty.length)];
+    const stack = be.items[idx]!;
+    const dx = PISTON_DX[f];
+    const dy = PISTON_DY[f];
+    const dz = PISTON_DZ[f];
+    const tx = x + dx;
+    const ty = y + dy;
+    const tz = z + dz;
+    const ox = x + 0.5 + dx * 0.7;
+    const oy = y + 0.35 + dy * 0.7;
+    const oz = z + 0.5 + dz * 0.7;
+
+    if (dropper) {
+      if (insertOneIntoContainer(w, tx, ty, tz, stack, f)) {
+        if (stack.count <= 0) be.items[idx] = null;
+      } else {
+        serverDropStack(ox, oy, oz, cloneStackWithCount(stack, 1), 10, dx * 0.14 + (Math.random() - 0.5) * 0.03, 0.14 + dy * 0.1, dz * 0.14 + (Math.random() - 0.5) * 0.03);
+        if (--stack.count <= 0) be.items[idx] = null;
+      }
+    } else {
+      const py = y + 0.5 + dy * 0.7;
+      if (stack.id === I.ARROW) {
+        const a = new Arrow();
+        a.fromPlayer = true;
+        a.shoot(ox, py, oz, dx, dy + 0.05, dz, 1.1, 6, () => Math.random());
+        spawnServerEntity(a);
+        broadcastNear(ox, py, oz, 32, { type: 'sound', name: 'bow', x: ox, y: py, z: oz, volume: 0.7, pitch: 0.9 + Math.random() * 0.2 });
+        if (--stack.count <= 0) be.items[idx] = null;
+      } else if (stack.id === I.EGG || stack.id === I.SNOWBALL || stack.id === I.ENDER_PEARL || stack.id === I.SPLASH_POTION) {
+        const proj =
+          stack.id === I.ENDER_PEARL
+            ? new ThrownPearl()
+            : stack.id === I.SPLASH_POTION
+              ? new ThrownPotion(stack.potion ?? 'healing')
+              : new Thrown(stack.id);
+        proj.shoot(ox, py, oz, dx, dy + 0.05, dz, 1.1);
+        spawnServerEntity(proj);
+        broadcastNear(ox, py, oz, 32, { type: 'sound', name: 'bow', x: ox, y: py, z: oz, volume: 0.6, pitch: 1.2 });
+        if (--stack.count <= 0) be.items[idx] = null;
+      } else if (stack.id === B.TNT) {
+        if (w.getBlock(tx, ty, tz) === B.AIR || BLOCK_REPLACEABLE[w.getBlock(tx, ty, tz)] === 1) {
+          w.setBlock(tx, ty, tz, B.AIR, 0);
+          w.host.primeTnt(tx, ty, tz, 80);
+          if (--stack.count <= 0) be.items[idx] = null;
+        }
+      } else if (stack.id === I.WATER_BUCKET || stack.id === I.LAVA_BUCKET) {
+        const tid = w.getBlock(tx, ty, tz);
+        if (tid === B.AIR || BLOCK_REPLACEABLE[tid] === 1) {
+          w.setBlock(tx, ty, tz, stack.id === I.WATER_BUCKET ? B.WATER : B.LAVA, 0);
+          be.items[idx] = makeStack(I.BUCKET, 1);
+          broadcastNear(tx + 0.5, ty + 0.5, tz + 0.5, 32, { type: 'sound', name: 'bucket_empty', x: tx + 0.5, y: ty + 0.5, z: tz + 0.5, volume: 0.7 });
+        }
+      } else if (stack.id === I.BUCKET) {
+        const tv = w.getBlockAndMeta(tx, ty, tz);
+        const tid = tv & 255;
+        if ((tid === B.WATER || tid === B.LAVA) && (tv >> 8) === 0 && stack.count === 1) {
+          w.setBlock(tx, ty, tz, B.AIR, 0);
+          be.items[idx] = makeStack(tid === B.WATER ? I.WATER_BUCKET : I.LAVA_BUCKET, 1);
+          broadcastNear(tx + 0.5, ty + 0.5, tz + 0.5, 32, { type: 'sound', name: 'bucket_fill', x: tx + 0.5, y: ty + 0.5, z: tz + 0.5, volume: 0.7 });
+        }
+      } else if (stack.id === I.FLINT_AND_STEEL) {
+        if (w.getBlock(tx, ty, tz) === B.AIR && fireCanStay(w, tx, ty, tz)) {
+          w.setBlock(tx, ty, tz, B.FIRE, 0);
+          stack.damage++;
+          const lim = maxDamage(stack.id);
+          if (lim > 0 && stack.damage >= lim) be.items[idx] = null;
+          broadcastNear(tx + 0.5, ty + 0.5, tz + 0.5, 32, { type: 'sound', name: 'ignite', x: tx + 0.5, y: ty + 0.5, z: tz + 0.5, volume: 0.7 });
+        }
+      } else if (stack.id === I.BONE_MEAL) {
+        if (applyBonemeal(w, tx, ty, tz) && --stack.count <= 0) be.items[idx] = null;
+      } else {
+        serverDropStack(ox, oy, oz, cloneStackWithCount(stack, 1), 10, dx * 0.25 + (Math.random() - 0.5) * 0.04, 0.18 + dy * 0.2, dz * 0.25 + (Math.random() - 0.5) * 0.04);
+        if (--stack.count <= 0) be.items[idx] = null;
+      }
+    }
+    broadcastNear(x + 0.5, y + 0.5, z + 0.5, 32, { type: 'sound', name: 'click', x: x + 0.5, y: y + 0.5, z: z + 0.5, volume: 0.55, pitch: 1.0 });
+    broadcastNear(ox, y + 0.5 + dy * 0.5, oz, 32, { type: 'particles', kind: 'smoke', x: ox, y: y + 0.5 + dy * 0.5, z: oz, count: 4, spread: 0.1 });
+    w.markBlockEntityDirty(be);
+    updateRedstoneAround(w, x, y, z);
+  }
+
   function attachWorldHost(w: World): void {
     w.host = {
       dropItem: (x, y, z, id, count) => {
@@ -700,10 +801,25 @@ function start(): void {
       primeTnt: (x, y, z, fuse) => {
         const t = new Tnt(fuse);
         t.setPosition(x + 0.5, y, z + 0.5);
+        const a = Math.random() * Math.PI * 2;
+        t.vx = -Math.sin(a) * 0.02;
+        t.vy = 0.2;
+        t.vz = -Math.cos(a) * 0.02;
         spawnServerEntity(t);
+        broadcastNear(x + 0.5, y + 0.5, z + 0.5, 32, { type: 'sound', name: 'fuse', x: x + 0.5, y: y + 0.5, z: z + 0.5, volume: 1, pitch: 1 });
       },
-      effect: () => {},
+      effect: (kind, x, y, z) => {
+        if (kind === 'fizz') {
+          broadcastNear(x + 0.5, y + 0.5, z + 0.5, 32, { type: 'sound', name: 'fizz', x: x + 0.5, y: y + 0.5, z: z + 0.5, volume: 0.5, pitch: 2.6 });
+          broadcastNear(x + 0.5, y + 1, z + 0.5, 32, { type: 'particles', kind: 'large_smoke', x: x + 0.5, y: y + 1, z: z + 0.5, count: 8, spread: 0.4 });
+        } else if (kind === 'grow') {
+          broadcastNear(x + 0.5, y + 0.5, z + 0.5, 32, { type: 'particles', kind: 'bonemeal', x: x + 0.5, y: y + 0.5, z: z + 0.5, count: 12, spread: 0.5 });
+        }
+      },
       blockEntityRemoved: (be: BlockEntity) => {
+        if (be.type === 'jukebox') {
+          broadcastNear(be.x + 0.5, be.y + 0.5, be.z + 0.5, 64, { type: 'jukebox', x: be.x, y: be.y, z: be.z, disc: 0 });
+        }
         for (const s of blockEntityItems(be)) {
           serverDropStack(be.x + 0.5, be.y + 0.3, be.z + 0.5, s);
         }
@@ -716,6 +832,64 @@ function start(): void {
           }
         }
       },
+      pushEntities: (x0, y0, z0, x1, y1, z1, dx, dy, dz) => {
+        for (const e of serverEntities) {
+          if ((e instanceof Living && e.alive) || e instanceof ItemEntity) {
+            if (!e.dead && e.intersects(x0, y0, z0, x1, y1, z1)) {
+              e.setPosition(e.x + dx, e.y + dy, e.z + dz);
+            }
+          }
+        }
+        for (const p of players.values()) {
+          if (p.entity.alive && p.entity.intersects(x0, y0, z0, x1, y1, z1)) {
+            p.entity.setPosition(p.entity.x + dx, p.entity.y + dy, p.entity.z + dz);
+            p.x = p.entity.x;
+            p.y = p.entity.y;
+            p.z = p.entity.z;
+            p.lastMoveMs = Date.now();
+            sendJson(p.ws, { type: 'teleport', x: p.x, y: p.y, z: p.z });
+          }
+        }
+      },
+      hasEntityInBox: (x0, y0, z0, x1, y1, z1, kind) => {
+        for (const e of createServerGameApi().entitiesInBox(x0, y0, z0, x1, y1, z1, null)) {
+          if (!kind || e.kind === kind) return true;
+        }
+        return false;
+      },
+      playNote: (x, y, z, instrument, _note, pitch) => {
+        broadcastNear(x + 0.5, y + 0.5, z + 0.5, 48, {
+          type: 'sound',
+          name: `note_${instrument}` as SfxName,
+          x: x + 0.5,
+          y: y + 0.5,
+          z: z + 0.5,
+          volume: 0.9,
+          pitch,
+        });
+        broadcastNear(x + 0.5, y + 1.2, z + 0.5, 48, {
+          type: 'particles',
+          kind: 'note',
+          x: x + 0.5,
+          y: y + 1.2,
+          z: z + 0.5,
+          count: 1,
+          spread: 0.15,
+        });
+      },
+      pullItemForHopper: (x, y, z, accept) => {
+        for (const e of serverEntities) {
+          if (e instanceof ItemEntity && !e.dead && e.stack.count > 0 && e.intersects(x, y + 0.85, z, x + 1, y + 1.6, z + 1)) {
+            if (accept(e.stack)) {
+              e.itemCount = e.stack.count;
+              if (e.stack.count <= 0) e.dead = true;
+              return true;
+            }
+          }
+        }
+        return false;
+      },
+      dispense: (x, y, z, dropper) => serverDispenseAt(w, x, y, z, dropper),
       blockChanged: (x, y, z, id, meta) => {
         broadcastBlockUpdate(x, y, z, id, meta);
       },
@@ -2429,6 +2603,28 @@ function start(): void {
           const nextNote = ((meta & 31) + 1) % 25;
           world.setMetaSilent(x, y, z, nextNote | (meta & 32));
           triggerNoteBlock(world, x, y, z, nextNote);
+        } else if (id === B.JUKEBOX) {
+          const jb = getJukebox(world, x, y, z);
+          if (jb.disc > 0) {
+            serverDropStack(x + 0.5, y + 1.0, z + 0.5, makeStack(jb.disc, 1));
+            jb.disc = 0;
+            world.markBlockEntityDirty(jb);
+            updateRedstoneAround(world, x, y, z);
+            broadcastNear(x + 0.5, y + 0.5, z + 0.5, 64, { type: 'jukebox', x, y, z, disc: 0 });
+          } else {
+            const held = player.entity.inventory.held;
+            if (held && musicDiscInfo(held.id)) {
+              jb.disc = held.id;
+              if (player.gameMode !== 'creative') {
+                held.count--;
+                if (held.count <= 0) player.entity.inventory.slots[player.selected] = null;
+                sendInventory(player);
+              }
+              world.markBlockEntityDirty(jb);
+              updateRedstoneAround(world, x, y, z);
+              broadcastNear(x + 0.5, y + 0.5, z + 0.5, 64, { type: 'jukebox', x, y, z, disc: jb.disc });
+            }
+          }
         } else if (id === B.BED) {
           trySleepServerPlayer(player, x, y, z, meta);
         }
@@ -3134,6 +3330,38 @@ function start(): void {
       if (pendingEntities.length > 0) {
         for (const e of pendingEntities) serverEntities.push(e);
         pendingEntities.length = 0;
+      }
+
+      // Plaques de pression foulées par les joueurs ou les créatures
+      const pressPlateAt = (lx: number, ly: number, lz: number): void => {
+        const bx = Math.floor(lx);
+        const by = Math.floor(ly + 0.05);
+        const bz = Math.floor(lz);
+        const v = world.getBlockAndMeta(bx, by, bz);
+        if ((v & 255) === B.STONE_PRESSURE_PLATE) {
+          const pk = posKey(bx, by, bz);
+          pressedPlates.set(pk, world.age + 10);
+          if (((v >> 8) & 1) === 0) world.setMeta(bx, by, bz, 1, true);
+        }
+      };
+      for (const p of playerList) {
+        if (p.entity.alive) pressPlateAt(p.entity.x, p.entity.y, p.entity.z);
+      }
+      for (const e of serverEntities) {
+        if (e instanceof Living && !e.dead && e.alive) pressPlateAt(e.x, e.y, e.z);
+      }
+      if (pressedPlates.size > 0) {
+        for (const [pk, until] of pressedPlates) {
+          if (world.age >= until) {
+            pressedPlates.delete(pk);
+            const bx = posKeyX(pk);
+            const by = posKeyY(pk);
+            const bz = posKeyZ(pk);
+            if (world.getBlock(bx, by, bz) === B.STONE_PRESSURE_PLATE && world.getMeta(bx, by, bz) !== 0) {
+              world.setMeta(bx, by, bz, 0, true);
+            }
+          }
+        }
       }
 
       // Synchroniser inventaires / XP modifiés (ex. ramassage d'objets)

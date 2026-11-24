@@ -3327,7 +3327,22 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
         }
       },
       onSound: (name, x, y, z, volume, pitch) => {
+        if (name.startsWith('note_')) {
+          this.lastNote = {
+            x: Math.floor(x),
+            y: Math.floor(y),
+            z: Math.floor(z),
+            instrument: name.slice(5),
+            note: 0,
+            pitch: pitch ?? 1,
+            count: ++this.noteCount,
+          };
+        }
         this.sound(name, x, y, z, volume, pitch);
+      },
+      onJukebox: (x, y, z, disc) => {
+        if (disc > 0) this.playJukebox(x, y, z, disc);
+        else this.stopJukebox(x, y, z);
       },
       onParticles: (kind, x, y, z, count, spread) => {
         this.particles(kind, x, y, z, count, spread);

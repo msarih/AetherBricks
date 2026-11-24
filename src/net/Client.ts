@@ -44,6 +44,7 @@ export interface ClientHandlers {
   onTradeOpen?(entityId: number, title: string, offers: TradeOfferInfo[]): void;
   onTradeOffers?(entityId: number, offers: TradeOfferInfo[]): void;
   onSound?(name: SfxName, x: number, y: number, z: number, volume?: number, pitch?: number): void;
+  onJukebox?(x: number, y: number, z: number, disc: number): void;
   onParticles?(kind: ParticleKind, x: number, y: number, z: number, count?: number, spread?: number): void;
   onRtcSignal?(from: number, kind: 'offer' | 'answer' | 'ice', payload: unknown): void;
   onRtcState?(id: number, mic: boolean, cam: boolean, speaking: boolean): void;
@@ -256,6 +257,9 @@ export class MultiplayerClient {
         break;
       case 'sound':
         this.handlers.onSound?.(msg.name, msg.x, msg.y, msg.z, msg.volume, msg.pitch);
+        break;
+      case 'jukebox':
+        this.handlers.onJukebox?.(msg.x, msg.y, msg.z, msg.disc);
         break;
       case 'particles':
         this.handlers.onParticles?.(msg.kind, msg.x, msg.y, msg.z, msg.count, msg.spread);

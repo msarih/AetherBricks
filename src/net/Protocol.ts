@@ -215,6 +215,7 @@ export type ServerMessage =
   | { type: 'tradeOpen'; entityId: number; title: string; offers: TradeOfferInfo[] }
   | { type: 'tradeOffers'; entityId: number; offers: TradeOfferInfo[] }
   | { type: 'sound'; name: SfxName; x: number; y: number; z: number; volume?: number; pitch?: number }
+  | { type: 'jukebox'; x: number; y: number; z: number; disc: number }
   | { type: 'particles'; kind: ParticleKind; x: number; y: number; z: number; count?: number; spread?: number }
   | { type: 'rtcSignal'; from: number; kind: 'offer' | 'answer' | 'ice'; payload: unknown }
   | { type: 'rtcState'; id: number; mic: boolean; cam: boolean; speaking: boolean }
