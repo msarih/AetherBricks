@@ -14,7 +14,7 @@ import {
   type TradeOfferInfo,
 } from './Protocol';
 import { parseInviteCode } from './InviteCode';
-import type { GameMode } from '../world/Constants';
+import type { Dimension, GameMode } from '../world/Constants';
 import type { SfxName } from '../audio/Sfx';
 import type { ParticleKind } from '../render/Particles';
 import type { UseKind } from '../player/Player';
@@ -39,6 +39,8 @@ export interface ClientHandlers {
   onRespawn?(x: number, y: number, z: number): void;
   onSleep?(sleeping: boolean, x?: number, y?: number, z?: number): void;
   onMount?(vehicleId: number): void;
+  onDimension?(dimension: Dimension, x: number, y: number, z: number, yaw?: number): void;
+  onDragonState?(progress: number | null, killed: boolean, credits?: boolean): void;
   onActionBar?(text: string): void;
   onContainerState?(msg: Extract<ServerMessage, { type: 'containerState' }>): void;
   onContainerClose?(x: number, y: number, z: number): void;
@@ -244,6 +246,12 @@ export class MultiplayerClient {
       case 'mount':
         this.handlers.onMount?.(msg.vehicleId);
         break;
+      case 'dimension':
+        this.handlers.onDimension?.(msg.dimension, msg.x, msg.y, msg.z, msg.yaw);
+        break;
+      case 'dragonState':
+        this.handlers.onDragonState?.(msg.progress, msg.killed, msg.credits);
+        break;
       case 'actionBar':
         this.handlers.onActionBar?.(msg.text);
         break;
@@ -310,6 +318,10 @@ export class MultiplayerClient {
 
   sendDismount(): void {
     this.send({ type: 'dismount' });
+  }
+
+  sendEnterPortal(kind: 'nether' | 'end'): void {
+    this.send({ type: 'enterPortal', kind });
   }
 
   sendUseBlock(x: number, y: number, z: number): void {

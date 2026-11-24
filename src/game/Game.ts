@@ -321,6 +321,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
   private remoteId = 0;
   private serverVehicleId = 0;
   private pendingMountId = 0;
+  private remoteDragonProgress: number | null = null;
   private readonly remotePlayers = new Map<number, RemotePlayerEntity>();
   private readonly remoteEntities = new Map<number, RemoteEntity>();
   private remoteContainer: {
@@ -548,6 +549,10 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       this.rainLevel = this.raining ? 1 : 0;
       this.thunderLevel = this.thundering ? 1 : 0;
       this.spawnPoint = o.welcome.spawn;
+      if (o.welcome.dimension && o.welcome.dimension !== this.dimension) {
+        this.dimension = o.welcome.dimension;
+        this.chunks.setDimension(this.dimension, new Set());
+      }
       player.teleport(o.welcome.x, o.welcome.y, o.welcome.z);
       player.yaw = player.pYaw = player.headYaw = player.pHeadYaw = o.welcome.yaw;
       player.headPitch = player.pHeadPitch = o.welcome.pitch;
@@ -1162,6 +1167,13 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     const feet = this.world.getBlock(Math.floor(p.x), Math.floor(p.y + 0.2), Math.floor(p.z));
     // portail de l'End : il emporte aussitôt, sans attente
     if (feet === B.END_PORTAL && p.alive) {
+      if (this.isRemote) {
+        if (this.portalCooldown <= 0) {
+          this.portalCooldown = 40;
+          this.net?.sendEnterPortal('end');
+        }
+        return;
+      }
       if (this.dimension === 'end') void this.leaveEnd();
       else if (this.dimension === 'overworld') void this.enterEnd();
       return;
@@ -1178,6 +1190,11 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     this.portalTicks++;
     if (p.creative || this.portalTicks >= 80) {
       this.portalTicks = 0;
+      if (this.isRemote) {
+        this.portalCooldown = 100;
+        this.net?.sendEnterPortal('nether');
+        return;
+      }
       const target: Dimension = this.dimension === 'overworld' ? 'nether' : 'overworld';
       void this.switchDimension(target, p.x, p.z);
     }
@@ -2143,7 +2160,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
 
   get boss(): { name: string; progress: number } | null {
     if (this.dimension !== 'end') return null;
-    const progress = this.endFight.progress;
+    const progress = this.isRemote ? this.remoteDragonProgress : this.endFight.progress;
     return progress === null ? null : { name: "Dragon de l'Ender", progress };
   }
 
@@ -3259,6 +3276,34 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
           this.pendingMountId = vehicleId;
         }
       },
+      onDimension: (dimension, x, y, z, yaw) => {
+        this.serverVehicleId = 0;
+        this.pendingMountId = 0;
+        this.remoteDragonProgress = null;
+        this.remotePlayers.clear();
+        this.remoteEntities.clear();
+        this.entities.length = 0;
+        this.entities.push(this.player);
+        this.requestedChunks.clear();
+        this.dimension = dimension;
+        this.chunks.setDimension(dimension, new Set());
+        this.player.teleport(x, y, z);
+        if (yaw !== undefined) this.player.setRotation(yaw);
+        this.player.fallDistance = 0;
+        this.portalCooldown = 100;
+        this.portalTicks = 0;
+        this.requestMissingChunks();
+      },
+      onDragonState: (progress, killed, credits) => {
+        this.remoteDragonProgress = progress;
+        this.endFight.killed = killed;
+        if (credits && !this.endFight.creditsSeen && !this.disposed) {
+          this.endFight.creditsSeen = true;
+          this.interaction.reset();
+          this.ui.showWin();
+          this.input.unlock();
+        }
+      },
       onActionBar: (text) => {
         this.ui.actionBar(text);
       },
@@ -3643,11 +3688,12 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
 
     if (archiveBuf && this.storage) {
       await replaceWorldFromArchive(this.storage, this.info.id, archiveBuf);
-      const keys = await this.storage.chunkKeys(this.info.id);
+      const keys = await this.storage.chunkKeys(dimensionStorageId(this.info.id, this.dimension));
       this.entities.length = 0;
       this.entities.push(this.player);
       this.homes.clear();
       this.chunks.setRemoteMode(false, keys);
+      this.chunks.setDimension(this.dimension, keys);
     } else {
       this.chunks.setRemoteMode(false);
     }
@@ -3698,6 +3744,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     const cx = Math.floor(p.x) >> 4;
     const cz = Math.floor(p.z) >> 4;
     if (this.world.chunks.has(chunkKey(cx, cz))) {
+      this.tickPortal();
       if (p.vehicle instanceof RemoteEntity && !p.vehicle.dead) {
         const v = p.vehicle;
         v.px = v.x;

@@ -964,6 +964,10 @@ export class Interaction {
     if (held === I.ENDER_EYE && h.id === B.END_PORTAL_FRAME) {
       // l'œil se loge dans le cadre ; le douzième ouvre le portail
       if (h.meta & FRAME_EYE) return false;
+      if (g.isRemote && g.netPlaceBlock) {
+        g.netPlaceBlock(h.x, h.y, h.z, h.face, I.ENDER_EYE, 0, p.inventory.selected);
+        return true;
+      }
       w.setMeta(h.x, h.y, h.z, h.meta | FRAME_EYE);
       g.blockSound('place', B.GLASS, h.x + 0.5, h.y + 1, h.z + 0.5);
       p.consumeHand(this.activeHand);
@@ -972,6 +976,10 @@ export class Interaction {
     }
 
     if (held === I.FLINT_AND_STEEL) {
+      if (g.isRemote && g.netPlaceBlock) {
+        g.netPlaceBlock(h.x, h.y, h.z, h.face, I.FLINT_AND_STEEL, 0, p.inventory.selected);
+        return true;
+      }
       if (h.id === B.TNT) {
         w.setBlock(h.x, h.y, h.z, B.AIR, 0);
         w.host.primeTnt(h.x, h.y, h.z, 80);

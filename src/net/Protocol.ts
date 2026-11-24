@@ -3,7 +3,7 @@
  *
  * Module pur (aucune dépendance DOM ni Three.js) : partagé entre le serveur Node.js et le client.
  */
-import { CHUNK_AREA, CHUNK_VOLUME, type GameMode, type WorldType } from '../world/Constants';
+import { CHUNK_AREA, CHUNK_VOLUME, type Dimension, type GameMode, type WorldType } from '../world/Constants';
 import { rleDecode, rleEncode } from '../world/Storage';
 import type { EntityKind } from '../entity/EntityView';
 import type { MobKind } from '../entity/MobModels';
@@ -115,6 +115,7 @@ export type ClientMessage =
   | { type: 'placeBlock'; x: number; y: number; z: number; face: number; id: number; meta: number; slot: number }
   | { type: 'placeVehicle'; x: number; y: number; z: number; face: number; itemId: number; yaw: number }
   | { type: 'dismount' }
+  | { type: 'enterPortal'; kind: 'nether' | 'end' }
   | { type: 'useBlock'; x: number; y: number; z: number }
   | { type: 'selectSlot'; slot: number }
   | { type: 'invSync'; slots: Array<SerializedSlot | null>; selected: number; armor?: Array<SerializedSlot | null>; offhand?: SerializedSlot | null }
@@ -159,6 +160,7 @@ export type ServerMessage =
       seed: number;
       worldType: WorldType;
       gameMode: GameMode;
+      dimension?: Dimension;
       time: number;
       raining: boolean;
       thundering: boolean;
@@ -201,6 +203,8 @@ export type ServerMessage =
   | { type: 'respawn'; x: number; y: number; z: number }
   | { type: 'sleep'; sleeping: boolean; x?: number; y?: number; z?: number }
   | { type: 'mount'; vehicleId: number }
+  | { type: 'dimension'; dimension: Dimension; x: number; y: number; z: number; yaw?: number }
+  | { type: 'dragonState'; progress: number | null; killed: boolean; credits?: boolean }
   | { type: 'actionBar'; text: string }
   | {
       type: 'containerState';
