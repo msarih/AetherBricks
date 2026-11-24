@@ -250,11 +250,16 @@ async function getPos(page) {
       await aimAt(pageA, 33.5, 4.15, 10.5);
       await ticks(pageA, 2);
       await rclick(pageA);
+      await ticks(pageA, 4);
+      const bSeenByA = await ev(pageA, () => {
+        const rp = window.__game.entities.find((e) => e.kind === 'player' && e.customName === 'JoueurB');
+        return rp ? { x: rp.x, y: rp.y, z: rp.z } : null;
+      });
       await pageB.bringToFront();
-      await ticks(pageB, 10);
+      await ticks(pageB, 4);
       const bAfter = await getPos(pageB);
       const pushedStone = await getBlock(pageA, 34, 6, 10);
-      check('piston poussé déplace le bloc et B debout dessus', pushedStone.id === B_STONE && bAfter.y >= bBefore.y + 0.8, `stone=${pushedStone.id}, y0=${bBefore.y}, y1=${bAfter.y}`);
+      check('piston poussé déplace le bloc et B debout dessus', pushedStone.id === B_STONE && bSeenByA !== null && bSeenByA.y >= bBefore.y + 0.8 && bAfter.y >= bBefore.y + 0.8, `stone=${pushedStone.id}, y0=${bBefore.y}, ySeenA=${bSeenByA?.y}, y1=${bAfter.y}`);
 
       // Horloge de redstone à 30 blocs (en 60..62, 4, 10..11) : comparateur en mode soustraction
       await chatCmd(pageA, '/setblock 60 4 10 lever 8');
