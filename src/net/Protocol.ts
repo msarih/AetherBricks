@@ -3,7 +3,7 @@
  *
  * Module pur (aucune dépendance DOM ni Three.js) : partagé entre le serveur Node.js et le client.
  */
-import { CHUNK_AREA, CHUNK_VOLUME, type GameMode, type WorldType } from '../world/Constants';
+import { CHUNK_AREA, CHUNK_VOLUME, type Dimension, type GameMode, type WorldType } from '../world/Constants';
 import { rleDecode, rleEncode } from '../world/Storage';
 import type { EntityKind } from '../entity/EntityView';
 import type { MobKind } from '../entity/MobModels';
@@ -39,6 +39,7 @@ export interface RemotePlayerState {
   blocking?: boolean;
   hurtTime?: number;
   alive?: boolean;
+  riding?: boolean;
 }
 
 export interface RemoteEntityState {
@@ -107,11 +108,14 @@ export interface SerializedEffect {
 
 export type ClientMessage =
   | { type: 'join'; name: string; password?: string; code?: string; hostToken?: string }
-  | { type: 'move'; x: number; y: number; z: number; yaw: number; pitch: number; sneaking: boolean; onGround: boolean; swing: number; sprinting?: boolean }
+  | { type: 'move'; x: number; y: number; z: number; yaw: number; pitch: number; sneaking: boolean; onGround: boolean; swing: number; sprinting?: boolean; vehicleYaw?: number }
   | { type: 'chat'; text: string }
   | { type: 'needChunks'; keys: Array<[number, number]> }
   | { type: 'breakBlock'; x: number; y: number; z: number }
   | { type: 'placeBlock'; x: number; y: number; z: number; face: number; id: number; meta: number; slot: number }
+  | { type: 'placeVehicle'; x: number; y: number; z: number; face: number; itemId: number; yaw: number }
+  | { type: 'dismount' }
+  | { type: 'enterPortal'; kind: 'nether' | 'end' }
   | { type: 'useBlock'; x: number; y: number; z: number }
   | { type: 'selectSlot'; slot: number }
   | { type: 'invSync'; slots: Array<SerializedSlot | null>; selected: number; armor?: Array<SerializedSlot | null>; offhand?: SerializedSlot | null }
@@ -156,6 +160,7 @@ export type ServerMessage =
       seed: number;
       worldType: WorldType;
       gameMode: GameMode;
+      dimension?: Dimension;
       time: number;
       raining: boolean;
       thundering: boolean;
@@ -197,6 +202,9 @@ export type ServerMessage =
   | { type: 'death'; message: string }
   | { type: 'respawn'; x: number; y: number; z: number }
   | { type: 'sleep'; sleeping: boolean; x?: number; y?: number; z?: number }
+  | { type: 'mount'; vehicleId: number }
+  | { type: 'dimension'; dimension: Dimension; x: number; y: number; z: number; yaw?: number }
+  | { type: 'dragonState'; progress: number | null; killed: boolean; credits?: boolean }
   | { type: 'actionBar'; text: string }
   | {
       type: 'containerState';
@@ -215,6 +223,7 @@ export type ServerMessage =
   | { type: 'tradeOpen'; entityId: number; title: string; offers: TradeOfferInfo[] }
   | { type: 'tradeOffers'; entityId: number; offers: TradeOfferInfo[] }
   | { type: 'sound'; name: SfxName; x: number; y: number; z: number; volume?: number; pitch?: number }
+  | { type: 'jukebox'; x: number; y: number; z: number; disc: number }
   | { type: 'particles'; kind: ParticleKind; x: number; y: number; z: number; count?: number; spread?: number }
   | { type: 'rtcSignal'; from: number; kind: 'offer' | 'answer' | 'ice'; payload: unknown }
   | { type: 'rtcState'; id: number; mic: boolean; cam: boolean; speaking: boolean }

@@ -31,11 +31,15 @@ import {
 } from '../src/net/Protocol';
 import { EFFECT_TYPES, Entity, Living, type DamageCause, type EffectType, type GameApi } from '../src/entity/Entity';
 import { IronGolem } from '../src/entity/Creatures';
+import { EndCrystal } from '../src/entity/EndMobs';
 import { HOSTILE_KINDS, LEASH_BREAK, Mob, Monster, NPC_KINDS, PASSIVE_KINDS, Villager, createMob, isLeashPost } from '../src/entity/Mobs';
 import { isProfession } from '../src/entity/Trades';
-import { Arrow, ItemEntity, ThrownPotion, Tnt } from '../src/entity/Objects';
+import { Arrow, ItemEntity, Thrown, ThrownPearl, ThrownPotion, Tnt } from '../src/entity/Objects';
 import { createEntity } from '../src/entity/Registry';
 import { Spawner } from '../src/entity/Spawner';
+import { BOAT_SEAT, Boat, MINECART_SEAT, Minecart } from '../src/entity/Vehicles';
+import type { SfxName } from '../src/audio/Sfx';
+import { DRAGON_XP, EndFight } from '../src/game/EndFight';
 import { explode as runExplosion } from '../src/game/Explosion';
 import { findBedStandSpot, formatDeathMessage } from '../src/game/SurvivalHelpers';
 import {
@@ -45,6 +49,8 @@ import {
   getDispenser,
   getFurnace,
   getHopper,
+  getJukebox,
+  insertOneIntoContainer,
   tickBlockEntities,
   type BrewingStandEntity,
   type ChestEntity,
@@ -62,31 +68,42 @@ import {
   type Menu,
 } from '../src/game/Inventory';
 import { attackDamage } from '../src/player/Player';
-import { BLOCKS, BLOCK_REPLACEABLE, BLOCK_SOLID, FACING_DX, FACING_DZ, isFluid } from '../src/world/Blocks';
+import { applyBonemeal, fireCanStay } from '../src/world/Behavior';
+import { BLOCKS, BLOCK_REPLACEABLE, BLOCK_SOLID, FACING_DX, FACING_DZ, PISTON_DX, PISTON_DY, PISTON_DZ, isFluid } from '../src/world/Blocks';
 import { Chunk } from '../src/world/Chunk';
 import {
   CHUNK_AREA,
   CHUNK_HEIGHT,
   DAY_TICKS,
+  FACE_DX,
+  FACE_DY,
+  FACE_DZ,
   GEN_VERSION,
   TICKS_PER_SECOND,
   chunkKey,
   skyDayFactor,
+  type Dimension,
   type GameMode,
   type WorldType,
 } from '../src/world/Constants';
 import { blockDrops } from '../src/world/Drops';
 import { enchantLevel } from '../src/world/Enchants';
+import { FRAME_EYE, buildEndPlatform, tryOpenEndPortal } from '../src/world/EndPortal';
 import { type GameRules, GAME_RULE_NAMES } from '../src/world/GameRules';
-import { B, I } from '../src/world/Ids';
+import { B, I, musicDiscInfo } from '../src/world/Ids';
 import { ITEMS, getItem, isTool, itemLabel, maxStack } from '../src/world/Items';
 import { addToSlots, cloneStackWithCount, loadSlots, makeStack, saveSlots, type ItemStack, type Slot } from '../src/world/ItemStack';
+import { findOrCreatePortal, tryIgnitePortal } from '../src/world/Portal';
 import { POTION_GIVE_HELP, applyPotionVariant, potionLabel, resolvePotionKind } from '../src/world/Potions';
+import { isRail } from '../src/world/Rails';
 import { computeDaylightPower, isBlockPowered, triggerNoteBlock, updateRedstoneAround, updateRepeaterState } from '../src/world/Redstone';
-import type { SavedChunk, WorldInfo } from '../src/world/Storage';
-import { World, type BlockEntity } from '../src/world/World';
+import { readDimension, type SavedChunk, type WorldInfo } from '../src/world/Storage';
+import { World, posKey, posKeyX, posKeyY, posKeyZ, type BlockEntity } from '../src/world/World';
 import { buildWorldArchive, parseWorldArchive } from '../src/world/WorldFile';
+import { END_PLATFORM } from '../src/world/gen/EndLayout';
+import { EndGen } from '../src/world/gen/EndGen';
 import type { GenSpawn } from '../src/world/gen/GenCanvas';
+import { NetherGen } from '../src/world/gen/NetherGen';
 import { hash2, hashString, mulberry32 } from '../src/world/gen/Noise';
 import { WorldGen, computeHeightmap } from '../src/world/gen/WorldGen';
 import { ServerPlayerEntity, computeServerChunkLight, serializeEntityState } from './ServerEntities';
@@ -122,6 +139,7 @@ interface WorldSaveMeta {
   difficulty?: number;
   rules?: Partial<GameRules>;
   spawn: { x: number; y: number; z: number };
+  end?: Record<string, unknown>;
 }
 
 interface PlayerSaveData {
@@ -130,6 +148,7 @@ interface PlayerSaveData {
   z: number;
   yaw: number;
   pitch: number;
+  dimension?: Dimension;
   gameMode: GameMode;
   health: number;
   hunger: number;
@@ -152,6 +171,7 @@ interface ServerPlayer {
   name: string;
   isHost: boolean;
   ws: WebSocket;
+  dimension: Dimension;
   x: number;
   y: number;
   z: number;
@@ -448,19 +468,27 @@ function start(): void {
       thundering: st.thundering === true,
       weatherTimer: typeof st.weatherTimer === 'number' ? st.weatherTimer : 12000,
       spawn: { x: rawSpawn[0], y: rawSpawn[1], z: rawSpawn[2] },
+      ...(st.end && typeof st.end === 'object' ? { end: st.end as Record<string, unknown> } : {}),
     };
     writeJsonAtomic(worldSavePath, meta);
-    for (const c of archive.chunks) {
-      const [cx, cz] = chunkCoordsFromKey(c.key);
-      const pkt = encodeChunkPacket(cx, cz, c.blocks, c.meta, c.biomes, c.tints);
-      writeBinaryAtomic(path.join(chunksDir, `${cx}_${cz}.bin`), pkt);
-      if (c.blockEntities.length > 0 || c.entities.length > 0) {
-        writeJsonAtomic(path.join(chunksDir, `${cx}_${cz}.json`), {
-          blockEntities: c.blockEntities,
-          entities: c.entities,
-        });
+    const writeImportDim = (dir: string, list: readonly SavedChunk[]): void => {
+      if (list.length === 0) return;
+      fs.mkdirSync(dir, { recursive: true });
+      for (const c of list) {
+        const [cx, cz] = chunkCoordsFromKey(c.key);
+        const pkt = encodeChunkPacket(cx, cz, c.blocks, c.meta, c.biomes, c.tints);
+        writeBinaryAtomic(path.join(dir, `${cx}_${cz}.bin`), pkt);
+        if (c.blockEntities.length > 0 || c.entities.length > 0) {
+          writeJsonAtomic(path.join(dir, `${cx}_${cz}.json`), {
+            blockEntities: c.blockEntities,
+            entities: c.entities,
+          });
+        }
       }
-    }
+    };
+    writeImportDim(chunksDir, archive.chunks);
+    writeImportDim(path.join(worldDir, 'nether', 'chunks'), archive.netherChunks);
+    writeImportDim(path.join(worldDir, 'end', 'chunks'), archive.endChunks);
     console.log(`Monde importé depuis ${importPath} (${archive.chunks.length} chunk(s)).`);
   }
 
@@ -500,13 +528,27 @@ function start(): void {
   let activeTailscaleCode: string | null = null;
   let activeTailscaleUrl: string | null = null;
 
+  interface DimensionRuntime {
+    dim: Dimension;
+    world: World;
+    gen: WorldGen | NetherGen | EndGen;
+    chunksDir: string;
+    entities: Entity[];
+    pendingEntities: Entity[];
+    entityTicking: boolean;
+    pressedPlates: Map<number, number>;
+    spawner: Spawner;
+  }
+
+  const dims = new Map<Dimension, DimensionRuntime>();
+  function getDim(dim: Dimension): DimensionRuntime {
+    return dims.get(dim) ?? dims.get('overworld')!;
+  }
+  const endFight = new EndFight();
+
   const players = new Map<number, ServerPlayer>();
   let nextPlayerId = 1;
   const authLimits = new Map<string, RateLimitEntry>();
-  const serverEntities: Entity[] = [];
-  const pendingEntities: Entity[] = [];
-  let entityTicking = false;
-  let spawner = new Spawner();
   const fallbackPlayerEntity = new ServerPlayerEntity('');
   let tickMsAvg = 0;
   let totalTickSamples = 0;
@@ -526,13 +568,22 @@ function start(): void {
     }
   }
 
-  function broadcastBlockUpdate(x: number, y: number, z: number, id: number, meta: number): void {
+  function broadcastToDim(dim: Dimension, msg: ServerMessage): void {
+    const raw = JSON.stringify(msg);
+    for (const p of players.values()) {
+      if (p.dimension === dim && p.ws.readyState === WebSocket.OPEN) {
+        p.ws.send(raw);
+      }
+    }
+  }
+
+  function broadcastBlockUpdate(x: number, y: number, z: number, id: number, meta: number, dim: Dimension = 'overworld'): void {
     const cx = x >> 4;
     const cz = z >> 4;
     const maxR = viewDistance + 2;
     const raw = JSON.stringify({ type: 'blockUpdate', x, y, z, id, meta } satisfies ServerMessage);
     for (const p of players.values()) {
-      if (p.ws.readyState !== WebSocket.OPEN) continue;
+      if (p.dimension !== dim || p.ws.readyState !== WebSocket.OPEN) continue;
       const pcx = Math.floor(p.x) >> 4;
       const pcz = Math.floor(p.z) >> 4;
       if (Math.abs(cx - pcx) <= maxR && Math.abs(cz - pcz) <= maxR) {
@@ -541,11 +592,11 @@ function start(): void {
     }
   }
 
-  function broadcastNear(x: number, y: number, z: number, radius: number, msg: ServerMessage): void {
+  function broadcastNear(x: number, y: number, z: number, radius: number, msg: ServerMessage, dim: Dimension = 'overworld'): void {
     const r2 = radius * radius;
     const raw = JSON.stringify(msg);
     for (const p of players.values()) {
-      if (p.ws.readyState !== WebSocket.OPEN) continue;
+      if (p.dimension !== dim || p.ws.readyState !== WebSocket.OPEN) continue;
       const dx = p.x - x;
       const dy = p.y - y;
       const dz = p.z - z;
@@ -555,9 +606,10 @@ function start(): void {
     }
   }
 
-  function spawnServerEntity(e: Entity): void {
-    if (entityTicking) pendingEntities.push(e);
-    else serverEntities.push(e);
+  function spawnServerEntity(e: Entity, dim: Dimension = 'overworld'): void {
+    const rt = getDim(dim);
+    if (rt.entityTicking) rt.pendingEntities.push(e);
+    else rt.entities.push(e);
   }
 
   function serverDropStack(
@@ -569,6 +621,7 @@ function start(): void {
     vx?: number,
     vy?: number,
     vz?: number,
+    dim: Dimension = 'overworld',
   ): ItemEntity {
     const item = new ItemEntity(stack);
     item.setPosition(x, y, z);
@@ -584,7 +637,7 @@ function start(): void {
       item.vz = Math.sin(a) * s;
     }
     item.pickupDelay = pickupDelay;
-    spawnServerEntity(item);
+    spawnServerEntity(item, dim);
     return item;
   }
 
@@ -608,29 +661,30 @@ function start(): void {
     });
   }
 
-  function createServerGameApi(activePlayer?: ServerPlayer): GameApi {
+  function createServerGameApi(activePlayer?: ServerPlayer, dim: Dimension = activePlayer?.dimension ?? 'overworld'): GameApi {
+    const rt = getDim(dim);
     return {
-      world,
+      world: rt.world,
       player: activePlayer?.entity ?? fallbackPlayerEntity,
-      players: Array.from(players.values()).map((p) => p.entity),
+      players: Array.from(players.values()).filter((p) => p.dimension === dim).map((p) => p.entity),
       pvp: pvpEnabled,
-      entities: serverEntities,
+      entities: rt.entities,
       rng: () => Math.random(),
       dayTime: worldTime % DAY_TICKS,
       difficulty,
-      dimension: 'overworld',
-      spawn: (e) => spawnServerEntity(e),
+      dimension: dim,
+      spawn: (e) => spawnServerEntity(e, dim),
       sound: (name, x, y, z, volume, pitch) => {
-        broadcastNear(x, y, z, 32, { type: 'sound', name, x, y, z, volume, pitch });
+        broadcastNear(x, y, z, 32, { type: 'sound', name, x, y, z, volume, pitch }, dim);
       },
       blockSound: () => {},
       particles: (kind, x, y, z, count, spread) => {
-        broadcastNear(x, y, z, 32, { type: 'particles', kind, x, y, z, count, spread });
+        broadcastNear(x, y, z, 32, { type: 'particles', kind, x, y, z, count, spread }, dim);
       },
       blockParticles: () => {},
       itemParticles: () => {},
-      dropItem: (x, y, z, id, count, damage = 0) => serverDropStack(x, y, z, makeStack(id, count, damage)),
-      dropStack: (x, y, z, stack) => serverDropStack(x, y, z, stack),
+      dropItem: (x, y, z, id, count, damage = 0) => serverDropStack(x, y, z, makeStack(id, count, damage), 10, undefined, undefined, undefined, dim),
+      dropStack: (x, y, z, stack) => serverDropStack(x, y, z, stack, 10, undefined, undefined, undefined, dim),
       openTrade: (villager) => {
         if (!activePlayer || !(villager instanceof Villager)) return;
         villager.customer = activePlayer.entity;
@@ -643,15 +697,15 @@ function start(): void {
         });
       },
       explode: (x, y, z, power, fire, source, griefing) => {
-        runExplosion(createServerGameApi(), x, y, z, power, fire, source, griefing ?? world.rules.mobGriefing);
+        runExplosion(createServerGameApi(undefined, dim), x, y, z, power, fire, source, griefing ?? world.rules.mobGriefing);
       },
       entitiesInBox: (x0, y0, z0, x1, y1, z1, except = null) => {
         const out: Entity[] = [];
-        for (const e of serverEntities) {
+        for (const e of rt.entities) {
           if (e !== except && !e.dead && e.intersects(x0, y0, z0, x1, y1, z1)) out.push(e);
         }
         for (const p of players.values()) {
-          if (p.entity !== except && p.entity.alive && p.entity.intersects(x0, y0, z0, x1, y1, z1)) {
+          if (p.dimension === dim && p.entity !== except && p.entity.alive && p.entity.intersects(x0, y0, z0, x1, y1, z1)) {
             out.push(p.entity);
           }
         }
@@ -664,13 +718,19 @@ function start(): void {
     };
   }
 
-  function spawnGenerated(s: GenSpawn): void {
+  function spawnGenerated(s: GenSpawn, dim: Dimension = 'overworld'): void {
     if (s.kind === 'iron_golem') {
       const golem = new IronGolem();
       golem.setPosition(s.x, s.y, s.z);
       golem.setRotation(0);
       golem.setHome(s.x, s.z);
-      spawnServerEntity(golem);
+      spawnServerEntity(golem, dim);
+      return;
+    }
+    if (s.kind === 'end_crystal') {
+      const crystal = new EndCrystal();
+      crystal.setPosition(s.x, s.y, s.z);
+      spawnServerEntity(crystal, dim);
       return;
     }
     if (s.kind !== 'villager') return;
@@ -679,13 +739,109 @@ function start(): void {
     v.setPosition(s.x, s.y, s.z);
     v.setRotation(rng() * Math.PI * 2);
     v.setHome(s.x, s.z);
-    spawnServerEntity(v);
+    spawnServerEntity(v, dim);
   }
 
-  function attachWorldHost(w: World): void {
+  function serverDispenseAt(w: World, x: number, y: number, z: number, dropper: boolean, dim: Dimension = 'overworld'): void {
+    const v = w.getBlockAndMeta(x, y, z);
+    const id = v & 255;
+    if ((dropper && id !== B.DROPPER) || (!dropper && id !== B.DISPENSER)) return;
+    const f = Math.min(5, (v >> 8) & 7);
+    const be = getDispenser(w, x, y, z, dropper ? 'dropper' : 'dispenser');
+    const nonEmpty: number[] = [];
+    for (let i = 0; i < be.items.length; i++) {
+      const s = be.items[i];
+      if (s && s.count > 0) nonEmpty.push(i);
+    }
+    if (nonEmpty.length === 0) {
+      broadcastNear(x + 0.5, y + 0.5, z + 0.5, 32, { type: 'sound', name: 'click', x: x + 0.5, y: y + 0.5, z: z + 0.5, volume: 0.5, pitch: 0.7 }, dim);
+      return;
+    }
+    const idx = nonEmpty[Math.floor(Math.random() * nonEmpty.length)];
+    const stack = be.items[idx]!;
+    const dx = PISTON_DX[f];
+    const dy = PISTON_DY[f];
+    const dz = PISTON_DZ[f];
+    const tx = x + dx;
+    const ty = y + dy;
+    const tz = z + dz;
+    const ox = x + 0.5 + dx * 0.7;
+    const oy = y + 0.35 + dy * 0.7;
+    const oz = z + 0.5 + dz * 0.7;
+
+    if (dropper) {
+      if (insertOneIntoContainer(w, tx, ty, tz, stack, f)) {
+        if (stack.count <= 0) be.items[idx] = null;
+      } else {
+        serverDropStack(ox, oy, oz, cloneStackWithCount(stack, 1), 10, dx * 0.14 + (Math.random() - 0.5) * 0.03, 0.14 + dy * 0.1, dz * 0.14 + (Math.random() - 0.5) * 0.03, dim);
+        if (--stack.count <= 0) be.items[idx] = null;
+      }
+    } else {
+      const py = y + 0.5 + dy * 0.7;
+      if (stack.id === I.ARROW) {
+        const a = new Arrow();
+        a.fromPlayer = true;
+        a.shoot(ox, py, oz, dx, dy + 0.05, dz, 1.1, 6, () => Math.random());
+        spawnServerEntity(a, dim);
+        broadcastNear(ox, py, oz, 32, { type: 'sound', name: 'bow', x: ox, y: py, z: oz, volume: 0.7, pitch: 0.9 + Math.random() * 0.2 }, dim);
+        if (--stack.count <= 0) be.items[idx] = null;
+      } else if (stack.id === I.EGG || stack.id === I.SNOWBALL || stack.id === I.ENDER_PEARL || stack.id === I.SPLASH_POTION) {
+        const proj =
+          stack.id === I.ENDER_PEARL
+            ? new ThrownPearl()
+            : stack.id === I.SPLASH_POTION
+              ? new ThrownPotion(stack.potion ?? 'healing')
+              : new Thrown(stack.id);
+        proj.shoot(ox, py, oz, dx, dy + 0.05, dz, 1.1);
+        spawnServerEntity(proj, dim);
+        broadcastNear(ox, py, oz, 32, { type: 'sound', name: 'bow', x: ox, y: py, z: oz, volume: 0.6, pitch: 1.2 }, dim);
+        if (--stack.count <= 0) be.items[idx] = null;
+      } else if (stack.id === B.TNT) {
+        if (w.getBlock(tx, ty, tz) === B.AIR || BLOCK_REPLACEABLE[w.getBlock(tx, ty, tz)] === 1) {
+          w.setBlock(tx, ty, tz, B.AIR, 0);
+          w.host.primeTnt(tx, ty, tz, 80);
+          if (--stack.count <= 0) be.items[idx] = null;
+        }
+      } else if (stack.id === I.WATER_BUCKET || stack.id === I.LAVA_BUCKET) {
+        const tid = w.getBlock(tx, ty, tz);
+        if (tid === B.AIR || BLOCK_REPLACEABLE[tid] === 1) {
+          w.setBlock(tx, ty, tz, stack.id === I.WATER_BUCKET ? B.WATER : B.LAVA, 0);
+          be.items[idx] = makeStack(I.BUCKET, 1);
+          broadcastNear(tx + 0.5, ty + 0.5, tz + 0.5, 32, { type: 'sound', name: 'bucket_empty', x: tx + 0.5, y: ty + 0.5, z: tz + 0.5, volume: 0.7 }, dim);
+        }
+      } else if (stack.id === I.BUCKET) {
+        const tv = w.getBlockAndMeta(tx, ty, tz);
+        const tid = tv & 255;
+        if ((tid === B.WATER || tid === B.LAVA) && (tv >> 8) === 0 && stack.count === 1) {
+          w.setBlock(tx, ty, tz, B.AIR, 0);
+          be.items[idx] = makeStack(tid === B.WATER ? I.WATER_BUCKET : I.LAVA_BUCKET, 1);
+          broadcastNear(tx + 0.5, ty + 0.5, tz + 0.5, 32, { type: 'sound', name: 'bucket_fill', x: tx + 0.5, y: ty + 0.5, z: tz + 0.5, volume: 0.7 }, dim);
+        }
+      } else if (stack.id === I.FLINT_AND_STEEL) {
+        if (w.getBlock(tx, ty, tz) === B.AIR && fireCanStay(w, tx, ty, tz)) {
+          w.setBlock(tx, ty, tz, B.FIRE, 0);
+          stack.damage++;
+          const lim = getItem(stack.id).durability;
+          if (lim > 0 && stack.damage >= lim) be.items[idx] = null;
+          broadcastNear(tx + 0.5, ty + 0.5, tz + 0.5, 32, { type: 'sound', name: 'ignite', x: tx + 0.5, y: ty + 0.5, z: tz + 0.5, volume: 0.7 }, dim);
+        }
+      } else if (stack.id === I.BONE_MEAL) {
+        if (applyBonemeal(w, tx, ty, tz) && --stack.count <= 0) be.items[idx] = null;
+      } else {
+        serverDropStack(ox, oy, oz, cloneStackWithCount(stack, 1), 10, dx * 0.25 + (Math.random() - 0.5) * 0.04, 0.18 + dy * 0.2, dz * 0.25 + (Math.random() - 0.5) * 0.04, dim);
+        if (--stack.count <= 0) be.items[idx] = null;
+      }
+    }
+    broadcastNear(x + 0.5, y + 0.5, z + 0.5, 32, { type: 'sound', name: 'click', x: x + 0.5, y: y + 0.5, z: z + 0.5, volume: 0.55, pitch: 1.0 }, dim);
+    broadcastNear(ox, y + 0.5 + dy * 0.5, oz, 32, { type: 'particles', kind: 'smoke', x: ox, y: y + 0.5 + dy * 0.5, z: oz, count: 4, spread: 0.1 }, dim);
+    w.markBlockEntityDirty(be);
+    updateRedstoneAround(w, x, y, z);
+  }
+
+  function attachWorldHost(w: World, dim: Dimension = 'overworld'): void {
     w.host = {
       dropItem: (x, y, z, id, count) => {
-        serverDropStack(x + 0.5, y + 0.3, z + 0.5, makeStack(id, count));
+        serverDropStack(x + 0.5, y + 0.3, z + 0.5, makeStack(id, count), 10, undefined, undefined, undefined, dim);
       },
       spawnFallingBlock: (x, y, z, id, meta) => {
         let ly = y;
@@ -700,15 +856,30 @@ function start(): void {
       primeTnt: (x, y, z, fuse) => {
         const t = new Tnt(fuse);
         t.setPosition(x + 0.5, y, z + 0.5);
-        spawnServerEntity(t);
+        const a = Math.random() * Math.PI * 2;
+        t.vx = -Math.sin(a) * 0.02;
+        t.vy = 0.2;
+        t.vz = -Math.cos(a) * 0.02;
+        spawnServerEntity(t, dim);
+        broadcastNear(x + 0.5, y + 0.5, z + 0.5, 32, { type: 'sound', name: 'fuse', x: x + 0.5, y: y + 0.5, z: z + 0.5, volume: 1, pitch: 1 }, dim);
       },
-      effect: () => {},
+      effect: (kind, x, y, z) => {
+        if (kind === 'fizz') {
+          broadcastNear(x + 0.5, y + 0.5, z + 0.5, 32, { type: 'sound', name: 'fizz', x: x + 0.5, y: y + 0.5, z: z + 0.5, volume: 0.5, pitch: 2.6 }, dim);
+          broadcastNear(x + 0.5, y + 1, z + 0.5, 32, { type: 'particles', kind: 'large_smoke', x: x + 0.5, y: y + 1, z: z + 0.5, count: 8, spread: 0.4 }, dim);
+        } else if (kind === 'grow') {
+          broadcastNear(x + 0.5, y + 0.5, z + 0.5, 32, { type: 'particles', kind: 'bonemeal', x: x + 0.5, y: y + 0.5, z: z + 0.5, count: 12, spread: 0.5 }, dim);
+        }
+      },
       blockEntityRemoved: (be: BlockEntity) => {
+        if (be.type === 'jukebox') {
+          broadcastNear(be.x + 0.5, be.y + 0.5, be.z + 0.5, 64, { type: 'jukebox', x: be.x, y: be.y, z: be.z, disc: 0 }, dim);
+        }
         for (const s of blockEntityItems(be)) {
-          serverDropStack(be.x + 0.5, be.y + 0.3, be.z + 0.5, s);
+          serverDropStack(be.x + 0.5, be.y + 0.3, be.z + 0.5, s, 10, undefined, undefined, undefined, dim);
         }
         for (const p of players.values()) {
-          if (p.openContainer && p.openContainer.x === be.x && p.openContainer.y === be.y && p.openContainer.z === be.z) {
+          if (p.dimension === dim && p.openContainer && p.openContainer.x === be.x && p.openContainer.y === be.y && p.openContainer.z === be.z) {
             p.openContainer.menu.close();
             p.openContainer = null;
             sendInventory(p);
@@ -716,8 +887,68 @@ function start(): void {
           }
         }
       },
+      pushEntities: (x0, y0, z0, x1, y1, z1, dx, dy, dz) => {
+        const rt = getDim(dim);
+        for (const e of rt.entities) {
+          if ((e instanceof Living && e.alive) || e instanceof ItemEntity) {
+            if (!e.dead && e.intersects(x0, y0, z0, x1, y1, z1)) {
+              e.setPosition(e.x + dx, e.y + dy, e.z + dz);
+            }
+          }
+        }
+        for (const p of players.values()) {
+          if (p.dimension === dim && p.entity.alive && p.entity.intersects(x0, y0, z0, x1, y1, z1)) {
+            p.entity.setPosition(p.entity.x + dx, p.entity.y + dy, p.entity.z + dz);
+            p.x = p.entity.x;
+            p.y = p.entity.y;
+            p.z = p.entity.z;
+            p.lastMoveMs = Date.now();
+            sendJson(p.ws, { type: 'teleport', x: p.x, y: p.y, z: p.z });
+          }
+        }
+      },
+      hasEntityInBox: (x0, y0, z0, x1, y1, z1, kind) => {
+        for (const e of createServerGameApi(undefined, dim).entitiesInBox(x0, y0, z0, x1, y1, z1, null)) {
+          if (!kind || e.kind === kind) return true;
+        }
+        return false;
+      },
+      playNote: (x, y, z, instrument, _note, pitch) => {
+        broadcastNear(x + 0.5, y + 0.5, z + 0.5, 48, {
+          type: 'sound',
+          name: `note_${instrument}` as SfxName,
+          x: x + 0.5,
+          y: y + 0.5,
+          z: z + 0.5,
+          volume: 0.9,
+          pitch,
+        }, dim);
+        broadcastNear(x + 0.5, y + 1.2, z + 0.5, 48, {
+          type: 'particles',
+          kind: 'note',
+          x: x + 0.5,
+          y: y + 1.2,
+          z: z + 0.5,
+          count: 1,
+          spread: 0.15,
+        }, dim);
+      },
+      pullItemForHopper: (x, y, z, accept) => {
+        const rt = getDim(dim);
+        for (const e of rt.entities) {
+          if (e instanceof ItemEntity && !e.dead && e.stack.count > 0 && e.intersects(x, y + 0.85, z, x + 1, y + 1.6, z + 1)) {
+            if (accept(e.stack)) {
+              e.itemCount = e.stack.count;
+              if (e.stack.count <= 0) e.dead = true;
+              return true;
+            }
+          }
+        }
+        return false;
+      },
+      dispense: (x, y, z, dropper) => serverDispenseAt(w, x, y, z, dropper, dim),
       blockChanged: (x, y, z, id, meta) => {
-        broadcastBlockUpdate(x, y, z, id, meta);
+        broadcastBlockUpdate(x, y, z, id, meta, dim);
       },
     };
   }
@@ -742,31 +973,55 @@ function start(): void {
     weatherTimer = existingSave?.weatherTimer ?? (12000 + Math.floor(Math.random() * 168000));
     if (existingSave?.pvp !== undefined) pvpEnabled = existingSave.pvp;
     if (typeof existingSave?.difficulty === 'number') difficulty = Math.max(0, Math.min(3, Math.floor(existingSave.difficulty)));
+    endFight.load(existingSave?.end);
 
-    world = new World(seed, worldType, genVersion);
-    world.raining = raining;
-    if (existingSave?.rules) {
-      for (const k of GAME_RULE_NAMES) {
-        if (typeof existingSave.rules[k] === 'boolean') world.rules[k] = existingSave.rules[k] as boolean;
+    dims.clear();
+    const makeDim = (dim: Dimension, dGen: WorldGen | NetherGen | EndGen, dChunksDir: string): DimensionRuntime => {
+      const w = new World(seed, worldType, genVersion);
+      w.raining = dim === 'overworld' ? raining : false;
+      if (existingSave?.rules) {
+        for (const k of GAME_RULE_NAMES) {
+          if (typeof existingSave.rules[k] === 'boolean') w.rules[k] = existingSave.rules[k] as boolean;
+        }
       }
-    }
-    attachWorldHost(world);
-    gen = new WorldGen(seed, worldType, genVersion);
+      attachWorldHost(w, dim);
+      return {
+        dim,
+        world: w,
+        gen: dGen,
+        chunksDir: dChunksDir,
+        entities: [],
+        pendingEntities: [],
+        entityTicking: false,
+        pressedPlates: new Map<number, number>(),
+        spawner: new Spawner(),
+      };
+    };
+
+    const ow = makeDim('overworld', new WorldGen(seed, worldType, genVersion), chunksDir);
+    const ne = makeDim('nether', new NetherGen(seed, genVersion), path.join(worldDir, 'nether', 'chunks'));
+    const en = makeDim('end', new EndGen(seed), path.join(worldDir, 'end', 'chunks'));
+    dims.set('overworld', ow);
+    dims.set('nether', ne);
+    dims.set('end', en);
+    world = ow.world;
+    gen = ow.gen as WorldGen;
 
     for (let dz = -1; dz <= 1; dz++) {
       for (let dx = -1; dx <= 1; dx++) {
-        getOrGenerateChunk(dx, dz);
+        getOrGenerateChunk(dx, dz, 'overworld');
       }
     }
     spawn = existingSave?.spawn ?? { x: 8.5, y: findSpawnY(world, 8.5, 8.5), z: 8.5 };
     saveWorldMeta();
   }
 
-  function getOrGenerateChunk(cx: number, cz: number): Chunk {
-    const existing = world.getChunk(cx, cz);
+  function getOrGenerateChunk(cx: number, cz: number, dim: Dimension = 'overworld'): Chunk {
+    const rt = getDim(dim);
+    const existing = rt.world.getChunk(cx, cz);
     if (existing) return existing;
 
-    const chunkFile = path.join(chunksDir, `${cx}_${cz}.bin`);
+    const chunkFile = path.join(rt.chunksDir, `${cx}_${cz}.bin`);
     if (fs.existsSync(chunkFile)) {
       const pkt = decodeChunkPacket(fs.readFileSync(chunkFile));
       if (pkt) {
@@ -775,18 +1030,18 @@ function start(): void {
         const chunk = new Chunk(cx, cz, pkt.blocks, pkt.meta, pkt.biomes, hm, pkt.tints);
         computeServerChunkLight(chunk);
         chunk.saveDirty = false;
-        world.addChunk(chunk);
+        rt.world.addChunk(chunk);
         const metaData = readJsonFile<{ blockEntities?: BlockEntity[]; entities?: unknown[] }>(
-          path.join(chunksDir, `${cx}_${cz}.json`),
+          path.join(rt.chunksDir, `${cx}_${cz}.json`),
         );
         if (metaData) {
           if (Array.isArray(metaData.blockEntities)) {
-            for (const be of metaData.blockEntities) world.setBlockEntity(be, true);
+            for (const be of metaData.blockEntities) rt.world.setBlockEntity(be, true);
           }
           if (Array.isArray(metaData.entities)) {
             for (const d of metaData.entities) {
               const e = createEntity(d);
-              if (e) spawnServerEntity(e);
+              if (e) spawnServerEntity(e, dim);
             }
           }
         }
@@ -794,14 +1049,14 @@ function start(): void {
       }
     }
 
-    const g = gen.generateChunk(cx, cz);
+    const g = rt.gen.generateChunk(cx, cz);
     const chunk = new Chunk(cx, cz, g.blocks, g.meta, g.biomes, g.heightmap, g.tints);
     computeServerChunkLight(chunk);
     chunk.saveDirty = false;
-    world.addChunk(chunk);
-    for (const be of g.blockEntities) world.setBlockEntity(be, true);
-    spawner.populateChunk(createServerGameApi(), chunk);
-    for (const s of g.spawns) spawnGenerated(s);
+    rt.world.addChunk(chunk);
+    for (const be of g.blockEntities) rt.world.setBlockEntity(be, true);
+    rt.spawner.populateChunk(createServerGameApi(undefined, dim), chunk);
+    for (const s of g.spawns) spawnGenerated(s, dim);
     return chunk;
   }
 
@@ -820,16 +1075,17 @@ function start(): void {
       difficulty,
       rules: { ...world.rules },
       spawn,
+      end: endFight.save(),
     };
     writeJsonAtomic(worldSavePath, meta);
   }
 
-  function collectChunkAux(): {
+  function collectChunkAux(rt: DimensionRuntime): {
     beByChunk: Map<number, BlockEntity[]>;
     entByChunk: Map<number, unknown[]>;
   } {
     const beByChunk = new Map<number, BlockEntity[]>();
-    for (const be of world.blockEntities.values()) {
+    for (const be of rt.world.blockEntities.values()) {
       const key = chunkKey(be.x >> 4, be.z >> 4);
       let arr = beByChunk.get(key);
       if (!arr) {
@@ -839,7 +1095,7 @@ function start(): void {
       arr.push(be);
     }
     const entByChunk = new Map<number, unknown[]>();
-    for (const e of serverEntities) {
+    for (const e of rt.entities) {
       if (e.dead || e.roaming) continue;
       const key = chunkKey(Math.floor(e.x) >> 4, Math.floor(e.z) >> 4);
       const d = e.save();
@@ -855,20 +1111,23 @@ function start(): void {
   }
 
   function saveDirtyChunks(): void {
-    const { beByChunk, entByChunk } = collectChunkAux();
-    for (const chunk of world.chunks.values()) {
-      const bes = beByChunk.get(chunk.key) ?? [];
-      const ents = entByChunk.get(chunk.key) ?? [];
-      const metaPath = path.join(chunksDir, `${chunk.cx}_${chunk.cz}.json`);
-      const hadMeta = fs.existsSync(metaPath);
-      if (chunk.saveDirty || bes.length > 0 || ents.length > 0 || hadMeta) {
-        const pkt = encodeChunkPacket(chunk.cx, chunk.cz, chunk.blocks, chunk.meta, chunk.biomes, chunk.tints);
-        writeBinaryAtomic(path.join(chunksDir, `${chunk.cx}_${chunk.cz}.bin`), pkt);
-        chunk.saveDirty = false;
-        if (bes.length > 0 || ents.length > 0) {
-          writeJsonAtomic(metaPath, { blockEntities: bes, entities: ents });
-        } else if (hadMeta) {
-          fs.rmSync(metaPath, { force: true });
+    for (const rt of dims.values()) {
+      const { beByChunk, entByChunk } = collectChunkAux(rt);
+      for (const chunk of rt.world.chunks.values()) {
+        const bes = beByChunk.get(chunk.key) ?? [];
+        const ents = entByChunk.get(chunk.key) ?? [];
+        const metaPath = path.join(rt.chunksDir, `${chunk.cx}_${chunk.cz}.json`);
+        const hadMeta = fs.existsSync(metaPath);
+        if (chunk.saveDirty || bes.length > 0 || ents.length > 0 || hadMeta) {
+          fs.mkdirSync(rt.chunksDir, { recursive: true });
+          const pkt = encodeChunkPacket(chunk.cx, chunk.cz, chunk.blocks, chunk.meta, chunk.biomes, chunk.tints);
+          writeBinaryAtomic(path.join(rt.chunksDir, `${chunk.cx}_${chunk.cz}.bin`), pkt);
+          chunk.saveDirty = false;
+          if (bes.length > 0 || ents.length > 0) {
+            writeJsonAtomic(metaPath, { blockEntities: bes, entities: ents });
+          } else if (hadMeta) {
+            fs.rmSync(metaPath, { force: true });
+          }
         }
       }
     }
@@ -882,6 +1141,7 @@ function start(): void {
       z: p.z,
       yaw: p.yaw,
       pitch: p.pitch,
+      dimension: p.dimension,
       gameMode: p.gameMode,
       health: e.health,
       hunger: e.hunger,
@@ -916,7 +1176,7 @@ function start(): void {
     const key = chunkKey(cx, cz);
     if (p.sentChunks.has(key)) return;
     p.sentChunks.add(key);
-    const chunk = getOrGenerateChunk(cx, cz);
+    const chunk = getOrGenerateChunk(cx, cz, p.dimension);
     const pkt = encodeChunkPacket(cx, cz, chunk.blocks, chunk.meta, chunk.biomes, chunk.tints);
     p.ws.send(pkt);
   }
@@ -1012,6 +1272,15 @@ function start(): void {
     p.health = p.entity.health;
     p.hunger = p.entity.hunger;
     p.lastMoveMs = Date.now();
+    if (p.dimension !== 'overworld') {
+      p.dimension = 'overworld';
+      p.sentChunks.clear();
+      p.lastChunkX = Math.floor(spot.x) >> 4;
+      p.lastChunkZ = Math.floor(spot.z) >> 4;
+      if (sendPacket) {
+        sendJson(p.ws, { type: 'dimension', dimension: 'overworld', x: spot.x, y: spot.y, z: spot.z });
+      }
+    }
     if (sendPacket) {
       sendJson(p.ws, { type: 'respawn', x: spot.x, y: spot.y, z: spot.z });
       sendVitals(p);
@@ -1054,7 +1323,7 @@ function start(): void {
       sendJson(p.ws, { type: 'actionBar', text: 'Vous ne pouvez dormir que la nuit ou pendant un orage' });
       return;
     }
-    for (const e of serverEntities) {
+    for (const e of getDim(p.dimension).entities) {
       if (e instanceof Monster && !e.dead && Math.abs(e.x - hx) < 8 && Math.abs(e.z - hz) < 8 && Math.abs(e.y - y) < 5) {
         sendJson(p.ws, { type: 'actionBar', text: 'Vous ne pouvez pas dormir : des monstres rôdent' });
         return;
@@ -1137,45 +1406,51 @@ function start(): void {
     activeTailscaleCode = null;
     activeTailscaleUrl = null;
 
-    // Collecter tous les chunks sauvegardés sur disque + en mémoire
-    const { beByChunk, entByChunk } = collectChunkAux();
-    const chunkMap = new Map<number, SavedChunk>();
-    if (fs.existsSync(chunksDir)) {
-      for (const file of fs.readdirSync(chunksDir)) {
-        if (!file.endsWith('.bin')) continue;
-        const pkt = decodeChunkPacket(fs.readFileSync(path.join(chunksDir, file)));
-        if (pkt) {
-          const k = chunkKey(pkt.cx, pkt.cz);
-          const metaData = readJsonFile<{ blockEntities?: unknown[]; entities?: unknown[] }>(
-            path.join(chunksDir, `${pkt.cx}_${pkt.cz}.json`),
-          );
-          chunkMap.set(k, {
-            key: k,
-            blocks: pkt.blocks,
-            meta: pkt.meta,
-            biomes: pkt.biomes,
-            tints: pkt.tints,
-            blockEntities: metaData?.blockEntities ?? [],
-            entities: metaData?.entities ?? [],
+    // Collecter tous les chunks sauvegardés sur disque + en mémoire pour les 3 dimensions
+    const collectDimChunks = (rt: DimensionRuntime): SavedChunk[] => {
+      const { beByChunk, entByChunk } = collectChunkAux(rt);
+      const chunkMap = new Map<number, SavedChunk>();
+      if (fs.existsSync(rt.chunksDir)) {
+        for (const file of fs.readdirSync(rt.chunksDir)) {
+          if (!file.endsWith('.bin')) continue;
+          const pkt = decodeChunkPacket(fs.readFileSync(path.join(rt.chunksDir, file)));
+          if (pkt) {
+            const k = chunkKey(pkt.cx, pkt.cz);
+            const metaData = readJsonFile<{ blockEntities?: unknown[]; entities?: unknown[] }>(
+              path.join(rt.chunksDir, `${pkt.cx}_${pkt.cz}.json`),
+            );
+            chunkMap.set(k, {
+              key: k,
+              blocks: pkt.blocks,
+              meta: pkt.meta,
+              biomes: pkt.biomes,
+              tints: pkt.tints,
+              blockEntities: metaData?.blockEntities ?? [],
+              entities: metaData?.entities ?? [],
+            });
+          }
+        }
+      }
+      for (const c of rt.world.chunks.values()) {
+        const bes = beByChunk.get(c.key) ?? [];
+        const ents = entByChunk.get(c.key) ?? [];
+        if (c.modified || bes.length > 0 || ents.length > 0 || chunkMap.has(c.key)) {
+          chunkMap.set(c.key, {
+            key: c.key,
+            blocks: c.blocks,
+            meta: c.meta,
+            biomes: c.biomes,
+            tints: c.tints,
+            blockEntities: bes,
+            entities: ents,
           });
         }
       }
-    }
-    for (const c of world.chunks.values()) {
-      const bes = beByChunk.get(c.key) ?? [];
-      const ents = entByChunk.get(c.key) ?? [];
-      if (c.modified || bes.length > 0 || ents.length > 0 || chunkMap.has(c.key)) {
-        chunkMap.set(c.key, {
-          key: c.key,
-          blocks: c.blocks,
-          meta: c.meta,
-          biomes: c.biomes,
-          tints: c.tints,
-          blockEntities: bes,
-          entities: ents,
-        });
-      }
-    }
+      return Array.from(chunkMap.values());
+    };
+    const overworldChunks = collectDimChunks(getDim('overworld'));
+    const netherChunks = collectDimChunks(getDim('nether'));
+    const endChunks = collectDimChunks(getDim('end'));
 
     const hostPlayer = Array.from(players.values()).find((p) => p.isHost);
     const info: WorldInfo = {
@@ -1193,6 +1468,8 @@ function start(): void {
         thundering,
         weatherTimer,
         spawn: [spawn.x, spawn.y, spawn.z],
+        dimension: hostPlayer?.dimension ?? 'overworld',
+        end: endFight.save(),
         ...(hostPlayer
           ? {
               player: {
@@ -1214,7 +1491,7 @@ function start(): void {
       },
     };
 
-    const archiveBytes = buildWorldArchive(info, Array.from(chunkMap.values()));
+    const archiveBytes = buildWorldArchive(info, overworldChunks, netherChunks, endChunks);
 
     // Déconnecter les amis avec un message clair
     for (const p of Array.from(players.values())) {
@@ -1311,13 +1588,30 @@ function start(): void {
           sendJson(sender.ws, { type: 'chat', text: `Joueur introuvable : ${parts[1]}` });
           return;
         }
+        const clearRide = (p: ServerPlayer): void => {
+          if (p.entity.vehicle) {
+            const v = p.entity.vehicle;
+            if (v instanceof Boat || v instanceof Minecart) v.rider = null;
+            p.entity.leaveVehicle();
+            sendJson(p.ws, { type: 'mount', vehicleId: 0 });
+          }
+        };
+        clearRide(sender);
         sender.x = dest.x;
         sender.y = dest.y;
         sender.z = dest.z;
         sender.entity.teleport(dest.x, dest.y, dest.z);
         sender.entity.fallDistance = 0;
         sender.lastMoveMs = Date.now();
-        sendJson(sender.ws, { type: 'teleport', x: sender.x, y: sender.y, z: sender.z });
+        if (dest.dimension !== sender.dimension) {
+          sender.dimension = dest.dimension;
+          sender.sentChunks.clear();
+          sender.lastChunkX = Math.floor(dest.x) >> 4;
+          sender.lastChunkZ = Math.floor(dest.z) >> 4;
+          sendJson(sender.ws, { type: 'dimension', dimension: dest.dimension, x: dest.x, y: dest.y, z: dest.z });
+        } else {
+          sendJson(sender.ws, { type: 'teleport', x: sender.x, y: sender.y, z: sender.z });
+        }
         streamChunksAround(sender);
         sendJson(sender.ws, { type: 'chat', text: `Téléporté vers ${dest.name}` });
         return;
@@ -1353,6 +1647,12 @@ function start(): void {
         if (!Number.isFinite(tx) || !Number.isFinite(ty) || !Number.isFinite(tz) || ty < -10 || ty > 256) {
           sendJson(sender.ws, { type: 'chat', text: 'Coordonnées invalides.' });
           return;
+        }
+        if (target.entity.vehicle) {
+          const v = target.entity.vehicle;
+          if (v instanceof Boat || v instanceof Minecart) v.rider = null;
+          target.entity.leaveVehicle();
+          sendJson(target.ws, { type: 'mount', vehicleId: 0 });
         }
         target.x = tx;
         target.y = ty;
@@ -1419,8 +1719,10 @@ function start(): void {
       }
       difficulty = d;
       if (d === 0) {
-        for (const e of serverEntities) {
-          if (e instanceof Monster) e.dead = true;
+        for (const rt of dims.values()) {
+          for (const e of rt.entities) {
+            if (e instanceof Monster) e.dead = true;
+          }
         }
       }
       saveWorldMeta();
@@ -1510,7 +1812,7 @@ function start(): void {
       if (!mob) return;
       mob.setPosition(sx, sy, sz);
       mob.setRotation(Math.random() * Math.PI * 2);
-      spawnServerEntity(mob);
+      spawnServerEntity(mob, sender.dimension);
       sendJson(sender.ws, { type: 'chat', text: `Apparition : ${kind} en ${sx.toFixed(1)}, ${sy.toFixed(1)}, ${sz.toFixed(1)}` });
       return;
     }
@@ -1545,6 +1847,115 @@ function start(): void {
       spawn = { x: bx + 0.5, y: by, z: bz + 0.5 };
       saveWorldMeta();
       sendJson(sender.ws, { type: 'chat', text: `Point d'apparition fixé en ${bx}, ${by}, ${bz}` });
+      return;
+    }
+
+    const resolveBlockArg = (nameRaw: string | undefined, metaRaw?: string): { id: number; meta: number } | null => {
+      if (!nameRaw) return null;
+      const clean = nameRaw.toLowerCase().replace(/^minecraft:/, '');
+      let id = -1;
+      for (const [k, v] of Object.entries(B)) {
+        if (typeof v === 'number' && k.toLowerCase() === clean) {
+          id = v;
+          break;
+        }
+      }
+      if (id < 0) {
+        for (let i = 0; i < BLOCKS.length; i++) {
+          const b = BLOCKS[i];
+          if (b && b.name.toLowerCase() === clean) {
+            id = i;
+            break;
+          }
+        }
+      }
+      if (id < 0) return null;
+      const m = metaRaw !== undefined ? Number(metaRaw) : 0;
+      if (!Number.isInteger(m) || m < 0 || m > 255) return null;
+      return { id, meta: m };
+    };
+    const parseBlkCoord = (raw: string | undefined, base: number): number => {
+      if (!raw || raw === '~') return base;
+      if (raw.startsWith('~')) {
+        const d = Number(raw.slice(1));
+        return Number.isFinite(d) ? Math.floor(base + d) : NaN;
+      }
+      const v = Number(raw);
+      return Number.isFinite(v) ? Math.floor(v) : NaN;
+    };
+
+    if (cmd === 'setblock') {
+      if (parts.length < 5) {
+        sendJson(sender.ws, { type: 'chat', text: 'Usage : /setblock <x> <y> <z> <bloc> [méta]' });
+        return;
+      }
+      const sWorld = getDim(sender.dimension).world;
+      const x = parseBlkCoord(parts[1], Math.floor(sender.x));
+      const y = parseBlkCoord(parts[2], Math.floor(sender.y));
+      const z = parseBlkCoord(parts[3], Math.floor(sender.z));
+      if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z) || y < 0 || y >= CHUNK_HEIGHT) return;
+      if (!sWorld.isLoaded(x, z)) {
+        sendJson(sender.ws, { type: 'chat', text: 'Chunk non chargé à cette position' });
+        return;
+      }
+      const spec = resolveBlockArg(parts[4], parts[5]);
+      if (!spec) {
+        sendJson(sender.ws, { type: 'chat', text: `Bloc inconnu : ${parts[4]}` });
+        return;
+      }
+      if (spec.id === B.IRON_DOOR || spec.id === B.OAK_DOOR) {
+        if ((spec.meta & 8) === 0 && y + 1 < CHUNK_HEIGHT) {
+          sWorld.setBlock(x, y, z, spec.id, spec.meta, false);
+          sWorld.setBlock(x, y + 1, z, spec.id, spec.meta | 8, true);
+          broadcastBlockUpdate(x, y, z, spec.id, spec.meta, sender.dimension);
+          return;
+        }
+      }
+      sWorld.setBlock(x, y, z, spec.id, spec.meta, true);
+      sendJson(sender.ws, { type: 'chat', text: `Bloc posé en ${x} ${y} ${z}` });
+      return;
+    }
+
+    if (cmd === 'fill') {
+      if (parts.length < 8) {
+        sendJson(sender.ws, { type: 'chat', text: 'Usage : /fill <x1> <y1> <z1> <x2> <y2> <z2> <bloc> [mode]' });
+        return;
+      }
+      const sWorld = getDim(sender.dimension).world;
+      const bx = Math.floor(sender.x);
+      const by = Math.floor(sender.y);
+      const bz = Math.floor(sender.z);
+      const x1 = parseBlkCoord(parts[1], bx);
+      const y1 = parseBlkCoord(parts[2], by);
+      const z1 = parseBlkCoord(parts[3], bz);
+      const x2 = parseBlkCoord(parts[4], bx);
+      const y2 = parseBlkCoord(parts[5], by);
+      const z2 = parseBlkCoord(parts[6], bz);
+      if (![x1, y1, z1, x2, y2, z2].every(Number.isFinite)) return;
+      if (y1 < 0 || y1 >= CHUNK_HEIGHT || y2 < 0 || y2 >= CHUNK_HEIGHT) return;
+      const minX = Math.min(x1, x2), maxX = Math.max(x1, x2);
+      const minY = Math.min(y1, y2), maxY = Math.max(y1, y2);
+      const minZ = Math.min(z1, z2), maxZ = Math.max(z1, z2);
+      if ((maxX - minX + 1) * (maxY - minY + 1) * (maxZ - minZ + 1) > 32768) return;
+      const spec = resolveBlockArg(parts[7]);
+      if (!spec) {
+        sendJson(sender.ws, { type: 'chat', text: `Bloc inconnu : ${parts[7]}` });
+        return;
+      }
+      const mode = (parts[8] ?? 'replace').toLowerCase();
+      for (let fx = minX; fx <= maxX; fx++) {
+        for (let fz = minZ; fz <= maxZ; fz++) {
+          if (!sWorld.isLoaded(fx, fz)) continue;
+          for (let fy = minY; fy <= maxY; fy++) {
+            const shell = fx === minX || fx === maxX || fy === minY || fy === maxY || fz === minZ || fz === maxZ;
+            if (mode === 'outline' && !shell) continue;
+            if (mode === 'keep' && sWorld.getBlock(fx, fy, fz) !== B.AIR) continue;
+            if (mode === 'hollow' && !shell) sWorld.setBlock(fx, fy, fz, B.AIR, 0, true);
+            else sWorld.setBlock(fx, fy, fz, spec.id, spec.meta, true);
+          }
+        }
+      }
+      sendJson(sender.ws, { type: 'chat', text: 'Zone remplie' });
       return;
     }
 
@@ -1605,7 +2016,7 @@ function start(): void {
       const payload: Record<string, unknown> = { ok: true, hosting: inviteSecretHex !== null, port };
       if (hasValidPw) {
         payload.name = worldName;
-        payload.entityCount = serverEntities.length;
+        payload.entityCount = Array.from(dims.values()).reduce((s, r) => s + r.entities.length, 0);
         payload.tickMsAvg = Math.round(tickMsAvg * 1000) / 1000;
       }
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -1691,29 +2102,43 @@ function start(): void {
 
         world = new World(seed, worldType, genVersion);
         world.raining = raining;
-        attachWorldHost(world);
+        attachWorldHost(world, 'overworld');
         gen = new WorldGen(seed, worldType, genVersion);
-        serverEntities.length = 0;
-        pendingEntities.length = 0;
-        spawner = new Spawner();
+        endFight.load(st.end);
 
-        for (const c of archive.chunks) {
-          const [cx, cz] = chunkCoordsFromKey(c.key);
-          const hm = new Uint8Array(CHUNK_AREA);
-          computeHeightmap(c.blocks, hm);
-          const chunk = new Chunk(cx, cz, c.blocks, c.meta, c.biomes, hm, c.tints);
-          computeServerChunkLight(chunk);
-          chunk.modified = true;
-          chunk.saveDirty = true;
-          world.addChunk(chunk);
-          for (const be of c.blockEntities) {
-            if (be && typeof be === 'object') world.setBlockEntity(be as BlockEntity, true);
-          }
-          for (const d of c.entities) {
-            const e = createEntity(d);
-            if (e) spawnServerEntity(e);
-          }
+        const owRt = getDim('overworld');
+        const neRt = getDim('nether');
+        const enRt = getDim('end');
+        owRt.world = world;
+        owRt.gen = gen;
+        for (const rt of dims.values()) {
+          rt.entities.length = 0;
+          rt.pendingEntities.length = 0;
+          rt.pressedPlates.clear();
+          rt.spawner = new Spawner();
         }
+        const loadArchiveChunks = (rt: DimensionRuntime, list: readonly SavedChunk[]): void => {
+          for (const c of list) {
+            const [cx, cz] = chunkCoordsFromKey(c.key);
+            const hm = new Uint8Array(CHUNK_AREA);
+            computeHeightmap(c.blocks, hm);
+            const chunk = new Chunk(cx, cz, c.blocks, c.meta, c.biomes, hm, c.tints);
+            computeServerChunkLight(chunk);
+            chunk.modified = true;
+            chunk.saveDirty = true;
+            rt.world.addChunk(chunk);
+            for (const be of c.blockEntities) {
+              if (be && typeof be === 'object') rt.world.setBlockEntity(be as BlockEntity, true);
+            }
+            for (const d of c.entities) {
+              const e = createEntity(d);
+              if (e) spawnServerEntity(e, rt.dim);
+            }
+          }
+        };
+        loadArchiveChunks(owRt, archive.chunks);
+        loadArchiveChunks(neRt, archive.netherChunks);
+        loadArchiveChunks(enRt, archive.endChunks);
 
         const hostName = (urlObj.searchParams.get('name') ?? 'Hote').trim().slice(0, 16) || 'Hote';
         const pState = st.player && typeof st.player === 'object' ? (st.player as Record<string, unknown>) : null;
@@ -1726,6 +2151,7 @@ function start(): void {
             z: pos ? pos[2] : typeof pState.z === 'number' ? pState.z : spawn.z,
             yaw: typeof pState.yaw === 'number' ? pState.yaw : 0,
             pitch: typeof pState.pitch === 'number' ? pState.pitch : 0,
+            dimension: readDimension(st.dimension),
             gameMode:
               pState.gameMode === 'creative' || pState.gameMode === 'adventure' || pState.gameMode === 'spectator'
                 ? pState.gameMode
@@ -2137,11 +2563,13 @@ function start(): void {
         if (Array.isArray(savedPlayer?.bed) && savedPlayer.bed.length === 3) {
           pEntity.bed = { x: savedPlayer.bed[0], y: savedPlayer.bed[1], z: savedPlayer.bed[2] };
         }
+        const pDim = readDimension(savedPlayer?.dimension);
         player = {
           id,
           name: cleanName,
           isHost,
           ws,
+          dimension: pDim,
           x: px,
           y: py,
           z: pz,
@@ -2164,7 +2592,7 @@ function start(): void {
           sentChunks: new Set<number>(),
         };
         inv.drop = (stack) => {
-          serverDropStack(player!.x, player!.y + 1.3, player!.z, stack, 40);
+          serverDropStack(player!.x, player!.y + 1.3, player!.z, stack, 40, undefined, undefined, undefined, player!.dimension);
         };
         attachPlayerCallbacks(player);
         // Un joueur déconnecté mort réapparaît proprement à la reconnexion, sans dupliquer son inventaire
@@ -2181,6 +2609,7 @@ function start(): void {
           seed,
           worldType,
           gameMode: player.gameMode,
+          dimension: player.dimension,
           time: worldTime,
           raining,
           thundering,
@@ -2222,6 +2651,9 @@ function start(): void {
       }
 
       // Messages authentifiés
+      const pRt = getDim(player.dimension);
+      const world = pRt.world;
+      const serverEntities = pRt.entities;
       if (msg.type === 'move') {
         const { x, y, z, yaw, pitch, sneaking, onGround, swing, sprinting } = msg;
         if (
@@ -2246,12 +2678,33 @@ function start(): void {
           return;
         }
 
+        if (
+          player.entity.vehicle instanceof Boat ||
+          player.entity.vehicle instanceof Minecart
+        ) {
+          const v = player.entity.vehicle;
+          if (sneaking) {
+            player.entity.dismount(createServerGameApi(player));
+            v.rider = null;
+            player.x = player.entity.x;
+            player.y = player.entity.y;
+            player.z = player.entity.z;
+            player.lastMoveMs = now;
+            sendJson(ws, { type: 'mount', vehicleId: 0 });
+            sendJson(ws, { type: 'teleport', x: player.x, y: player.y, z: player.z });
+            return;
+          }
+          const seatY = v instanceof Minecart ? MINECART_SEAT : BOAT_SEAT;
+          v.setPosition(x, y - seatY, z);
+          if (Number.isFinite(msg.vehicleYaw)) v.yaw = msg.vehicleYaw!;
+        }
+
         player.x = x;
         player.y = y;
         player.z = z;
         player.yaw = yaw;
         player.pitch = pitch;
-        player.sneaking = Boolean(sneaking);
+        player.sneaking = player.entity.vehicle ? false : Boolean(sneaking);
         player.onGround = Boolean(onGround);
         player.swing = Number.isFinite(swing) ? Math.max(0, Math.min(1, swing)) : 0;
         player.lastMoveMs = now;
@@ -2275,6 +2728,162 @@ function start(): void {
           player.lastChunkZ = cz;
           streamChunksAround(player);
         }
+        return;
+      }
+
+      if (msg.type === 'placeVehicle') {
+        const { x, y, z, face, itemId, yaw } = msg;
+        if (!Number.isInteger(x) || !Number.isInteger(y) || !Number.isInteger(z)) return;
+        if (y < 0 || y >= CHUNK_HEIGHT || !world.isLoaded(x, z)) return;
+        if (player.gameMode === 'adventure' || player.gameMode === 'spectator') return;
+        const dist = Math.hypot(x + 0.5 - player.x, y + 0.5 - (player.y + 1.62), z + 0.5 - player.z);
+        if (dist > 7.0) return;
+        const held = player.entity.inventory.held;
+        if (player.gameMode !== 'creative' && (!held || held.id !== itemId || held.count <= 0)) {
+          sendInventory(player);
+          return;
+        }
+        if (itemId === I.MINECART) {
+          if (!isRail(world.getBlock(x, y, z))) return;
+          const cart = new Minecart();
+          cart.setPosition(x + 0.5, y + 0.0625, z + 0.5);
+          cart.yaw = Number.isFinite(yaw) ? yaw : 0;
+          spawnServerEntity(cart, player.dimension);
+        } else if (itemId === I.BOAT) {
+          const bid = world.getBlock(x, y, z);
+          const boat = new Boat();
+          if (bid === B.WATER) {
+            boat.setPosition(x + 0.5, y + 0.9, z + 0.5);
+          } else {
+            const dx = FACE_DX[face] ?? 0;
+            const dy = FACE_DY[face] ?? 0;
+            const dz = FACE_DZ[face] ?? 0;
+            const ax = x + dx;
+            const ay = y + dy;
+            const az = z + dz;
+            if (ay < 0 || ay >= CHUNK_HEIGHT || BLOCK_REPLACEABLE[world.getBlock(ax, ay, az)] !== 1) return;
+            boat.setPosition(ax + 0.5, ay + 0.05, az + 0.5);
+          }
+          boat.yaw = Number.isFinite(yaw) ? yaw : 0;
+          spawnServerEntity(boat, player.dimension);
+        } else {
+          return;
+        }
+        if (player.gameMode !== 'creative' && held) {
+          held.count--;
+          if (held.count <= 0) player.entity.inventory.slots[player.selected] = null;
+          sendInventory(player);
+        }
+        return;
+      }
+
+      if (msg.type === 'dismount') {
+        const v = player.entity.vehicle;
+        if (v instanceof Boat || v instanceof Minecart) {
+          player.entity.dismount(createServerGameApi(player));
+          v.rider = null;
+          player.x = player.entity.x;
+          player.y = player.entity.y;
+          player.z = player.entity.z;
+          player.lastMoveMs = Date.now();
+          sendJson(ws, { type: 'mount', vehicleId: 0 });
+          sendJson(ws, { type: 'teleport', x: player.x, y: player.y, z: player.z });
+        }
+        return;
+      }
+
+      if (msg.type === 'enterPortal') {
+        const kind = msg.kind;
+        if (kind !== 'nether' && kind !== 'end') return;
+        if (!player.entity.alive) return;
+        const pRt = getDim(player.dimension);
+        const pWorld = pRt.world;
+        const fx = Math.floor(player.x);
+        const fy = Math.floor(player.y + 0.2);
+        const fz = Math.floor(player.z);
+        const expectedBlock = kind === 'end' ? B.END_PORTAL : B.NETHER_PORTAL;
+        let inPortal = false;
+        for (let dy = -1; dy <= 1 && !inPortal; dy++) {
+          for (let dx = -1; dx <= 1 && !inPortal; dx++) {
+            for (let dz = -1; dz <= 1 && !inPortal; dz++) {
+              if (pWorld.getBlock(fx + dx, fy + dy, fz + dz) === expectedBlock) inPortal = true;
+            }
+          }
+        }
+        if (!inPortal) {
+          sendJson(ws, { type: 'error', code: 'bad_request', message: 'Vous n’êtes pas dans un portail.' });
+          return;
+        }
+        let target: Dimension = 'overworld';
+        if (kind === 'nether') {
+          if (player.dimension === 'end') return;
+          target = player.dimension === 'overworld' ? 'nether' : 'overworld';
+        } else {
+          if (player.dimension === 'nether') return;
+          target = player.dimension === 'overworld' ? 'end' : 'overworld';
+        }
+
+        if (player.entity.vehicle) {
+          const v = player.entity.vehicle;
+          if (v instanceof Boat || v instanceof Minecart) v.rider = null;
+          player.entity.leaveVehicle();
+          sendJson(ws, { type: 'mount', vehicleId: 0 });
+        }
+        if (player.openContainer) {
+          player.openContainer.menu.close();
+          player.openContainer = null;
+          sendJson(ws, { type: 'containerClose', x: 0, y: 0, z: 0 });
+        }
+
+        let dest: { x: number; y: number; z: number };
+        let yaw: number | undefined;
+        let showCredits = false;
+        if (kind === 'nether') {
+          const tx = target === 'nether' ? Math.floor(player.x / 8) : Math.floor(player.x * 8);
+          const tz = target === 'nether' ? Math.floor(player.z / 8) : Math.floor(player.z * 8);
+          const tcx = tx >> 4;
+          const tcz = tz >> 4;
+          for (let dz = -4; dz <= 4; dz++) {
+            for (let dx = -4; dx <= 4; dx++) {
+              getOrGenerateChunk(tcx + dx, tcz + dz, target);
+            }
+          }
+          dest = findOrCreatePortal(getDim(target).world, tx, tz, target);
+        } else if (target === 'end') {
+          const tcx = END_PLATFORM.x >> 4;
+          const tcz = END_PLATFORM.z >> 4;
+          for (let dz = -2; dz <= 2; dz++) {
+            for (let dx = -2; dx <= 2; dx++) {
+              getOrGenerateChunk(tcx + dx, tcz + dz, 'end');
+            }
+          }
+          dest = buildEndPlatform(getDim('end').world);
+          yaw = Math.PI / 2;
+        } else {
+          if (endFight.killed && !endFight.creditsSeen) {
+            endFight.creditsSeen = true;
+            showCredits = true;
+          }
+          dest = findRespawnSpot(player);
+        }
+
+        if (showCredits) {
+          sendJson(ws, { type: 'dragonState', progress: null, killed: true, credits: true });
+        }
+        player.dimension = target;
+        player.x = dest.x;
+        player.y = dest.y;
+        player.z = dest.z;
+        if (yaw !== undefined) player.yaw = yaw;
+        player.entity.teleport(dest.x, dest.y, dest.z);
+        if (yaw !== undefined) player.entity.setRotation(yaw);
+        player.entity.fallDistance = 0;
+        player.lastMoveMs = Date.now();
+        player.sentChunks.clear();
+        player.lastChunkX = Math.floor(dest.x) >> 4;
+        player.lastChunkZ = Math.floor(dest.z) >> 4;
+        sendJson(ws, { type: 'dimension', dimension: target, x: dest.x, y: dest.y, z: dest.z, ...(yaw !== undefined ? { yaw } : {}) });
+        streamChunksAround(player);
         return;
       }
 
@@ -2313,16 +2922,72 @@ function start(): void {
       }
 
       if (msg.type === 'placeBlock') {
-        const { x, y, z, id, meta, slot } = msg;
+        const { x, y, z, face, id, meta, slot } = msg;
+        const pRt = getDim(player.dimension);
+        const pWorld = pRt.world;
         if (!Number.isInteger(x) || !Number.isInteger(y) || !Number.isInteger(z)) return;
-        if (!Number.isInteger(id) || !Number.isInteger(meta) || id <= 0 || id >= 256 || meta < 0 || meta > 255) return;
+        if (!Number.isInteger(id) || !Number.isInteger(meta) || id <= 0 || meta < 0 || meta > 255) return;
         if (y < 0 || y >= CHUNK_HEIGHT) return;
         if (player.gameMode === 'adventure' || player.gameMode === 'spectator') return;
-        if (!world.isLoaded(x, z)) return;
+        if (!pWorld.isLoaded(x, z)) return;
         const dist = Math.hypot(x + 0.5 - player.x, y + 0.5 - (player.y + 1.62), z + 0.5 - player.z);
         if (dist > 7.0) return;
 
-        const existing = world.getBlock(x, y, z);
+        if (id === I.ENDER_EYE) {
+          const v = pWorld.getBlockAndMeta(x, y, z);
+          if ((v & 255) !== B.END_PORTAL_FRAME || ((v >> 8) & FRAME_EYE) !== 0) return;
+          if (player.gameMode === 'survival') {
+            const idx = Number.isInteger(slot) && slot >= 0 && slot < 36 ? slot : player.selected;
+            const s = player.slots[idx];
+            if (!s || s.count <= 0 || s.id !== I.ENDER_EYE) {
+              sendInventory(player);
+              return;
+            }
+            s.count -= 1;
+            if (s.count <= 0) player.slots[idx] = null;
+            sendInventory(player);
+          }
+          pWorld.setMeta(x, y, z, (v >> 8) | FRAME_EYE);
+          if (tryOpenEndPortal(pWorld, x, y, z)) {
+            broadcastNear(x + 0.5, y + 0.5, z + 0.5, 48, { type: 'sound', name: 'thunder', x: x + 0.5, y: y + 0.5, z: z + 0.5, volume: 0.9, pitch: 0.6 }, player.dimension);
+          }
+          return;
+        }
+
+        if (id === I.FLINT_AND_STEEL) {
+          const idx = Number.isInteger(slot) && slot >= 0 && slot < 36 ? slot : player.selected;
+          const s = player.slots[idx];
+          if (player.gameMode === 'survival' && (!s || s.count <= 0 || s.id !== I.FLINT_AND_STEEL)) {
+            sendInventory(player);
+            return;
+          }
+          if (pWorld.getBlock(x, y, z) === B.TNT) {
+            pWorld.setBlock(x, y, z, B.AIR, 0);
+            pWorld.host.primeTnt(x, y, z, 80);
+          } else {
+            const fdx = FACE_DX[face] ?? 0;
+            const fdy = FACE_DY[face] ?? 0;
+            const fdz = FACE_DZ[face] ?? 0;
+            const tx = x + fdx;
+            const ty = y + fdy;
+            const tz = z + fdz;
+            if (!tryIgnitePortal(pWorld, tx, ty, tz)) {
+              if (pWorld.getBlock(tx, ty, tz) !== B.AIR || !fireCanStay(pWorld, tx, ty, tz)) return;
+              pWorld.setBlock(tx, ty, tz, B.FIRE, 0);
+            }
+          }
+          broadcastNear(x + 0.5, y + 0.5, z + 0.5, 32, { type: 'sound', name: 'ignite', x: x + 0.5, y: y + 0.5, z: z + 0.5, volume: 0.8, pitch: 1.0 }, player.dimension);
+          if (player.gameMode === 'survival' && s) {
+            s.damage++;
+            const lim = getItem(s.id).durability;
+            if (lim > 0 && s.damage >= lim) player.slots[idx] = null;
+            sendInventory(player);
+          }
+          return;
+        }
+
+        if (id >= 256) return;
+        const existing = pWorld.getBlock(x, y, z);
         if (BLOCK_REPLACEABLE[existing] !== 1) return;
 
         if (BLOCK_SOLID[id] === 1) {
@@ -2429,6 +3094,28 @@ function start(): void {
           const nextNote = ((meta & 31) + 1) % 25;
           world.setMetaSilent(x, y, z, nextNote | (meta & 32));
           triggerNoteBlock(world, x, y, z, nextNote);
+        } else if (id === B.JUKEBOX) {
+          const jb = getJukebox(world, x, y, z);
+          if (jb.disc > 0) {
+            serverDropStack(x + 0.5, y + 1.0, z + 0.5, makeStack(jb.disc, 1));
+            jb.disc = 0;
+            world.markBlockEntityDirty(jb);
+            updateRedstoneAround(world, x, y, z);
+            broadcastNear(x + 0.5, y + 0.5, z + 0.5, 64, { type: 'jukebox', x, y, z, disc: 0 }, player.dimension);
+          } else {
+            const held = player.entity.inventory.held;
+            if (held && musicDiscInfo(held.id)) {
+              jb.disc = held.id;
+              if (player.gameMode !== 'creative') {
+                held.count--;
+                if (held.count <= 0) player.entity.inventory.slots[player.selected] = null;
+                sendInventory(player);
+              }
+              world.markBlockEntityDirty(jb);
+              updateRedstoneAround(world, x, y, z);
+              broadcastNear(x + 0.5, y + 0.5, z + 0.5, 64, { type: 'jukebox', x, y, z, disc: jb.disc }, player.dimension);
+            }
+          }
         } else if (id === B.BED) {
           trySleepServerPlayer(player, x, y, z, meta);
         }
@@ -2485,7 +3172,7 @@ function start(): void {
         const vx = -Math.sin(player.yaw) * cp * 0.3;
         const vy = Math.sin(player.pitch) * 0.3 + 0.1;
         const vz = -Math.cos(player.yaw) * cp * 0.3;
-        serverDropStack(player.x, player.y + 1.3, player.z, dropped, 40, vx, vy, vz);
+        serverDropStack(player.x, player.y + 1.3, player.z, dropped, 40, vx, vy, vz, player.dimension);
         sendInventory(player);
         return;
       }
@@ -2659,8 +3346,8 @@ function start(): void {
         arrow.powerLevel = enchantLevel(bowStack, 'power');
         arrow.critical = power >= 1;
         arrow.shoot(player.x + lx * 0.3, player.y + player.entity.eyeHeight - 0.1, player.z + lz * 0.3, lx, ly, lz, power * 3, 1, () => Math.random());
-        spawnServerEntity(arrow);
-        broadcastNear(player.x, player.y + 1.5, player.z, 32, { type: 'sound', name: 'bow', x: player.x, y: player.y + 1.5, z: player.z, volume: 0.8, pitch: 0.8 + power * 0.4 });
+        spawnServerEntity(arrow, player.dimension);
+        broadcastNear(player.x, player.y + 1.5, player.z, 32, { type: 'sound', name: 'bow', x: player.x, y: player.y + 1.5, z: player.z, volume: 0.8, pitch: 0.8 + power * 0.4 }, player.dimension);
         if (player.gameMode !== 'creative') player.entity.inventory.remove(I.ARROW, 1);
         player.entity.damageHand(hand, createServerGameApi(player), 1);
         sendInventory(player);
@@ -2681,8 +3368,8 @@ function start(): void {
         const pot = new ThrownPotion(stack.potion ?? 'poison');
         pot.owner = player.entity;
         pot.shoot(player.x + lx * 0.3, player.y + player.entity.eyeHeight - 0.1, player.z + lz * 0.3, lx, ly, lz, 0.6);
-        spawnServerEntity(pot);
-        broadcastNear(player.x, player.y + 1.5, player.z, 24, { type: 'sound', name: 'bow', x: player.x, y: player.y + 1.5, z: player.z, volume: 0.5, pitch: 0.6 });
+        spawnServerEntity(pot, player.dimension);
+        broadcastNear(player.x, player.y + 1.5, player.z, 24, { type: 'sound', name: 'bow', x: player.x, y: player.y + 1.5, z: player.z, volume: 0.5, pitch: 0.6 }, player.dimension);
         player.entity.consumeHand(hand);
         sendInventory(player);
         return;
@@ -2715,6 +3402,13 @@ function start(): void {
           return;
         }
         if (target.interact(api, player.entity)) {
+          if ((target instanceof Boat || target instanceof Minecart) && player.entity.vehicle === target) {
+            player.x = player.entity.x;
+            player.y = player.entity.y;
+            player.z = player.entity.z;
+            player.lastMoveMs = Date.now();
+            sendJson(player.ws, { type: 'mount', vehicleId: target.id });
+          }
           if (player.entity.invDirty) {
             player.entity.invDirty = false;
             sendInventory(player);
@@ -2815,7 +3509,7 @@ function start(): void {
           return;
         }
         const dist = Math.hypot(x + 0.5 - player.x, y + 0.5 - (player.y + 1.62), z + 0.5 - player.z);
-        if (dist > 6.5 || !isContainerBlockAt(x, y, z, oc.kind)) {
+        if (dist > 6.5 || !isContainerBlockAt(world, x, y, z, oc.kind)) {
           oc.menu.close();
           player.openContainer = null;
           sendInventory(player);
@@ -2831,7 +3525,7 @@ function start(): void {
         else if (action.kind === 'numberKey') m.numberKey(action.i, action.bar);
         else if (action.kind === 'dropKey') m.dropKey(action.i, Boolean(action.all));
         sendInventory(player);
-        broadcastContainerState(x, y, z, oc.kind);
+        broadcastContainerState(player.dimension, x, y, z, oc.kind);
         return;
       }
 
@@ -2954,8 +3648,13 @@ function start(): void {
         player.openContainer.menu.close();
         player.openContainer = null;
       }
+      if (player.entity.vehicle) {
+        const v = player.entity.vehicle;
+        if (v instanceof Boat || v instanceof Minecart) v.rider = null;
+        player.entity.leaveVehicle();
+      }
       if (player.openTradeEntityId !== null) {
-        const target = serverEntities.find((e) => e.id === player!.openTradeEntityId && e instanceof Villager);
+        const target = getDim(player.dimension).entities.find((e) => e.id === player!.openTradeEntityId && e instanceof Villager);
         if (target instanceof Villager && target.customer === player.entity) target.customer = null;
         player.openTradeEntityId = null;
       }
@@ -2967,8 +3666,8 @@ function start(): void {
     });
   });
 
-  function isContainerBlockAt(x: number, y: number, z: number, kind: ContainerKind): boolean {
-    const bid = world.getBlock(x, y, z);
+  function isContainerBlockAt(w: World, x: number, y: number, z: number, kind: ContainerKind): boolean {
+    const bid = w.getBlock(x, y, z);
     if (kind === 'chest') return bid === B.CHEST;
     if (kind === 'furnace') return bid === B.FURNACE || bid === B.FURNACE_LIT;
     if (kind === 'brewing') return bid === B.BREWING_STAND;
@@ -2978,7 +3677,7 @@ function start(): void {
     return false;
   }
 
-  function buildContainerPacket(x: number, y: number, z: number, kind: ContainerKind): ServerMessage {
+  function buildContainerPacket(w: World, x: number, y: number, z: number, kind: ContainerKind): ServerMessage {
     let items: Slot[] = [];
     let burnTime: number | undefined;
     let burnTotal: number | undefined;
@@ -2986,22 +3685,22 @@ function start(): void {
     let brewTime: number | undefined;
     let fuel: number | undefined;
     if (kind === 'chest') {
-      items = getChest(world, x, y, z).items;
+      items = getChest(w, x, y, z).items;
     } else if (kind === 'furnace') {
-      const f = getFurnace(world, x, y, z);
+      const f = getFurnace(w, x, y, z);
       items = f.items;
       burnTime = f.burnTime;
       burnTotal = f.burnTotal;
       cookTime = f.cookTime;
     } else if (kind === 'brewing') {
-      const b = getBrewingStand(world, x, y, z);
+      const b = getBrewingStand(w, x, y, z);
       items = b.items;
       brewTime = b.brewTime;
       fuel = b.fuel;
     } else if (kind === 'hopper') {
-      items = getHopper(world, x, y, z).items;
+      items = getHopper(w, x, y, z).items;
     } else {
-      items = getDispenser(world, x, y, z, kind).items;
+      items = getDispenser(w, x, y, z, kind).items;
     }
     return {
       type: 'containerState',
@@ -3016,14 +3715,14 @@ function start(): void {
   }
 
   function sendContainerStateTo(p: ServerPlayer, x: number, y: number, z: number, kind: ContainerKind): void {
-    sendJson(p.ws, buildContainerPacket(x, y, z, kind));
+    sendJson(p.ws, buildContainerPacket(getDim(p.dimension).world, x, y, z, kind));
   }
 
-  function broadcastContainerState(x: number, y: number, z: number, kind: ContainerKind): void {
-    const pkt = buildContainerPacket(x, y, z, kind);
+  function broadcastContainerState(dim: Dimension, x: number, y: number, z: number, kind: ContainerKind): void {
+    const pkt = buildContainerPacket(getDim(dim).world, x, y, z, kind);
     const raw = JSON.stringify(pkt);
     for (const p of players.values()) {
-      if (p.openContainer && p.openContainer.x === x && p.openContainer.y === y && p.openContainer.z === z && p.ws.readyState === WebSocket.OPEN) {
+      if (p.dimension === dim && p.openContainer && p.openContainer.x === x && p.openContainer.y === y && p.openContainer.z === z && p.ws.readyState === WebSocket.OPEN) {
         p.ws.send(raw);
       }
     }
@@ -3062,18 +3761,124 @@ function start(): void {
 
     if (players.size > 0) {
       const playerList = Array.from(players.values());
-      const firstPlayer = playerList[0];
-      if (firstPlayer) {
-        world.tick(firstPlayer.x, firstPlayer.z);
+
+      // Simulation par dimension (Surface, Nether, End)
+      for (const rt of dims.values()) {
+        const dimPlayers = playerList.filter((p) => p.dimension === rt.dim);
+        if (dimPlayers.length === 0) {
+          if (rt.dim === 'end' && endFight.dragon) endFight.leave();
+          continue;
+        }
+        const firstP = dimPlayers[0];
+        rt.world.tick(firstP.x, firstP.z);
+        tickBlockEntities(rt.world);
+
+        if (rt.dim !== 'end' && world.rules.doMobSpawning) {
+          const spawnerTarget = dimPlayers[spawnPlayerIdx % dimPlayers.length];
+          rt.spawner.tick(createServerGameApi(spawnerTarget, rt.dim));
+        }
+
+        // Simulation des joueurs de cette dimension
+        for (const p of dimPlayers) {
+          const hadVehicle = p.entity.vehicle;
+          p.entity.tick(createServerGameApi(p, rt.dim));
+          if (hadVehicle && !p.entity.vehicle) {
+            sendJson(p.ws, { type: 'mount', vehicleId: 0 });
+          }
+          if (p.entity.vehicle) {
+            p.x = p.entity.x;
+            p.y = p.entity.y;
+            p.z = p.entity.z;
+          }
+          if (p.entity.sleeping) {
+            const bed = p.entity.bed;
+            if (!bed || rt.world.getBlock(bed.x, bed.y, bed.z) !== B.BED || !p.entity.alive) {
+              wakeServerPlayer(p);
+            } else {
+              p.entity.sleepTicks++;
+            }
+          }
+        }
+
+        // Combat du dragon partagé dans l'End
+        if (rt.dim === 'end') {
+          const endApi = createServerGameApi(firstP, 'end');
+          if (endFight.tick(endApi)) {
+            broadcastToDim('end', { type: 'chat', text: "Le dragon de l'Ender est vaincu ! Le portail de sortie s'est ouvert au centre de l'île." });
+            for (const p of dimPlayers) {
+              if (p !== firstP) p.entity.addXp(DRAGON_XP);
+            }
+          }
+          if (tickCount % 2 === 0) {
+            broadcastToDim('end', { type: 'dragonState', progress: endFight.progress, killed: endFight.killed });
+          }
+        }
+
+        // Simulation des entités de cette dimension
+        rt.entityTicking = true;
+        const api = createServerGameApi(firstP, rt.dim);
+        for (let i = 0; i < rt.entities.length; i++) {
+          const e = rt.entities[i];
+          if (!e.roaming && !rt.world.isLoaded(Math.floor(e.x), Math.floor(e.z))) {
+            e.dead = true;
+            continue;
+          }
+          e.tick(api);
+        }
+        let keep = 0;
+        for (let i = 0; i < rt.entities.length; i++) {
+          const e = rt.entities[i];
+          if (!e.dead) rt.entities[keep++] = e;
+        }
+        rt.entities.length = keep;
+        rt.entityTicking = false;
+        if (rt.pendingEntities.length > 0) {
+          for (const e of rt.pendingEntities) rt.entities.push(e);
+          rt.pendingEntities.length = 0;
+        }
+
+        // Plaques de pression foulées par les joueurs ou les créatures
+        const pressPlateAt = (lx: number, ly: number, lz: number): void => {
+          const bx = Math.floor(lx);
+          const by = Math.floor(ly + 0.05);
+          const bz = Math.floor(lz);
+          const v = rt.world.getBlockAndMeta(bx, by, bz);
+          if ((v & 255) === B.STONE_PRESSURE_PLATE) {
+            const pk = posKey(bx, by, bz);
+            rt.pressedPlates.set(pk, rt.world.age + 10);
+            if (((v >> 8) & 1) === 0) rt.world.setMeta(bx, by, bz, 1, true);
+          }
+        };
+        for (const p of dimPlayers) {
+          if (p.entity.alive) pressPlateAt(p.entity.x, p.entity.y, p.entity.z);
+        }
+        for (const e of rt.entities) {
+          if (e instanceof Living && !e.dead && e.alive) pressPlateAt(e.x, e.y, e.z);
+        }
+        if (rt.pressedPlates.size > 0) {
+          for (const [pk, until] of rt.pressedPlates) {
+            if (rt.world.age >= until) {
+              rt.pressedPlates.delete(pk);
+              const bx = posKeyX(pk);
+              const by = posKeyY(pk);
+              const bz = posKeyZ(pk);
+              if (rt.world.getBlock(bx, by, bz) === B.STONE_PRESSURE_PLATE && rt.world.getMeta(bx, by, bz) !== 0) {
+                rt.world.setMeta(bx, by, bz, 0, true);
+              }
+            }
+          }
+        }
       }
-      tickBlockEntities(world);
+
+      if (tickCount % 20 === 0) spawnPlayerIdx++;
 
       // Mettre à jour les conteneurs ouverts (fourneaux, alambics, entonnoirs) et fermer si hors de portée
       for (const p of playerList) {
         const oc = p.openContainer;
         if (!oc) continue;
+        const pWorld = getDim(p.dimension).world;
         const dist = Math.hypot(oc.x + 0.5 - p.x, oc.y + 0.5 - (p.y + 1.62), oc.z + 0.5 - p.z);
-        if (dist > 7.0 || !isContainerBlockAt(oc.x, oc.y, oc.z, oc.kind)) {
+        if (dist > 7.0 || !isContainerBlockAt(pWorld, oc.x, oc.y, oc.z, oc.kind)) {
           oc.menu.close();
           p.openContainer = null;
           sendInventory(p);
@@ -3083,25 +3888,6 @@ function start(): void {
         }
       }
 
-      // Apparition naturelle autour de chaque joueur (rotation à chaque cycle)
-      if (world.rules.doMobSpawning) {
-        const spawnerTarget = playerList[spawnPlayerIdx % playerList.length];
-        spawner.tick(createServerGameApi(spawnerTarget));
-      }
-      if (tickCount % 20 === 0) spawnPlayerIdx++;
-
-      // Simulation des joueurs (faim, effets, noyade, lave, feu, vide, sommeil)
-      for (const p of playerList) {
-        p.entity.tick(createServerGameApi(p));
-        if (p.entity.sleeping) {
-          const bed = p.entity.bed;
-          if (!bed || world.getBlock(bed.x, bed.y, bed.z) !== B.BED || !p.entity.alive) {
-            wakeServerPlayer(p);
-          } else {
-            p.entity.sleepTicks++;
-          }
-        }
-      }
       if (playerList.length > 0 && playerList.every((p) => p.entity.sleeping && p.entity.sleepTicks >= SLEEP_TICKS)) {
         worldTime += (DAY_TICKS - (worldTime % DAY_TICKS)) % DAY_TICKS;
         raining = false;
@@ -3111,29 +3897,6 @@ function start(): void {
         broadcastJson({ type: 'time', time: worldTime });
         broadcastJson({ type: 'weather', raining: false, thundering: false });
         for (const p of playerList) wakeServerPlayer(p);
-      }
-
-      // Simulation des entités
-      entityTicking = true;
-      const api = createServerGameApi(firstPlayer);
-      for (let i = 0; i < serverEntities.length; i++) {
-        const e = serverEntities[i];
-        if (!e.roaming && !world.isLoaded(Math.floor(e.x), Math.floor(e.z))) {
-          e.dead = true;
-          continue;
-        }
-        e.tick(api);
-      }
-      let keep = 0;
-      for (let i = 0; i < serverEntities.length; i++) {
-        const e = serverEntities[i];
-        if (!e.dead) serverEntities[keep++] = e;
-      }
-      serverEntities.length = keep;
-      entityTicking = false;
-      if (pendingEntities.length > 0) {
-        for (const e of pendingEntities) serverEntities.push(e);
-        pendingEntities.length = 0;
       }
 
       // Synchroniser inventaires / XP modifiés (ex. ramassage d'objets)
@@ -3148,10 +3911,11 @@ function start(): void {
         }
       }
 
-      // Diffusion des joueurs
-      const list: RemotePlayerState[] = [];
-      for (const p of playerList) {
-        list.push({
+      // Diffusion des joueurs (par dimension)
+      for (const dim of ['overworld', 'nether', 'end'] as const) {
+        const dimPlayers = playerList.filter((p) => p.dimension === dim);
+        if (dimPlayers.length === 0) continue;
+        const list: RemotePlayerState[] = dimPlayers.map((p) => ({
           id: p.id,
           name: p.name,
           x: p.x,
@@ -3167,24 +3931,29 @@ function start(): void {
           blocking: p.entity.blocking,
           hurtTime: p.entity.hurtTime,
           alive: p.entity.alive,
-        });
+          riding: p.entity.riding,
+        }));
+        broadcastToDim(dim, { type: 'players', list });
       }
-      broadcastJson({ type: 'players', list });
 
-      // Diffusion des entités à portée de chaque joueur
+      // Diffusion des entités à portée de chaque joueur (dans sa dimension)
       const entRange = (viewDistance + 2) * 16;
       const entRange2 = entRange * entRange;
-      const serialized = serverEntities.map(serializeEntityState);
-      for (const p of playerList) {
-        if (p.ws.readyState !== WebSocket.OPEN) continue;
-        const visible: RemoteEntityState[] = [];
-        for (let i = 0; i < serialized.length; i++) {
-          const s = serialized[i];
-          const dx = s.x - p.x;
-          const dz = s.z - p.z;
-          if (dx * dx + dz * dz <= entRange2) visible.push(s);
+      for (const rt of dims.values()) {
+        const dimPlayers = playerList.filter((p) => p.dimension === rt.dim);
+        if (dimPlayers.length === 0) continue;
+        const serialized = rt.entities.map(serializeEntityState);
+        for (const p of dimPlayers) {
+          if (p.ws.readyState !== WebSocket.OPEN) continue;
+          const visible: RemoteEntityState[] = [];
+          for (let i = 0; i < serialized.length; i++) {
+            const s = serialized[i];
+            const dx = s.x - p.x;
+            const dz = s.z - p.z;
+            if (dx * dx + dz * dz <= entRange2) visible.push(s);
+          }
+          sendJson(p.ws, { type: 'entities', list: visible });
         }
-        sendJson(p.ws, { type: 'entities', list: visible });
       }
 
       if (tickCount % TICKS_PER_SECOND === 0) {
@@ -3204,7 +3973,8 @@ function start(): void {
   function shutdown(): void {
     clearInterval(tickTimer);
     if (totalTickSamples > 0) {
-      console.log(`[Serveur] Tick moyen : ${tickMsAvg.toFixed(2)} ms | Entités actives : ${serverEntities.length}`);
+      const totalEnts = Array.from(dims.values()).reduce((s, r) => s + r.entities.length, 0);
+      console.log(`[Serveur] Tick moyen : ${tickMsAvg.toFixed(2)} ms | Entités actives : ${totalEnts}`);
     }
     saveAll();
     for (const p of players.values()) {

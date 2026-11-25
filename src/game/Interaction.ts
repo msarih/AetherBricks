@@ -87,6 +87,7 @@ export interface InteractionHost extends GameApi {
   readonly isRemote?: boolean;
   netBreakBlock?(x: number, y: number, z: number): void;
   netPlaceBlock?(x: number, y: number, z: number, face: number, id: number, meta: number, slot: number): void;
+  netPlaceVehicle?(x: number, y: number, z: number, face: number, itemId: number, yaw: number): void;
   netUseBlock?(x: number, y: number, z: number): void;
   netDropItem?(slot: number, all: boolean): void;
   netAttackEntity?(entityId: number): void;
@@ -662,6 +663,19 @@ export class Interaction {
       return true;
     }
 
+    if (g.isRemote) {
+      if (id === B.CHEST || id === B.FURNACE || id === B.FURNACE_LIT || id === B.BREWING_STAND || id === B.HOPPER || id === B.DISPENSER || id === B.DROPPER) {
+        g.netOpenContainer?.(x, y, z);
+        return true;
+      }
+      if (
+        id === B.OAK_DOOR || id === B.LEVER || id === B.STONE_BUTTON || id === B.TRAPDOOR || id === B.FENCE_GATE ||
+        id === B.REPEATER || id === B.COMPARATOR || id === B.DAYLIGHT_DETECTOR || id === B.NOTE_BLOCK || id === B.JUKEBOX || id === B.BED
+      ) {
+        g.netUseBlock?.(x, y, z);
+        return true;
+      }
+    }
     if (id === B.OAK_DOOR) {
       const ly = meta & META_DOOR_UPPER ? y - 1 : y;
       const lower = w.getBlockAndMeta(x, ly, z);
@@ -696,19 +710,6 @@ export class Interaction {
       w.setMeta(x, y, z, m);
       g.sound(open ? 'door_open' : 'door_close', x + 0.5, y + 0.5, z + 0.5, 0.8, 0.9 + g.rng() * 0.2);
       return true;
-    }
-    if (g.isRemote) {
-      if (id === B.CHEST || id === B.FURNACE || id === B.FURNACE_LIT || id === B.BREWING_STAND || id === B.HOPPER || id === B.DISPENSER || id === B.DROPPER) {
-        g.netOpenContainer?.(x, y, z);
-        return true;
-      }
-      if (
-        id === B.OAK_DOOR || id === B.LEVER || id === B.STONE_BUTTON || id === B.TRAPDOOR || id === B.FENCE_GATE ||
-        id === B.REPEATER || id === B.COMPARATOR || id === B.DAYLIGHT_DETECTOR || id === B.NOTE_BLOCK || id === B.BED
-      ) {
-        g.netUseBlock?.(x, y, z);
-        return true;
-      }
     }
     if (id === B.CHEST) {
       const chest = getChest(w, x, y, z);
@@ -872,6 +873,10 @@ export class Interaction {
     const item = getItem(held);
 
     if (held === I.MINECART && isRail(h.id)) {
+      if (g.isRemote && g.netPlaceVehicle) {
+        g.netPlaceVehicle(h.x, h.y, h.z, h.face, held, p.yaw);
+        return true;
+      }
       const cart = new Minecart();
       cart.setPosition(h.x + 0.5, h.y + 0.0625, h.z + 0.5);
       cart.yaw = p.yaw;
@@ -886,6 +891,10 @@ export class Interaction {
       p.look(this.look);
       const l = this.look;
       if (raycast(w, p.x, p.y + p.eyeHeight, p.z, l.x, l.y, l.z, this.reach(), f, false, true) && f.id === B.WATER) {
+        if (g.isRemote && g.netPlaceVehicle) {
+          g.netPlaceVehicle(f.x, f.y, f.z, f.face, held, p.yaw);
+          return true;
+        }
         const boat = new Boat();
         boat.setPosition(f.x + 0.5, f.y + 0.9, f.z + 0.5);
         boat.yaw = p.yaw;
@@ -901,6 +910,10 @@ export class Interaction {
       const ay = h.y + dy;
       const az = h.z + dz;
       if (this.replaceable(ax, ay, az)) {
+        if (g.isRemote && g.netPlaceVehicle) {
+          g.netPlaceVehicle(h.x, h.y, h.z, h.face, held, p.yaw);
+          return true;
+        }
         const boat = new Boat();
         boat.setPosition(ax + 0.5, ay + 0.05, az + 0.5);
         boat.yaw = p.yaw;
@@ -951,6 +964,10 @@ export class Interaction {
     if (held === I.ENDER_EYE && h.id === B.END_PORTAL_FRAME) {
       // l'œil se loge dans le cadre ; le douzième ouvre le portail
       if (h.meta & FRAME_EYE) return false;
+      if (g.isRemote && g.netPlaceBlock) {
+        g.netPlaceBlock(h.x, h.y, h.z, h.face, I.ENDER_EYE, 0, p.inventory.selected);
+        return true;
+      }
       w.setMeta(h.x, h.y, h.z, h.meta | FRAME_EYE);
       g.blockSound('place', B.GLASS, h.x + 0.5, h.y + 1, h.z + 0.5);
       p.consumeHand(this.activeHand);
@@ -959,6 +976,10 @@ export class Interaction {
     }
 
     if (held === I.FLINT_AND_STEEL) {
+      if (g.isRemote && g.netPlaceBlock) {
+        g.netPlaceBlock(h.x, h.y, h.z, h.face, I.FLINT_AND_STEEL, 0, p.inventory.selected);
+        return true;
+      }
       if (h.id === B.TNT) {
         w.setBlock(h.x, h.y, h.z, B.AIR, 0);
         w.host.primeTnt(h.x, h.y, h.z, 80);

@@ -105,6 +105,7 @@ import { MultiplayerClient as NetClient } from '../net/Client';
 import type { ContainerKind, SerializedSlot, TradeOfferInfo } from '../net/Protocol';
 import { RemoteEntity } from '../net/RemoteEntity';
 import { RemotePlayerEntity } from '../net/RemotePlayer';
+import { BOAT_SEAT, MINECART_SEAT, stepBoatPhysics, stepMinecartPhysics } from '../entity/Vehicles';
 import { loadLastPseudo, loadRecentServers, saveRecentServer } from '../net/RecentServers';
 import { exportWorld, replaceWorldFromArchive } from '../world/WorldFile';
 
@@ -318,6 +319,10 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
   private readonly storage: Storage | null;
   net: MultiplayerClient | null = null;
   private remoteId = 0;
+  private serverVehicleId = 0;
+  private pendingMountId = 0;
+  private remoteDragonProgress: number | null = null;
+  private closingToFriends = false;
   private readonly remotePlayers = new Map<number, RemotePlayerEntity>();
   private readonly remoteEntities = new Map<number, RemoteEntity>();
   private remoteContainer: {
@@ -545,6 +550,10 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       this.rainLevel = this.raining ? 1 : 0;
       this.thunderLevel = this.thundering ? 1 : 0;
       this.spawnPoint = o.welcome.spawn;
+      if (o.welcome.dimension && o.welcome.dimension !== this.dimension) {
+        this.dimension = o.welcome.dimension;
+        this.chunks.setDimension(this.dimension, new Set());
+      }
       player.teleport(o.welcome.x, o.welcome.y, o.welcome.z);
       player.yaw = player.pYaw = player.headYaw = player.pHeadYaw = o.welcome.yaw;
       player.headPitch = player.pHeadPitch = o.welcome.pitch;
@@ -1159,6 +1168,13 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     const feet = this.world.getBlock(Math.floor(p.x), Math.floor(p.y + 0.2), Math.floor(p.z));
     // portail de l'End : il emporte aussitôt, sans attente
     if (feet === B.END_PORTAL && p.alive) {
+      if (this.isRemote) {
+        if (this.portalCooldown <= 0) {
+          this.portalCooldown = 40;
+          this.net?.sendEnterPortal('end');
+        }
+        return;
+      }
       if (this.dimension === 'end') void this.leaveEnd();
       else if (this.dimension === 'overworld') void this.enterEnd();
       return;
@@ -1175,6 +1191,11 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     this.portalTicks++;
     if (p.creative || this.portalTicks >= 80) {
       this.portalTicks = 0;
+      if (this.isRemote) {
+        this.portalCooldown = 100;
+        this.net?.sendEnterPortal('nether');
+        return;
+      }
       const target: Dimension = this.dimension === 'overworld' ? 'nether' : 'overworld';
       void this.switchDimension(target, p.x, p.z);
     }
@@ -2140,7 +2161,7 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
 
   get boss(): { name: string; progress: number } | null {
     if (this.dimension !== 'end') return null;
-    const progress = this.endFight.progress;
+    const progress = this.isRemote ? this.remoteDragonProgress : this.endFight.progress;
     return progress === null ? null : { name: "Dragon de l'Ender", progress };
   }
 
@@ -3140,9 +3161,21 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
         }
         for (const [id, re] of this.remoteEntities) {
           if (!seen.has(id)) {
+            if (this.player.vehicle === re) {
+              re.localDriven = false;
+              this.player.dismount(this);
+              this.serverVehicleId = 0;
+            }
             this.remoteEntities.delete(id);
             const idx = this.entities.indexOf(re);
             if (idx >= 0) this.entities.splice(idx, 1);
+          }
+        }
+        if (this.pendingMountId > 0) {
+          const re = this.remoteEntities.get(this.pendingMountId);
+          if (re) {
+            this.pendingMountId = 0;
+            this.mountRemoteVehicle(re);
           }
         }
       },
@@ -3223,6 +3256,53 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
           this.player.teleport(x, y, z);
           this.player.vx = this.player.vy = this.player.vz = 0;
           this.player.fallDistance = 0;
+        }
+      },
+      onMount: (vehicleId) => {
+        if (vehicleId <= 0) {
+          this.serverVehicleId = 0;
+          this.pendingMountId = 0;
+          if (this.player.vehicle instanceof RemoteEntity) {
+            this.player.vehicle.localDriven = false;
+          }
+          if (this.player.vehicle) this.player.dismount(this);
+          return;
+        }
+        this.serverVehicleId = vehicleId;
+        const re = this.remoteEntities.get(vehicleId);
+        if (re) {
+          this.pendingMountId = 0;
+          this.mountRemoteVehicle(re);
+        } else {
+          this.pendingMountId = vehicleId;
+        }
+      },
+      onDimension: (dimension, x, y, z, yaw) => {
+        this.serverVehicleId = 0;
+        this.pendingMountId = 0;
+        this.remoteDragonProgress = null;
+        this.remotePlayers.clear();
+        this.remoteEntities.clear();
+        this.entities.length = 0;
+        this.entities.push(this.player);
+        this.requestedChunks.clear();
+        this.dimension = dimension;
+        this.chunks.setDimension(dimension, new Set());
+        this.player.teleport(x, y, z);
+        if (yaw !== undefined) this.player.setRotation(yaw);
+        this.player.fallDistance = 0;
+        this.portalCooldown = 100;
+        this.portalTicks = 0;
+        this.requestMissingChunks();
+      },
+      onDragonState: (progress, killed, credits) => {
+        this.remoteDragonProgress = progress;
+        this.endFight.killed = killed;
+        if (credits && !this.endFight.creditsSeen && !this.disposed) {
+          this.endFight.creditsSeen = true;
+          this.interaction.reset();
+          this.ui.showWin();
+          this.input.unlock();
         }
       },
       onActionBar: (text) => {
@@ -3327,17 +3407,32 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
         }
       },
       onSound: (name, x, y, z, volume, pitch) => {
+        if (name.startsWith('note_')) {
+          this.lastNote = {
+            x: Math.floor(x),
+            y: Math.floor(y),
+            z: Math.floor(z),
+            instrument: name.slice(5),
+            note: 0,
+            pitch: pitch ?? 1,
+            count: ++this.noteCount,
+          };
+        }
         this.sound(name, x, y, z, volume, pitch);
+      },
+      onJukebox: (x, y, z, disc) => {
+        if (disc > 0) this.playJukebox(x, y, z, disc);
+        else this.stopJukebox(x, y, z);
       },
       onParticles: (kind, x, y, z, count, spread) => {
         this.particles(kind, x, y, z, count, spread);
       },
       onWorldClosed: (reason) => {
-        if (this.disposed) return;
+        if (this.disposed || this.closingToFriends) return;
         this.onDisconnected?.(reason);
       },
       onDisconnect: (reason) => {
-        if (this.disposed) return;
+        if (this.disposed || this.closingToFriends) return;
         this.onDisconnected?.(reason);
       },
     });
@@ -3370,6 +3465,20 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
 
   netPlaceBlock(x: number, y: number, z: number, face: number, id: number, meta: number, slot: number): void {
     this.net?.sendPlaceBlock(x, y, z, face, id, meta, slot);
+  }
+
+  netPlaceVehicle(x: number, y: number, z: number, face: number, itemId: number, yaw: number): void {
+    this.net?.sendPlaceVehicle(x, y, z, face, itemId, yaw);
+  }
+
+  private mountRemoteVehicle(re: RemoteEntity): void {
+    if (this.player.vehicle === re) return;
+    if (this.player.vehicle instanceof RemoteEntity) this.player.vehicle.localDriven = false;
+    if (this.player.vehicle) this.player.leaveVehicle();
+    if (!this.player.mount(re)) return;
+    re.localDriven = true;
+    const seatY = re.kind === 'minecart' ? MINECART_SEAT : BOAT_SEAT;
+    this.player.setPosition(re.x, re.y + seatY, re.z);
   }
 
   netUseBlock(x: number, y: number, z: number): void {
@@ -3534,6 +3643,8 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
 
   async closeToFriends(): Promise<void> {
     if (!this.isHost || !this.hostServerUrl || !this.hostToken) return;
+    this.closingToFriends = true;
+    try {
     const serverUrl = this.hostServerUrl;
     const token = this.hostToken;
 
@@ -3580,15 +3691,19 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
 
     if (archiveBuf && this.storage) {
       await replaceWorldFromArchive(this.storage, this.info.id, archiveBuf);
-      const keys = await this.storage.chunkKeys(this.info.id);
+      const keys = await this.storage.chunkKeys(dimensionStorageId(this.info.id, this.dimension));
       this.entities.length = 0;
       this.entities.push(this.player);
       this.homes.clear();
       this.chunks.setRemoteMode(false, keys);
+      this.chunks.setDimension(this.dimension, keys);
     } else {
       this.chunks.setRemoteMode(false);
     }
     this.ui.addMessage('Partie fermée aux amis. Le monde solo est à jour.');
+    } finally {
+      this.closingToFriends = false;
+    }
   }
 
   private applyRemoteInventory(
@@ -3635,7 +3750,29 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
     const cx = Math.floor(p.x) >> 4;
     const cz = Math.floor(p.z) >> 4;
     if (this.world.chunks.has(chunkKey(cx, cz))) {
+      this.tickPortal();
+      if (p.vehicle instanceof RemoteEntity && !p.vehicle.dead) {
+        const v = p.vehicle;
+        v.px = v.x;
+        v.py = v.y;
+        v.pz = v.z;
+        v.pYaw = v.yaw;
+        if (v.kind === 'boat') {
+          stepBoatPhysics(this.world, v, p.input);
+          p.setPosition(v.x, v.y + BOAT_SEAT, v.z);
+        } else if (v.kind === 'minecart') {
+          stepMinecartPhysics(this.world, v, { forward: p.input.forward, yaw: p.yaw }, true, false);
+          p.setPosition(v.x, v.y + MINECART_SEAT, v.z);
+        }
+        p.vx = p.vy = p.vz = 0;
+        p.fallDistance = 0;
+      }
       p.tick(this);
+      if (this.serverVehicleId > 0 && !p.vehicle) {
+        this.serverVehicleId = 0;
+        for (const re of this.remoteEntities.values()) re.localDriven = false;
+        this.net?.sendDismount();
+      }
     }
     for (const rp of this.remotePlayers.values()) {
       rp.tick(this);
@@ -3659,7 +3796,8 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
         p.yaw !== this.lastSentYaw ||
         p.headPitch !== this.lastSentPitch ||
         p.sneaking !== this.lastSentSneak ||
-        p.swing !== this.lastSentSwing)
+        p.swing !== this.lastSentSwing ||
+        p.vehicle instanceof RemoteEntity)
     ) {
       this.lastSentX = p.x;
       this.lastSentY = p.y;
@@ -3668,7 +3806,8 @@ export class Game implements InteractionHost, UiGame, ChunkHooks {
       this.lastSentPitch = p.headPitch;
       this.lastSentSneak = p.sneaking;
       this.lastSentSwing = p.swing;
-      this.net.sendMove(p.x, p.y, p.z, p.yaw, p.headPitch, p.sneaking, p.onGround, p.swing, p.sprinting);
+      const vYaw = p.vehicle instanceof RemoteEntity ? p.vehicle.yaw : undefined;
+      this.net.sendMove(p.x, p.y, p.z, p.yaw, p.headPitch, p.sneaking, p.onGround, p.swing, p.sprinting, vYaw);
     }
   }
 }

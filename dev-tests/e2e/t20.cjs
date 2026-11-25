@@ -366,7 +366,8 @@ async function getChatText(page) {
       await ticks(pageB, 45);
       const hAfter = await getHealth(pageB);
       const posAfterFall = await getPos(pageB);
-      check('chute de 10 blocs fait perdre la vie attendue', hAfter < hBefore, `before=${hBefore}, after=${hAfter}, pos0=${JSON.stringify(posBeforeFall)}, pos1=${JSON.stringify(posAfterFall)}`);
+      const fallDmg = hBefore - hAfter;
+      check('chute de 10 blocs fait perdre 7 points (±1)', fallDmg >= 6 && fallDmg <= 8, `before=${hBefore}, after=${hAfter}, dmg=${fallDmg}, pos0=${JSON.stringify(posBeforeFall)}, pos1=${JSON.stringify(posAfterFall)}`);
     });
 
     await section('6. Faim, repas et potion jetable', async () => {
@@ -430,6 +431,9 @@ async function getChatText(page) {
       await chatCmd(pageA, '/give JoueurA diamond_sword 1');
       await chatCmd(pageA, '/give JoueurB diamond 3');
       await chatCmd(pageA, '/tp JoueurA 30 4 29.0');
+      await chatCmd(pageA, '/setblock 29 4 32 stone');
+      await chatCmd(pageA, '/setblock 31 4 32 stone');
+      await chatCmd(pageA, '/setblock 30 4 33 stone');
       await chatCmd(pageA, '/tp JoueurB 30 4 32');
       await ticks(pageA, 4);
       await selectSlot(pageA, 0);
@@ -440,8 +444,23 @@ async function getChatText(page) {
         await ticks(pageA, 4);
         await aimAtPlayer(pageA, 'JoueurB');
         await lclick(pageA);
-        await sleep(750);
+        await sleep(150);
+        if ((await getHealth(pageB)) <= 0) break;
+        await sleep(600);
       }
+      // Objets tombés au sol vus par A (diamants de B à moins de 3 blocs de sa mort, ou ramassés par A)
+      await ticks(pageA, 2);
+      const diamondId = 261;
+      const dropInfo = await ev(pageA, (did, dx, dy, dz) => {
+        const items = window.__game.entities
+          .filter((e) => e.kind === 'item')
+          .map((e) => ({ id: e.itemId, d: Math.hypot(e.x - dx, e.y - dy, e.z - dz) }));
+        const itemOk = items.some((it) => it.id === did && it.d < 3);
+        const pickedDiamond = window.__game.player.inventory.slots.some(
+          (s) => s && s.id === did && s.count === 3,
+        );
+        return { ok: itemOk || pickedDiamond, items, pickedDiamond };
+      }, diamondId, 30, 4, 32);
       await pageB.bringToFront();
       await ticks(pageB, 4);
       const deadB = await getHealth(pageB);
@@ -455,18 +474,12 @@ async function getChatText(page) {
       await shot(pageA, 't20-mort-chat');
       check('message de mort affiché chez A et chez B', /JoueurB.*tué.*JoueurA/.test(chatA) && /JoueurB.*tué.*JoueurA/.test(chatB), chatA.slice(-150));
 
-      // Objets tombés au sol vus par A (ou déjà ramassés par A si projetés vers lui)
-      await ticks(pageA, 6);
-      const dropVisibleOrPicked = await ev(pageA, () => {
-        const hasItem = window.__game.entities.some((e) => e.kind === 'item');
-        const pickedDiamond = window.__game.player.inventory.slots.some((s) => s && s.count === 3);
-        return hasItem || pickedDiamond;
-      });
       await shot(pageA, 't20-butin-sol');
-      check('keepInventory false : objets tombent au sol et A les voit', dropVisibleOrPicked);
+      check('keepInventory false : diamants tombent à moins de 3 blocs de la mort et A les voit', dropInfo.ok, JSON.stringify(dropInfo));
 
       // B réapparaît au point d'apparition
       await pageB.bringToFront();
+      await pageB.waitForSelector('[data-mc="respawn"]:not([disabled])', { timeout: 5000 });
       await pageB.click('[data-mc="respawn"]');
       await ticks(pageB, 10);
       const respH = await getHealth(pageB);
@@ -569,7 +582,7 @@ async function getChatText(page) {
         return rp ? rp.remoteId : 0;
       });
       // Coup à 20 blocs
-      ws.send(JSON.stringify({ type: 'move', x: 100, y: 4, z: 80, yaw: 0, pitch: 0, sneaking: false, onGround: true, swing: 0 }));
+      await chatCmd(pageA, '/tp Tricheur 100 4 80');
       await sleep(100);
       const hb0 = await getHealth(pageB);
       ws.send(JSON.stringify({ type: 'attackPlayer', playerId: bId }));
@@ -578,7 +591,7 @@ async function getChatText(page) {
       check('triche : coup à 20 blocs refusé', hb1 === hb0, `hb0=${hb0}, hb1=${hb1}`);
 
       // 20 coups en 1 seconde à 2 blocs
-      ws.send(JSON.stringify({ type: 'move', x: 82, y: 4, z: 80, yaw: 0, pitch: 0, sneaking: false, onGround: true, swing: 0 }));
+      await chatCmd(pageA, '/tp Tricheur 82 4 80');
       await sleep(100);
       for (let i = 0; i < 20; i++) {
         ws.send(JSON.stringify({ type: 'attackPlayer', playerId: bId }));
@@ -586,7 +599,8 @@ async function getChatText(page) {
       }
       await sleep(250);
       const hb2 = await getHealth(pageB);
-      check('triche : 20 coups/s plafonnés (pas plus qu’un coup chargé)', hb1 - hb2 <= 2, `dmg=${hb1 - hb2}`);
+      const burstDmg = hb1 - hb2;
+      check('triche : 20 coups/s plafonnés (au moins 1 coup passe, pas plus qu’un coup chargé)', burstDmg > 0 && burstDmg <= 2, `dmg=${burstDmg}`);
 
       // Faux paquet vitals / heal après que A a blessé Tricheur
       await chatCmd(pageA, '/give JoueurA diamond_sword 1');

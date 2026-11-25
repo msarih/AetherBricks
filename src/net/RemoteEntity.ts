@@ -16,9 +16,10 @@ export class RemoteEntity extends Entity {
   }
 
   override get pickable(): boolean {
-    return this.kind === 'mob';
+    return this.kind === 'mob' || this.kind === 'boat' || this.kind === 'minecart';
   }
 
+  localDriven = false;
   private tx: number;
   private ty: number;
   private tz: number;
@@ -41,6 +42,12 @@ export class RemoteEntity extends Entity {
     } else if (this.kind === 'falling_block' || this.kind === 'tnt') {
       this.width = 0.98;
       this.height = 0.98;
+    } else if (this.kind === 'boat') {
+      this.width = 1.375;
+      this.height = 0.5625;
+    } else if (this.kind === 'minecart') {
+      this.width = 0.98;
+      this.height = 0.7;
     }
     this.px = this.x = this.tx = s.x;
     this.py = this.y = this.ty = s.y;
@@ -60,6 +67,13 @@ export class RemoteEntity extends Entity {
     this.ty = s.y;
     this.tz = s.z;
     this.tyaw = s.yaw;
+    if (this.localDriven && Math.hypot(s.x - this.x, s.y - this.y, s.z - this.z) > 2.5) {
+      this.x = s.x;
+      this.y = s.y;
+      this.z = s.z;
+      this.yaw = s.yaw;
+      this.vx = this.vy = this.vz = 0;
+    }
     this.theadYaw = s.headYaw ?? s.yaw;
     this.theadPitch = s.headPitch ?? 0;
     this.hurtTime = s.hurtTime ?? 0;
@@ -110,6 +124,10 @@ export class RemoteEntity extends Entity {
     this.pLeashY = this.leashY;
     this.pLeashZ = this.leashZ;
 
+    if (this.localDriven) {
+      this.updateLight(api.world);
+      return;
+    }
     const dx = this.tx - this.x;
     const dz = this.tz - this.z;
     const horiz = Math.hypot(dx, dz);

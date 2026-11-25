@@ -14,7 +14,7 @@ import {
   type TradeOfferInfo,
 } from './Protocol';
 import { parseInviteCode } from './InviteCode';
-import type { GameMode } from '../world/Constants';
+import type { Dimension, GameMode } from '../world/Constants';
 import type { SfxName } from '../audio/Sfx';
 import type { ParticleKind } from '../render/Particles';
 import type { UseKind } from '../player/Player';
@@ -38,12 +38,16 @@ export interface ClientHandlers {
   onDeath?(message: string): void;
   onRespawn?(x: number, y: number, z: number): void;
   onSleep?(sleeping: boolean, x?: number, y?: number, z?: number): void;
+  onMount?(vehicleId: number): void;
+  onDimension?(dimension: Dimension, x: number, y: number, z: number, yaw?: number): void;
+  onDragonState?(progress: number | null, killed: boolean, credits?: boolean): void;
   onActionBar?(text: string): void;
   onContainerState?(msg: Extract<ServerMessage, { type: 'containerState' }>): void;
   onContainerClose?(x: number, y: number, z: number): void;
   onTradeOpen?(entityId: number, title: string, offers: TradeOfferInfo[]): void;
   onTradeOffers?(entityId: number, offers: TradeOfferInfo[]): void;
   onSound?(name: SfxName, x: number, y: number, z: number, volume?: number, pitch?: number): void;
+  onJukebox?(x: number, y: number, z: number, disc: number): void;
   onParticles?(kind: ParticleKind, x: number, y: number, z: number, count?: number, spread?: number): void;
   onRtcSignal?(from: number, kind: 'offer' | 'answer' | 'ice', payload: unknown): void;
   onRtcState?(id: number, mic: boolean, cam: boolean, speaking: boolean): void;
@@ -239,6 +243,15 @@ export class MultiplayerClient {
       case 'sleep':
         this.handlers.onSleep?.(msg.sleeping, msg.x, msg.y, msg.z);
         break;
+      case 'mount':
+        this.handlers.onMount?.(msg.vehicleId);
+        break;
+      case 'dimension':
+        this.handlers.onDimension?.(msg.dimension, msg.x, msg.y, msg.z, msg.yaw);
+        break;
+      case 'dragonState':
+        this.handlers.onDragonState?.(msg.progress, msg.killed, msg.credits);
+        break;
       case 'actionBar':
         this.handlers.onActionBar?.(msg.text);
         break;
@@ -256,6 +269,9 @@ export class MultiplayerClient {
         break;
       case 'sound':
         this.handlers.onSound?.(msg.name, msg.x, msg.y, msg.z, msg.volume, msg.pitch);
+        break;
+      case 'jukebox':
+        this.handlers.onJukebox?.(msg.x, msg.y, msg.z, msg.disc);
         break;
       case 'particles':
         this.handlers.onParticles?.(msg.kind, msg.x, msg.y, msg.z, msg.count, msg.spread);
@@ -276,8 +292,8 @@ export class MultiplayerClient {
     }
   }
 
-  sendMove(x: number, y: number, z: number, yaw: number, pitch: number, sneaking: boolean, onGround: boolean, swing: number, sprinting = false): void {
-    this.send({ type: 'move', x, y, z, yaw, pitch, sneaking, onGround, swing, sprinting });
+  sendMove(x: number, y: number, z: number, yaw: number, pitch: number, sneaking: boolean, onGround: boolean, swing: number, sprinting = false, vehicleYaw?: number): void {
+    this.send({ type: 'move', x, y, z, yaw, pitch, sneaking, onGround, swing, sprinting, ...(vehicleYaw !== undefined ? { vehicleYaw } : {}) });
   }
 
   sendChat(text: string): void {
@@ -294,6 +310,18 @@ export class MultiplayerClient {
 
   sendPlaceBlock(x: number, y: number, z: number, face: number, id: number, meta: number, slot: number): void {
     this.send({ type: 'placeBlock', x, y, z, face, id, meta, slot });
+  }
+
+  sendPlaceVehicle(x: number, y: number, z: number, face: number, itemId: number, yaw: number): void {
+    this.send({ type: 'placeVehicle', x, y, z, face, itemId, yaw });
+  }
+
+  sendDismount(): void {
+    this.send({ type: 'dismount' });
+  }
+
+  sendEnterPortal(kind: 'nether' | 'end'): void {
+    this.send({ type: 'enterPortal', kind });
   }
 
   sendUseBlock(x: number, y: number, z: number): void {
